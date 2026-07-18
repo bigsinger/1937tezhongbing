@@ -50,6 +50,15 @@ if (-not $GodotExecutable.EndsWith('_console.exe', [System.StringComparison]::Or
     }
 }
 
+# A fresh checkout has no `.godot/global_script_class_cache.cfg`. Prime the
+# project once before compiling scripts individually so `class_name` types are
+# available regardless of filesystem enumeration order. Existing developer
+# checkouts usually hide this dependency because the editor created the cache.
+& $GodotExecutable --headless --editor --path $game --quit-after 2
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot project initialization failed with exit code $LASTEXITCODE."
+}
+
 Get-ChildItem -LiteralPath $game -Recurse -Filter '*.gd' | ForEach-Object {
     $relativePath = ($_.FullName.Substring($game.Length) -replace '^[\\/]+', '') -replace '\\', '/'
     $resourcePath = "res://$relativePath"
