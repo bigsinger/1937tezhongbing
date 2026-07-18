@@ -1,0 +1,13 @@
+﻿test=pm-baseline-driver
+duration_s=34.0
+gameplay_samples=308
+changed_frames=0
+frame_interval_p50_ms=0.00
+frame_interval_p95_ms=0.00
+frame_interval_p99_ms=0.00
+frame_interval_max_ms=0.00
+gaps_over_80ms=0
+gaps_over_120ms=0
+cpu_one_logical_core_percent=21.7
+read_during_gameplay_bytes=29184
+unresponsive_samples=0

@@ -1,0 +1,13 @@
+﻿test=pm-vsync-screenrate-driver
+duration_s=34.0
+gameplay_samples=108
+changed_frames=0
+frame_interval_p50_ms=0.00
+frame_interval_p95_ms=0.00
+frame_interval_p99_ms=0.00
+frame_interval_max_ms=0.00
+gaps_over_80ms=0
+gaps_over_120ms=0
+cpu_one_logical_core_percent=1.6
+read_during_gameplay_bytes=0
+unresponsive_samples=0

@@ -1,55 +1,28 @@
-# Prerequisites
+# Build and debugger outputs
+*.obj
+*.pdb
+*.ilk
+*.lib
+*.exp
+*.map
 *.d
 
-# Object files
-*.o
-*.ko
-*.obj
-*.elf
+# Local test logs and temporary extraction directories
+*.tmp
+*.log
+release-test/
+test-results/
 
-# Linker output
-*.ilk
-*.map
-*.exp
+# Original game content must never enter this repository
+1937tzb_1229/
+backups/
+*.GFL
+*.gfl
+*.VWF
+*.vwf
+*.SVT
+*.svt
+*.SAV
+*.sav
 
-# Precompiled Headers
-*.gch
-*.pch
-
-# Libraries
-*.lib
-*.a
-*.la
-*.lo
-
-# Shared objects (inc. Windows DLLs)
-*.dll
-*.so
-*.so.*
-*.dylib
-
-# Executables
-*.exe
-*.out
-*.app
-*.i*86
-*.x86_64
-*.hex
-
-# Debug files
-*.dSYM/
-*.su
-*.idb
-*.pdb
-
-# Kernel Module Compile Results
-*.mod*
-*.cmd
-.tmp_versions/
-modules.order
-Module.symvers
-Mkfile.old
-dkms.conf
-
-# debug information files
-*.dwo
+# Keep the distributable patch binaries and scripts tracked.
