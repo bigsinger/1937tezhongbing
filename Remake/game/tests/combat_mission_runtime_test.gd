@@ -25,6 +25,56 @@ class ClearSight:
 		return true
 
 
+class MockMediaDirector:
+	extends CanvasLayer
+
+	var calls: Array[Dictionary] = []
+
+	func play_audio_event(
+		event_key: String,
+		actor_key: String = "",
+		variant_seed: int = 0,
+		caption: String = "",
+	) -> bool:
+		calls.append({
+			"kind": "audio",
+			"event_key": event_key,
+			"actor_key": actor_key,
+			"variant_seed": variant_seed,
+			"caption": caption,
+		})
+		return true
+
+	func start_dialogue(sequence_id: String, lines: Array) -> bool:
+		calls.append({"kind": "dialogue", "sequence_id": sequence_id, "lines": lines})
+		return true
+
+	func play_movie(movie_id: String) -> bool:
+		calls.append({"kind": "movie", "movie_id": movie_id})
+		return true
+
+	func show_ending(target_width: int, fallback_text: String = "") -> bool:
+		calls.append({
+			"kind": "ending",
+			"target_width": target_width,
+			"fallback_text": fallback_text,
+		})
+		return true
+
+
+class MockMediaMissionRuntime:
+	extends Node
+
+	var last_error := ""
+	var completed_ids: Array[String] = []
+
+	func is_configured() -> bool:
+		return true
+
+	func publish_world_event(_event_name: String, _payload: Dictionary) -> Array[String]:
+		return completed_ids.duplicate()
+
+
 var check_count := 0
 
 
@@ -39,6 +89,8 @@ func _run_tests() -> void:
 	_test_faction_and_exit_party_rules(failures)
 	_test_m000_world_event_closure(failures)
 	_test_m008_manual_explosion_failure(failures)
+	_test_m010_simultaneous_high_ground(failures)
+	_test_mission_media_cues(failures)
 	_test_all_mission_world_event_closures(failures)
 
 	if failures.is_empty():
@@ -450,6 +502,162 @@ func _test_m008_manual_explosion_failure(failures: Array[String]) -> void:
 	main.mission_runtime = null
 	main.free()
 	runtime.free()
+
+
+func _test_m010_simultaneous_high_ground(failures: Array[String]) -> void:
+	var mission: Dictionary = MISSION_DATA.load_mission("m010")
+	var rule := mission.get("simultaneous_zone_rule", {}) as Dictionary
+	_expect(
+		str(rule.get("source_status", "")) == "recovered"
+		and float(rule.get("radius_world", 0.0)) == 128.0
+		and bool(rule.get("distinct_occupants", false)),
+		"m010 stores the recovered 128-pixel simultaneous occupation rule",
+		failures,
+	)
+	_expect(
+		mission.get("required_survivors", []) == ["老赵", "强子", "大牛", "古明"],
+		"m010 requires exactly the four actors checked by the original evaluator",
+		failures,
+	)
+	var level := _build_mission_level_fixture(mission)
+	var state = MISSION_STATE.new(mission)
+	var runtime = MISSION_RUNTIME_SCRIPT.new()
+	root.add_child(runtime)
+	_expect(runtime.configure(mission, level, state), "m010 simultaneous-zone fixture configures", failures)
+
+	var main = MAIN_SCRIPT.new()
+	main.current_mission = mission
+	main.current_mission_state = state
+	main.mission_runtime = runtime
+	var zone_positions: Array[Vector2] = [
+		Vector2(100.0, 100.0),
+		Vector2(500.0, 100.0),
+		Vector2(100.0, 500.0),
+		Vector2(500.0, 500.0),
+	]
+	var zone_scenes: Array = (mission.get("scene_bindings", {}) as Dictionary)["high_ground"]
+	for index: int in range(zone_scenes.size()):
+		main.world_entities_by_scene[int(zone_scenes[index])] = {
+			"scene_index": int(zone_scenes[index]),
+			"x": zone_positions[index].x,
+			"y": zone_positions[index].y,
+		}
+	var names: Array[String] = ["老赵", "强子", "大牛", "古明"]
+	for index: int in range(names.size()):
+		var unit = SQUAD_UNIT_SCRIPT.new()
+		unit.display_name = names[index]
+		unit.position = zone_positions[index] if index < 3 else Vector2(900.0, 900.0)
+		main.units.append(unit)
+	var tiedan = SQUAD_UNIT_SCRIPT.new()
+	tiedan.display_name = "铁蛋"
+	tiedan.position = zone_positions[3]
+	main.units.append(tiedan)
+	main._evaluate_simultaneous_zone_rule()
+	_expect(
+		not state.is_objective_complete("capture_high_ground"),
+		"m010 rejects 铁蛋 as a substitute and does not persist partial occupation",
+		failures,
+	)
+	main.units[3].position = zone_positions[3] + Vector2(128.0, 0.0)
+	main._evaluate_simultaneous_zone_rule()
+	_expect(
+		state.is_victory(),
+		"m010 completes when the four eligible actors simultaneously occupy four zones at the inclusive radius",
+		failures,
+	)
+	_expect(
+		not main._can_assign_distinct_zone_occupants([[0], [0]], 0, {}),
+		"simultaneous zones cannot reuse one actor for two points",
+		failures,
+	)
+	for unit: Node2D in main.units:
+		unit.free()
+	main.units.clear()
+	main.mission_runtime = null
+	main.free()
+	runtime.free()
+
+
+func _test_mission_media_cues(failures: Array[String]) -> void:
+	var catalog: Dictionary = MISSION_DATA.load_catalog()
+	_expect(not catalog.is_empty(), "mission catalog accepts data-driven media cues", failures)
+	for mission_id: String in ["m000", "m006", "m011"]:
+		_expect(
+			MISSION_DATA.is_valid_media_cues(MISSION_DATA.load_mission(mission_id)),
+			"%s media cue schema validates" % mission_id,
+			failures,
+		)
+	var invalid_catalog := catalog.duplicate(true)
+	var invalid_cue := (
+		(((invalid_catalog["missions"] as Array)[0] as Dictionary)["media_cues"] as Dictionary)["on_start"]
+		as Dictionary
+	)
+	invalid_cue["source_status"] = "guessed_original_dialogue"
+	_expect(
+		not MISSION_DATA.is_valid_catalog(invalid_catalog),
+		"mission media rejects unlabelled guesses as recovered story content",
+		failures,
+	)
+
+	var main = MAIN_SCRIPT.new()
+	var director := MockMediaDirector.new()
+	main.media_director = director
+	main.current_mission = MISSION_DATA.load_mission("m000")
+	_expect(
+		main._play_mission_media_cue("on_start")
+		and director.calls.size() == 1
+		and str(director.calls[0].get("kind", "")) == "dialogue"
+		and str(director.calls[0].get("sequence_id", "")) == "m000_tutorial",
+		"m000 start cue reaches the real dialogue entry point",
+		failures,
+	)
+	main._on_objective_completed("rescue_pengxin")
+	_expect(
+		director.calls.size() == 3
+		and str(director.calls[1].get("event_key", "")) == "ui_confirm"
+		and str(director.calls[2].get("event_key", "")) == "acknowledge"
+		and str(director.calls[2].get("actor_key", "")) == "laozhao",
+		"objective completion dispatches its configured recovered-audio cue",
+		failures,
+	)
+
+	var mock_runtime := MockMediaMissionRuntime.new()
+	mock_runtime.completed_ids = ["follow_contact"]
+	main.mission_runtime = mock_runtime
+	main.current_mission = MISSION_DATA.load_mission("m006")
+	var completed: Array[String] = main._publish_mission_event(
+		"story_anchor_reached", {"role_id": "m006_exchange_point", "scene_index": 1461}
+	)
+	_expect(
+		completed == ["follow_contact"]
+		and str(director.calls.back().get("sequence_id", "")) == "m006_exchange_confirmed",
+		"a completed story-anchor event opens its configured dialogue",
+		failures,
+	)
+	var calls_after_story := director.calls.size()
+	mock_runtime.completed_ids.clear()
+	main._publish_mission_event(
+		"story_anchor_reached", {"role_id": "m006_exchange_point", "scene_index": 1461}
+	)
+	_expect(
+		director.calls.size() == calls_after_story,
+		"a repeated story fact cannot replay modal dialogue without new objective progress",
+		failures,
+	)
+
+	main.current_mission = MISSION_DATA.load_mission("m011")
+	_expect(
+		main._play_mission_media_cue("on_victory")
+		and str(director.calls.back().get("kind", "")) == "ending"
+		and str(director.calls.back().get("fallback_text", "")) == "十二关任务全部完成",
+		"m011 victory cue reaches the recovered ending-image path",
+		failures,
+	)
+	main.mission_runtime = null
+	main.media_director = null
+	mock_runtime.free()
+	director.free()
+	main.free()
 
 
 func _test_all_mission_world_event_closures(failures: Array[String]) -> void:

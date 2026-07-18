@@ -29,6 +29,11 @@ dotnet run --project .\tools\ResourceTool -- inspect "E:\1937\1937tzb_1229"
 # 导入到默认、已忽略的 LocalAssets
 .\tools\Import-OriginalAssets.cmd "E:\1937\1937tzb_1229"
 
+# 可选：用 FFmpeg 把原启动/历史视频转为 Godot 可播的 Ogg Theora
+.\tools\Convert-LegacyMedia.cmd `
+  -GameDirectory "E:\1937\1937tzb_1229" `
+  -FfmpegExecutable "C:\path\to\ffmpeg.exe"
+
 # 运行 Godot
 godot --path .\game
 
@@ -59,6 +64,8 @@ godot --headless --editor --path .\game --quit-after 2
 ```
 
 由 Godot 自己扫描项目并生成类缓存，再逐脚本执行 `--check-only`、逻辑测试和场景冒烟测试。不要把本机 `.godot/` 提交进仓库，也不要通过调整 PowerShell 文件枚举顺序来掩盖依赖；fresh checkout 和本机缓存热启动必须走同一验证入口。
+
+当前验证计数基线为：171 项 .NET 合成格式/媒体目录测试、123 项 Godot 核心逻辑、154 项战斗/任务、82 项投射物/背包、120 项世界交互、46 项无资产媒体和 93 项确定性回放。存在完整 `LocalAssets` 时再追加 6,753 项真实关卡/任务绑定与 310 项真实媒体审计；计数变化必须由功能或 fixture 变化解释，不能只改文档或放宽断言。
 
 ## 当前导入基线
 
@@ -91,8 +98,11 @@ Godot 端的责任分工为：
 - `tactical_senses.gd`：原版等距椭圆、八方向扫描、近远识别区、军犬特殊感知、L2 遮挡和武器射程；
 - `enemy_unit.gd`：巡逻、发现、追击、攻击态和最后位置搜索；
 - `combat_profiles.gd` 与 `game/data/combat_profiles.json`：版本化、可校验的原版感知/武器参数。
+- `combat_inventory.gd`：玩家多武器、弹匣、备弹、装填和状态快照；
+- `projectile_world.gd` / `combat_projectile.gd`：type 6/7/9 世界飞行、段碰撞、落地和椭圆爆炸；
+- `world_pickup_catalog.gd`、`field_pickup.gd`、`land_mine.gd`、`explosive_prop.gd`：真实场景拾取、地雷和油桶。
 
-`combat_profiles.json` 当前的普通敌人/军犬感知、11 类攻击距离、普通伤害、连发次数、弹药物品 ID、每次消耗和末帧命中语义来自 `M1937.exe` 字段级逆向，不能随意当作手感参数改写。每个新战斗字段都必须标记 `recovered`、`recovered_with_unresolved_override` 或 `unresolved_remake_default`。当前弹匣容量、初始备弹、装填/恢复秒数和特殊攻击直接伤害是重制默认；听觉遮挡、尸体发现和更高层走廊会车尚未完成。详见 [导航、动态占位、敌人感知与攻击](NAVIGATION_AND_COMBAT.md)。
+`combat_profiles.json` 当前的普通敌人/军犬感知、11 类攻击距离、普通伤害、连发次数、弹药物品 ID、每次消耗和末帧提交语义来自 `M1937.exe` 字段级逆向，不能随意当作手感参数改写。每个新战斗字段都必须标记 `recovered`、`recovered_with_unresolved_override` 或 `unresolved_remake_default`。当前弹匣容量、初始备弹、装填/恢复秒数，投射物速度/弧高/碰撞半径，手榴弹、地雷、油桶和拾取效果参数均是重制默认；type 8/10/11、听觉遮挡、尸体发现和更高层走廊会车尚未完成。详见 [导航、动态占位、敌人感知与攻击](NAVIGATION_AND_COMBAT.md) 与 [投射物、背包与世界交互物](PROJECTILES_AND_INVENTORY.md)。
 
 导航/感知修改的合成测试至少应覆盖：绕墙、对角禁止穿墙、多格足印、障碍目标的附近落点、L2/L3 分离、scene 忽略/清除、视锥前后边界、射程和视线组合，以及 `M37NAV1` 截断/错版本拒绝。具有本地资产时，`Verify` 还会逐关校验十二份导航文件，并以 m004 的 98 个动态角色执行高密度寻路压力回归；固定 120 个物理帧内必须有敌人实际移动，A* 请求量必须处于 20—500 次且总寻路耗时不超过 2 秒，以防“AI 未运行”的假通过、退化巡逻点或拥挤重规划重新形成请求风暴。
 
@@ -108,7 +118,7 @@ serial_id = action_index * 9 + direction_index
 
 `load_action_groups(preview_path, action_key)` 是通用入口。增加战斗动作时，应让角色状态机请求已有动作 key，并由明确的玩法事件切换动画；不要为每种武器重新写资源解析器。玩家与敌人的 `run`/`walk`、`stand`、对应武器攻击和 `death` 已接入。0.085 秒是基础 sprite tick，每组每帧实际保持 `0.085 × (parameters[2] + 1)` 秒；例如已导入强子的跑、走、匍匐分别保持 1、2、3 个 tick。
 
-攻击只在**进入动作最后一帧**时复核射程/视线并结算伤害；死亡动作播放一次并保持末帧。当前没有证据表明资源中存在可直接使用的独立受伤动作，因此非致命伤使用 0.18 秒闪红/硬直，这是明确的重制反馈。修改动作推进时必须覆盖“末帧前不伤害、末帧复核、单帧动作、死亡幂等、死亡末帧保持”。
+攻击只在**进入动作最后一帧**时复核射程/视线并提交即时命中或 type 6/7/9 投射物；投射物在实际碰撞/爆炸时再伤害。死亡动作播放一次并保持末帧。当前没有证据表明资源中存在可直接使用的独立受伤动作，因此非致命伤使用 0.18 秒闪红/硬直，这是明确的重制反馈。修改动作推进时必须覆盖“末帧前不伤害、末帧复核、单帧动作、投射物延迟结算、死亡幂等、死亡末帧保持”。
 
 ## 任务开发工作流
 
@@ -128,6 +138,20 @@ serial_id = action_index * 9 + direction_index
 5. 全部必需目标完成后的胜利。
 
 世界系统不得直接调用 `MissionState.record_event()`；必须通过 `MissionRuntime.publish_world_event()`。运行时会确认 scene 同时属于已加载关卡和当前任务 `scene_bindings`，并拒绝缺失或未绑定引用。救援、拾取、任务角色击毙、剧情锚点、爆破/占点、清敌、撤离、限时和角色损失已经接线；持久事实会去重并在前置依赖完成后重放，出口则保持瞬时区域判定。对白、镜头、特定角色条件、AI 配合和演出节奏仍需要逐关人工校准。详见 [任务恢复说明](MISSION_RECOVERY.md)。
+
+爆破关必须显式提供 `charge_policy`，并将来源状态保持为 `remake_policy_from_recovered_map_inventory`。m001/m004/m011 使用 `preplanted`；m002/m003/m008/m009 使用 `inventory_required`。验证器会将 `target_count` 与 explosion scene 绑定、`map_pickup_count` 与真实 DBL 998 逐关计数交叉核对，并拒绝物资不足的消耗模式。实现时必须先成功发布世界事件，再提交背包扣除；不要把检查和扣除顺序颠倒，也不要让预置目标因背包恰好有炸药而消费物品。
+
+m004 的计划书携带者已由物品 101/VWF 携带记录定案为 scene 2637；m009 默认修复原版未使用的全关 faction 1 扫描，要求两份文件、全关清敌和四处爆破；m010 的四个区域由老赵、强子、大牛、古明在 128 像素内分别同时占据，不按 `E`、不累计、不要求停留或先清敌。不要在新脚本中重新引入旧候选或临时近似。
+
+任务媒体必须写入可选 `media_cues`，不得在关卡脚本里散落硬编码弹窗。只允许 `on_start`、`on_objective`、`on_story_anchor`、`on_victory` 四段和 `audio`、`dialogue`、`movie`、`ending` 四类 cue；每项必须标 `recovered_media_mapping`、`remake_editorial` 或 `mixed`。目标键必须引用真实 objective ID，剧情锚点键必须同时存在于 scene 绑定和 `story_anchor_reached` 目标。当前基线包括 m000 教程/彭鑫营救确认、m006 接头提示和 m011 结局；重复持久剧情事实不能重播模态媒体。
+
+`runtime_state_snapshot.gd` 为合成战斗命令和十二关任务事件生成规范化 SHA-256 哈希链，并执行两遍比较。它验证状态确定性，不录制鼠标/键盘、物理帧或渲染时序；涉及长期稳定性时仍需另建真实输入回放和帧时间/内存基线。
+
+## 媒体开发工作流
+
+完整导入会生成 `LocalAssets/converted/legacy-media-catalog.json`，记录十二张简报、十二张目标图、三张结局图、128 个 WAV 和五段已审计旧视频的元数据。原 WAV、PNG、SVT/VWF 媒体及转码 OGV 均留在被忽略的 `LocalAssets`，不能提交到 Git。
+
+`legacy_media_catalog.gd` 负责安全解析本地/回退元数据，`media_director.gd` 负责简报、声音、Theora 视频、字幕和文字/可选语音对白。主场景已经在切关时显示简报，并把攻击、投射物命中、爆炸、警报、角色选择/确认、死亡和 UI 事件映射到原 WAV；任务运行时进一步按 `media_cues` 在开场、目标、剧情锚点和胜利时调用同一导演。一个专用语音/对白播放器与固定 8 路 SFX 池彼此分离，SFX 空闲槽按轮询顺序选择，池满时确定性复用一个有界槽，避免密集枪声、爆炸和 UI 音互相截断或无限创建节点。简报、对白、视频或结局图打开时，导演把 SceneTree 置为暂停而自身继续接收跳过/前进输入，最后一个模态层关闭后恢复进入前的暂停状态，从而冻结任务时限、AI 和战斗。视频播放/跳过和对白 schema 已测试，但除 m000/m006 提示和 m011 结局外，尚未逐关编排启动顺序、对白原文、镜头或过场。任何新增逐关对白/镜头都必须基于原版实机证据和人工校对，不能从 WAV 文件名猜造剧情。
 
 ## Windows 本地试玩包
 

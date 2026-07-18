@@ -8,9 +8,13 @@
       "id": "m000",
       "number": 1,
       "title": "营救行动",
-      "overview_image_index": 1025,
+      "overview_image_index": 1036,
       "briefing_image_index": 1048,
       "scene_bindings": {"rescued": [1427, 1428], "exit": [1600]},
+      "media_cues": {
+        "on_start": {"kind": "dialogue", "sequence_id": "m000_tutorial", "source_status": "remake_editorial", "lines": [{"speaker": "任务提示", "text": "营救彭鑫和老罗叔，然后护送所有存活人员抵达撤离点。", "minimum_seconds": 0.0, "auto_advance": false}]},
+        "on_objective": {"rescue_pengxin": {"kind": "audio", "event_key": "acknowledge", "actor_key": "laozhao", "source_status": "remake_editorial"}}
+      },
       "time_limit_seconds": 0,
       "trigger_inventory": {"markers": 1, "explosion": 0, "exit": 1, "spawns": 4, "entrances": 0},
       "objectives": [
@@ -26,8 +30,9 @@
       "title": "奇袭火车站",
       "overview_image_index": 1026,
       "briefing_image_index": 1049,
-      "scene_bindings": {"driver": [2506], "uniform_pickup": [2516], "explosion": [2520, 2521], "exit": [2522]},
-      "pickup_bindings": {"uniform_pickup": {"item_name": "日军军服"}},
+      "scene_bindings": {"driver": [2506], "uniform_crate": [2099], "uniform_pickup": [2516], "explosion": [2520, 2521], "exit": [2522]},
+      "charge_policy": {"mode": "preplanted", "inventory_item_key": "explosives", "quantity_per_target": 1, "map_pickup_count": 1, "target_count": 2, "source_status": "remake_policy_from_recovered_map_inventory", "evidence_note": "地图仅有 1 个 DBL 998 炸药，少于 2 个爆破目标；目标按预置炸药处理，不消耗背包。"},
+      "pickup_bindings": {"uniform_crate": {"item_name": "日军军服"}, "uniform_pickup": {"item_name": "日军军服"}},
       "exit_party": {"player_names": ["古明"], "escort_bindings": ["driver"]},
       "time_limit_seconds": 9000,
       "trigger_inventory": {"markers": 4, "explosion": 2, "exit": 1, "spawns": 5, "entrances": 8},
@@ -46,6 +51,7 @@
       "overview_image_index": 1027,
       "briefing_image_index": 1050,
       "scene_bindings": {"rescued": [877], "explosion": [889], "exit": [895]},
+      "charge_policy": {"mode": "inventory_required", "inventory_item_key": "explosives", "quantity_per_target": 1, "map_pickup_count": 1, "target_count": 1, "source_status": "remake_policy_from_recovered_map_inventory", "evidence_note": "地图的 1 个 DBL 998 炸药与 1 个爆破目标数量闭合，每次激活消耗 1 个炸药。"},
       "exit_party": {"player_names": ["老赵"], "escort_bindings": ["rescued"]},
       "time_limit_seconds": 0,
       "trigger_inventory": {"markers": 3, "explosion": 1, "exit": 1, "spawns": 7, "entrances": 2},
@@ -63,6 +69,7 @@
       "overview_image_index": 1028,
       "briefing_image_index": 1051,
       "scene_bindings": {"truck": [1228], "explosion": [1230, 1231, 1232, 1233, 1234], "exit": [1235]},
+      "charge_policy": {"mode": "inventory_required", "inventory_item_key": "explosives", "quantity_per_target": 1, "map_pickup_count": 6, "target_count": 5, "source_status": "remake_policy_from_recovered_map_inventory", "evidence_note": "地图有 6 个 DBL 998 炸药供 5 个桥梁爆破目标使用，包含 1 个容错余量。"},
       "time_limit_seconds": 0,
       "trigger_inventory": {"markers": 6, "explosion": 5, "exit": 1, "spawns": 2, "entrances": 4},
       "objectives": [
@@ -78,8 +85,9 @@
       "overview_image_index": 1029,
       "briefing_image_index": 1052,
       "scene_bindings": {"rescued": [2700], "m004_plan_officer": [2637], "explosion": [2695, 2696]},
-      "binding_notes": "m004_plan_officer 暂绑定候选山本 scene 2637；原资源存在另一候选 2548，需继续以原版运行行为校准。",
-      "role_drops": {"m004_plan_officer": {"item_role": "m004_plan_document"}},
+      "charge_policy": {"mode": "preplanted", "inventory_item_key": "explosives", "quantity_per_target": 1, "map_pickup_count": 0, "target_count": 2, "source_status": "remake_policy_from_recovered_map_inventory", "evidence_note": "地图没有 DBL 998 炸药但有 2 个粮仓目标；目标按预置引燃物处理，不消耗背包。"},
+      "binding_notes": "已由原任务 case 5 的物品 101 检查和 VWF auxiliary[0] 携带物记录确认 scene 2637；同名 scene 2548 不携带该物品。",
+      "role_drops": {"m004_plan_officer": {"item_role": "m004_plan_document", "original_item_id": 101}},
       "time_limit_seconds": 0,
       "trigger_inventory": {"markers": 3, "explosion": 2, "exit": 0, "spawns": 4, "entrances": 15},
       "objectives": [
@@ -115,6 +123,9 @@
       "briefing_image_index": 1054,
       "scene_bindings": {"sun_damazi": [1457], "kato_engine_role": [1460], "m006_sun_damazi": [1457], "m006_kato": [1460], "m006_exchange_point": [1461], "exit": [1462]},
       "binding_notes": "剧情中的加藤由引擎 type22/DBL 王老板资源承担。",
+      "media_cues": {
+        "on_story_anchor": {"m006_exchange_point": {"kind": "dialogue", "sequence_id": "m006_exchange_confirmed", "source_status": "remake_editorial", "lines": [{"speaker": "任务提示", "text": "接头地点已确认。完成两名刺杀目标后离开该区域。", "minimum_seconds": 0.0, "auto_advance": false}]}}
+      },
       "time_limit_seconds": 0,
       "trigger_inventory": {"markers": 2, "explosion": 0, "exit": 1, "spawns": 4, "entrances": 7},
       "objectives": [
@@ -148,6 +159,7 @@
       "overview_image_index": 1033,
       "briefing_image_index": 1056,
       "scene_bindings": {"explosion": [798, 799, 800, 801], "exit": [802]},
+      "charge_policy": {"mode": "inventory_required", "inventory_item_key": "explosives", "quantity_per_target": 1, "map_pickup_count": 4, "target_count": 4, "source_status": "remake_policy_from_recovered_map_inventory", "evidence_note": "地图的 4 个 DBL 998 炸药与 4 个工事爆破目标数量闭合，每次激活消耗 1 个炸药。"},
       "exit_party": {"player_names": ["老赵", "大牛"]},
       "time_limit_seconds": 0,
       "trigger_inventory": {"markers": 5, "explosion": 4, "exit": 1, "spawns": 4, "entrances": 1},
@@ -164,12 +176,14 @@
       "overview_image_index": 1034,
       "briefing_image_index": 1057,
       "scene_bindings": {"m009_transfer_document_sources": [1610, 1611], "explosion": [1714, 1715, 1716, 1717]},
-      "role_drops": {"m009_transfer_document_sources": {"item_role": "m009_transfer_document"}},
+      "charge_policy": {"mode": "inventory_required", "inventory_item_key": "explosives", "quantity_per_target": 1, "map_pickup_count": 9, "target_count": 4, "source_status": "remake_policy_from_recovered_map_inventory", "evidence_note": "地图有 9 个 DBL 998 炸药供 4 个列车爆破目标使用，物资数量足以形成完整任务闭环。"},
+      "role_drops": {"m009_transfer_document_sources": {"item_role": "m009_transfer_document", "original_item_id": 101}},
+      "restoration_notes": "原版 case 10 的全场 faction 1 存活扫描结果因控制流缺陷未被使用。重制按任务简报恢复设计意图：全关日军清零、取得两份文件并炸毁四个列车目标；strict-original 可只保留列车目标和老赵存活。",
       "time_limit_seconds": 0,
       "trigger_inventory": {"markers": 4, "explosion": 4, "exit": 0, "spawns": 3, "entrances": 11},
       "objectives": [
-        {"id": "obtain_documents", "label": "取得两名日军军官携带的交接文件（简报目标）", "required": false, "condition": {"event": "item_acquired", "where": {"item_role": "m009_transfer_document"}, "required_count": 2, "unique_by": "source_scene_index"}},
-        {"id": "clear_station", "label": "清剿临时车站守军（简报目标）", "required": false, "condition": {"event": "area_hostiles_cleared", "where": {"area_role": "m009_station"}, "required_count": 1}},
+        {"id": "obtain_documents", "label": "取得两名日军军官携带的交接文件", "required": true, "condition": {"event": "item_acquired", "where": {"item_role": "m009_transfer_document"}, "required_count": 2, "unique_by": "source_scene_index"}},
+        {"id": "clear_station", "label": "清剿临时车站守军（按全关日军清零判定）", "required": true, "condition": {"event": "area_hostiles_cleared", "where": {"area_role": "m009_station"}, "required_count": 1}},
         {"id": "destroy_train", "label": "炸毁军火列车的四个目标", "required": true, "condition": {"event": "trigger_activated", "where": {"display_name": "检测爆炸精灵"}, "required_count": 4, "unique_by": "scene_index"}}
       ],
       "failure_conditions": [{"id": "required_character_lost", "event": "required_character_lost"}]
@@ -181,10 +195,12 @@
       "overview_image_index": 1035,
       "briefing_image_index": 1058,
       "scene_bindings": {"high_ground": [1620, 1621, 1622, 1623]},
+      "simultaneous_zone_rule": {"binding": "high_ground", "event": "simultaneous_zones_occupied", "zone_role": "m010_high_ground", "radius_world": 128.0, "dwell_seconds": 0.0, "eligible_player_names": ["老赵", "强子", "大牛", "古明"], "distinct_occupants": true, "requires_hostiles_cleared": false, "source_status": "recovered"},
+      "required_survivors": ["老赵", "强子", "大牛", "古明"],
       "time_limit_seconds": 3600,
       "trigger_inventory": {"markers": 4, "explosion": 0, "exit": 4, "spawns": 4, "entrances": 11},
       "objectives": [
-        {"id": "capture_high_ground", "label": "在一小时内占领四处制高点", "required": true, "condition": {"event": "trigger_activated", "where": {"display_name": "检测出口精灵"}, "required_count": 4, "unique_by": "scene_index"}}
+        {"id": "capture_high_ground", "label": "在一小时内由四名队员同时占领四处制高点", "required": true, "condition": {"event": "simultaneous_zones_occupied", "where": {"zone_role": "m010_high_ground"}, "required_count": 1}}
       ],
       "failure_conditions": [{"id": "time_limit", "event": "time_expired"}, {"id": "required_character_lost", "event": "required_character_lost"}]
     },
@@ -192,10 +208,14 @@
       "id": "m011",
       "number": 12,
       "title": "破袭机场",
-      "overview_image_index": 1036,
+      "overview_image_index": 1025,
       "briefing_image_index": 1059,
       "scene_bindings": {"m011_air_commander": [759], "explosion": [1348, 1349, 1350, 1351, 1352, 1353], "exit": [1359]},
+      "charge_policy": {"mode": "preplanted", "inventory_item_key": "explosives", "quantity_per_target": 1, "map_pickup_count": 4, "target_count": 6, "source_status": "remake_policy_from_recovered_map_inventory", "evidence_note": "地图仅有 4 个 DBL 998 炸药，少于重制修复后的 6 个目标；目标按预置炸药处理，不消耗背包。"},
       "original_quirk": "原版初始化反复覆盖爆破目标指针，实际只检查 scene 1353；重制默认修复为六目标，可另设 strict-original 兼容模式。",
+      "media_cues": {
+        "on_victory": {"kind": "ending", "fallback_text": "十二关任务全部完成", "source_status": "recovered_media_mapping"}
+      },
       "time_limit_seconds": 0,
       "trigger_inventory": {"markers": 7, "explosion": 6, "exit": 1, "spawns": 7, "entrances": 8},
       "objectives": [

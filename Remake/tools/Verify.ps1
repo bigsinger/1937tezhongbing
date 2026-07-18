@@ -78,7 +78,35 @@ if ($LASTEXITCODE -ne 0) {
     throw "Godot combat and mission runtime tests failed with exit code $LASTEXITCODE."
 }
 
+& $GodotExecutable --headless --path $game --script 'res://tests/projectile_inventory_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot projectile and inventory tests failed with exit code $LASTEXITCODE."
+}
+
+& $GodotExecutable --headless --path $game --script 'res://tests/world_interactables_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot world interactable tests failed with exit code $LASTEXITCODE."
+}
+
+& $GodotExecutable --headless --path $game --script 'res://tests/media_runtime_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot media catalog and fallback runtime tests failed with exit code $LASTEXITCODE."
+}
+
+& $GodotExecutable --headless --path $game --script 'res://tests/replay_validation_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot deterministic replay tests failed with exit code $LASTEXITCODE."
+}
+
 if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
+    $realMediaCatalog = Join-Path $remakeRoot 'LocalAssets\converted\legacy-media-catalog.json'
+    if (Test-Path -LiteralPath $realMediaCatalog -PathType Leaf) {
+        & $GodotExecutable --headless --path $game --script 'res://tests/real_media_test.gd'
+        if ($LASTEXITCODE -ne 0) {
+            throw "Godot real imported-media tests failed with exit code $LASTEXITCODE."
+        }
+    }
+
     & $GodotExecutable --headless --path $game --script 'res://tests/real_assets_test.gd'
     if ($LASTEXITCODE -ne 0) {
         throw "Godot real imported-asset tests failed with exit code $LASTEXITCODE."

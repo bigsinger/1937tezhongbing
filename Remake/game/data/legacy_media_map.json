@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "source_policy": "Metadata only. Original and transcoded media stay in ignored LocalAssets.",
+  "briefings": [
+    {"level_id": "m000", "gfl_index": 1048, "relative_path": "iblock/1048.png"},
+    {"level_id": "m001", "gfl_index": 1049, "relative_path": "iblock/1049.png"},
+    {"level_id": "m002", "gfl_index": 1050, "relative_path": "iblock/1050.png"},
+    {"level_id": "m003", "gfl_index": 1051, "relative_path": "iblock/1051.png"},
+    {"level_id": "m004", "gfl_index": 1052, "relative_path": "iblock/1052.png"},
+    {"level_id": "m005", "gfl_index": 1053, "relative_path": "iblock/1053.png"},
+    {"level_id": "m006", "gfl_index": 1054, "relative_path": "iblock/1054.png"},
+    {"level_id": "m007", "gfl_index": 1055, "relative_path": "iblock/1055.png"},
+    {"level_id": "m008", "gfl_index": 1056, "relative_path": "iblock/1056.png"},
+    {"level_id": "m009", "gfl_index": 1057, "relative_path": "iblock/1057.png"},
+    {"level_id": "m010", "gfl_index": 1058, "relative_path": "iblock/1058.png"},
+    {"level_id": "m011", "gfl_index": 1059, "relative_path": "iblock/1059.png"}
+  ],
+  "objective_maps": [
+    {"level_id": "m000", "gfl_index": 1036, "relative_path": "iblock/1036.png"},
+    {"level_id": "m001", "gfl_index": 1026, "relative_path": "iblock/1026.png"},
+    {"level_id": "m002", "gfl_index": 1027, "relative_path": "iblock/1027.png"},
+    {"level_id": "m003", "gfl_index": 1028, "relative_path": "iblock/1028.png"},
+    {"level_id": "m004", "gfl_index": 1029, "relative_path": "iblock/1029.png"},
+    {"level_id": "m005", "gfl_index": 1030, "relative_path": "iblock/1030.png"},
+    {"level_id": "m006", "gfl_index": 1031, "relative_path": "iblock/1031.png"},
+    {"level_id": "m007", "gfl_index": 1032, "relative_path": "iblock/1032.png"},
+    {"level_id": "m008", "gfl_index": 1033, "relative_path": "iblock/1033.png"},
+    {"level_id": "m009", "gfl_index": 1034, "relative_path": "iblock/1034.png"},
+    {"level_id": "m010", "gfl_index": 1035, "relative_path": "iblock/1035.png"},
+    {"level_id": "m011", "gfl_index": 1025, "relative_path": "iblock/1025.png"}
+  ],
+  "ending_images": [
+    {"width": 640, "gfl_index": 1061, "relative_path": "iblock/1061.png"},
+    {"width": 800, "gfl_index": 1062, "relative_path": "iblock/1062.png"},
+    {"width": 1024, "gfl_index": 1060, "relative_path": "iblock/1060.png"}
+  ],
+  "movies": [
+    {"id": "logo", "role": "publisher_logo", "relative_path": "media/video/logo.ogv", "auto_play": false},
+    {"id": "historical_intro", "role": "historical_intro", "relative_path": "media/video/historical_intro.ogv", "auto_play": false},
+    {"id": "bonus_013", "role": "unreferenced_bonus", "relative_path": "media/video/bonus_013.ogv", "auto_play": false},
+    {"id": "bonus_014", "role": "unreferenced_bonus", "relative_path": "media/video/bonus_014.ogv", "auto_play": false},
+    {"id": "bonus_015", "role": "unreferenced_bonus", "relative_path": "media/video/bonus_015.ogv", "auto_play": false}
+  ],
+  "audio_events": {
+    "attack_pistol": {"default": [1363, 1364, 1365, 1366]},
+    "attack_rifle": {"default": [1274, 1275, 1276]},
+    "attack_light_machinegun": {"default": [1347, 1348]},
+    "attack_light_machinegun_burst": {"default": [1349]},
+    "attack_heavy_machinegun": {"default": [1266, 1392]},
+    "attack_dagger": {"default": [1273]},
+    "attack_broadsword": {"default": [1280]},
+    "attack_slingshot": {"default": [1290]},
+    "attack_dart": {"default": [1305, 1306]},
+    "projectile_impact": {"default": [1291, 1292]},
+    "explosion": {"default": [1267, 1268, 1269]},
+    "alert": {"default": [1324], "japanese_soldier": [1355, 1356]},
+    "death": {"ally": [1368, 1369, 1370, 1371], "enemy": [1372, 1373], "war_dog": [1374], "civilian": [1367, 1375, 1376, 1377]},
+    "selected": {"daniu": [1282, 1287], "laozhao": [1331], "qiangzi": [1344]},
+    "acknowledge": {"daniu": [1281, 1283, 1284, 1285, 1288, 1289], "guming": [1308, 1309, 1310, 1311, 1312, 1313, 1314], "laozhao": [1328, 1329, 1330, 1332], "qiangzi": [1345, 1346], "tiedan": [1383, 1384, 1385]},
+    "battle_cry": {"daniu": [1286]},
+    "challenge_chase": {"ergou": [1296, 1297, 1298], "guitian": [1315], "lanjiaoqi": [1325], "japanese_soldier": [1353], "shanben": [1359, 1360], "sun_damazi": [1378]},
+    "challenge_stop": {"ergou": [1301, 1302], "guitian": [1316, 1317], "lanjiaoqi": [1327], "translator": [1338], "japanese_soldier": [1354, 1357], "shanben": [1361, 1362], "sun_damazi": [1379, 1382]},
+    "challenge_attack": {"ergou": [1303, 1304]},
+    "investigate": {"ergou": [1299, 1300], "translator": [1337], "sun_damazi": [1380, 1381]},
+    "threat_shoot": {"lanjiaoqi": [1326]},
+    "fire_start": {"default": [1351]},
+    "fire_loop": {"default": [1350]},
+    "fire_stop": {"default": [1352]},
+    "rain": {"default": [1390, 1391]},
+    "thunder": {"default": [1333]},
+    "ui_confirm": {"default": [1393]}
+  }
+}

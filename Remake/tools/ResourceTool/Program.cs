@@ -40,6 +40,7 @@ internal static class Program
             "list-gfl" => ListGfl(args),
             "extract-gfl" => ExtractGfl(args),
             "import" => Import(args),
+            "media-catalog" => MediaCatalog(args),
             _ => UnknownCommand(args[0])
         };
     }
@@ -201,6 +202,27 @@ internal static class Program
         return 0;
     }
 
+    private static int MediaCatalog(string[] args)
+    {
+        RequireArgumentCount(args, 3, 3, "media-catalog <game-directory> <converted-directory>");
+        var gameDirectory = System.IO.Path.GetFullPath(args[1]);
+        var convertedDirectory = System.IO.Path.GetFullPath(args[2]);
+        EnsureOutputIsOutsideSource(gameDirectory, convertedDirectory);
+        EnsureOutputIsGitIgnoredIfNecessary(convertedDirectory);
+
+        var resourcePath = System.IO.Path.Combine(gameDirectory, "1937Resources.GFL");
+        var indexPath = System.IO.Path.Combine(gameDirectory, "InterMedia.GFL");
+        var archive = GflArchive.Open(resourcePath, File.Exists(indexPath) ? indexPath : null);
+        var catalogPath = System.IO.Path.Combine(convertedDirectory, "legacy-media-catalog.json");
+        var soundNames = SoundLibrary.Open(System.IO.Path.Combine(gameDirectory, "1937Sound.slf"))
+            .Entries.Select(entry => entry.FileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        WriteJson(catalogPath, LegacyMediaCatalogBuilder.Build(archive.Entries, gameDirectory, soundNames));
+        var audioCueCount = archive.Entries.Count(entry => entry.Type == "WAV");
+        Console.WriteLine($"Wrote metadata for {audioCueCount} audio cues, " +
+            $"12 mission briefings and 5 legacy movies to {catalogPath}");
+        return 0;
+    }
+
     private static void EnsureOutputIsOutsideSource(string source, string output)
     {
         var sourceWithSeparator = source.TrimEnd(System.IO.Path.DirectorySeparatorChar) + System.IO.Path.DirectorySeparatorChar;
@@ -304,6 +326,7 @@ internal static class Program
         Console.WriteLine("  list-gfl <1937Resources.GFL> [InterMedia.GFL]");
         Console.WriteLine("  extract-gfl <1937Resources.GFL> <output-directory> [InterMedia.GFL]");
         Console.WriteLine("  import <game-directory> <output-directory>");
+        Console.WriteLine("  media-catalog <game-directory> <converted-directory>");
         Console.WriteLine();
         Console.WriteLine("Repository-local output directories must be ignored by Git.");
     }

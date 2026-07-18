@@ -25,6 +25,7 @@ internal static class Program
             _checks += TlgSyntheticTests.Run();
             _checks += SprSyntheticTests.Run();
             _checks += SprAnimationSemanticsTests.Run();
+            _checks += LegacyMediaCatalogTests.Run(temporaryDirectory);
             _checks += VwfSceneListSyntheticTests.Run(temporaryDirectory);
             _checks += VwfNavigationGridSyntheticTests.Run();
             _checks += TerrainRasterizerSyntheticTests.Run();

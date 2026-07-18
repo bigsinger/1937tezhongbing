@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "source_status": "Projectile delivery is inferred from original attack/world-object behavior. Flight timing, collision radii, arc height and blast geometry remain explicit playable remake defaults until their original fields are recovered.",
+  "projectiles": {
+    "dart_attack": {
+      "attack_type": 6,
+      "motion": "linear",
+      "speed": 640.0,
+      "arc_height": 0.0,
+      "collision_radius": 10.0,
+      "detonation_delay_seconds": 0.0,
+      "blast_horizontal_radius": 0.0,
+      "blast_vertical_radius": 0.0,
+      "friendly_fire": false,
+      "source_status": {
+        "delivery": "recovered_world_object_path",
+        "speed": "unresolved_remake_default",
+        "arc_height": "unresolved_remake_default",
+        "collision_radius": "unresolved_remake_default"
+      }
+    },
+    "slingshot_attack": {
+      "attack_type": 7,
+      "motion": "arc",
+      "speed": 520.0,
+      "arc_height": 28.0,
+      "collision_radius": 12.0,
+      "detonation_delay_seconds": 0.0,
+      "blast_horizontal_radius": 0.0,
+      "blast_vertical_radius": 0.0,
+      "friendly_fire": false,
+      "source_status": {
+        "delivery": "recovered_world_object_path",
+        "speed": "unresolved_remake_default",
+        "arc_height": "unresolved_remake_default",
+        "collision_radius": "unresolved_remake_default"
+      }
+    },
+    "grenade_attack": {
+      "attack_type": 9,
+      "motion": "arc",
+      "speed": 480.0,
+      "arc_height": 64.0,
+      "collision_radius": 10.0,
+      "detonation_delay_seconds": 0.35,
+      "blast_horizontal_radius": 128.0,
+      "blast_vertical_radius": 64.0,
+      "friendly_fire": true,
+      "source_status": {
+        "delivery": "recovered_world_object_path",
+        "speed": "unresolved_remake_default",
+        "arc_height": "unresolved_remake_default",
+        "collision_radius": "unresolved_remake_default",
+        "detonation_delay_seconds": "unresolved_remake_default",
+        "blast_horizontal_radius": "unresolved_remake_default",
+        "blast_vertical_radius": "unresolved_remake_default",
+        "friendly_fire": "unresolved_remake_default"
+      }
+    }
+  }
+}

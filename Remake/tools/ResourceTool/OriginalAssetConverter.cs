@@ -16,7 +16,8 @@ internal sealed record OriginalAssetConversionResult(
     int TotalLevelEntityCount,
     IReadOnlyList<ConvertedLevelSummary> Levels,
     string AssetManifest,
-    string LevelManifest);
+    string LevelManifest,
+    string MediaCatalog);
 
 internal sealed record ConvertedLevelSummary(
     string LevelId,
@@ -224,6 +225,11 @@ internal static class OriginalAssetConverter
             levels = levelSummaries
         });
 
+        var mediaCatalogPath = System.IO.Path.Combine(convertedRoot, "legacy-media-catalog.json");
+        var soundNames = SoundLibrary.Open(System.IO.Path.Combine(gameRoot, "1937Sound.slf"))
+            .Entries.Select(entry => entry.FileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        WriteJson(mediaCatalogPath, LegacyMediaCatalogBuilder.Build(archive.Entries, gameRoot, soundNames));
+
         return new OriginalAssetConversionResult(
             iBlockEntries.Length,
             tileGroupEntries.Length,
@@ -236,7 +242,8 @@ internal static class OriginalAssetConverter
             levelSummaries.Sum(level => level.EntityCount),
             levelSummaries,
             RelativePath(outputRoot, assetManifestPath),
-            RelativePath(outputRoot, levelManifestPath));
+            RelativePath(outputRoot, levelManifestPath),
+            RelativePath(outputRoot, mediaCatalogPath));
     }
 
     private static ConvertedLevelSummary ConvertLevel(

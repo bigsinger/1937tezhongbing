@@ -1,0 +1,258 @@
+{
+  "schema_version": 1,
+  "entity_count": 11,
+  "source_status": "Entity IDs and Chinese display names are recovered from the converted original DBL/VWF data. Pickup effects are inferred from those names. All quantities, interaction ranges, hit points, timing, damage and explosion geometry below are explicit playable remake defaults until their original semantics are recovered.",
+  "entities": {
+    "982": {
+      "database_entry_id": 982,
+      "key": "machine_gun_pickup",
+      "original_display_name": "可拾取机枪",
+      "behavior": "field_pickup",
+      "interaction_radius": 36.0,
+      "grant": {
+        "kind": "weapon",
+        "action_key": "machine_gun_attack",
+        "quantity": 1
+      },
+      "source_status": {
+        "identity": "recovered_converted_database",
+        "behavior": "inferred_from_recovered_display_name",
+        "grant_kind": "inferred_from_recovered_display_name",
+        "action_key": "inferred_from_recovered_display_name",
+        "interaction_radius": "unresolved_remake_default",
+        "grant_quantity": "unresolved_remake_default"
+      }
+    },
+    "983": {
+      "database_entry_id": 983,
+      "key": "ammunition_box_pickup",
+      "original_display_name": "可拾取弹药箱",
+      "behavior": "field_pickup",
+      "interaction_radius": 36.0,
+      "grant": {
+        "kind": "active_weapon_ammunition",
+        "quantity": 24
+      },
+      "source_status": {
+        "identity": "recovered_converted_database",
+        "behavior": "inferred_from_recovered_display_name",
+        "grant_kind": "inferred_from_recovered_display_name",
+        "interaction_radius": "unresolved_remake_default",
+        "grant_quantity": "unresolved_remake_default"
+      }
+    },
+    "984": {
+      "database_entry_id": 984,
+      "key": "land_mine_pickup",
+      "original_display_name": "可拾取地雷",
+      "behavior": "field_pickup",
+      "interaction_radius": 36.0,
+      "grant": {
+        "kind": "deployable",
+        "deployable_key": "land_mine",
+        "item_id": 43,
+        "quantity": 1
+      },
+      "source_status": {
+        "identity": "recovered_converted_database",
+        "behavior": "inferred_from_recovered_display_name",
+        "grant_kind": "inferred_from_recovered_display_name",
+        "deployable_key": "inferred_from_recovered_display_name",
+        "item_id": "recovered_attack_item_mapping",
+        "interaction_radius": "unresolved_remake_default",
+        "grant_quantity": "unresolved_remake_default"
+      }
+    },
+    "986": {
+      "database_entry_id": 986,
+      "key": "grenade_pickup",
+      "original_display_name": "可拾取手榴弹",
+      "behavior": "field_pickup",
+      "interaction_radius": 36.0,
+      "grant": {
+        "kind": "ammunition",
+        "action_key": "grenade_attack",
+        "item_id": 44,
+        "quantity": 3
+      },
+      "source_status": {
+        "identity": "recovered_converted_database",
+        "behavior": "inferred_from_recovered_display_name",
+        "grant_kind": "inferred_from_recovered_display_name",
+        "action_key": "inferred_from_recovered_display_name",
+        "item_id": "recovered_attack_item_mapping",
+        "interaction_radius": "unresolved_remake_default",
+        "grant_quantity": "unresolved_remake_default"
+      }
+    },
+    "987": {
+      "database_entry_id": 987,
+      "key": "pistol_pickup",
+      "original_display_name": "可拾取手枪",
+      "behavior": "field_pickup",
+      "interaction_radius": 36.0,
+      "grant": {
+        "kind": "weapon",
+        "action_key": "pistol_attack",
+        "quantity": 1
+      },
+      "source_status": {
+        "identity": "recovered_converted_database",
+        "behavior": "inferred_from_recovered_display_name",
+        "grant_kind": "inferred_from_recovered_display_name",
+        "action_key": "inferred_from_recovered_display_name",
+        "interaction_radius": "unresolved_remake_default",
+        "grant_quantity": "unresolved_remake_default"
+      }
+    },
+    "988": {
+      "database_entry_id": 988,
+      "key": "dart_box_pickup",
+      "original_display_name": "放在地上的飞刀箱子",
+      "behavior": "field_pickup",
+      "interaction_radius": 36.0,
+      "grant": {
+        "kind": "ammunition",
+        "action_key": "dart_attack",
+        "item_id": 41,
+        "quantity": 8
+      },
+      "source_status": {
+        "identity": "recovered_converted_database",
+        "behavior": "inferred_from_recovered_display_name",
+        "grant_kind": "inferred_from_recovered_display_name",
+        "action_key": "inferred_from_recovered_display_name",
+        "item_id": "recovered_attack_item_mapping",
+        "interaction_radius": "unresolved_remake_default",
+        "grant_quantity": "unresolved_remake_default"
+      }
+    },
+    "990": {
+      "database_entry_id": 990,
+      "key": "uniform_box_pickup",
+      "original_display_name": "放在地上的军服箱子",
+      "behavior": "field_pickup",
+      "interaction_radius": 36.0,
+      "grant": {
+        "kind": "mission_item",
+        "item_key": "uniform",
+        "quantity": 1
+      },
+      "source_status": {
+        "identity": "recovered_converted_database",
+        "behavior": "inferred_from_recovered_display_name",
+        "grant_kind": "inferred_from_recovered_display_name",
+        "item_key": "inferred_from_recovered_display_name",
+        "interaction_radius": "unresolved_remake_default",
+        "grant_quantity": "unresolved_remake_default"
+      }
+    },
+    "993": {
+      "database_entry_id": 993,
+      "key": "herb_pickup",
+      "original_display_name": "放在地上的草药",
+      "behavior": "field_pickup",
+      "interaction_radius": 36.0,
+      "grant": {
+        "kind": "healing",
+        "quantity": 1,
+        "healing_hit_points": 8
+      },
+      "source_status": {
+        "identity": "recovered_converted_database",
+        "behavior": "inferred_from_recovered_display_name",
+        "grant_kind": "inferred_from_recovered_display_name",
+        "interaction_radius": "unresolved_remake_default",
+        "grant_quantity": "unresolved_remake_default",
+        "healing_hit_points": "unresolved_remake_default"
+      }
+    },
+    "998": {
+      "database_entry_id": 998,
+      "key": "explosives_pickup",
+      "original_display_name": "放在地上的炸药",
+      "behavior": "field_pickup",
+      "interaction_radius": 36.0,
+      "grant": {
+        "kind": "mission_item",
+        "item_key": "explosives",
+        "quantity": 1
+      },
+      "source_status": {
+        "identity": "recovered_converted_database",
+        "behavior": "inferred_from_recovered_display_name",
+        "grant_kind": "inferred_from_recovered_display_name",
+        "item_key": "inferred_from_recovered_display_name",
+        "interaction_radius": "unresolved_remake_default",
+        "grant_quantity": "unresolved_remake_default"
+      }
+    },
+    "999": {
+      "database_entry_id": 999,
+      "key": "medical_kit_pickup",
+      "original_display_name": "放在地上的医药箱",
+      "behavior": "field_pickup",
+      "interaction_radius": 36.0,
+      "grant": {
+        "kind": "healing",
+        "quantity": 1,
+        "healing_hit_points": 16
+      },
+      "source_status": {
+        "identity": "recovered_converted_database",
+        "behavior": "inferred_from_recovered_display_name",
+        "grant_kind": "inferred_from_recovered_display_name",
+        "interaction_radius": "unresolved_remake_default",
+        "grant_quantity": "unresolved_remake_default",
+        "healing_hit_points": "unresolved_remake_default"
+      }
+    },
+    "1003": {
+      "database_entry_id": 1003,
+      "key": "explosive_gasoline_barrel",
+      "original_display_name": "可爆炸汽油桶",
+      "behavior": "explosive_prop",
+      "hit_points": 8,
+      "blast_damage": 16,
+      "blast_horizontal_radius": 128.0,
+      "blast_vertical_radius": 64.0,
+      "destroyed_visual_seconds": 0.12,
+      "source_status": {
+        "identity": "recovered_converted_database",
+        "behavior": "inferred_from_recovered_display_name",
+        "hit_points": "unresolved_remake_default",
+        "blast_damage": "unresolved_remake_default",
+        "blast_horizontal_radius": "unresolved_remake_default",
+        "blast_vertical_radius": "unresolved_remake_default",
+        "destroyed_visual_seconds": "unresolved_remake_default"
+      }
+    }
+  },
+  "deployables": {
+    "land_mine": {
+      "key": "land_mine",
+      "source_pickup_database_entry_id": 984,
+      "ammo_item_id": 43,
+      "arm_delay_seconds": 0.75,
+      "trigger_horizontal_radius": 48.0,
+      "trigger_vertical_radius": 24.0,
+      "detonation_delay_seconds": 0.15,
+      "blast_damage": 16,
+      "blast_horizontal_radius": 128.0,
+      "blast_vertical_radius": 64.0,
+      "resolved_visual_seconds": 0.12,
+      "source_status": {
+        "identity": "inferred_from_recovered_display_name",
+        "ammo_item_id": "recovered_attack_item_mapping",
+        "arm_delay_seconds": "unresolved_remake_default",
+        "trigger_horizontal_radius": "unresolved_remake_default",
+        "trigger_vertical_radius": "unresolved_remake_default",
+        "detonation_delay_seconds": "unresolved_remake_default",
+        "blast_damage": "unresolved_remake_default",
+        "blast_horizontal_radius": "unresolved_remake_default",
+        "blast_vertical_radius": "unresolved_remake_default",
+        "resolved_visual_seconds": "unresolved_remake_default"
+      }
+    }
+  }
+}

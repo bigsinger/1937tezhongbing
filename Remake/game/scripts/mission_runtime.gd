@@ -46,7 +46,6 @@ const FACT_IDENTITY_FIELDS: Array[String] = [
 ]
 const DURABLE_TRIGGER_BINDINGS: Dictionary = {
 	"explosion": true,
-	"high_ground": true,
 }
 const EXPECTED_ANCHOR_KIND_BY_BINDING: Dictionary = {
 	"explosion": "explosion_detector",

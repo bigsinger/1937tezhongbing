@@ -6,6 +6,8 @@ const DEFAULT_REPLAN_BLOCKED_SECONDS := 0.25
 const COMBAT_REPATH_SECONDS := 0.40
 const HURT_REACTION_SECONDS := 0.18
 const TACTICAL_SENSES_SCRIPT: Script = preload("res://scripts/tactical_senses.gd")
+const PROJECTILE_PROFILES: Script = preload("res://scripts/projectile_profiles.gd")
+const COMBAT_INVENTORY_SCRIPT: Script = preload("res://scripts/combat_inventory.gd")
 
 enum CombatAction { NONE, ATTACK, RELOAD, DEATH }
 
@@ -16,6 +18,7 @@ signal attack_started(
 	alert_radius: float,
 )
 signal attack_hit(attacker: Node2D, target: Node2D, attack_type: int, damage: int)
+signal projectile_requested(attacker: Node2D, target: Node2D, weapon_profile: Dictionary)
 signal damage_received(unit: Node2D, attacker: Node2D, damage: int, remaining_hit_points: int)
 signal died(unit: Node2D, killer: Node2D)
 signal ammo_changed(unit: Node2D, magazine: int, reserve: int)
@@ -65,6 +68,9 @@ var pending_hit_target: Node2D
 var pending_hit_resolved := false
 var hurt_remaining := 0.0
 var death_emitted := false
+var combat_inventory: RefCounted
+var attack_groups_by_action: Dictionary = {}
+var inventory_weapon_order: Array[String] = []
 
 
 func configure(
@@ -98,6 +104,9 @@ func configure(
 	action_finished = false
 	hurt_remaining = 0.0
 	death_emitted = false
+	combat_inventory = null
+	attack_groups_by_action.clear()
+	inventory_weapon_order.clear()
 	is_alive = true
 	if (
 		dynamic_occupancy != null
@@ -136,6 +145,21 @@ func configure_combat(
 	var magazine_capacity := maxi(int(weapon_profile.get("magazine_capacity", 0)), 0)
 	magazine_ammo = magazine_capacity
 	reserve_ammo = maxi(int(weapon_profile.get("starting_reserve_ammo", 0)), 0)
+	combat_inventory = null
+	attack_groups_by_action.clear()
+	inventory_weapon_order.clear()
+	var action_key := str(weapon_profile.get("action_key", ""))
+	var ammo_item_id := int(weapon_profile.get("ammo_item_id", 0))
+	if (
+		not infinite_ammo
+		and not action_key.is_empty()
+		and COMBAT_INVENTORY_SCRIPT.supports_ammo_item(ammo_item_id)
+	):
+		combat_inventory = COMBAT_INVENTORY_SCRIPT.new()
+		if combat_inventory.register_weapon(action_key, weapon_profile, true):
+			attack_groups_by_action[action_key] = new_attack_groups
+			inventory_weapon_order.append(action_key)
+			_sync_ammo_from_inventory(false)
 	combat_target = null
 	auto_combat_enabled = false
 	combat_repath_elapsed = COMBAT_REPATH_SECONDS
@@ -155,6 +179,114 @@ func configure_combat(
 func set_selected(value: bool) -> void:
 	selected = value and is_alive
 	queue_redraw()
+
+
+func register_inventory_weapon(
+	new_weapon_profile: Dictionary,
+	new_attack_groups: Array[Dictionary] = [],
+	load_profile_defaults: bool = false,
+	equip_now: bool = true,
+) -> bool:
+	if infinite_ammo or new_weapon_profile.is_empty():
+		return false
+	var action_key := str(new_weapon_profile.get("action_key", ""))
+	if action_key.is_empty():
+		return false
+	if combat_inventory == null:
+		combat_inventory = COMBAT_INVENTORY_SCRIPT.new()
+	if combat_inventory.weapon_state(action_key).is_empty():
+		if not combat_inventory.register_weapon(
+			action_key, new_weapon_profile, load_profile_defaults
+		):
+			return false
+		inventory_weapon_order.append(action_key)
+	attack_groups_by_action[action_key] = new_attack_groups
+	if equip_now:
+		return equip_inventory_weapon(action_key)
+	_sync_ammo_from_inventory(false)
+	return true
+
+
+func equip_inventory_weapon(action_key: String) -> bool:
+	if (
+		combat_inventory == null
+		or combat_action != CombatAction.NONE
+		or not combat_inventory.equip_weapon(action_key)
+	):
+		return false
+	weapon_profile = combat_inventory.active_weapon_profile()
+	attack_groups = attack_groups_by_action.get(action_key, []) as Array[Dictionary]
+	clear_combat_target()
+	_sync_ammo_from_inventory(true)
+	apply_idle_frame()
+	queue_redraw()
+	return true
+
+
+func equip_attack_type(attack_type: int) -> bool:
+	if combat_inventory == null:
+		return false
+	for action_key: String in inventory_weapon_order:
+		if int(combat_inventory.weapon_profile(action_key).get("attack_type", 0)) == attack_type:
+			return equip_inventory_weapon(action_key)
+	return false
+
+
+func cycle_inventory_weapon(direction: int = 1) -> bool:
+	if combat_inventory == null or inventory_weapon_order.size() < 2:
+		return false
+	var current_index := inventory_weapon_order.find(combat_inventory.active_weapon_key())
+	var next_index := posmod(current_index + (1 if direction >= 0 else -1), inventory_weapon_order.size())
+	return equip_inventory_weapon(inventory_weapon_order[next_index])
+
+
+func add_ammo_item(item_id: int, quantity: int) -> int:
+	if combat_inventory == null:
+		return 0
+	var accepted := int(combat_inventory.add_item(item_id, quantity))
+	if accepted > 0:
+		_sync_ammo_from_inventory(true)
+	return accepted
+
+
+func ammo_item_count(item_id: int) -> int:
+	if combat_inventory == null:
+		return 0
+	return int(combat_inventory.ammo_item_count(item_id))
+
+
+func remove_ammo_item(item_id: int, quantity: int) -> int:
+	if combat_inventory == null:
+		return 0
+	var removed := int(combat_inventory.remove_item(item_id, quantity))
+	if removed > 0:
+		_sync_ammo_from_inventory(true)
+	return removed
+
+
+func has_inventory_weapon(action_key: String) -> bool:
+	return combat_inventory != null and not combat_inventory.weapon_state(action_key).is_empty()
+
+
+func preferred_finite_ammo_item_id() -> int:
+	if combat_inventory == null:
+		return 0
+	var active_state: Dictionary = combat_inventory.weapon_state(
+		combat_inventory.active_weapon_key()
+	)
+	if int(active_state.get("magazine_capacity", 0)) > 0:
+		return int(active_state.get("ammo_item_id", 0))
+	for action_key: String in inventory_weapon_order:
+		var state: Dictionary = combat_inventory.weapon_state(action_key)
+		if int(state.get("magazine_capacity", 0)) > 0:
+			return int(state.get("ammo_item_id", 0))
+	return 0
+
+
+func inventory_snapshot() -> Dictionary:
+	if combat_inventory == null:
+		return {}
+	return combat_inventory.full_snapshot()
 
 
 func issue_move(destination: Vector2) -> void:
@@ -211,7 +343,10 @@ func can_attack_target(target: Node2D) -> bool:
 	if (
 		not is_alive
 		or not _target_is_alive(target)
-		or not factions_are_hostile(faction_id, int(target.get("faction_id")))
+		or not (
+			factions_are_hostile(faction_id, int(target.get("faction_id")))
+			or _is_destructible_world_target(target)
+		)
 		or weapon_profile.is_empty()
 		or dynamic_occupancy == null
 	):
@@ -226,6 +361,14 @@ func can_attack_target(target: Node2D) -> bool:
 		target.position,
 		weapon_profile,
 		ignored,
+	)
+
+
+func _is_destructible_world_target(target: Node2D) -> bool:
+	return (
+		target != null
+		and target.has_method("explosion_payload")
+		and target.has_method("take_damage")
 	)
 
 
@@ -247,11 +390,17 @@ func try_start_attack(target: Node2D) -> bool:
 		return false
 	var ammo_per_attack := maxi(int(weapon_profile.get("ammo_per_attack", 0)), 0)
 	if not infinite_ammo and ammo_per_attack > 0:
-		if magazine_ammo < ammo_per_attack:
-			_start_reload()
-			return false
-		magazine_ammo -= ammo_per_attack
-		ammo_changed.emit(self, magazine_ammo, reserve_ammo)
+		if combat_inventory != null:
+			if not combat_inventory.consume_active_attack():
+				_start_reload()
+				return false
+			_sync_ammo_from_inventory(true)
+		else:
+			if magazine_ammo < ammo_per_attack:
+				_start_reload()
+				return false
+			magazine_ammo -= ammo_per_attack
+			ammo_changed.emit(self, magazine_ammo, reserve_ammo)
 
 	var facing := target.position - position
 	if not facing.is_zero_approx():
@@ -295,6 +444,15 @@ func take_damage(amount: int, attacker: Node2D = null) -> int:
 		_interrupt_combat_action()
 		cancel_path()
 		hurt_remaining = HURT_REACTION_SECONDS
+	queue_redraw()
+	return applied
+
+
+func heal(amount: int) -> int:
+	if not is_alive or amount <= 0 or current_hit_points >= maximum_hit_points:
+		return 0
+	var applied := mini(amount, maximum_hit_points - current_hit_points)
+	current_hit_points += applied
 	queue_redraw()
 	return applied
 
@@ -486,6 +644,9 @@ func _resolve_pending_hit() -> void:
 	if not can_attack_target(pending_hit_target):
 		return
 	var attack_type := int(weapon_profile.get("attack_type", 0))
+	if PROJECTILE_PROFILES.is_projectile_attack(attack_type):
+		projectile_requested.emit(self, pending_hit_target, weapon_profile.duplicate(true))
+		return
 	var damage := maxi(int(weapon_profile.get("damage", 1)), 1)
 	var burst_count := maxi(int(weapon_profile.get("burst_count", 1)), 1)
 	for unused_shot in range(burst_count):
@@ -498,6 +659,12 @@ func _resolve_pending_hit() -> void:
 
 func _start_reload() -> bool:
 	var magazine_capacity := maxi(int(weapon_profile.get("magazine_capacity", 0)), 0)
+	if combat_inventory != null:
+		var state: Dictionary = combat_inventory.weapon_state(
+			combat_inventory.active_weapon_key()
+		)
+		magazine_ammo = int(state.get("magazine", 0))
+		reserve_ammo = int(state.get("reserve", 0))
 	if (
 		infinite_ammo
 		or magazine_capacity <= 0
@@ -514,16 +681,30 @@ func _start_reload() -> bool:
 
 
 func _finish_reload() -> void:
-	var magazine_capacity := maxi(int(weapon_profile.get("magazine_capacity", 0)), 0)
-	var needed := maxi(magazine_capacity - magazine_ammo, 0)
-	var transferred := mini(needed, reserve_ammo)
-	magazine_ammo += transferred
-	reserve_ammo -= transferred
+	if combat_inventory != null:
+		combat_inventory.reload_active_weapon()
+		_sync_ammo_from_inventory(false)
+	else:
+		var magazine_capacity := maxi(int(weapon_profile.get("magazine_capacity", 0)), 0)
+		var needed := maxi(magazine_capacity - magazine_ammo, 0)
+		var transferred := mini(needed, reserve_ammo)
+		magazine_ammo += transferred
+		reserve_ammo -= transferred
 	combat_action = CombatAction.NONE
 	reload_remaining = 0.0
 	action_finished = true
 	ammo_changed.emit(self, magazine_ammo, reserve_ammo)
 	apply_idle_frame()
+
+
+func _sync_ammo_from_inventory(emit_change: bool) -> void:
+	if combat_inventory == null:
+		return
+	var state: Dictionary = combat_inventory.weapon_state(combat_inventory.active_weapon_key())
+	magazine_ammo = int(state.get("magazine", 0))
+	reserve_ammo = int(state.get("reserve", 0))
+	if emit_change:
+		ammo_changed.emit(self, magazine_ammo, reserve_ammo)
 
 
 func _interrupt_combat_action() -> void:
