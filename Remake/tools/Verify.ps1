@@ -73,6 +73,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "Godot logic tests failed with exit code $LASTEXITCODE."
 }
 
+& $GodotExecutable --headless --path $game --script 'res://tests/combat_mission_runtime_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot combat and mission runtime tests failed with exit code $LASTEXITCODE."
+}
+
 if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
     & $GodotExecutable --headless --path $game --script 'res://tests/real_assets_test.gd'
     if ($LASTEXITCODE -ne 0) {

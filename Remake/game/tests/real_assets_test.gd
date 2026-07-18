@@ -1,6 +1,9 @@
 extends SceneTree
 
 const IMPORTED_LEVEL_DATA: Script = preload("res://scripts/imported_level_data.gd")
+const MISSION_DATA: Script = preload("res://scripts/mission_data.gd")
+const MISSION_RUNTIME_SCRIPT: Script = preload("res://scripts/mission_runtime.gd")
+const MISSION_STATE: Script = preload("res://scripts/mission_state.gd")
 const NAVIGATION_GRID_DATA: Script = preload("res://scripts/navigation_grid_data.gd")
 const LEVEL_IDS: Array[String] = [
 	"m000",
@@ -47,6 +50,7 @@ func _init() -> void:
 		expect(not level.is_empty(), "%s level metadata loads" % level_id)
 		if level.is_empty():
 			continue
+		validate_mission_runtime_bindings(level_id, level)
 		total_entities += (level["entities"] as Array).size()
 		var metadata: Dictionary = level["navigation"] as Dictionary
 		var level_directory: String = (
@@ -210,6 +214,40 @@ func validate_sprite_manifests() -> void:
 	expect(manifest_count == EXPECTED_SPRITE_COUNT, "all 980 sprite manifests validate")
 	expect(group_count == EXPECTED_GROUP_COUNT, "all 2,775 animation groups validate")
 	expect(frame_count == EXPECTED_FRAME_COUNT, "all 11,898 animation frames validate")
+
+
+func validate_mission_runtime_bindings(level_id: String, level: Dictionary) -> void:
+	var mission: Dictionary = MISSION_DATA.load_mission(level_id)
+	expect(not mission.is_empty(), "%s mission definition loads" % level_id)
+	if mission.is_empty():
+		return
+	var state = MISSION_STATE.new(mission)
+	var runtime = MISSION_RUNTIME_SCRIPT.new()
+	var configured: bool = runtime.configure(mission, level, state)
+	expect(
+		configured,
+		"%s MissionRuntime resolves every real scene binding: %s" % [level_id, runtime.last_error],
+	)
+	if not configured:
+		runtime.free()
+		return
+
+	var scene_bindings := mission.get("scene_bindings", {}) as Dictionary
+	for raw_binding_kind: Variant in scene_bindings.keys():
+		var binding_kind := str(raw_binding_kind)
+		var expected_scenes: Array[int] = []
+		for raw_scene: Variant in scene_bindings[raw_binding_kind] as Array:
+			expected_scenes.append(int(raw_scene))
+		expect(
+			runtime.bound_scenes(binding_kind) == expected_scenes,
+			"%s binding %s preserves its real scene list" % [level_id, binding_kind],
+		)
+		for scene_index: int in expected_scenes:
+			expect(
+				runtime.binding_kinds_for_scene(scene_index).has(binding_kind),
+				"%s scene %d round-trips binding %s" % [level_id, scene_index, binding_kind],
+			)
+	runtime.free()
 
 
 func load_json_dictionary(path: String) -> Dictionary:

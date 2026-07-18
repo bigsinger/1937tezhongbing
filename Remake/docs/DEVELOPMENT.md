@@ -40,9 +40,25 @@ godot --path .\game -- --level=m011
 
 # 导入后逐关校验真实导航、实体出生格和全部动画清单
 .\tools\Run-RealAssetTests.cmd C:\path\to\Godot_v4.7.1-stable_win64_console.exe
+
+# 生成可双击启动的 Windows 本地试玩包
+.\tools\Build-Playable.cmd `
+  -GodotExecutable C:\path\to\Godot_v4.7.1-stable_win64_console.exe
 ```
 
 如果只做开源仓库验证而没有原版目录，直接运行 `Verify.cmd` 即可；所有自动测试都使用人工合成数据。
+
+### fresh checkout 的 Godot 校验顺序
+
+Godot 的 `class_name` 类型注册缓存位于未纳入 Git 的 `.godot/global_script_class_cache.cfg`。如果 CI 在全新检出中直接按文件枚举顺序执行每个 `.gd` 的 `--check-only`，依赖 `NavigationGridData` 等全局类的脚本可能先于类型注册而报 `Identifier not found`，即使同一提交在打开过编辑器的开发机上能够通过。
+
+`tools/Verify.ps1` 现在固定先运行：
+
+```powershell
+godot --headless --editor --path .\game --quit-after 2
+```
+
+由 Godot 自己扫描项目并生成类缓存，再逐脚本执行 `--check-only`、逻辑测试和场景冒烟测试。不要把本机 `.godot/` 提交进仓库，也不要通过调整 PowerShell 文件枚举顺序来掩盖依赖；fresh checkout 和本机缓存热启动必须走同一验证入口。
 
 ## 当前导入基线
 
@@ -76,7 +92,7 @@ Godot 端的责任分工为：
 - `enemy_unit.gd`：巡逻、发现、追击、攻击态和最后位置搜索；
 - `combat_profiles.gd` 与 `game/data/combat_profiles.json`：版本化、可校验的原版感知/武器参数。
 
-`combat_profiles.json` 当前的普通敌人/军犬感知和 11 类攻击距离均来自 `M1937.exe` 字段级逆向，不能再随意当作手感参数改写。尚未完成的是警报传播、听觉事件、尸体发现、伤害/弹药和更高层走廊会车。详见 [导航、动态占位、敌人感知与攻击](NAVIGATION_AND_COMBAT.md)。
+`combat_profiles.json` 当前的普通敌人/军犬感知、11 类攻击距离、普通伤害、连发次数、弹药物品 ID、每次消耗和末帧命中语义来自 `M1937.exe` 字段级逆向，不能随意当作手感参数改写。每个新战斗字段都必须标记 `recovered`、`recovered_with_unresolved_override` 或 `unresolved_remake_default`。当前弹匣容量、初始备弹、装填/恢复秒数和特殊攻击直接伤害是重制默认；听觉遮挡、尸体发现和更高层走廊会车尚未完成。详见 [导航、动态占位、敌人感知与攻击](NAVIGATION_AND_COMBAT.md)。
 
 导航/感知修改的合成测试至少应覆盖：绕墙、对角禁止穿墙、多格足印、障碍目标的附近落点、L2/L3 分离、scene 忽略/清除、视锥前后边界、射程和视线组合，以及 `M37NAV1` 截断/错版本拒绝。具有本地资产时，`Verify` 还会逐关校验十二份导航文件，并以 m004 的 98 个动态角色执行高密度寻路压力回归；固定 120 个物理帧内必须有敌人实际移动，A* 请求量必须处于 20—500 次且总寻路耗时不超过 2 秒，以防“AI 未运行”的假通过、退化巡逻点或拥挤重规划重新形成请求风暴。
 
@@ -90,7 +106,9 @@ serial_id = action_index * 9 + direction_index
 
 共有 20 个动作槽和 9 个方向槽；方向 0 是“无”，1—8 才是可播放的八方向组。转换输出的每个 `sprite.json` 保存动作名、方向名、组参数、锚点、atlas 和逐帧路径。
 
-`load_action_groups(preview_path, action_key)` 是通用入口。增加战斗动作时，应让角色状态机请求已有动作 key，并由明确的玩法事件切换动画；不要为每种武器重新写资源解析器。玩家与敌人的 `run`/`walk`、`stand` 已接入。0.085 秒是基础 sprite tick，每组每帧实际保持 `0.085 × (parameters[2] + 1)` 秒；例如已导入强子的跑、走、匍匐分别保持 1、2、3 个 tick。攻击命中帧和动作过渡仍需单独校准。
+`load_action_groups(preview_path, action_key)` 是通用入口。增加战斗动作时，应让角色状态机请求已有动作 key，并由明确的玩法事件切换动画；不要为每种武器重新写资源解析器。玩家与敌人的 `run`/`walk`、`stand`、对应武器攻击和 `death` 已接入。0.085 秒是基础 sprite tick，每组每帧实际保持 `0.085 × (parameters[2] + 1)` 秒；例如已导入强子的跑、走、匍匐分别保持 1、2、3 个 tick。
+
+攻击只在**进入动作最后一帧**时复核射程/视线并结算伤害；死亡动作播放一次并保持末帧。当前没有证据表明资源中存在可直接使用的独立受伤动作，因此非致命伤使用 0.18 秒闪红/硬直，这是明确的重制反馈。修改动作推进时必须覆盖“末帧前不伤害、末帧复核、单帧动作、死亡幂等、死亡末帧保持”。
 
 ## 任务开发工作流
 
@@ -98,6 +116,7 @@ serial_id = action_index * 9 + direction_index
 
 - `game/scripts/mission_data.gd`：schema、ID、目标、依赖和触发清单校验；
 - `game/scripts/mission_state.gd`：事件匹配、计数、去重、限时、失败与胜利；
+- `game/scripts/mission_runtime.gd`：当前关卡 scene 白名单、锚点类型、持久事实重放和瞬时区域语义；
 - `LocalAssets/converted/levels/mNNN/level.json`：实际实体坐标和 `task_anchors`。
 
 任务开发应保持“关卡事实”和“任务规则”分离：锚点坐标来自本地转换数据，目标依赖与胜负规则进入 `missions.json`，战斗/交互系统只发送规范化事件。新事件至少需要覆盖：
@@ -108,7 +127,11 @@ serial_id = action_index * 9 + direction_index
 4. 限时或角色损失失败；
 5. 全部必需目标完成后的胜利。
 
-`MissionState` 不直接校验 `scene_bindings` 白名单；事件发送器必须确认目标 scene 属于当前关卡的实体或 `task_anchors`，不能只凭显示名构造事件。任务图与锚点已经恢复，但世界系统还没有发送完整的救援、拾取、击毙、爆破和撤离事件。对白、镜头、触发半径、AI 配合和演出节奏需要逐关人工校准。详见 [任务恢复说明](MISSION_RECOVERY.md)。
+世界系统不得直接调用 `MissionState.record_event()`；必须通过 `MissionRuntime.publish_world_event()`。运行时会确认 scene 同时属于已加载关卡和当前任务 `scene_bindings`，并拒绝缺失或未绑定引用。救援、拾取、任务角色击毙、剧情锚点、爆破/占点、清敌、撤离、限时和角色损失已经接线；持久事实会去重并在前置依赖完成后重放，出口则保持瞬时区域判定。对白、镜头、特定角色条件、AI 配合和演出节奏仍需要逐关人工校准。详见 [任务恢复说明](MISSION_RECOVERY.md)。
+
+## Windows 本地试玩包
+
+导入本地资源后，运行 `tools/Build-Playable.cmd` 会在已忽略的 `LocalBuild/1937Remake/` 生成 `Play-1937-Remake.cmd`。默认使用目录联接复用 `LocalAssets`；需要复制到另一台已获授权的电脑时使用 `-AssetMode Copy`。构建会固定 Godot 4.7.1、生成 release 导出或 PCK 回退包，并执行 headless 冒烟测试。详细目录结构、切关参数和导出模板行为见 [Windows 本地试玩包](PLAYABLE_BUILD.md)。
 
 ## IDA 9.1 的 IDAPython 致命初始化错误
 

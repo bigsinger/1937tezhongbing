@@ -59,6 +59,8 @@ static func is_valid_catalog(catalog: Dictionary) -> bool:
 			return false
 		if not mission.get("failure_conditions") is Array:
 			return false
+		if mission.has("exit_party") and not is_valid_exit_party(mission):
+			return false
 	return true
 
 
@@ -113,3 +115,35 @@ static func is_valid_objectives(value: Variant) -> bool:
 			if dependency as String == str(objective["id"]):
 				return false
 	return true
+
+
+static func is_valid_exit_party(mission: Dictionary) -> bool:
+	var raw_rules: Variant = mission.get("exit_party")
+	var raw_bindings: Variant = mission.get("scene_bindings")
+	if (
+		not raw_rules is Dictionary
+		or (raw_rules as Dictionary).is_empty()
+		or not raw_bindings is Dictionary
+		or not (raw_bindings as Dictionary).has("exit")
+	):
+		return false
+	var rules := raw_rules as Dictionary
+	var has_requirement := false
+	for field: String in ["player_names", "escort_bindings"]:
+		if not rules.has(field):
+			continue
+		has_requirement = true
+		var raw_values: Variant = rules[field]
+		if not raw_values is Array or (raw_values as Array).is_empty():
+			return false
+		var seen: Dictionary = {}
+		for raw_value: Variant in raw_values as Array:
+			if not raw_value is String or str(raw_value).is_empty() or seen.has(raw_value):
+				return false
+			seen[raw_value] = true
+			if (
+				field == "escort_bindings"
+				and not (raw_bindings as Dictionary).has(str(raw_value))
+			):
+				return false
+	return has_requirement

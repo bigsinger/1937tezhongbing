@@ -23,6 +23,7 @@ TestResults/
 
 # Remake assets generated from a locally owned original copy
 Remake/LocalAssets/
+Remake/LocalBuild/
 Remake/game/imported/
 Remake/game/assets/original/
 Remake/game/assets/imported/

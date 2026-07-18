@@ -22,9 +22,6 @@ var patrol_index := 0
 var patrol_enabled := false
 var original_direction_index := 1
 var sense_profile: Dictionary = {}
-var weapon_profile: Dictionary = {}
-var current_hit_points := 8
-var maximum_hit_points := 8
 var potential_targets: Array[Node2D] = []
 var current_target: Node2D
 var last_known_target_position := Vector2.ZERO
@@ -44,6 +41,8 @@ func configure_enemy(
 	new_movement_groups: Array[Dictionary],
 	new_idle_groups: Array[Dictionary],
 	new_dynamic_occupancy: RefCounted,
+	new_attack_groups: Array[Dictionary] = [],
+	new_death_groups: Array[Dictionary] = [],
 ) -> void:
 	configure(
 		str(entity.get("display_name", "enemy")),
@@ -82,9 +81,14 @@ func configure_enemy(
 	)
 	if weapon_profile.is_empty():
 		weapon_profile = COMBAT_PROFILES.weapon_profile("rifle_attack")
-	current_hit_points = maxi(int(entity.get("current_hit_points", 8)), 0)
-	maximum_hit_points = current_hit_points
-	is_alive = current_hit_points > 0
+	configure_combat(
+		1,
+		maxi(int(entity.get("current_hit_points", 8)), 1),
+		weapon_profile,
+		new_attack_groups,
+		new_death_groups,
+		true,
+	)
 	patrol_waypoints = patrol_world_points(entity.get("patrol_waypoints", []))
 	patrol_index = clampi(int(entity.get("patrol_current_waypoint_index", 0)), 0, maxi(0, patrol_waypoints.size() - 1))
 	patrol_enabled = bool(entity.get("patrol_enabled", true)) and not patrol_waypoints.is_empty()
@@ -98,6 +102,9 @@ func set_potential_targets(targets: Array[Node2D]) -> void:
 
 func _physics_process(delta: float) -> void:
 	var safe_delta := maxf(delta, 0.0)
+	if not is_alive or combat_action != CombatAction.NONE or hurt_remaining > 0.0:
+		super._physics_process(safe_delta)
+		return
 	path_request_delay_remaining = maxf(path_request_delay_remaining - safe_delta, 0.0)
 	sense_elapsed += safe_delta
 	chase_replan_elapsed += safe_delta
@@ -116,7 +123,7 @@ func _update_detection() -> void:
 	var nearest_visible: Node2D
 	var nearest_distance_squared := INF
 	for target: Node2D in potential_targets:
-		if not is_instance_valid(target) or not target.is_inside_tree():
+		if not _is_hostile_target(target):
 			continue
 		var ignored: Array = [scene_index]
 		var target_scene_index := int(target.get("scene_index"))
@@ -172,7 +179,8 @@ func _update_behavior(delta: float) -> void:
 				last_known_target_position = current_target.position
 				_issue_path_to(last_known_target_position)
 		BehaviorState.ATTACK:
-			cancel_path()
+			if movement_path_index < movement_path.size():
+				cancel_path()
 			if current_target == null or not is_instance_valid(current_target):
 				_enter_patrol()
 				return
@@ -183,10 +191,11 @@ func _update_behavior(delta: float) -> void:
 			if attack_recheck_elapsed >= attack_recheck_seconds:
 				attack_recheck_elapsed = 0.0
 				attack_recheck_seconds = _deterministic_attack_interval()
-				attack_count += 1
-				attack_committed.emit(
-					self, current_target, int(weapon_profile.get("attack_type", 0))
-				)
+				if try_start_attack(current_target):
+					attack_count += 1
+					attack_committed.emit(
+						self, current_target, int(weapon_profile.get("attack_type", 0))
+					)
 		BehaviorState.SEARCH:
 			if movement_path_index < movement_path.size():
 				return
@@ -239,15 +248,30 @@ func _issue_path_to(destination: Vector2) -> bool:
 
 
 func _can_attack_current_target() -> bool:
-	if current_target == null or not is_instance_valid(current_target):
+	return can_attack_target(current_target)
+
+
+func receive_alert(target: Node2D, world_position: Vector2) -> bool:
+	if not is_alive or not _is_hostile_target(target):
 		return false
-	var ignored: Array = [scene_index]
-	var target_scene_index := int(current_target.get("scene_index"))
-	if target_scene_index >= 0:
-		ignored.append(target_scene_index)
-	return TACTICAL_SENSES.can_attack(
-		dynamic_occupancy, position, current_target.position, weapon_profile, ignored
+	current_target = target
+	last_known_target_position = world_position
+	search_elapsed = 0.0
+	chase_replan_elapsed = CHASE_REPLAN_SECONDS
+	behavior_state = BehaviorState.CHASE
+	return true
+
+
+func _is_hostile_target(target: Node2D) -> bool:
+	return (
+		_target_is_alive(target)
+		and factions_are_hostile(faction_id, int(target.get("faction_id")))
 	)
+
+
+func _on_damage_taken(attacker: Node2D) -> void:
+	if _target_is_alive(attacker):
+		receive_alert(attacker, attacker.position)
 
 
 func _deterministic_attack_interval() -> float:

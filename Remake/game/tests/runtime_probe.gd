@@ -85,8 +85,9 @@ func run_probe() -> void:
 	)
 	expect(
 		main.dynamic_occupancy != null
-		and main.dynamic_occupancy.actors.size() == main.units.size() + main.enemies.size(),
-		"the squad and every enemy share one dynamic occupancy overlay",
+		and main.dynamic_occupancy.actors.size()
+		== main.units.size() + main.escorts.size() + main.enemies.size(),
+		"the squad, escorts, and every enemy share one dynamic occupancy overlay",
 		failures,
 	)
 	expect(
@@ -275,6 +276,37 @@ func run_probe() -> void:
 			"R reset restores an original unit position",
 			failures
 		)
+	expect(main.escorts.size() == 2, "m000 spawns both recovered rescue actors", failures)
+	if main.escorts.size() == 2 and not main.units.is_empty():
+		for escort in main.escorts:
+			expect(
+				escort.rescue(main.units[0]),
+				"the live m000 interaction path rescues a bound actor",
+				failures,
+			)
+		var exit_entity := main.world_entities_by_scene.get(1600, {}) as Dictionary
+		expect(not exit_entity.is_empty(), "m000 exit binding resolves to the real scene", failures)
+		if not exit_entity.is_empty():
+			var exit_position := Vector2(float(exit_entity["x"]), float(exit_entity["y"]))
+			for unit in main.units:
+				unit.position = exit_position
+			for escort in main.escorts:
+				escort.position = exit_position
+			main._evaluate_exit_scene(1600)
+			expect(
+				main.current_mission_state.is_victory(),
+				"real m000 rescue-rescue-party-at-exit integration reaches victory",
+				failures,
+			)
+	main.switch_level(main.current_level_index)
+	expect(
+		not main.current_mission_state.is_victory()
+		and main.escorts.size() == 2
+		and not main.escorts[0].rescued_state
+		and not main.escorts[1].rescued_state,
+		"level reset clears mission facts and escort state after victory",
+		failures,
+	)
 	main.level_camera.position = Vector2(root.size.x * 0.5, root.size.y * 0.5)
 	main.clamp_level_camera()
 	main.level_camera.reset_smoothing()
