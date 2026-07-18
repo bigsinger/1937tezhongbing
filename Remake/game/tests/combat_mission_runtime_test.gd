@@ -88,7 +88,7 @@ func _run_tests() -> void:
 	_test_alert_propagation(failures)
 	_test_faction_and_exit_party_rules(failures)
 	_test_m000_world_event_closure(failures)
-	_test_m008_manual_explosion_failure(failures)
+	_test_m008_manual_explosion_sequence(failures)
 	_test_m010_simultaneous_high_ground(failures)
 	_test_mission_media_cues(failures)
 	_test_all_mission_world_event_closures(failures)
@@ -482,21 +482,84 @@ func _test_faction_and_exit_party_rules(failures: Array[String]) -> void:
 	arena.free()
 
 
-func _test_m008_manual_explosion_failure(failures: Array[String]) -> void:
+func _test_m008_manual_explosion_sequence(failures: Array[String]) -> void:
 	var mission: Dictionary = MISSION_DATA.load_mission("m008")
 	var level := _build_mission_level_fixture(mission)
+
+	var early_state = MISSION_STATE.new(mission)
+	var early_runtime = MISSION_RUNTIME_SCRIPT.new()
+	root.add_child(early_runtime)
+	_expect(
+		early_runtime.configure(mission, level, early_state),
+		"m008 premature-explosion fixture configures",
+		failures,
+	)
+	var early_main = MAIN_SCRIPT.new()
+	early_main.current_mission = mission
+	early_main.current_mission_state = early_state
+	early_main.mission_runtime = early_runtime
+	early_main._detonate_mission_charges()
+	_expect(
+		early_state.failure_id == "premature_explosion"
+		and not early_state.is_objective_complete("detonate_charges"),
+		"F detonation closes m008 through the recovered premature-explosion failure",
+		failures,
+	)
+	early_main.mission_runtime = null
+	early_main.free()
+	early_runtime.free()
+
 	var state = MISSION_STATE.new(mission)
 	var runtime = MISSION_RUNTIME_SCRIPT.new()
 	root.add_child(runtime)
-	_expect(runtime.configure(mission, level, state), "m008 explosion fixture configures", failures)
+	_expect(runtime.configure(mission, level, state), "m008 success fixture configures", failures)
+	var explosion_scenes: Array = (mission.get("scene_bindings", {}) as Dictionary)["explosion"]
+	for raw_scene: Variant in explosion_scenes:
+		runtime.publish_world_event(
+			"trigger_activated",
+			{"scene_index": int(raw_scene), "display_name": "检测爆炸精灵"},
+		)
+	_expect(
+		state.is_objective_complete("place_mine_charges")
+		and not state.is_objective_complete("detonate_charges")
+		and not state.is_victory(),
+		"m008 records all four distinct charge points without treating placement as detonation",
+		failures,
+	)
+
+	var exit_scene := int(((mission.get("scene_bindings", {}) as Dictionary)["exit"] as Array)[0])
+	var exit_payload := {
+		"scene_index": exit_scene,
+		"trigger_scene_index": exit_scene,
+		"display_name": "检测出口精灵",
+	}
+	runtime.publish_world_event("trigger_activated", exit_payload)
+	runtime.publish_world_event("party_at_trigger", exit_payload)
+	_expect(
+		not state.is_objective_complete("use_elevator") and not state.is_victory(),
+		"m008 cannot win by entering the elevator after placement but before manual detonation",
+		failures,
+	)
+
 	var main = MAIN_SCRIPT.new()
 	main.current_mission = mission
 	main.current_mission_state = state
 	main.mission_runtime = runtime
 	main._detonate_mission_charges()
 	_expect(
-		state.failure_id == "premature_explosion",
-		"F detonation closes m008 through the recovered premature-explosion failure",
+		state.is_objective_complete("detonate_charges")
+		and not state.is_objective_complete("use_elevator")
+		and not state.is_failed()
+		and not state.is_victory(),
+		"manual F detonation completes only m008's detonation target and leaves evacuation pending",
+		failures,
+	)
+
+	runtime.publish_world_event("trigger_activated", exit_payload)
+	runtime.publish_world_event("party_at_trigger", exit_payload)
+	_expect(
+		state.is_objective_complete("use_elevator") and state.is_victory(),
+		"m008 reaches victory only after manual detonation followed by elevator evacuation",
 		failures,
 	)
 	main.mission_runtime = null

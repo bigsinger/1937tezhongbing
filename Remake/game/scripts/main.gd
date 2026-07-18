@@ -14,6 +14,10 @@ const MISSION_RUNTIME_SCRIPT: Script = preload("res://scripts/mission_runtime.gd
 const COMBAT_PROFILES: Script = preload("res://scripts/combat_profiles.gd")
 const PROJECTILE_WORLD_SCRIPT: Script = preload("res://scripts/projectile_world.gd")
 const MEDIA_DIRECTOR_SCRIPT: Script = preload("res://scripts/media_director.gd")
+const GAME_SHELL_SCRIPT: Script = preload("res://scripts/game_shell.gd")
+const GAME_SETTINGS_SCRIPT: Script = preload("res://scripts/game_settings.gd")
+const GAME_SAVE_STORE_SCRIPT: Script = preload("res://scripts/game_save_store.gd")
+const GAME_SESSION_STATE_SCRIPT: Script = preload("res://scripts/game_session_state.gd")
 const WORLD_PICKUP_CATALOG: Script = preload("res://scripts/world_pickup_catalog.gd")
 const FIELD_PICKUP_SCRIPT: Script = preload("res://scripts/field_pickup.gd")
 const EXPLOSIVE_PROP_SCRIPT: Script = preload("res://scripts/explosive_prop.gd")
@@ -23,8 +27,11 @@ const DYNAMIC_OCCUPANCY_GRID: Script = preload("res://scripts/dynamic_occupancy_
 const DEFAULT_WORLD_SIZE := Vector2(1280.0, 720.0)
 const DEFAULT_MOVEMENT_BOUNDS := Rect2(Vector2(36.0, 100.0), Vector2(1208.0, 568.0))
 const CAMERA_PAN_SPEED := 720.0
+const EDGE_SCROLL_MARGIN := 18.0
 const MISSION_INTERACTION_RADIUS := 128.0
 const MISSION_ZONE_CHECK_SECONDS := 0.20
+const QUICK_SAVE_SLOT := "quick"
+const AUTO_SAVE_SLOT := "autosave"
 const FORMAL_LEVEL_IDS: Array[String] = [
 	"m000",
 	"m001",
@@ -76,6 +83,19 @@ const WEAPON_NAMES := {
 	10: "特殊地雷",
 	11: "特殊动作",
 }
+const INVENTORY_ITEM_NAMES := {
+	36: "手枪弹",
+	37: "步枪弹",
+	38: "机枪弹",
+	39: "匕首",
+	40: "大刀",
+	41: "飞刀",
+	42: "弹弓弹",
+	43: "地雷",
+	44: "手榴弹",
+	45: "特殊地雷",
+	99: "特殊物品",
+}
 
 var units: Array[SQUAD_UNIT] = []
 var enemies: Array[ENEMY_UNIT] = []
@@ -110,15 +130,29 @@ var navigation_grid: NavigationGridData
 var dynamic_occupancy: RefCounted
 var projectile_world: Node2D
 var media_director: CanvasLayer
+var game_shell: CanvasLayer
+var game_settings: RefCounted
+var save_store: RefCounted
+var campaign_progress: Dictionary = {}
+var command_line_controls_display := false
 var media_event_seed := 0
 var field_pickups: Array[Node2D] = []
 var explosive_props: Array[Node2D] = []
 var deployed_mines: Array[Node2D] = []
 var field_inventory: Dictionary = {}
+var runtime_settings: Dictionary = {
+	"fullscreen": false,
+	"subtitles": true,
+	"show_briefings": true,
+	"edge_scroll": true,
+	"master_volume": 0.8,
+}
 
 
 func _ready() -> void:
+	_initialize_persistence()
 	_create_media_director()
+	_create_game_shell()
 	create_interface()
 	create_level_camera()
 	switch_level(requested_level_index())
@@ -138,7 +172,7 @@ func create_interface() -> void:
 
 	var help := Label.new()
 	help.position = Vector2(24.0, 54.0)
-	help.text = "左键选择 · 右键移动/攻击 · E 交互 · 1–8/TAB 切武器 · Q 换弹 · X 布雷 · F 引爆 · WASD 平移 · PgUp/PgDn 切关"
+	help.text = "左键选择 · 右键移动/攻击 · E 交互 · 1–8/TAB 切武器 · Q 换弹 · X 布雷 · F 引爆 · M 地图 · B/I 背包 · Esc 菜单"
 	help.add_theme_font_size_override("font_size", 15)
 	help.add_theme_color_override("font_color", Color(0.82, 0.84, 0.76))
 	canvas.add_child(help)
@@ -183,7 +217,7 @@ func requested_level_index() -> int:
 	return 0
 
 
-func switch_level(level_index: int) -> void:
+func switch_level(level_index: int, show_briefing: bool = true) -> void:
 	current_level_index = posmod(level_index, FORMAL_LEVEL_IDS.size())
 	var level_id := FORMAL_LEVEL_IDS[current_level_index]
 	_load_mission_graph(level_id)
@@ -192,7 +226,7 @@ func switch_level(level_index: int) -> void:
 	_configure_mission_runtime()
 	if badge_label != null:
 		badge_label.text = "M2 / %s / LOCAL ASSETS" % level_id.to_upper()
-	if _should_show_briefing():
+	if show_briefing and _should_show_briefing():
 		media_director.show_briefing(
 			level_id,
 			"第 %d 关：%s" % [
@@ -205,6 +239,8 @@ func switch_level(level_index: int) -> void:
 
 func _should_show_briefing() -> bool:
 	if media_director == null or DisplayServer.get_name() == "headless":
+		return false
+	if not bool(runtime_settings.get("show_briefings", true)):
 		return false
 	for argument: String in OS.get_cmdline_user_args():
 		if argument == "--skip-briefing":
@@ -683,10 +719,45 @@ func _process(delta: float) -> void:
 		float(Input.is_key_pressed(KEY_D)) - float(Input.is_key_pressed(KEY_A)),
 		float(Input.is_key_pressed(KEY_S)) - float(Input.is_key_pressed(KEY_W))
 	)
+	if bool(runtime_settings.get("edge_scroll", true)):
+		direction += _mouse_edge_scroll_direction()
 	if direction.length_squared() > 1.0:
 		direction = direction.normalized()
 	level_camera.position += direction * CAMERA_PAN_SPEED * delta / level_camera.zoom.x
 	clamp_level_camera()
+
+
+func _mouse_edge_scroll_direction() -> Vector2:
+	if DisplayServer.get_name() == "headless" or not DisplayServer.window_is_focused():
+		return Vector2.ZERO
+	var viewport_size := get_viewport_rect().size
+	var mouse_position := get_viewport().get_mouse_position()
+	return edge_scroll_direction_for_position(mouse_position, viewport_size, EDGE_SCROLL_MARGIN)
+
+
+static func edge_scroll_direction_for_position(
+	mouse_position: Vector2,
+	viewport_size: Vector2,
+	margin: float = EDGE_SCROLL_MARGIN,
+) -> Vector2:
+	if (
+		mouse_position.x < 0.0
+		or mouse_position.y < 0.0
+		or mouse_position.x > viewport_size.x
+		or mouse_position.y > viewport_size.y
+	):
+		return Vector2.ZERO
+	var safe_margin := clampf(margin, 0.0, minf(viewport_size.x, viewport_size.y) * 0.5)
+	var direction := Vector2.ZERO
+	if mouse_position.x <= safe_margin:
+		direction.x -= 1.0
+	elif mouse_position.x >= viewport_size.x - safe_margin:
+		direction.x += 1.0
+	if mouse_position.y <= safe_margin:
+		direction.y -= 1.0
+	elif mouse_position.y >= viewport_size.y - safe_margin:
+		direction.y += 1.0
+	return direction
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -732,7 +803,22 @@ func _unhandled_input(event: InputEvent) -> void:
 				get_viewport().set_input_as_handled()
 	elif event is InputEventKey and event.pressed and not event.echo:
 		var key_event := event as InputEventKey
-		if key_event.keycode == KEY_R:
+		if key_event.keycode == KEY_ESCAPE:
+			_open_pause_menu()
+			get_viewport().set_input_as_handled()
+		elif key_event.keycode == KEY_M:
+			_open_tactical_map()
+			get_viewport().set_input_as_handled()
+		elif key_event.keycode in [KEY_B, KEY_I]:
+			_open_inventory()
+			get_viewport().set_input_as_handled()
+		elif key_event.keycode == KEY_F5:
+			_save_game()
+			get_viewport().set_input_as_handled()
+		elif key_event.keycode == KEY_F9:
+			_load_game()
+			get_viewport().set_input_as_handled()
+		elif key_event.keycode == KEY_R:
 			switch_level(current_level_index)
 			update_status("关卡已重置")
 			get_viewport().set_input_as_handled()
@@ -1280,6 +1366,409 @@ func _create_media_director() -> void:
 	media_director.briefing_closed.connect(_on_briefing_closed)
 
 
+func _create_game_shell() -> void:
+	game_shell = GAME_SHELL_SCRIPT.new()
+	game_shell.name = "GameShell"
+	add_child(game_shell)
+	game_shell.resume_requested.connect(_on_shell_resumed)
+	game_shell.save_requested.connect(_save_game)
+	game_shell.load_requested.connect(_load_game)
+	game_shell.restart_requested.connect(_restart_current_level)
+	game_shell.quit_requested.connect(_quit_game)
+	game_shell.settings_changed.connect(_on_shell_settings_changed)
+	game_shell.map_position_requested.connect(_on_map_position_requested)
+	game_shell.inventory_cycle_requested.connect(_on_inventory_cycle_requested)
+	game_shell.inventory_reload_requested.connect(_on_inventory_reload_requested)
+	game_shell.set_settings(runtime_settings)
+	_apply_runtime_settings(runtime_settings)
+
+
+func _initialize_persistence() -> void:
+	game_settings = GAME_SETTINGS_SCRIPT.new()
+	game_settings.load_from_disk()
+	game_settings.apply_audio_to_runtime()
+	command_line_controls_display = _command_line_has_display_override()
+	if not command_line_controls_display:
+		game_settings.apply_display_to_runtime()
+	var display: Dictionary = game_settings.display_settings()
+	runtime_settings = {
+		"fullscreen": str(display.get("mode", "fullscreen")) != "windowed",
+		"display_mode": str(display.get("mode", "fullscreen")),
+		"subtitles": bool(game_settings.interface_enabled("subtitles")),
+		"show_briefings": bool(game_settings.interface_enabled("show_briefings")),
+		"edge_scroll": bool(game_settings.interface_enabled("edge_scroll")),
+		"master_volume": float(game_settings.audio_volume("master")),
+	}
+	save_store = GAME_SAVE_STORE_SCRIPT.new()
+	campaign_progress = GAME_SAVE_STORE_SCRIPT.default_campaign()
+	var latest_slot := _latest_save_slot()
+	if not latest_slot.is_empty():
+		var latest_result: Dictionary = save_store.load_slot(latest_slot)
+		if bool(latest_result.get("ok", false)):
+			var latest_document := latest_result.get("data", {}) as Dictionary
+			campaign_progress = (
+				(latest_document.get("campaign", campaign_progress) as Dictionary)
+				.duplicate(true)
+			)
+
+
+func _command_line_has_display_override() -> bool:
+	for argument: String in OS.get_cmdline_args():
+		if argument in ["--windowed", "--fullscreen", "--maximized"]:
+			return true
+		if argument.contains("runtime_probe.gd"):
+			return true
+	return false
+
+
+func _on_shell_resumed() -> void:
+	update_status("继续任务")
+
+
+func _restart_current_level() -> void:
+	switch_level(current_level_index)
+	update_status("本关已重新开始")
+
+
+func _quit_game() -> void:
+	get_tree().quit()
+
+
+func _on_shell_settings_changed(new_settings: Dictionary) -> void:
+	var fullscreen := bool(new_settings.get("fullscreen", true))
+	new_settings["display_mode"] = "fullscreen" if fullscreen else "windowed"
+	runtime_settings = new_settings.duplicate(true)
+	command_line_controls_display = false
+	if game_settings != null:
+		game_settings.set_audio_volume(
+			"master", float(runtime_settings.get("master_volume", 0.8))
+		)
+		game_settings.set_display_mode(str(runtime_settings["display_mode"]))
+		game_settings.set_resolution_policy("desktop")
+		game_settings.set_interface_enabled(
+			"subtitles", bool(runtime_settings.get("subtitles", true))
+		)
+		game_settings.set_interface_enabled(
+			"show_briefings", bool(runtime_settings.get("show_briefings", true))
+		)
+		game_settings.set_interface_enabled(
+			"edge_scroll", bool(runtime_settings.get("edge_scroll", true))
+		)
+		game_settings.save_to_disk()
+	_apply_runtime_settings(runtime_settings)
+	update_status("设置已应用")
+
+
+func _apply_runtime_settings(new_settings: Dictionary) -> void:
+	var master_bus := AudioServer.get_bus_index("Master")
+	if master_bus >= 0:
+		var volume := clampf(float(new_settings.get("master_volume", 0.8)), 0.0, 1.0)
+		AudioServer.set_bus_mute(master_bus, volume <= 0.0001)
+		AudioServer.set_bus_volume_db(master_bus, linear_to_db(maxf(volume, 0.0001)))
+	if media_director != null and media_director.has_method("set_subtitles_enabled"):
+		media_director.set_subtitles_enabled(bool(new_settings.get("subtitles", true)))
+	if DisplayServer.get_name() == "headless" or command_line_controls_display:
+		return
+	var display_mode := str(new_settings.get(
+		"display_mode", "fullscreen" if bool(new_settings.get("fullscreen", false)) else "windowed"
+	))
+	DisplayServer.window_set_flag(
+		DisplayServer.WINDOW_FLAG_BORDERLESS, display_mode == "borderless"
+	)
+	if display_mode == "fullscreen":
+		if DisplayServer.window_get_mode() != DisplayServer.WINDOW_MODE_FULLSCREEN:
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+	elif display_mode == "borderless":
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MAXIMIZED)
+	else:
+		var was_windowed := DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_WINDOWED
+		if not was_windowed:
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+		var window_size := Vector2i(1280, 720)
+		DisplayServer.window_set_size(window_size)
+		var screen := DisplayServer.window_get_current_screen()
+		var screen_position := DisplayServer.screen_get_position(screen)
+		var screen_size := DisplayServer.screen_get_size(screen)
+		DisplayServer.window_set_position(screen_position + (screen_size - window_size) / 2)
+
+
+func _open_pause_menu() -> void:
+	if game_shell == null:
+		return
+	if media_director != null and media_director.has_method("is_modal_active"):
+		if bool(media_director.is_modal_active()):
+			return
+	game_shell.show_pause_menu(_has_save_slot())
+
+
+func _open_tactical_map() -> void:
+	if game_shell == null:
+		return
+	var terrain_texture: Texture2D
+	var terrain_node := get_node_or_null("ImportedTerrain")
+	if terrain_node is Sprite2D:
+		terrain_texture = (terrain_node as Sprite2D).texture
+	game_shell.show_tactical_map(
+		terrain_texture,
+		world_size,
+		_tactical_actor_markers(),
+		_tactical_mission_markers(),
+		_camera_world_rect(),
+	)
+
+
+func _open_inventory() -> void:
+	if game_shell != null:
+		game_shell.show_inventory(_inventory_bbcode())
+
+
+func _on_map_position_requested(world_position: Vector2) -> void:
+	if level_camera == null:
+		return
+	level_camera.position = world_position
+	clamp_level_camera()
+	if game_shell != null:
+		game_shell.update_map_camera(_camera_world_rect())
+
+
+func _on_inventory_cycle_requested(direction: int) -> void:
+	_cycle_selected_weapons(direction)
+	if game_shell != null:
+		game_shell.update_inventory(_inventory_bbcode())
+
+
+func _on_inventory_reload_requested() -> void:
+	var reload_count := 0
+	for unit: SQUAD_UNIT in selected_units:
+		if unit.request_reload():
+			reload_count += 1
+	update_status("%d 名队员开始换弹" % reload_count)
+	if game_shell != null:
+		game_shell.update_inventory(_inventory_bbcode())
+
+
+func _camera_world_rect() -> Rect2:
+	if level_camera == null:
+		return Rect2()
+	var visible_size := get_viewport_rect().size / maxf(level_camera.zoom.x, 0.001)
+	return Rect2(level_camera.position - visible_size * 0.5, visible_size)
+
+
+func _tactical_actor_markers() -> Array[Dictionary]:
+	var markers: Array[Dictionary] = []
+	for unit: SQUAD_UNIT in units:
+		if unit.is_alive:
+			markers.append({
+				"position": unit.position,
+				"color": Color(0.28, 0.72, 1.0),
+				"radius": 5.0,
+				"selected": selected_units.has(unit),
+			})
+	for escort: ESCORT_UNIT in escorts:
+		if escort.is_alive:
+			markers.append({
+				"position": escort.position,
+				"color": Color(0.88, 0.82, 0.35) if not escort.rescued_state else Color(0.36, 0.82, 0.78),
+				"radius": 4.0,
+			})
+	for enemy: ENEMY_UNIT in enemies:
+		if enemy.is_alive:
+			markers.append({
+				"position": enemy.position,
+				"color": Color(0.92, 0.28, 0.22),
+				"radius": 3.5,
+			})
+	return markers
+
+
+func _tactical_mission_markers() -> Array[Dictionary]:
+	var markers: Array[Dictionary] = []
+	var raw_bindings: Variant = current_mission.get("scene_bindings", {})
+	if not raw_bindings is Dictionary:
+		return markers
+	for binding_value: Variant in (raw_bindings as Dictionary).keys():
+		var binding_kind := str(binding_value)
+		if not _binding_has_world_marker(binding_kind):
+			continue
+		for scene_index: int in _binding_scenes(binding_kind):
+			if not world_entities_by_scene.has(scene_index):
+				continue
+			var entity := world_entities_by_scene[scene_index] as Dictionary
+			var color := Color(0.98, 0.66, 0.18)
+			if binding_kind == "exit":
+				color = Color(0.28, 0.92, 0.44)
+			elif binding_kind == "high_ground":
+				color = Color(0.30, 0.72, 1.0)
+			if activated_mission_scenes.has(scene_index):
+				color = Color(0.48, 0.52, 0.48)
+			markers.append({
+				"position": Vector2(float(entity["x"]), float(entity["y"])),
+				"color": color,
+				"radius": 6.0,
+			})
+	return markers
+
+
+func _inventory_bbcode() -> String:
+	var lines := PackedStringArray()
+	lines.append("[color=#e7d89a][b]当前关卡：%s　选中队员：%d[/b][/color]" % [str(current_mission.get("title", "")), selected_units.size()])
+	lines.append("")
+	for unit: SQUAD_UNIT in units:
+		var selected_text := " [color=#fff3a8]● 已选中[/color]" if selected_units.has(unit) else ""
+		var state_text := "阵亡" if not unit.is_alive else "生命 %d/%d" % [unit.current_hit_points, unit.maximum_hit_points]
+		var attack_type := int(unit.weapon_profile.get("attack_type", 0))
+		lines.append("[b]%s[/b]%s　%s　当前：%s" % [
+			unit.display_name,
+			selected_text,
+			state_text,
+			str(WEAPON_NAMES.get(attack_type, "徒手")),
+		])
+		if unit.combat_inventory != null:
+			var weapon_parts := PackedStringArray()
+			for action_key: String in unit.combat_inventory.registered_weapon_keys():
+				var weapon_state: Dictionary = unit.combat_inventory.weapon_state(action_key)
+				var profile := weapon_state.get("profile", {}) as Dictionary
+				var weapon_name := str(WEAPON_NAMES.get(int(profile.get("attack_type", 0)), action_key))
+				var ammunition := ""
+				if int(weapon_state.get("magazine_capacity", 0)) > 0:
+					ammunition = " %d/%d" % [int(weapon_state.get("magazine", 0)), int(weapon_state.get("reserve", 0))]
+				weapon_parts.append(weapon_name + ammunition)
+			if not weapon_parts.is_empty():
+				lines.append("　武器：" + "　｜　".join(weapon_parts))
+		var item_parts := PackedStringArray()
+		for raw_item_id: Variant in INVENTORY_ITEM_NAMES.keys():
+			var item_id := int(raw_item_id)
+			var count := unit.ammo_item_count(item_id)
+			if count > 0:
+				item_parts.append("%s × %d" % [str(INVENTORY_ITEM_NAMES[item_id]), count])
+		lines.append("　物品：%s" % ("无" if item_parts.is_empty() else "　｜　".join(item_parts)))
+		lines.append("")
+	var shared_parts := PackedStringArray()
+	for raw_key: Variant in field_inventory.keys():
+		var quantity := int(field_inventory[raw_key])
+		if quantity > 0:
+			shared_parts.append("%s × %d" % [str(raw_key), quantity])
+	lines.append("[color=#9fd6a0][b]小队任务物资：[/b][/color]%s" % ("无" if shared_parts.is_empty() else "　｜　".join(shared_parts)))
+	lines.append("[color=#aeb7a8]提示：先在地图上选中队员，再在本界面切换武器或换弹；数字键 1–8 与 Tab 仍可快速操作。[/color]")
+	return "\n".join(lines)
+
+
+func _has_save_slot() -> bool:
+	return not _latest_save_slot().is_empty()
+
+
+func _latest_save_slot() -> String:
+	if save_store == null:
+		return ""
+	var slots: Array[Dictionary] = save_store.list_slots()
+	if slots.is_empty():
+		return ""
+	slots.sort_custom(
+		func(first: Dictionary, second: Dictionary) -> bool:
+			var first_time := int(first.get("saved_at_unix", 0))
+			var second_time := int(second.get("saved_at_unix", 0))
+			if first_time == second_time:
+				var first_slot := str(first.get("slot_id", ""))
+				var second_slot := str(second.get("slot_id", ""))
+				if first_slot != second_slot:
+					return first_slot == QUICK_SAVE_SLOT
+				return int(first.get("revision", 0)) > int(second.get("revision", 0))
+			return first_time > second_time
+	)
+	return str(slots[0].get("slot_id", ""))
+
+
+func _save_game(slot_id: String = QUICK_SAVE_SLOT, announce: bool = true) -> bool:
+	if save_store == null or current_mission_state == null:
+		if announce:
+			_show_save_feedback("存档系统尚未初始化")
+		return false
+	if current_mission_state.is_failed():
+		if announce:
+			_show_save_feedback("任务失败状态不能覆盖有效存档，请重玩或读取")
+		return false
+	var session: Dictionary = GAME_SESSION_STATE_SCRIPT.capture(self)
+	var result: Dictionary = save_store.save_slot(slot_id, session, campaign_progress)
+	if not bool(result.get("ok", false)):
+		if announce:
+			_show_save_feedback("保存失败：%s" % str(result.get("message", "未知错误")))
+		return false
+	if announce:
+		_show_save_feedback("进度已保存：%s" % str(current_mission.get("title", session.get("level_id", ""))))
+	return true
+
+
+func _load_game() -> bool:
+	if save_store == null:
+		_show_load_feedback("存档系统尚未初始化")
+		return false
+	var slot_id := _latest_save_slot()
+	if slot_id.is_empty():
+		_show_load_feedback("没有可读取的存档")
+		return false
+	var result: Dictionary = save_store.load_slot(slot_id)
+	if not bool(result.get("ok", false)):
+		_show_load_feedback("读取失败：%s" % str(result.get("message", "存档损坏")))
+		return false
+	var document := result.get("data", {}) as Dictionary
+	var session := document.get("session", {}) as Dictionary
+	var level_id := str(session.get("level_id", ""))
+	var level_index := FORMAL_LEVEL_IDS.find(level_id)
+	if level_index < 0:
+		_show_load_feedback("读取失败：存档关卡编号无效")
+		return false
+	if game_shell != null:
+		game_shell.close_for_state_change()
+	switch_level(level_index, false)
+	var applied: Dictionary = GAME_SESSION_STATE_SCRIPT.apply_after_level_loaded(self, session)
+	if not bool(applied.get("ok", false)):
+		_show_load_feedback("读取失败：无法恢复关卡状态")
+		return false
+	campaign_progress = (
+		(document.get("campaign", GAME_SAVE_STORE_SCRIPT.default_campaign()) as Dictionary)
+		.duplicate(true)
+	)
+	var warnings := applied.get("warnings", []) as Array
+	if current_mission_state.is_failed():
+		_on_mission_failed(str(current_mission_state.failure_id))
+	elif current_mission_state.is_victory():
+		update_status("存档已恢复：本关任务已完成，可进入下一关")
+	else:
+		update_status(
+			"存档已恢复%s" % ("" if warnings.is_empty() else "（%d 项内容降级）" % warnings.size())
+		)
+	return true
+
+
+func _show_save_feedback(message: String) -> void:
+	update_status(message)
+	if game_shell != null and game_shell.is_overlay_open():
+		game_shell.set_menu_message(message)
+
+
+func _show_load_feedback(message: String) -> void:
+	update_status(message)
+	if game_shell != null and game_shell.is_overlay_open():
+		game_shell.set_menu_message(message)
+
+
+func _update_campaign_progress_for_victory() -> void:
+	var level_id := str(current_mission.get("id", ""))
+	if not FORMAL_LEVEL_IDS.has(level_id):
+		return
+	if campaign_progress.is_empty():
+		campaign_progress = GAME_SAVE_STORE_SCRIPT.default_campaign()
+	var completed: Array = campaign_progress.get("completed_level_ids", []) as Array
+	if not completed.has(level_id):
+		completed.append(level_id)
+	completed.sort()
+	campaign_progress["completed_level_ids"] = completed
+	var next_index := mini(FORMAL_LEVEL_IDS.find(level_id) + 1, FORMAL_LEVEL_IDS.size() - 1)
+	var current_highest := str(campaign_progress.get("highest_unlocked_level_id", "m000"))
+	var current_highest_index := maxi(FORMAL_LEVEL_IDS.find(current_highest), 0)
+	campaign_progress["highest_unlocked_level_id"] = FORMAL_LEVEL_IDS[maxi(next_index, current_highest_index)]
+
+
 func _publish_mission_event(event_name: String, payload: Dictionary = {}) -> Array[String]:
 	if mission_runtime == null or not mission_runtime.is_configured():
 		return []
@@ -1299,6 +1788,8 @@ func _on_objective_completed(objective_id: String) -> void:
 
 func _on_mission_victory() -> void:
 	_play_media_audio("ui_confirm")
+	_update_campaign_progress_for_victory()
+	_save_game(AUTO_SAVE_SLOT, false)
 	update_status("任务完成！按 PageDown 进入下一关，或按 R 重玩。")
 	_refresh_mission_ui()
 	_play_mission_media_cue("on_victory")
@@ -1364,6 +1855,8 @@ func _mission_media_cue(section: String, key: String = "") -> Dictionary:
 func _on_mission_failed(failure_id: String) -> void:
 	update_status("任务失败：%s。按 R 重新开始。" % failure_id)
 	_refresh_mission_ui()
+	if game_shell != null:
+		game_shell.show_failure("任务失败：%s\n可重新开始本关，或读取最近存档。" % failure_id, _has_save_slot())
 
 
 func _refresh_mission_ui() -> void:
@@ -1676,6 +2169,10 @@ func _binding_is_interactive(binding_kind: String) -> bool:
 	return false
 
 
+func _binding_has_world_marker(binding_kind: String) -> bool:
+	return binding_kind == "high_ground" or _binding_is_interactive(binding_kind)
+
+
 func _evaluate_transient_mission_zones() -> void:
 	for scene_index: int in _binding_scenes("exit"):
 		_evaluate_exit_scene(scene_index)
@@ -1979,7 +2476,7 @@ func _draw_mission_markers() -> void:
 		return
 	for binding_value: Variant in (raw_bindings as Dictionary).keys():
 		var binding_kind := str(binding_value)
-		if not _binding_is_interactive(binding_kind):
+		if not _binding_has_world_marker(binding_kind):
 			continue
 		for scene_index: int in _binding_scenes(binding_kind):
 			if not world_entities_by_scene.has(scene_index):

@@ -165,7 +165,8 @@
       "trigger_inventory": {"markers": 5, "explosion": 4, "exit": 1, "spawns": 4, "entrances": 1},
       "objectives": [
         {"id": "place_mine_charges", "label": "在四处工事入口放置炸药", "required": true, "condition": {"event": "trigger_activated", "where": {"display_name": "检测爆炸精灵"}, "required_count": 4, "unique_by": "scene_index"}},
-        {"id": "use_elevator", "label": "老赵和大牛从东南升降机撤离", "required": true, "depends_on": ["place_mine_charges"], "condition": {"event": "trigger_activated", "where": {"display_name": "检测出口精灵"}, "required_count": 1, "unique_by": "scene_index"}}
+        {"id": "detonate_charges", "label": "引爆矿坑炸药", "required": true, "depends_on": ["place_mine_charges"], "condition": {"event": "explosion", "where": {"cause": "manual_detonation"}, "required_count": 1}},
+        {"id": "use_elevator", "label": "老赵和大牛从东南升降机撤离", "required": true, "depends_on": ["detonate_charges"], "condition": {"event": "trigger_activated", "where": {"display_name": "检测出口精灵"}, "required_count": 1, "unique_by": "scene_index"}}
       ],
       "failure_conditions": [{"id": "premature_explosion", "event": "explosion", "unless_objective_complete": "place_mine_charges"}, {"id": "required_character_lost", "event": "required_character_lost"}]
     },

@@ -50,6 +50,7 @@ var dialogue_sequence_id := ""
 var dialogue_lines: Array = []
 var dialogue_line_index := -1
 var dialogue_minimum_seconds := 0.0
+var subtitles_enabled := true
 var _modal_pause_owned := false
 var _pause_state_before_modal := false
 var _process_mode_before_modal := Node.PROCESS_MODE_INHERIT
@@ -66,6 +67,17 @@ func _ready() -> void:
 func configure(converted_root: String = "") -> bool:
 	catalog = CATALOG_SCRIPT.new()
 	return bool(catalog.call("configure", converted_root))
+
+
+func set_subtitles_enabled(enabled: bool) -> void:
+	subtitles_enabled = enabled
+	if not subtitles_enabled and subtitle_panel != null:
+		subtitle_panel.visible = false
+		subtitle_seconds = 0.0
+
+
+func is_modal_active() -> bool:
+	return _has_active_modal()
 
 
 func play_audio_event(
@@ -320,25 +332,35 @@ func _process(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not event.is_pressed() or event.is_echo():
 		return
+	var handled := false
 	if event.is_action("ui_cancel"):
 		if not active_movie.is_empty():
 			stop_movie(true)
+			handled = true
 		elif not dialogue_sequence_id.is_empty():
 			stop_dialogue(true)
+			handled = true
 		elif not active_briefing.is_empty():
 			dismiss_briefing()
+			handled = true
 		elif active_ending:
 			dismiss_ending()
-		return
-	if event.is_action("ui_accept"):
+			handled = true
+	elif event.is_action("ui_accept"):
 		if not active_movie.is_empty():
 			stop_movie(true)
+			handled = true
 		elif not dialogue_sequence_id.is_empty():
 			advance_dialogue()
+			handled = true
 		elif not active_briefing.is_empty():
 			dismiss_briefing()
+			handled = true
 		elif active_ending:
 			dismiss_ending()
+			handled = true
+	if handled:
+		get_viewport().set_input_as_handled()
 
 
 func _advance_dialogue_internal() -> void:
@@ -383,6 +405,8 @@ func _load_external_image(path: String) -> bool:
 
 
 func _show_subtitle(text: String, duration: float) -> void:
+	if not subtitles_enabled:
+		return
 	subtitle_label.text = text
 	subtitle_panel.visible = true
 	subtitle_seconds = duration

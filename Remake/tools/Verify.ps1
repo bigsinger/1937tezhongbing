@@ -98,6 +98,16 @@ if ($LASTEXITCODE -ne 0) {
     throw "Godot deterministic replay tests failed with exit code $LASTEXITCODE."
 }
 
+& $GodotExecutable --headless --path $game --script 'res://tests/product_shell_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot product shell tests failed with exit code $LASTEXITCODE."
+}
+
+& $GodotExecutable --headless --path $game --script 'res://tests/save_settings_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot save and settings tests failed with exit code $LASTEXITCODE."
+}
+
 if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
     $realMediaCatalog = Join-Path $remakeRoot 'LocalAssets\converted\legacy-media-catalog.json'
     if (Test-Path -LiteralPath $realMediaCatalog -PathType Leaf) {
