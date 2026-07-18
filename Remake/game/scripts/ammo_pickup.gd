@@ -1,6 +1,8 @@
 class_name AmmoPickup
 extends Node2D
 
+const WORLD_DEPTH: Script = preload("res://scripts/world_depth.gd")
+
 signal collected(pickup: Node2D, collector: Node, item_id: int, quantity: int)
 
 const COMBAT_INVENTORY_SCRIPT: Script = preload("res://scripts/combat_inventory.gd")
@@ -19,7 +21,7 @@ func configure(item_id: int, new_quantity: int, world_position: Vector2, label: 
 	pickup_label = label
 	position = world_position
 	consumed = false
-	z_index = clampi(int(position.y) + 2, -4096, 4095)
+	z_index = WORLD_DEPTH.normal_z(position.y, 2)
 	queue_redraw()
 	return true
 

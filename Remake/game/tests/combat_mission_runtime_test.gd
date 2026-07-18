@@ -29,6 +29,7 @@ class MockMediaDirector:
 	extends CanvasLayer
 
 	var calls: Array[Dictionary] = []
+	var dialogue_sequence_id := ""
 
 	func play_audio_event(
 		event_key: String,
@@ -46,6 +47,7 @@ class MockMediaDirector:
 		return true
 
 	func start_dialogue(sequence_id: String, lines: Array) -> bool:
+		dialogue_sequence_id = sequence_id
 		calls.append({"kind": "dialogue", "sequence_id": sequence_id, "lines": lines})
 		return true
 
@@ -73,6 +75,55 @@ class MockMediaMissionRuntime:
 
 	func publish_world_event(_event_name: String, _payload: Dictionary) -> Array[String]:
 		return completed_ids.duplicate()
+
+
+class MockDirectionRuntime:
+	extends Node
+
+	var tutorial_actions: Array[String] = []
+	var external_sequences: Array[String] = []
+	var start_count := 0
+	var pending_media := false
+
+	func report_tutorial_action(action: String) -> Array[String]:
+		tutorial_actions.append(action)
+		return []
+
+	func start() -> bool:
+		start_count += 1
+		return true
+
+	func has_pending_media_dialogue() -> bool:
+		return pending_media
+
+	func queue_external_dialogue(sequence_id: String, _lines: Array) -> bool:
+		external_sequences.append(sequence_id)
+		return true
+
+
+class MockAiCoordinator:
+	extends Node
+
+	var observed_events: Array[Dictionary] = []
+	var shared_alerts: Array[Dictionary] = []
+
+	func observe_mission_event(event_name: String, payload: Dictionary = {}) -> bool:
+		observed_events.append({"event_name": event_name, "payload": payload.duplicate(true)})
+		return true
+
+	func queue_shared_alert(
+		source: Node2D,
+		target: Node2D,
+		world_position: Vector2,
+		base_radius: float,
+	) -> Array[int]:
+		shared_alerts.append({
+			"source": source,
+			"target": target,
+			"world_position": world_position,
+			"base_radius": base_radius,
+		})
+		return [901]
 
 
 var check_count := 0
@@ -293,6 +344,23 @@ func _test_alert_propagation(failures: Array[String]) -> void:
 		"enemy alert receiver rejects a missing or dead combat target",
 		failures,
 	)
+	var coordinator := MockAiCoordinator.new()
+	main.mission_ai_coordinator = coordinator
+	var dead_enemy = _make_alert_enemy("dead source", Vector2(240.0, 0.0), clear_sight)
+	dead_enemy.is_alive = false
+	arena.add_child(dead_enemy)
+	main.enemies.append(dead_enemy)
+	main._on_combatant_died(dead_enemy, attacker)
+	_expect(
+		coordinator.shared_alerts.size() == 1
+		and coordinator.shared_alerts[0].get("source") == dead_enemy
+		and coordinator.shared_alerts[0].get("target") == attacker
+		and (coordinator.shared_alerts[0].get("world_position") as Vector2) == dead_enemy.position,
+		"enemy-death alerts enter the mission AI cooperation queue instead of bypassing its delay and group limits",
+		failures,
+	)
+	main.mission_ai_coordinator = null
+	coordinator.free()
 	main.free()
 	arena.free()
 
@@ -685,25 +753,45 @@ func _test_mission_media_cues(failures: Array[String]) -> void:
 	)
 
 	var mock_runtime := MockMediaMissionRuntime.new()
-	mock_runtime.completed_ids = ["follow_contact"]
+	var direction_runtime := MockDirectionRuntime.new()
+	var ai_coordinator := MockAiCoordinator.new()
 	main.mission_runtime = mock_runtime
+	main.mission_direction_runtime = direction_runtime
+	main.mission_ai_coordinator = ai_coordinator
 	main.current_mission = MISSION_DATA.load_mission("m006")
+	mock_runtime.last_error = "synthetic rejection"
+	main._publish_mission_event("trigger_activated", {"scene_index": -1})
+	_expect(
+		ai_coordinator.observed_events.is_empty(),
+		"a mission-runtime rejection cannot advance AI reinforcement event counts",
+		failures,
+	)
+	mock_runtime.last_error = ""
+	main._publish_mission_event("trigger_activated", {"scene_index": 1461})
+	_expect(
+		ai_coordinator.observed_events.size() == 1
+		and str(ai_coordinator.observed_events[0].get("event_name", "")) == "trigger_activated",
+		"an accepted mission event reaches the AI coordinator exactly once",
+		failures,
+	)
+	mock_runtime.completed_ids = ["follow_contact"]
 	var completed: Array[String] = main._publish_mission_event(
 		"story_anchor_reached", {"role_id": "m006_exchange_point", "scene_index": 1461}
 	)
 	_expect(
 		completed == ["follow_contact"]
-		and str(director.calls.back().get("sequence_id", "")) == "m006_exchange_confirmed",
-		"a completed story-anchor event opens its configured dialogue",
+		and direction_runtime.external_sequences == ["m006_exchange_confirmed"]
+		and direction_runtime.tutorial_actions == ["follow_target"],
+		"a completed story-anchor cue joins the director queue instead of replacing its objective dialogue",
 		failures,
 	)
-	var calls_after_story := director.calls.size()
+	var calls_after_story := direction_runtime.external_sequences.size()
 	mock_runtime.completed_ids.clear()
 	main._publish_mission_event(
 		"story_anchor_reached", {"role_id": "m006_exchange_point", "scene_index": 1461}
 	)
 	_expect(
-		director.calls.size() == calls_after_story,
+		direction_runtime.external_sequences.size() == calls_after_story,
 		"a repeated story fact cannot replay modal dialogue without new objective progress",
 		failures,
 	)
@@ -716,8 +804,48 @@ func _test_mission_media_cues(failures: Array[String]) -> void:
 		"m011 victory cue reaches the recovered ending-image path",
 		failures,
 	)
+	var sequence_runtime := MockDirectionRuntime.new()
+	main.mission_direction_runtime = sequence_runtime
+	main.current_mission = MISSION_DATA.load_mission("m000")
+	main.pending_initial_briefing_level = ""
+	main._on_briefing_closed("m000")
+	_expect(
+		sequence_runtime.start_count == 0,
+		"closing an F7 revisit cannot restart the already-running mission director",
+		failures,
+	)
+	main.pending_direction_start_sequence_id = "m000_tutorial"
+	main._on_media_dialogue_finished("m000_tutorial", false)
+	_expect(
+		sequence_runtime.start_count == 1,
+		"the initial recovered m000 cue completes before the director intro starts",
+		failures,
+	)
+	main.current_mission = MISSION_DATA.load_mission("m011")
+	var calls_before_ending := director.calls.size()
+	main.pending_victory_media_cue = true
+	director.dialogue_sequence_id = "m011_victory_editorial"
+	sequence_runtime.pending_media = true
+	main._try_play_pending_victory_media_cue()
+	_expect(
+		director.calls.size() == calls_before_ending,
+		"m011 ending waits while director victory dialogue remains active or queued",
+		failures,
+	)
+	director.dialogue_sequence_id = ""
+	sequence_runtime.pending_media = false
+	main._try_play_pending_victory_media_cue()
+	_expect(
+		director.calls.size() == calls_before_ending + 1
+		and str(director.calls.back().get("kind", "")) == "ending",
+		"m011 ending starts only after every queued director victory line finishes",
+		failures,
+	)
 	main.mission_runtime = null
+	main.mission_direction_runtime = null
+	main.mission_ai_coordinator = null
 	main.media_director = null
+	ai_coordinator.free()
 	mock_runtime.free()
 	director.free()
 	main.free()

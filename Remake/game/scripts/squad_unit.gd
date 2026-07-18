@@ -5,9 +5,14 @@ const BASE_SPRITE_TICK_SECONDS := 0.085
 const DEFAULT_REPLAN_BLOCKED_SECONDS := 0.25
 const COMBAT_REPATH_SECONDS := 0.40
 const HURT_REACTION_SECONDS := 0.18
+const RUN_SPEED := 150.0
+const WALK_SPEED := 92.0
+const CRAWL_SPEED := 48.0
 const TACTICAL_SENSES_SCRIPT: Script = preload("res://scripts/tactical_senses.gd")
 const PROJECTILE_PROFILES: Script = preload("res://scripts/projectile_profiles.gd")
 const COMBAT_INVENTORY_SCRIPT: Script = preload("res://scripts/combat_inventory.gd")
+const LEGACY_SPECIAL_ACTION_PROFILES: Script = preload("res://scripts/legacy_special_action_profiles.gd")
+const WORLD_DEPTH: Script = preload("res://scripts/world_depth.gd")
 
 enum CombatAction { NONE, ATTACK, RELOAD, DEATH }
 
@@ -19,6 +24,7 @@ signal attack_started(
 )
 signal attack_hit(attacker: Node2D, target: Node2D, attack_type: int, damage: int)
 signal projectile_requested(attacker: Node2D, target: Node2D, weapon_profile: Dictionary)
+signal special_action_requested(attacker: Node2D, target: Node2D, weapon_profile: Dictionary)
 signal damage_received(unit: Node2D, attacker: Node2D, damage: int, remaining_hit_points: int)
 signal died(unit: Node2D, killer: Node2D)
 signal ammo_changed(unit: Node2D, magazine: int, reserve: int)
@@ -35,6 +41,7 @@ var was_moving := false
 var blocked_elapsed := 0.0
 var blocked_replan_seconds := DEFAULT_REPLAN_BLOCKED_SECONDS
 var is_crawling := false
+var is_running := true
 var is_alive := true
 var faction_id := 3
 var current_hit_points := 8
@@ -46,6 +53,10 @@ var sprite_texture: Texture2D
 var sprite_anchor := Vector2.ZERO
 var movement_groups: Array[Dictionary] = []
 var idle_groups: Array[Dictionary] = []
+var run_groups: Array[Dictionary] = []
+var walk_groups: Array[Dictionary] = []
+var crawl_groups: Array[Dictionary] = []
+var standing_idle_groups: Array[Dictionary] = []
 var animation_group_index := 7
 var animation_frame_index := 0
 var animation_elapsed := 0.0
@@ -56,6 +67,7 @@ var magazine_ammo := 0
 var reserve_ammo := 0
 var infinite_ammo := false
 var combat_target: Node2D
+var combat_target_forced := false
 var auto_combat_enabled := false
 var combat_repath_elapsed := COMBAT_REPATH_SECONDS
 var attack_cooldown_remaining := 0.0
@@ -65,6 +77,7 @@ var action_frame_elapsed := 0.0
 var action_finished := false
 var reload_remaining := 0.0
 var pending_hit_target: Node2D
+var pending_hit_forced := false
 var pending_hit_resolved := false
 var hurt_remaining := 0.0
 var death_emitted := false
@@ -89,6 +102,13 @@ func configure(
 	sprite_texture = texture
 	movement_groups = new_movement_groups
 	idle_groups = new_idle_groups
+	run_groups = new_movement_groups
+	walk_groups = new_movement_groups
+	crawl_groups = []
+	standing_idle_groups = new_idle_groups
+	is_running = true
+	is_crawling = false
+	move_speed = RUN_SPEED
 	scene_index = new_scene_index
 	dynamic_occupancy = new_dynamic_occupancy
 	position = start_position
@@ -99,6 +119,7 @@ func configure(
 	blocked_elapsed = 0.0
 	dynamic_registered = false
 	combat_target = null
+	combat_target_forced = false
 	auto_combat_enabled = false
 	combat_action = CombatAction.NONE
 	action_finished = false
@@ -117,12 +138,74 @@ func configure(
 		)
 		if not dynamic_registered:
 			dynamic_occupancy = null
-	z_index = clampi(int(position.y) + 1, -4096, 4095)
+	z_index = WORLD_DEPTH.normal_z(position.y, 1)
 	if movement_groups.size() >= 8:
 		set_animation_group(7)
 		apply_idle_frame()
 	elif sprite_texture != null:
 		sprite_anchor = sprite_texture.get_size() * 0.5
+	queue_redraw()
+
+
+func configure_movement_modes(
+	new_run_groups: Array[Dictionary],
+	new_walk_groups: Array[Dictionary],
+	new_crawl_groups: Array[Dictionary],
+) -> void:
+	run_groups = new_run_groups if not new_run_groups.is_empty() else movement_groups
+	walk_groups = new_walk_groups if not new_walk_groups.is_empty() else run_groups
+	crawl_groups = new_crawl_groups
+	_apply_movement_mode()
+
+
+func toggle_run_walk() -> bool:
+	if not is_alive or is_crawling:
+		return is_running
+	return set_running(not is_running)
+
+
+func set_running(value: bool) -> bool:
+	if not is_alive:
+		return is_running
+	is_running = value
+	_apply_movement_mode()
+	return is_running
+
+
+func set_crawling(value: bool) -> bool:
+	if not is_alive:
+		return is_crawling
+	is_crawling = value
+	_apply_movement_mode()
+	return is_crawling
+
+
+func toggle_crawling() -> bool:
+	return set_crawling(not is_crawling)
+
+
+func movement_mode_name() -> String:
+	if is_crawling:
+		return "crawl"
+	return "run" if is_running else "walk"
+
+
+func _apply_movement_mode() -> void:
+	if is_crawling and not crawl_groups.is_empty():
+		movement_groups = crawl_groups
+		idle_groups = crawl_groups
+		move_speed = CRAWL_SPEED
+	elif is_running:
+		movement_groups = run_groups if not run_groups.is_empty() else walk_groups
+		idle_groups = standing_idle_groups
+		move_speed = RUN_SPEED
+	else:
+		movement_groups = walk_groups if not walk_groups.is_empty() else run_groups
+		idle_groups = standing_idle_groups
+		move_speed = WALK_SPEED
+	animation_frame_index = 0
+	animation_elapsed = 0.0
+	apply_idle_frame()
 	queue_redraw()
 
 
@@ -161,6 +244,7 @@ func configure_combat(
 			inventory_weapon_order.append(action_key)
 			_sync_ammo_from_inventory(false)
 	combat_target = null
+	combat_target_forced = false
 	auto_combat_enabled = false
 	combat_repath_elapsed = COMBAT_REPATH_SECONDS
 	attack_cooldown_remaining = 0.0
@@ -170,6 +254,7 @@ func configure_combat(
 	action_finished = false
 	reload_remaining = 0.0
 	pending_hit_target = null
+	pending_hit_forced = false
 	pending_hit_resolved = false
 	hurt_remaining = 0.0
 	death_emitted = false
@@ -320,10 +405,11 @@ func cancel_path() -> void:
 	queue_redraw()
 
 
-func issue_attack(target: Node2D) -> bool:
+func issue_attack(target: Node2D, force_target: bool = false) -> bool:
 	if not is_alive or not _target_is_alive(target) or weapon_profile.is_empty():
 		return false
 	combat_target = target
+	combat_target_forced = force_target
 	auto_combat_enabled = true
 	combat_repath_elapsed = COMBAT_REPATH_SECONDS
 	return true
@@ -331,6 +417,7 @@ func issue_attack(target: Node2D) -> bool:
 
 func clear_combat_target() -> void:
 	combat_target = null
+	combat_target_forced = false
 	auto_combat_enabled = false
 	combat_repath_elapsed = COMBAT_REPATH_SECONDS
 
@@ -339,12 +426,13 @@ func is_combat_alive() -> bool:
 	return is_alive
 
 
-func can_attack_target(target: Node2D) -> bool:
+func can_attack_target(target: Node2D, allow_non_hostile: bool = false) -> bool:
 	if (
 		not is_alive
 		or not _target_is_alive(target)
 		or not (
-			factions_are_hostile(faction_id, int(target.get("faction_id")))
+			allow_non_hostile
+			or factions_are_hostile(faction_id, int(target.get("faction_id")))
 			or _is_destructible_world_target(target)
 		)
 		or weapon_profile.is_empty()
@@ -379,34 +467,45 @@ static func factions_are_hostile(first_faction: int, second_faction: int) -> boo
 	)
 
 
-func try_start_attack(target: Node2D) -> bool:
+func try_start_attack(target: Node2D, force_target: bool = false) -> bool:
+	var forced := force_target or (target == combat_target and combat_target_forced)
 	if (
 		not is_alive
 		or combat_action != CombatAction.NONE
 		or hurt_remaining > 0.0
 		or attack_cooldown_remaining > 0.0
-		or not can_attack_target(target)
+		or not can_attack_target(target, forced)
 	):
 		return false
 	var ammo_per_attack := maxi(int(weapon_profile.get("ammo_per_attack", 0)), 0)
+	var attack_type := int(weapon_profile.get("attack_type", 0))
+	var defer_item_cost_to_hit_frame := attack_type in [8, 10]
 	if not infinite_ammo and ammo_per_attack > 0:
 		if combat_inventory != null:
-			if not combat_inventory.consume_active_attack():
+			var inventory_ready: bool = (
+				combat_inventory.can_consume_active_attack()
+				if defer_item_cost_to_hit_frame
+				else combat_inventory.consume_active_attack()
+			)
+			if not inventory_ready:
 				_start_reload()
 				return false
-			_sync_ammo_from_inventory(true)
+			if not defer_item_cost_to_hit_frame:
+				_sync_ammo_from_inventory(true)
 		else:
 			if magazine_ammo < ammo_per_attack:
 				_start_reload()
 				return false
-			magazine_ammo -= ammo_per_attack
-			ammo_changed.emit(self, magazine_ammo, reserve_ammo)
+			if not defer_item_cost_to_hit_frame:
+				magazine_ammo -= ammo_per_attack
+				ammo_changed.emit(self, magazine_ammo, reserve_ammo)
 
 	var facing := target.position - position
 	if not facing.is_zero_approx():
 		set_animation_group(direction_group_index(facing))
 	cancel_path()
 	pending_hit_target = target
+	pending_hit_forced = forced
 	pending_hit_resolved = false
 	attack_cooldown_remaining = maxf(
 		float(weapon_profile.get("recovery_seconds", 0.5)), 0.05
@@ -526,7 +625,7 @@ func _physics_process(delta: float) -> void:
 		set_animation_group(direction_group_index(displacement))
 		advance_animation(safe_delta)
 		was_moving = true
-		z_index = clampi(int(position.y) + 1, -4096, 4095)
+		z_index = WORLD_DEPTH.normal_z(position.y, 1)
 		queue_redraw()
 	else:
 		_apply_idle_state()
@@ -536,11 +635,11 @@ func _update_auto_combat(delta: float) -> bool:
 	if not _target_is_alive(combat_target):
 		clear_combat_target()
 		return false
-	if can_attack_target(combat_target):
+	if can_attack_target(combat_target, combat_target_forced):
 		if movement_path_index < movement_path.size():
 			cancel_path()
 		if attack_cooldown_remaining <= 0.0:
-			try_start_attack(combat_target)
+			try_start_attack(combat_target, combat_target_forced)
 		else:
 			_apply_idle_state()
 		return true
@@ -641,9 +740,23 @@ func _resolve_pending_hit() -> void:
 	if pending_hit_resolved:
 		return
 	pending_hit_resolved = true
-	if not can_attack_target(pending_hit_target):
+	if not can_attack_target(pending_hit_target, pending_hit_forced):
 		return
 	var attack_type := int(weapon_profile.get("attack_type", 0))
+	if LEGACY_SPECIAL_ACTION_PROFILES.is_special_attack(attack_type):
+		if attack_type in [8, 10] and not infinite_ammo:
+			var ammo_per_attack := maxi(int(weapon_profile.get("ammo_per_attack", 0)), 0)
+			if combat_inventory != null:
+				if not combat_inventory.consume_active_attack():
+					return
+				_sync_ammo_from_inventory(true)
+			elif ammo_per_attack <= 0 or magazine_ammo < ammo_per_attack:
+				return
+			else:
+				magazine_ammo -= ammo_per_attack
+				ammo_changed.emit(self, magazine_ammo, reserve_ammo)
+		special_action_requested.emit(self, pending_hit_target, weapon_profile.duplicate(true))
+		return
 	if PROJECTILE_PROFILES.is_projectile_attack(attack_type):
 		projectile_requested.emit(self, pending_hit_target, weapon_profile.duplicate(true))
 		return
@@ -713,6 +826,7 @@ func _interrupt_combat_action() -> void:
 	combat_action = CombatAction.NONE
 	action_finished = true
 	pending_hit_target = null
+	pending_hit_forced = false
 	pending_hit_resolved = true
 	reload_remaining = 0.0
 
@@ -833,8 +947,6 @@ func _draw() -> void:
 		)
 	if selected:
 		draw_arc(Vector2.ZERO, 23.0, 0.0, TAU, 40, Color(0.98, 0.84, 0.25), 3.0)
-		if position.distance_squared_to(target_position) > 4.0:
-			draw_line(Vector2.ZERO, target_position - position, Color(0.98, 0.84, 0.25, 0.65), 1.5)
 
 
 func draw_flat_ellipse(center: Vector2, radii: Vector2, color: Color) -> void:

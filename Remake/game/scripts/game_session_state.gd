@@ -9,8 +9,10 @@ extends RefCounted
 
 const COMBAT_INVENTORY: Script = preload("res://scripts/combat_inventory.gd")
 const LAND_MINE: Script = preload("res://scripts/land_mine.gd")
+const LEGACY_SPECIAL_ACTION_PROFILES: Script = preload("res://scripts/legacy_special_action_profiles.gd")
 const MISSION_PICKUP: Script = preload("res://scripts/mission_pickup.gd")
 const SAVE_STORE: Script = preload("res://scripts/game_save_store.gd")
+const WORLD_DEPTH: Script = preload("res://scripts/world_depth.gd")
 
 
 static func capture(game: Node) -> Dictionary:
@@ -69,7 +71,9 @@ static func apply_after_level_loaded(game: Node, session: Dictionary) -> Diction
 	var occupancy: Variant = game.get("dynamic_occupancy")
 	if occupancy != null and occupancy.has_method("finalize_registration"):
 		occupancy.call("finalize_registration")
-	_restore_world(game, session.get("world", {}) as Dictionary, warnings)
+	var world_restore: Dictionary = _restore_world(
+		game, session.get("world", {}) as Dictionary, warnings
+	)
 	_sync_projectile_combatants(game)
 	_restore_camera(game, session.get("camera", {}) as Dictionary)
 	if game.has_method("_refresh_mission_ui"):
@@ -77,7 +81,13 @@ static func apply_after_level_loaded(game: Node, session: Dictionary) -> Diction
 	if game.has_method("_refresh_inventory_ui"):
 		game.call("_refresh_inventory_ui")
 	game.queue_redraw()
-	return {"ok": true, "warnings": warnings}
+	return {
+		"ok": true,
+		"warnings": warnings,
+		"mission_direction_restored": bool(
+			world_restore.get("mission_direction_restored", false)
+		),
+	}
 
 
 static func _capture_mission(game: Node, mission_state: Variant) -> Dictionary:
@@ -119,6 +129,7 @@ static func _capture_actor(actor: Node2D, group_name: String) -> Dictionary:
 		"maximum_hit_points": int(actor.get("maximum_hit_points")),
 		"is_alive": bool(actor.get("is_alive")),
 		"is_crawling": bool(actor.get("is_crawling")),
+		"is_running": bool(actor.get("is_running")),
 		"selected": bool(actor.get("selected")) if group_name == "units" else false,
 	}
 	if actor.has_method("inventory_snapshot"):
@@ -134,6 +145,7 @@ static func _capture_actor(actor: Node2D, group_name: String) -> Dictionary:
 			"last_known_y": (actor.get("last_known_target_position") as Vector2).y,
 			"search_elapsed": float(actor.get("search_elapsed")),
 			"attack_count": int(actor.get("attack_count")),
+			"regroup_remaining": float(actor.get("regroup_remaining")),
 			"current_target_scene_index": (
 				int((current_target as Node).get("scene_index"))
 				if current_target is Node and is_instance_valid(current_target)
@@ -157,18 +169,45 @@ static func _capture_actor(actor: Node2D, group_name: String) -> Dictionary:
 
 static func _capture_world(game: Node) -> Dictionary:
 	var world := {
+		"snapshot_presence": {
+			"field_pickups": true,
+			"explosive_props": true,
+		},
 		"activated_scene_indices": _sorted_integer_keys(
 			_dictionary_property(game, "activated_mission_scenes")
 		),
 		"collected_scene_indices": [],
 		"destroyed_scene_indices": [],
+		"buried_enemy_scene_indices": _sorted_integer_keys(
+			_dictionary_property(game, "buried_enemy_scene_indices")
+		),
+		"m010_split_ordered_names": _json_dictionary(
+			game.get("m010_split_ordered_names")
+		),
+		"victory_presentation_completed": bool(
+			game.get("victory_presentation_completed")
+		),
 		"remaining_field_pickup_scene_indices": [],
 		"explosive_props": [],
 		"mission_pickups": [],
 		"field_inventory": _json_dictionary(game.get("field_inventory")),
 		"deployed_mines": [],
+		"legacy_special_world_objects": [],
+		"legacy_ai_control_effects": [],
 		"projectiles": [],
+		"mission_direction": {},
+		"mission_ai_coordinator": {},
 	}
+	var direction_runtime: Variant = game.get("mission_direction_runtime")
+	if direction_runtime is Node and (direction_runtime as Node).has_method("capture_state"):
+		world["mission_direction"] = _json_value(
+			(direction_runtime as Node).call("capture_state")
+		)
+	var ai_coordinator: Variant = game.get("mission_ai_coordinator")
+	if ai_coordinator is Node and (ai_coordinator as Node).has_method("capture_state"):
+		world["mission_ai_coordinator"] = _json_value(
+			(ai_coordinator as Node).call("capture_state")
+		)
 	for pickup_value: Variant in _array_property(game, "field_pickups"):
 		if pickup_value is Node and is_instance_valid(pickup_value) and not bool((pickup_value as Node).get("consumed")):
 			(world["remaining_field_pickup_scene_indices"] as Array).append(int((pickup_value as Node).get("scene_index")))
@@ -197,6 +236,28 @@ static func _capture_world(game: Node) -> Dictionary:
 			if int(mine.get("state")) in [4, 5]:
 				continue
 			(world["deployed_mines"] as Array).append(_capture_mine(mine))
+	for world_object_value: Variant in _array_property(game, "legacy_special_world_objects"):
+		if (
+			world_object_value is Node
+			and is_instance_valid(world_object_value)
+			and (world_object_value as Node).has_method("is_active")
+			and bool((world_object_value as Node).call("is_active"))
+			and (world_object_value as Node).has_method("snapshot")
+		):
+			(world["legacy_special_world_objects"] as Array).append(
+				_json_value((world_object_value as Node).call("snapshot"))
+			)
+	for effect_value: Variant in _array_property(game, "legacy_ai_control_effects"):
+		if (
+			effect_value is Node
+			and is_instance_valid(effect_value)
+			and (effect_value as Node).has_method("is_active")
+			and bool((effect_value as Node).call("is_active"))
+			and (effect_value as Node).has_method("snapshot")
+		):
+			(world["legacy_ai_control_effects"] as Array).append(
+				_json_value((effect_value as Node).call("snapshot"))
+			)
 	var projectile_world: Variant = game.get("projectile_world")
 	if projectile_world is Node:
 		for child: Node in (projectile_world as Node).get_children():
@@ -344,9 +405,15 @@ static func _restore_actor(game: Node, actor: Node2D, record: Dictionary, group_
 	actor.set("is_alive", alive)
 	actor.set("current_hit_points", clampi(int(record.get("current_hit_points", 0)), 0, int(actor.get("maximum_hit_points"))))
 	actor.set("is_crawling", bool(record.get("is_crawling", false)))
+	actor.set("is_running", bool(record.get("is_running", true)))
+	if actor.has_method("_apply_movement_mode"):
+		actor.call("_apply_movement_mode")
 	actor.set("selected", bool(record.get("selected", false)) and alive and group_name == "units")
 	actor.set("auto_combat_enabled", false)
 	actor.set("combat_target", null)
+	if group_name == "units":
+		actor.set("combat_target_forced", false)
+		actor.set("pending_hit_forced", false)
 	if record.get("inventory") is Dictionary:
 		_restore_inventory(game, actor, record)
 	if alive:
@@ -375,6 +442,7 @@ static func _restore_actor(game: Node, actor: Node2D, record: Dictionary, group_
 		actor.set("last_known_target_position", Vector2(float(ai.get("last_known_x", 0.0)), float(ai.get("last_known_y", 0.0))))
 		actor.set("search_elapsed", float(ai.get("search_elapsed", 0.0)))
 		actor.set("attack_count", int(ai.get("attack_count", 0)))
+		actor.set("regroup_remaining", maxf(float(ai.get("regroup_remaining", 0.0)), 0.0))
 	elif group_name == "escorts" and record.get("escort") is Dictionary:
 		var escort := record["escort"] as Dictionary
 		actor.set("rescued_state", bool(escort.get("rescued", false)))
@@ -388,7 +456,7 @@ static func _restore_actor(game: Node, actor: Node2D, record: Dictionary, group_
 			if follow == null:
 				follow = _first_living_actor(_array_property(game, "units"))
 			actor.set("follow_target", follow)
-	actor.set("z_index", clampi(int(actor.position.y) + 1, -4096, 4095))
+	actor.set("z_index", WORLD_DEPTH.normal_z(actor.position.y, 1))
 	actor.queue_redraw()
 
 
@@ -490,41 +558,115 @@ static func _restore_inventory(game: Node, actor: Node2D, record: Dictionary) ->
 	actor.call("_sync_ammo_from_inventory", false)
 
 
-static func _restore_world(game: Node, world: Dictionary, warnings: Array[String]) -> void:
+static func _restore_world(game: Node, world: Dictionary, warnings: Array[String]) -> Dictionary:
 	var activated: Dictionary = {}
 	for value: Variant in world.get("activated_scene_indices", []) as Array:
 		activated[int(value)] = true
 	game.set("activated_mission_scenes", activated)
 	game.set("field_inventory", _string_dictionary(world.get("field_inventory", {})))
-	var remaining_pickups: Dictionary = {}
-	for value: Variant in world.get("remaining_field_pickup_scene_indices", []) as Array:
-		remaining_pickups[int(value)] = true
-	var pickup_array := _array_property(game, "field_pickups")
-	for index: int in range(pickup_array.size() - 1, -1, -1):
-		var pickup: Variant = pickup_array[index]
-		if pickup is Node and is_instance_valid(pickup) and not remaining_pickups.has(int((pickup as Node).get("scene_index"))):
-			(pickup as Node).queue_free()
-			pickup_array.remove_at(index)
-	var prop_records: Dictionary = {}
-	for record_value: Variant in world.get("explosive_props", []) as Array:
-		if record_value is Dictionary:
-			prop_records[int((record_value as Dictionary).get("scene_index", -1))] = record_value
-	var prop_array := _array_property(game, "explosive_props")
-	for index: int in range(prop_array.size() - 1, -1, -1):
-		var prop: Variant = prop_array[index]
-		if not prop is Node or not is_instance_valid(prop):
-			prop_array.remove_at(index)
+	var split_ordered_names: Dictionary = {}
+	var raw_split_ordered_names: Variant = world.get("m010_split_ordered_names", {})
+	if raw_split_ordered_names is Dictionary:
+		for name_value: Variant in (raw_split_ordered_names as Dictionary).keys():
+			if bool((raw_split_ordered_names as Dictionary)[name_value]):
+				split_ordered_names[str(name_value)] = true
+	game.set("m010_split_ordered_names", split_ordered_names)
+	game.set(
+		"victory_presentation_completed",
+		bool(world.get("victory_presentation_completed", true)),
+	)
+	var buried: Dictionary = {}
+	for value: Variant in world.get("buried_enemy_scene_indices", []) as Array:
+		buried[int(value)] = true
+	game.set("buried_enemy_scene_indices", buried)
+	for enemy_value: Variant in _array_property(game, "enemies"):
+		if not enemy_value is Node2D or not is_instance_valid(enemy_value):
 			continue
-		var prop_scene := int((prop as Node).get("scene_index"))
-		if not prop_records.has(prop_scene):
-			(prop as Node).queue_free()
-			prop_array.remove_at(index)
-		else:
-			(prop as Node).set("hit_points", maxi(int((prop_records[prop_scene] as Dictionary).get("hit_points", 1)), 1))
-			(prop as Node).queue_redraw()
+		var enemy := enemy_value as Node2D
+		if buried.has(int(enemy.get("scene_index"))):
+			enemy.visible = false
+			enemy.process_mode = Node.PROCESS_MODE_DISABLED
+	var snapshot_presence: Dictionary = {}
+	var raw_snapshot_presence: Variant = world.get("snapshot_presence", {})
+	if raw_snapshot_presence is Dictionary:
+		snapshot_presence = raw_snapshot_presence as Dictionary
+	var has_field_pickup_snapshot := bool(
+		snapshot_presence.get(
+			"field_pickups",
+			world.has("remaining_field_pickup_scene_indices"),
+		)
+	)
+	var has_explosive_prop_snapshot := bool(
+		snapshot_presence.get(
+			"explosive_props",
+			world.has("explosive_props"),
+		)
+	)
+	if has_field_pickup_snapshot:
+		var remaining_pickups: Dictionary = {}
+		for value: Variant in world.get("remaining_field_pickup_scene_indices", []) as Array:
+			remaining_pickups[int(value)] = true
+		var pickup_array := _array_property(game, "field_pickups")
+		for index: int in range(pickup_array.size() - 1, -1, -1):
+			var pickup: Variant = pickup_array[index]
+			if pickup is Node and is_instance_valid(pickup) and not remaining_pickups.has(int((pickup as Node).get("scene_index"))):
+				(pickup as Node).queue_free()
+				pickup_array.remove_at(index)
+	if has_explosive_prop_snapshot:
+		var prop_records: Dictionary = {}
+		for record_value: Variant in world.get("explosive_props", []) as Array:
+			if record_value is Dictionary:
+				prop_records[int((record_value as Dictionary).get("scene_index", -1))] = record_value
+		var prop_array := _array_property(game, "explosive_props")
+		for index: int in range(prop_array.size() - 1, -1, -1):
+			var prop: Variant = prop_array[index]
+			if not prop is Node or not is_instance_valid(prop):
+				prop_array.remove_at(index)
+				continue
+			var prop_scene := int((prop as Node).get("scene_index"))
+			if not prop_records.has(prop_scene):
+				(prop as Node).queue_free()
+				prop_array.remove_at(index)
+			else:
+				(prop as Node).set("hit_points", maxi(int((prop_records[prop_scene] as Dictionary).get("hit_points", 1)), 1))
+				(prop as Node).queue_redraw()
 	_restore_mission_pickups(game, world.get("mission_pickups", []) as Array)
 	_restore_mines(game, world.get("deployed_mines", []) as Array, warnings)
+	_restore_legacy_special_world_objects(
+		game,
+		world.get("legacy_special_world_objects", []) as Array,
+		warnings,
+	)
+	_restore_legacy_ai_control_effects(
+		game,
+		world.get("legacy_ai_control_effects", []) as Array,
+		warnings,
+	)
 	_restore_projectiles(game, world.get("projectiles", []) as Array, warnings)
+	var direction_runtime: Variant = game.get("mission_direction_runtime")
+	var direction_state: Variant = world.get("mission_direction", {})
+	var mission_direction_restored := false
+	if direction_state is Dictionary and not (direction_state as Dictionary).is_empty():
+		if (
+			direction_runtime is Node
+			and (direction_runtime as Node).has_method("restore_state")
+		):
+			mission_direction_restored = bool(
+				(direction_runtime as Node).call("restore_state", direction_state)
+			)
+		if not mission_direction_restored:
+			warnings.append("mission direction state could not be restored")
+	var ai_coordinator: Variant = game.get("mission_ai_coordinator")
+	var ai_state: Variant = world.get("mission_ai_coordinator", {})
+	if (
+		ai_state is Dictionary
+		and not (ai_state as Dictionary).is_empty()
+		and ai_coordinator is Node
+		and (ai_coordinator as Node).has_method("restore_state")
+		and not bool((ai_coordinator as Node).call("restore_state", ai_state))
+	):
+		warnings.append("mission AI coordinator state could not be restored")
+	return {"mission_direction_restored": mission_direction_restored}
 
 
 static func _restore_mission_pickups(game: Node, records: Array) -> void:
@@ -585,6 +727,107 @@ static func _restore_mines(game: Node, records: Array, warnings: Array[String]) 
 		if game.has_method("_on_world_explosion_requested"):
 			mine.connect("explosion_requested", Callable(game, "_on_world_explosion_requested"))
 		mine_array.append(mine)
+
+
+static func _restore_legacy_special_world_objects(
+	game: Node,
+	records: Array,
+	warnings: Array[String],
+) -> void:
+	var object_array := _array_property(game, "legacy_special_world_objects")
+	for object_value: Variant in object_array:
+		if object_value is Node and is_instance_valid(object_value):
+			(object_value as Node).queue_free()
+	object_array.clear()
+	if not game.has_method("_spawn_legacy_special_world_object"):
+		if not records.is_empty():
+			warnings.append("legacy special world objects are unsupported by this runtime")
+		return
+	for record_value: Variant in records:
+		if not record_value is Dictionary:
+			continue
+		var record := record_value as Dictionary
+		var attack_type := int(record.get("attack_type", 0))
+		var profile: Dictionary = LEGACY_SPECIAL_ACTION_PROFILES.profile_for_attack_type(
+			attack_type
+		)
+		if not LEGACY_SPECIAL_ACTION_PROFILES.is_world_object_attack(attack_type):
+			warnings.append("unknown legacy special world-object attack type %d" % attack_type)
+			continue
+		var owner := _find_actor_by_identity(
+			game,
+			int(record.get("owner_scene_index", -1)),
+			str(record.get("owner_display_name", "")),
+		)
+		var world_object: Variant = game.call(
+			"_spawn_legacy_special_world_object",
+			profile,
+			Vector2(float(record.get("x", 0.0)), float(record.get("y", 0.0))),
+			owner,
+			int(record.get("source_faction_id", 3)),
+		)
+		if (
+			not world_object is Node2D
+			or not (world_object as Node2D).has_method("restore_runtime_state")
+			or not bool((world_object as Node2D).call("restore_runtime_state", record))
+		):
+			if world_object is Node and is_instance_valid(world_object):
+				(world_object as Node).queue_free()
+			warnings.append("a legacy special world object could not be restored")
+
+
+static func _restore_legacy_ai_control_effects(
+	game: Node,
+	records: Array,
+	warnings: Array[String],
+) -> void:
+	var effect_array := _array_property(game, "legacy_ai_control_effects")
+	for effect_value: Variant in effect_array.duplicate():
+		if not effect_value is Node or not is_instance_valid(effect_value):
+			continue
+		var old_effect := effect_value as Node
+		if old_effect.has_method("release"):
+			old_effect.call("release")
+		else:
+			old_effect.queue_free()
+	effect_array.clear()
+	if not game.has_method("_apply_legacy_ai_control"):
+		if not records.is_empty():
+			warnings.append("legacy AI control effects are unsupported by this runtime")
+		return
+	var profile: Dictionary = LEGACY_SPECIAL_ACTION_PROFILES.profile_for_attack_type(11)
+	for record_value: Variant in records:
+		if not record_value is Dictionary:
+			continue
+		var record := record_value as Dictionary
+		var source := _find_actor_by_identity(
+			game,
+			int(record.get("source_scene_index", -1)),
+			str(record.get("source_display_name", "")),
+		)
+		var target := _find_actor_by_identity(
+			game,
+			int(record.get("target_scene_index", -1)),
+			str(record.get("target_display_name", "")),
+		)
+		if target == null:
+			warnings.append("a legacy AI control effect lost its target")
+			continue
+		var effect: Variant = game.call(
+			"_apply_legacy_ai_control",
+			profile,
+			source,
+			target,
+		)
+		if (
+			not effect is Node
+			or not (effect as Node).has_method("restore_elapsed_ticks")
+			or not bool((effect as Node).call(
+				"restore_elapsed_ticks",
+				int(record.get("elapsed_world_ticks", 0)),
+			))
+		):
+			warnings.append("a legacy AI control effect could not be restored")
 
 
 static func _restore_projectiles(game: Node, records: Array, warnings: Array[String]) -> void:

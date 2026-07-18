@@ -88,9 +88,24 @@ if ($LASTEXITCODE -ne 0) {
     throw "Godot world interactable tests failed with exit code $LASTEXITCODE."
 }
 
+& $GodotExecutable --headless --path $game --script 'res://tests/legacy_special_actions_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot legacy special-action tests failed with exit code $LASTEXITCODE."
+}
+
 & $GodotExecutable --headless --path $game --script 'res://tests/media_runtime_test.gd'
 if ($LASTEXITCODE -ne 0) {
     throw "Godot media catalog and fallback runtime tests failed with exit code $LASTEXITCODE."
+}
+
+& $GodotExecutable --headless --path $game --script 'res://tests/mission_direction_runtime_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot twelve-level mission direction tests failed with exit code $LASTEXITCODE."
+}
+
+& $GodotExecutable --headless --path $game --script 'res://tests/director_main_wiring_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot mission-director Main wiring tests failed with exit code $LASTEXITCODE."
 }
 
 & $GodotExecutable --headless --path $game --script 'res://tests/replay_validation_test.gd'
@@ -98,7 +113,8 @@ if ($LASTEXITCODE -ne 0) {
     throw "Godot deterministic replay tests failed with exit code $LASTEXITCODE."
 }
 
-& $GodotExecutable --headless --path $game --script 'res://tests/product_shell_test.gd'
+& $GodotExecutable --headless --path $game --quit-after 600 `
+    --script 'res://tests/product_shell_test.gd'
 if ($LASTEXITCODE -ne 0) {
     throw "Godot product shell tests failed with exit code $LASTEXITCODE."
 }
@@ -126,6 +142,15 @@ if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
         --script 'res://tests/navigation_stress_test.gd' -- --level=m004
     if ($LASTEXITCODE -ne 0) {
         throw "Godot dense navigation stress test failed with exit code $LASTEXITCODE."
+    }
+
+    $productUiProbeOutput = Join-Path $remakeRoot 'LocalAssets\qa\verify-product-ui'
+    New-Item -ItemType Directory -Force -Path $productUiProbeOutput | Out-Null
+    & $GodotExecutable --windowed --path $game `
+        --script 'res://tests/product_ui_probe.gd' -- `
+        "--output-dir=$productUiProbeOutput"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Godot product UI screenshot probe failed with exit code $LASTEXITCODE."
     }
 }
 

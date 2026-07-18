@@ -1,6 +1,8 @@
 class_name ExplosiveProp
 extends Node2D
 
+const WORLD_DEPTH: Script = preload("res://scripts/world_depth.gd")
+
 signal damage_taken(prop: Node2D, amount: int, remaining_hit_points: int, attacker: Node2D)
 signal explosion_requested(
 	prop: Node2D,
@@ -64,7 +66,7 @@ func configure(
 	has_exploded = false
 	resolved_visual_remaining = 0.0
 	visible = true
-	z_index = clampi(int(position.y) + 1, -4096, 4095)
+	z_index = WORLD_DEPTH.normal_z(position.y, 1)
 	_set_original_texture(original_texture)
 	queue_redraw()
 	return true

@@ -5,6 +5,9 @@ const MISSION_DATA: Script = preload("res://scripts/mission_data.gd")
 const MISSION_RUNTIME_SCRIPT: Script = preload("res://scripts/mission_runtime.gd")
 const MISSION_STATE: Script = preload("res://scripts/mission_state.gd")
 const NAVIGATION_GRID_DATA: Script = preload("res://scripts/navigation_grid_data.gd")
+const SPECIAL_PROFILES: Script = preload("res://scripts/legacy_special_action_profiles.gd")
+const MAIN_SCRIPT: Script = preload("res://scripts/main.gd")
+const TACTICAL_MAP_VIEW: Script = preload("res://scripts/tactical_map_view.gd")
 const LEVEL_IDS: Array[String] = [
 	"m000",
 	"m001",
@@ -18,6 +21,23 @@ const LEVEL_IDS: Array[String] = [
 	"m009",
 	"m010",
 	"m011",
+]
+const MINIMAP_GFL_IDS: Array[int] = [
+	1036, 1026, 1027, 1028, 1029, 1030, 1031, 1032, 1033, 1034, 1035, 1025,
+]
+const MINIMAP_CONTENT_BORDERS: Array[Vector2] = [
+	Vector2(13.0, 13.0),
+	Vector2(13.0, 13.0),
+	Vector2(13.0, 13.0),
+	Vector2(13.0, 13.0),
+	Vector2(3.0, 7.0),
+	Vector2(13.0, 13.0),
+	Vector2(13.0, 13.0),
+	Vector2(13.0, 13.0),
+	Vector2(13.0, 13.0),
+	Vector2(13.0, 13.0),
+	Vector2(13.0, 13.0),
+	Vector2(13.0, 13.0),
 ]
 const PLAYABLE_NAMES := {
 	"老赵": true,
@@ -64,6 +84,10 @@ func _init() -> void:
 		if navigation == null:
 			continue
 		var world_size: Dictionary = level["world_size"] as Dictionary
+		var world_size_vector := Vector2(
+			float(world_size["width"]),
+			float(world_size["height"]),
+		)
 		expect(
 			(
 				navigation.dimensions * navigation.cell_size
@@ -71,6 +95,31 @@ func _init() -> void:
 			),
 			"%s navigation dimensions match its rendered terrain" % level_id,
 		)
+		var minimap_path := ProjectSettings.globalize_path(
+			"res://../LocalAssets/converted/iblock/%d.png" % MINIMAP_GFL_IDS[LEVEL_IDS.find(level_id)]
+		)
+		var minimap_image := Image.new()
+		expect(
+			minimap_image.load(minimap_path) == OK,
+			"%s recovered minimap image loads" % level_id,
+		)
+		if not minimap_image.is_empty():
+			var minimap_size := Vector2(minimap_image.get_size())
+			var expected_border: Vector2 = MINIMAP_CONTENT_BORDERS[LEVEL_IDS.find(level_id)]
+			expect(
+				minimap_size.is_equal_approx(
+					world_size_vector / TACTICAL_MAP_VIEW.ORIGINAL_WORLD_UNITS_PER_MAP_PIXEL
+					+ expected_border * 2.0
+				),
+				"%s minimap is world/16 plus its recovered symmetric border" % level_id,
+			)
+			expect(
+				TACTICAL_MAP_VIEW.recovered_content_border(
+					minimap_size,
+					world_size_vector,
+				).is_equal_approx(expected_border),
+				"%s minimap content rectangle can align dynamic world markers" % level_id,
+			)
 		var expected_file_size: int = (
 			NAVIGATION_GRID_DATA.HEADER_SIZE
 			+ (
@@ -157,6 +206,9 @@ func _init() -> void:
 		"all 17,858 Layer 5 editor correction markers are preserved",
 	)
 	validate_sprite_manifests()
+	validate_special_action_assets()
+	validate_m000_farmland_depth()
+	validate_level_independent_inventory_icons()
 
 	if failures.is_empty():
 		print("Real imported-asset tests passed (%d checks)." % check_count)
@@ -214,6 +266,127 @@ func validate_sprite_manifests() -> void:
 	expect(manifest_count == EXPECTED_SPRITE_COUNT, "all 980 sprite manifests validate")
 	expect(group_count == EXPECTED_GROUP_COUNT, "all 2,775 animation groups validate")
 	expect(frame_count == EXPECTED_FRAME_COUNT, "all 11,898 animation frames validate")
+
+
+func validate_special_action_assets() -> void:
+	var converted_root := ProjectSettings.globalize_path("res://../LocalAssets/converted").simplify_path()
+	for attack_type: int in [8, 10]:
+		var profile: Dictionary = SPECIAL_PROFILES.profile_for_attack_type(attack_type)
+		var gfl_index := int(profile.get("original_gfl_index", 0))
+		var actor_type := int(profile.get("original_actor_type", 0))
+		var stem := "%04d" % gfl_index
+		var manifest_path := converted_root.path_join("sprite-frames").path_join(stem).path_join("sprite.json")
+		var manifest: Dictionary = load_json_dictionary(manifest_path)
+		expect(not manifest.is_empty(), "type %d GFL %d manifest loads" % [attack_type, gfl_index])
+		if not manifest.is_empty():
+			var header_values: Array = manifest.get("header_values", []) as Array
+			expect(
+				int(manifest.get("gfl_index", 0)) == gfl_index,
+				"type %d manifest preserves recovered GFL %d" % [attack_type, gfl_index],
+			)
+			expect(
+				header_values.size() >= 3 and int(header_values[2]) == actor_type,
+				"type %d GFL %d header preserves actor type %d" % [attack_type, gfl_index, actor_type],
+			)
+			expect(
+				not String(manifest.get("resource_name", "")).is_empty(),
+				"type %d GFL %d retains its original resource identity" % [attack_type, gfl_index],
+			)
+		var preview_path := converted_root.path_join("sprites").path_join("%s.png" % stem)
+		expect(FileAccess.file_exists(preview_path), "type %d GFL %d runtime preview exists" % [attack_type, gfl_index])
+		var image := Image.new()
+		expect(
+			image.load(preview_path) == OK and not image.is_empty(),
+			"type %d GFL %d runtime preview decodes" % [attack_type, gfl_index],
+		)
+	var game = MAIN_SCRIPT.new()
+	game.converted_root = converted_root
+	var type_8_visual: Dictionary = game.call("_load_legacy_special_visual", 470)
+	var type_10_visual: Dictionary = game.call("_load_legacy_special_visual", 900)
+	expect(
+		(type_8_visual.get("frames", []) as Array).size() == 1,
+		"type 8 runtime loads the one recovered GFL 470 frame",
+	)
+	expect(
+		(type_10_visual.get("frames", []) as Array).size() == 2,
+		"type 10 runtime loads both recovered GFL 900 animation frames",
+	)
+	expect(
+		int(type_10_visual.get("frame_hold_ticks", 0)) == 1,
+		"type 10 runtime preserves the recovered one-tick GFL 900 frame hold",
+	)
+	game.free()
+
+
+func validate_level_independent_inventory_icons() -> void:
+	var game = MAIN_SCRIPT.new()
+	game.converted_root = ProjectSettings.globalize_path(
+		"res://../LocalAssets/converted"
+	).simplify_path()
+	expect(
+		game.world_entities_by_scene.is_empty(),
+		"inventory icon validation starts without current-level pickup entities",
+	)
+	for action_key: String in [
+		"pistol_attack",
+		"rifle_attack",
+		"machine_gun_attack",
+		"dagger_attack",
+		"broadsword_attack",
+		"throwing_knife_attack",
+		"slingshot_attack",
+		"active_action",
+		"grenade_attack",
+		"active_action_alt",
+		"special_attack",
+	]:
+		expect(
+			game._inventory_icon_for(action_key, 0, "") != null,
+			"m000/m010 inventory weapon %s has a level-independent original or labelled fallback icon" % action_key,
+		)
+	for item_id: int in [36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 99]:
+		expect(
+			game._inventory_icon_for("", item_id, "") != null,
+			"m000/m010 inventory item %d has a stable grid icon" % item_id,
+		)
+	for item_key: String in ["uniform", "explosives"]:
+		expect(
+			game._inventory_icon_for("", 0, item_key) != null,
+			"m000/m010 mission item %s has a stable grid icon" % item_key,
+		)
+	game.free()
+
+
+func validate_m000_farmland_depth() -> void:
+	var level: Dictionary = IMPORTED_LEVEL_DATA.load_level("m000")
+	var field_base_count := 0
+	var rice_count := 0
+	var field_bases_are_background := true
+	var rice_uses_y_depth := true
+	for entity_value: Variant in level.get("entities", []) as Array:
+		var entity := entity_value as Dictionary
+		var database_entry_id := int(entity.get("database_entry_id", 0))
+		if database_entry_id in [336, 337]:
+			field_base_count += 1
+			var field_header := entity.get("database_header_values", []) as Array
+			field_bases_are_background = (
+				field_bases_are_background
+				and not field_header.is_empty()
+				and int(field_header[0]) == 1
+				and MAIN_SCRIPT.imported_entity_z_index(entity) == MAIN_SCRIPT.BACKGROUND_ENTITY_Z_INDEX
+			)
+		elif database_entry_id == 335:
+			rice_count += 1
+			var rice_header := entity.get("database_header_values", []) as Array
+			rice_uses_y_depth = (
+				rice_uses_y_depth
+				and not rice_header.is_empty()
+				and int(rice_header[0]) == 0
+				and MAIN_SCRIPT.imported_entity_z_index(entity)
+				== MAIN_SCRIPT.WORLD_DEPTH.normal_z(float(entity.get("reference_y", 0.0)))
+			)
+	expect(field_base_count == 22 and field_bases_are_background, "m000's 22 farmland base tiles stay behind actors")
+	expect(rice_count == 70 and rice_uses_y_depth, "m000's 70 individual rice plants retain baseline depth sorting")
 
 
 func validate_mission_runtime_bindings(level_id: String, level: Dictionary) -> void:

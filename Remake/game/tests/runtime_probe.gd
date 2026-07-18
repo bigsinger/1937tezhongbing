@@ -1,5 +1,7 @@
 extends SceneTree
 
+const WORLD_DEPTH: Script = preload("res://scripts/world_depth.gd")
+
 const MAIN_SCENE: PackedScene = preload("res://scenes/main.tscn")
 const OUTPUT_ARGUMENT_PREFIX := "--output-dir="
 const SAMPLE_FRAME_COUNT := 360
@@ -227,7 +229,7 @@ func run_probe() -> void:
 	expect(saw_animated_frame, "movement advances imported SPR animation frames", failures)
 	for unit in main.units:
 		expect(
-			unit.z_index == clampi(int(unit.position.y) + 1, -4096, 4095),
+			unit.z_index == WORLD_DEPTH.normal_z(unit.position.y, 1),
 			"unit z-order follows y",
 			failures
 		)
@@ -262,18 +264,22 @@ func run_probe() -> void:
 	var draw_calls := Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
 	var objects_drawn := Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)
 
-	var reset_event := InputEventKey.new()
-	reset_event.keycode = KEY_R
-	reset_event.pressed = true
-	main._unhandled_input(reset_event)
-	expect(main.selected_units.size() == 1, "R reset restores the initial selection", failures)
+	var run_walk_event := InputEventKey.new()
+	run_walk_event.keycode = KEY_R
+	run_walk_event.pressed = false
+	main._unhandled_input(run_walk_event)
 	expect(
-		main.units.size() == initial_unit_positions.size(), "R reset restores squad size", failures
+		main.selected_units.size() == main.units.size(),
+		"R preserves the current squad selection",
+		failures,
+	)
+	expect(
+		main.units.size() == initial_unit_positions.size(), "R does not rebuild the squad", failures
 	)
 	for index in range(main.units.size()):
 		expect(
-			main.units[index].position == initial_unit_positions[index],
-			"R reset restores an original unit position",
+			main.units[index].movement_mode_name() == "walk",
+			"R switches every selected unit from run to walk",
 			failures
 		)
 	expect(main.escorts.size() == 2, "m000 spawns both recovered rescue actors", failures)

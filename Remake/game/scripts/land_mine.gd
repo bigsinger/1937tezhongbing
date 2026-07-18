@@ -1,6 +1,8 @@
 class_name LandMine
 extends Node2D
 
+const WORLD_DEPTH: Script = preload("res://scripts/world_depth.gd")
+
 signal armed(mine: Node2D)
 signal triggered(mine: Node2D, target: Node2D)
 signal explosion_requested(
@@ -64,7 +66,7 @@ func configure(
 	state_elapsed = 0.0
 	trigger_target = null
 	visible = true
-	z_index = clampi(int(position.y) + 1, -4096, 4095)
+	z_index = WORLD_DEPTH.normal_z(position.y, 1)
 	queue_redraw()
 	return true
 

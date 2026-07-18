@@ -1,6 +1,8 @@
 class_name FieldPickup
 extends Node2D
 
+const WORLD_DEPTH: Script = preload("res://scripts/world_depth.gd")
+
 signal collected(pickup: Node2D, collector: Node, payload: Dictionary)
 
 const PICKUP_BEHAVIOR := "field_pickup"
@@ -40,7 +42,7 @@ func configure(
 		position = Vector2(float(entity_metadata["x"]), float(entity_metadata["y"]))
 	consumed = false
 	visible = true
-	z_index = clampi(int(position.y) + 2, -4096, 4095)
+	z_index = WORLD_DEPTH.normal_z(position.y, 2)
 	_set_original_texture(original_texture)
 	queue_redraw()
 	return true

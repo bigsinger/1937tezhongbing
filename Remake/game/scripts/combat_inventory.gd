@@ -99,27 +99,41 @@ func consume_active_attack() -> bool:
 	return consume_attack(_active_action_key)
 
 
-func consume_attack(action_key: String) -> bool:
+func can_consume_active_attack() -> bool:
+	return can_consume_attack(_active_action_key)
+
+
+func can_consume_attack(action_key: String) -> bool:
 	if not _weapons.has(action_key):
 		return false
 	var state := _weapons[action_key] as Dictionary
 	var capacity := int(state["magazine_capacity"])
-	# Recovered melee types 4/5 do not consume a stored item.  Other zero-capacity
-	# actions (mines/special world objects) consume their mapped 43/45/99 item
-	# directly instead of pretending to have a magazine.
+	var ammunition := int(state["ammo_per_attack"])
 	if capacity <= 0:
 		var attack_type := int((state["profile"] as Dictionary).get("attack_type", 0))
-		if attack_type in [4, 5]:
+		if attack_type in [4, 5, 11]:
+			return true
+		return ammunition > 0 and ammo_item_count(int(state["ammo_item_id"])) >= ammunition
+	return ammunition > 0 and int(state["magazine"]) >= ammunition
+
+
+func consume_attack(action_key: String) -> bool:
+	if not can_consume_attack(action_key):
+		return false
+	var state := _weapons[action_key] as Dictionary
+	var capacity := int(state["magazine_capacity"])
+	# Recovered melee types 4/5 do not consume a stored item. Recovered type 11
+	# also skips the item-removal path: sub_456DF0 sets a target flag but has no
+	# item-99 consumption call. Types 8/10 consume mapped items 43/45 directly.
+	if capacity <= 0:
+		var attack_type := int((state["profile"] as Dictionary).get("attack_type", 0))
+		if attack_type in [4, 5, 11]:
 			return true
 		var direct_item_cost := int(state["ammo_per_attack"])
 		var direct_item_id := int(state["ammo_item_id"])
-		if direct_item_cost <= 0 or ammo_item_count(direct_item_id) < direct_item_cost:
-			return false
 		remove_item(direct_item_id, direct_item_cost)
 		return true
 	var ammunition := int(state["ammo_per_attack"])
-	if ammunition <= 0 or int(state["magazine"]) < ammunition:
-		return false
 	state["magazine"] = int(state["magazine"]) - ammunition
 	magazine_changed.emit(action_key, int(state["magazine"]))
 	return true

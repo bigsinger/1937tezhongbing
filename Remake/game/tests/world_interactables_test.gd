@@ -5,6 +5,8 @@ const FIELD_PICKUP_SCRIPT: Script = preload("res://scripts/field_pickup.gd")
 const LAND_MINE_SCRIPT: Script = preload("res://scripts/land_mine.gd")
 const WORLD_PICKUP_CATALOG: Script = preload("res://scripts/world_pickup_catalog.gd")
 const MAIN_SCRIPT: Script = preload("res://scripts/main.gd")
+const MAIN_INPUT_HARNESS: Script = preload("res://tests/main_input_harness.gd")
+const NAVIGATION_GRID_DATA_SCRIPT: Script = preload("res://scripts/navigation_grid_data.gd")
 const SQUAD_UNIT_SCRIPT: Script = preload("res://scripts/squad_unit.gd")
 const COMBAT_PROFILES: Script = preload("res://scripts/combat_profiles.gd")
 const MISSION_DATA: Script = preload("res://scripts/mission_data.gd")
@@ -138,6 +140,7 @@ func _run_tests() -> void:
 	_test_explosive_prop_without_original_assets(failures)
 	_test_land_mine_arming_and_hostile_trigger(failures)
 	_test_main_inventory_and_explosion_integration(failures)
+	_test_special_world_deployment_product_entry(failures)
 	_test_mission_charge_policy_catalog(failures)
 	_test_charge_policy_activation_and_uniform_ghost(failures)
 	await _test_real_charge_policy_evidence(failures)
@@ -370,10 +373,80 @@ func _test_main_inventory_and_explosion_integration(failures: Array[String]) -> 
 		collector,
 	)
 	_expect(
-		collector.ammo_item_count(43) == 1,
-		"main stores a mine pickup as deployable item 43",
+		collector.ammo_item_count(43) == 1
+		and collector.has_inventory_weapon("active_action"),
+		"mine pickup stores item 43 and exposes the recovered type-8 action",
 		failures,
 	)
+	main._apply_field_pickup(
+		{
+			"original_display_name": "放在地上的炸药",
+			"scene_index": 5,
+			"grant": {"kind": "mission_item", "item_key": "explosives", "quantity": 1},
+		},
+		collector,
+	)
+	_expect(
+		int(main.field_inventory.get("explosives", 0)) == 1
+		and collector.ammo_item_count(45) == 1
+		and collector.has_inventory_weapon("active_action_alt"),
+		"explosives pickup keeps task inventory and exposes the recovered type-10 action",
+		failures,
+	)
+	main.current_mission = {"id": "m011"}
+	_expect(
+		main._grant_editorial_type_11_loadout()
+		and collector.has_inventory_weapon("special_attack")
+		and collector.ammo_item_count(99) == 1,
+		"m011 exposes the labelled reusable item-99 bridge for the type-11 lifecycle",
+		failures,
+	)
+	var bridge_bystander = SQUAD_UNIT_SCRIPT.new()
+	bridge_bystander.configure(
+		"bridge bystander",
+		Color.WHITE,
+		Vector2(10.0, 0.0),
+		null,
+		empty_groups,
+		empty_groups,
+		-1,
+		clear_sight,
+	)
+	bridge_bystander.configure_combat(3, 8, {}, empty_groups, empty_groups, true)
+	arena.add_child(bridge_bystander)
+	main.units.push_front(bridge_bystander)
+	_expect(
+		main._grant_editorial_type_11_loadout()
+		and collector.ammo_item_count(99) == 1
+		and not bridge_bystander.has_inventory_weapon("special_attack")
+		and bridge_bystander.ammo_item_count(99) == 0,
+		"reapplying the m011 compatibility bridge reuses the saved holder without duplicating item 99",
+		failures,
+	)
+	main.units.erase(bridge_bystander)
+	bridge_bystander.queue_free()
+	var friendly_target = SQUAD_UNIT_SCRIPT.new()
+	friendly_target.configure(
+		"friendly target",
+		Color.WHITE,
+		Vector2(20.0, 0.0),
+		null,
+		empty_groups,
+		empty_groups,
+		-1,
+		clear_sight,
+	)
+	friendly_target.configure_combat(3, 8, {}, empty_groups, empty_groups, true)
+	arena.add_child(friendly_target)
+	_expect(
+		not collector.can_attack_target(friendly_target)
+		and collector.can_attack_target(friendly_target, true)
+		and collector.issue_attack(friendly_target, true)
+		and collector.combat_target_forced,
+		"held Ctrl/Up force-target orders can deliberately target a non-hostile actor",
+		failures,
+	)
+	collector.clear_combat_target()
 	collector.current_hit_points = 4
 	main._apply_field_pickup(
 		{
@@ -415,6 +488,143 @@ func _test_main_inventory_and_explosion_integration(failures: Array[String]) -> 
 	main.units.clear()
 	main.explosive_props.clear()
 	main.free()
+	arena.queue_free()
+
+
+func _test_special_world_deployment_product_entry(failures: Array[String]) -> void:
+	var arena := Node2D.new()
+	root.add_child(arena)
+	var main = MAIN_INPUT_HARNESS.new()
+	arena.add_child(main)
+	var clear_sight := ClearSight.new()
+	var empty_groups: Array[Dictionary] = []
+	var unit = SQUAD_UNIT_SCRIPT.new()
+	unit.configure(
+		"deployment operator",
+		Color.WHITE,
+		Vector2.ZERO,
+		null,
+		empty_groups,
+		empty_groups,
+		-1,
+		clear_sight,
+	)
+	unit.configure_combat(
+		3,
+		20,
+		COMBAT_PROFILES.weapon_profile("pistol_attack"),
+		empty_groups,
+		empty_groups,
+		false,
+	)
+	main.add_child(unit)
+	main.units.append(unit)
+	main.selected_units.append(unit)
+	unit.set_selected(true)
+	main._connect_combatant(unit)
+
+	var mine_profile: Dictionary = COMBAT_PROFILES.weapon_profile_for_attack_type(8)
+	_expect(
+		unit.register_inventory_weapon(mine_profile, empty_groups, false, true),
+		"type-8 deployable can be equipped through the player inventory",
+		failures,
+	)
+	_expect(unit.add_ammo_item(43, 1) == 1, "type-8 test operator receives one recovered mine item", failures)
+	var deployment_point := Vector2(8.0, 0.0)
+	_expect(
+		main._try_issue_legacy_world_object_deployment(deployment_point),
+		"an empty-world left click enters the type-8 deployment command path",
+		failures,
+	)
+	_expect(
+		main.legacy_deployment_targets.size() == 1
+		and unit.combat_target == main.legacy_deployment_targets[0]
+		and unit.combat_target_forced,
+		"the product command retains its deployment target until the hit frame",
+		failures,
+	)
+	unit._physics_process(0.01)
+	_expect(unit.ammo_item_count(43) == 0, "the deployment attack consumes one item-43 charge", failures)
+	_expect(main.legacy_deployment_targets.is_empty(), "the transient command target is retired after the hit frame", failures)
+	_expect(
+		main.legacy_special_world_objects.size() == 1
+		and int(main.legacy_special_world_objects[0].get("attack_type")) == 8
+		and main.legacy_special_world_objects[0].position == deployment_point,
+		"the hit frame creates the authoritative type-8 world object at the clicked point",
+		failures,
+	)
+
+	unit.add_ammo_item(43, 3)
+	unit.dynamic_occupancy = null
+	_expect(
+		main._try_issue_legacy_world_object_deployment(Vector2(100.0, 0.0))
+		and main.legacy_deployment_targets.size() == 1,
+		"a second deployment command may wait while the operator approaches",
+		failures,
+	)
+	unit._physics_process(0.01)
+	_expect(not unit.movement_path.is_empty(), "the pending deployment may create an approach path", failures)
+	main._equip_selected_attack_type(1)
+	_expect(
+		main.legacy_deployment_targets.is_empty()
+		and unit.movement_path.is_empty()
+		and unit.combat_target == null
+		and unit.ammo_item_count(43) == 3,
+		"switching weapons cancels the pending target, approach path, and reserved goal without consuming it",
+		failures,
+	)
+	main._equip_selected_attack_type(8)
+	_expect(
+		main._try_issue_legacy_world_object_deployment(Vector2(12.0, 0.0))
+		and main.legacy_deployment_targets.size() == 1,
+		"the deployable can be selected again after cancellation",
+		failures,
+	)
+	var superseded_target: Node2D = main.legacy_deployment_targets[0]
+	_expect(
+		main._try_issue_legacy_world_object_deployment(Vector2(16.0, 0.0))
+		and main.legacy_deployment_targets.size() == 1
+		and main.legacy_deployment_targets[0] != superseded_target
+		and unit.ammo_item_count(43) == 3,
+		"a new deployment replaces the operator's old pending target without consuming it",
+		failures,
+	)
+	main.issue_formation_move(Vector2(24.0, 0.0))
+	_expect(
+		main.legacy_deployment_targets.is_empty() and unit.ammo_item_count(43) == 3,
+		"a movement order cancels the pending deployment without leaking or consuming ammunition",
+		failures,
+	)
+
+	var blocked_navigation = NAVIGATION_GRID_DATA_SCRIPT.new()
+	blocked_navigation.dimensions = Vector2i(3, 3)
+	blocked_navigation.cell_size = Vector2i(20, 20)
+	var blocked_cells := PackedInt64Array()
+	blocked_cells.resize(9)
+	blocked_cells.fill(1)
+	blocked_navigation.layers[blocked_navigation.MOVEMENT_LAYER_ID] = blocked_cells
+	blocked_navigation.prepare_astar()
+	main.navigation_grid = blocked_navigation
+	_expect(
+		main._try_issue_legacy_world_object_deployment(Vector2(50.0, 50.0))
+		and main.legacy_deployment_targets.is_empty()
+		and unit.ammo_item_count(43) == 3,
+		"an unreachable deployment point is rejected without a target leak or ammunition loss",
+		failures,
+	)
+	main.navigation_grid = null
+	_expect(
+		main._try_issue_legacy_world_object_deployment(Vector2(20.0, 0.0))
+		and main.legacy_deployment_targets.size() == 1,
+		"a valid pending deployment can be issued before the operator dies",
+		failures,
+	)
+	unit.take_damage(unit.maximum_hit_points, null)
+	_expect(
+		main.legacy_deployment_targets.is_empty() and unit.ammo_item_count(43) == 3,
+		"operator death cancels the pending deployment without consuming ammunition",
+		failures,
+	)
 	arena.queue_free()
 
 

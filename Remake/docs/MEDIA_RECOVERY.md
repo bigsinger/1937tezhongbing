@@ -73,13 +73,13 @@ media.play_movie("historical_intro")
 
 `show_briefing()` 即使没有图片也会显示调用者提供的标题和目标文字；返回值只表示是否使用了原简报图。音频或视频缺失时方法返回 `false` 并发出 `media_unavailable`，任务逻辑继续运行。
 
-主场景已经在每次非 headless 切关时调用 `show_briefing()`；`--skip-briefing` 可供自动探针跳过。攻击、飞镖/弹弓命中、爆炸、警报、队员选择/命令确认、死亡和 UI 确认也已经映射到原 WAV 事件。媒体导演固定创建一个语音/对白播放器和 8 个 SFX 播放器：对白/角色语音不会被枪声截断，武器、爆炸、环境和 UI 音可以重叠；空闲 SFX 槽按确定性轮询选择，池满时也只复用一个固定槽，不会无限创建音频节点。简报、对白、视频和结局图都是模态层：打开时暂停任务计时、AI、移动与战斗，导演自身以 `PROCESS_MODE_WHEN_PAUSED` 继续接收 Enter/Space/Esc；关闭最后一个模态层时恢复打开前的 SceneTree 暂停状态，连续切换不同媒体不会产生短暂解冻。`play_movie()` 与 `start_dialogue()` 是已测试的可用框架；任务 cue 已接入少量真实流程，但没有把 logo/历史片和十二关对白全部编排完成，也没有声称恢复了逐场对白或镜头。
+主场景已经在每次非 headless 切关时调用 `show_briefing()`；`--skip-briefing` 可供自动探针跳过。攻击、飞镖/弹弓命中、爆炸、警报、队员选择/命令确认、死亡和 UI 确认也已经映射到原 WAV 事件。媒体导演固定创建独立音乐/环境声播放器、一个语音/对白播放器和 8 个 SFX 播放器：前者进入 `Music`，对白/角色语音进入 `Voice`，武器、爆炸、环境事件和 UI 音进入 `Sfx`；影片播放器的音轨也进入 `Music`。对白不会被枪声截断，多个音效可以重叠；空闲 SFX 槽按确定性轮询选择，池满时也只复用一个固定槽，不会无限创建音频节点。简报、对白、视频和结局图都是模态层：打开时暂停任务计时、AI、移动与战斗，导演自身以 `PROCESS_MODE_WHEN_PAUSED` 继续接收输入；Enter/Space 继续，`Esc` 必须在松开时才提交关闭/跳过，以免穿透到下层系统菜单。关闭最后一个模态层时恢复打开前的 SceneTree 暂停状态，连续切换不同媒体不会产生短暂解冻。`play_movie()` 与 `start_dialogue()` 是已测试的可用框架；任务 cue 已接入少量真实流程，但没有把 logo/历史片和十二关对白全部编排完成，也没有声称恢复了逐场对白或镜头。
 
 ### 任务媒体 cue
 
 `missions.json` 可选的 `media_cues` 让任务状态机在 `on_start`、`on_objective`、`on_story_anchor` 和 `on_victory` 调用同一个媒体导演；cue 类型可以是 `audio`、`dialogue`、`movie` 或 `ending`。所有 cue 都必须带 `source_status`：`recovered_media_mapping` 表示媒体身份/位置有原资源映射证据，`remake_editorial` 表示为可玩性新增的编排提示，`mixed` 则要求两者并存时明确承认边界。
 
-当前正式任务接线为：m000 简报关闭后显示重制教程提示，营救彭鑫后播放老赵 `acknowledge`；m006 首次完成 scene 1461 接头点后显示重制提示对白；m011 胜利后显示恢复映射的结局图。前两关的提示文字和触发时机均不冒充原对白；剧情锚点只有在事件首次推进目标时才播放，重复持久事实不重弹。其余九关仍只有通用简报/WAV 能力，没有宣称完成逐关任务媒体编排。
+原有 `missions.json/media_cues` 接线仍负责 m000 的教程提示与确认音、m006 的接头点提示、m011 的恢复结局图。除此之外，十二关第一版关内对白节奏、镜头提示和教程门控已经放入独立的 `mission_direction.json`，由 `MissionDirectionRuntime` 派发，并可直接把文字序列送入本 `MediaDirector`。该目录共 43 个节奏节点、45 行补写对白；所有补写文本均标为 `remake_editorial`，不会宣称为原版对白。完整来源边界和逐关表见 `MISSION_DIRECTION.md`。
 
 对白序列支持纯文字、指定 WAV 索引或按事件/角色选择音频：
 
@@ -101,7 +101,7 @@ media.start_dialogue("m000_rescue", [
 ])
 ```
 
-每行必须有非空 `text`；`speaker`、`audio_index`、`audio_event`、`actor_key`、`minimum_seconds` 和 `auto_advance` 可选。Enter/Space 前进，Esc 跳过。这样任务可以先以完整文字流程交付，之后再逐句补录或绑定合法语音，而无需改任务状态机。
+每行必须有非空 `text`；`speaker`、`audio_index`、`audio_event`、`actor_key`、`minimum_seconds` 和 `auto_advance` 可选。Enter/Space 前进，松开 Esc 跳过。这样任务可以先以完整文字流程交付，之后再逐句补录或绑定合法语音，而无需改任务状态机。
 
 ## 视频转换
 
@@ -127,8 +127,8 @@ Godot 不直接播放旧 MPEG-PS。使用 FFmpeg 6 或更新版本转换为 Ogg 
 ## 验证
 
 - C# 合成测试验证简报、示意图、结局、角色/事件分类、variant 顺序和 bonus 安全标记，不读取原资源。
-- `media_runtime_test.gd` 在完全没有 `LocalAssets` 时验证 46 项：元数据、对白 schema、简报文字降级、音视频缺失返回/信号、1 路语音/对白与固定 8 路 SFX 分流、空闲/饱和池的确定性槽位选择、对白自动前进只等待语音通道，以及简报—对白—结局连续切换、外部预暂停和离树清理时的暂停恢复。
-- 本地存在生成目录时，`real_media_test.gd` 审计十二张简报、十二张示意图、128 个 WAV 的存在与 Godot 解码，以及 `126 SLF + 2 GFL-only` 来源闭环；当前完整本地资产并已转码 logo 的基线为 310 项，其中最后一项实际启动 Theora 播放器（未转码 logo 时为 309 项必需审计）。
+- `media_runtime_test.gd` 在完全没有 `LocalAssets` 时验证元数据、对白 schema、简报文字降级、音视频缺失返回/信号、Music/Voice/固定 8 路 SFX 分流、影片音轨总线、Esc 松开语义、空闲/饱和池的确定性槽位选择、对白自动前进只等待语音通道，以及简报—对白—结局连续切换、外部预暂停和离树清理时的暂停恢复。
+- 本地存在生成目录时，`real_media_test.gd` 审计十二张简报、十二张示意图、128 个 WAV 的存在与 Godot 解码，以及 `126 SLF + 2 GFL-only` 来源闭环；若已转码 logo，还会实际启动 Theora 播放器。套件在日志中输出当前检查数，文档不固定复制易过期计数。
 - `Check-NoOriginalAssets.ps1` 继续禁止 WAV、SVT、VWF、GFL 和生成资产进入提交。
 
 ## 仍需人工恢复的边界

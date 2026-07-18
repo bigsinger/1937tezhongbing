@@ -60,4 +60,21 @@ if ($LASTEXITCODE -ne 0) {
     throw "Godot runtime probe failed with exit code $LASTEXITCODE."
 }
 
+$productUiOutput = Join-Path $OutputDirectory 'product-ui'
+New-Item -ItemType Directory -Force -Path $productUiOutput | Out-Null
+$productUiLog = Join-Path $OutputDirectory 'product-ui.log'
+& $GodotExecutable `
+    --path $gameDirectory `
+    --windowed `
+    --max-fps 60 `
+    --disable-vsync `
+    --log-file $productUiLog `
+    --script 'res://tests/product_ui_probe.gd' `
+    -- `
+    "--output-dir=$productUiOutput"
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot product UI probe failed with exit code $LASTEXITCODE."
+}
+
 Write-Host "Runtime probe output: $OutputDirectory"
+Write-Host "Product UI screenshots: $productUiOutput"

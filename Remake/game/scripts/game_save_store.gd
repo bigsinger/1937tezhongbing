@@ -33,14 +33,21 @@ static func empty_session(level_id: String = "m000") -> Dictionary:
 		"enemies": [],
 		"escorts": [],
 		"world": {
+			"snapshot_presence": {
+				"field_pickups": true,
+				"explosive_props": true,
+			},
 			"activated_scene_indices": [],
 			"collected_scene_indices": [],
 			"destroyed_scene_indices": [],
+			"buried_enemy_scene_indices": [],
 			"remaining_field_pickup_scene_indices": [],
 			"explosive_props": [],
 			"mission_pickups": [],
 			"field_inventory": {},
 			"deployed_mines": [],
+			"legacy_special_world_objects": [],
+			"legacy_ai_control_effects": [],
 			"projectiles": [],
 		},
 	}
@@ -70,12 +77,14 @@ func save_slot(
 	if bool(previous.get("ok", false)):
 		revision = int((previous["data"] as Dictionary).get("revision", 0)) + 1
 	var resolved_campaign := default_campaign() if campaign.is_empty() else _normalize_campaign(campaign)
+	var saved_at_unix_msec := roundi(Time.get_unix_time_from_system() * 1000.0)
 	var document := {
 		"schema_version": SCHEMA_VERSION,
 		"game_id": GAME_ID,
 		"slot_id": slot_id,
 		"revision": revision,
-		"saved_at_unix": int(Time.get_unix_time_from_system()),
+		"saved_at_unix": int(saved_at_unix_msec / 1000),
+		"saved_at_unix_msec": saved_at_unix_msec,
 		"campaign": resolved_campaign,
 		"session": _normalize_session(session),
 	}
@@ -152,12 +161,37 @@ func list_slots() -> Array[Dictionary]:
 				"slot_id": slot_id,
 				"revision": int(document["revision"]),
 				"saved_at_unix": int(document["saved_at_unix"]),
+				"saved_at_unix_msec": int(document["saved_at_unix_msec"]),
 				"level_id": str(session["level_id"]),
 				"elapsed_seconds": float(session["elapsed_seconds"]),
 				"recovered": bool(result.get("recovered", false)),
 			}
 		)
 	return slots
+
+
+static func slot_summary_is_newer(first: Dictionary, second: Dictionary) -> bool:
+	var first_msec := int(
+		first.get(
+			"saved_at_unix_msec",
+			int(first.get("saved_at_unix", 0)) * 1000,
+		)
+	)
+	var second_msec := int(
+		second.get(
+			"saved_at_unix_msec",
+			int(second.get("saved_at_unix", 0)) * 1000,
+		)
+	)
+	if first_msec != second_msec:
+		return first_msec > second_msec
+	var first_revision := int(first.get("revision", 0))
+	var second_revision := int(second.get("revision", 0))
+	if first_revision != second_revision:
+		return first_revision > second_revision
+	var first_slot := str(first.get("slot_id", ""))
+	var second_slot := str(second.get("slot_id", ""))
+	return first_slot.naturalnocasecmp_to(second_slot) < 0
 
 
 func slot_path(slot_id: String) -> String:
@@ -204,6 +238,13 @@ func _is_current_document(document: Dictionary) -> bool:
 		or not is_valid_slot_id(str(document.get("slot_id", "")))
 		or int(document.get("revision", 0)) < 1
 		or int(document.get("saved_at_unix", -1)) < 0
+		or (
+			document.has("saved_at_unix_msec")
+			and (
+				not _is_number(document["saved_at_unix_msec"])
+				or int(document["saved_at_unix_msec"]) < 0
+			)
+		)
 		or not document.get("campaign") is Dictionary
 		or not document.get("session") is Dictionary
 	):
@@ -249,8 +290,21 @@ func _is_valid_session(session: Dictionary) -> bool:
 	if not mission.get("durable_facts", []) is Array:
 		return false
 	var world := session["world"] as Dictionary
+	if world.has("snapshot_presence"):
+		var raw_presence: Variant = world["snapshot_presence"]
+		if not raw_presence is Dictionary:
+			return false
+		for presence_key: String in ["field_pickups", "explosive_props"]:
+			if (
+				(raw_presence as Dictionary).has(presence_key)
+				and not (raw_presence as Dictionary)[presence_key] is bool
+			):
+				return false
 	for key: String in ["activated_scene_indices", "collected_scene_indices", "destroyed_scene_indices", "deployed_mines"]:
 		if not world.get(key) is Array:
+			return false
+	for optional_key: String in ["buried_enemy_scene_indices", "legacy_special_world_objects", "legacy_ai_control_effects"]:
+		if world.has(optional_key) and not world.get(optional_key) is Array:
 			return false
 	if not world.get("field_inventory") is Dictionary:
 		return false
@@ -268,7 +322,27 @@ func _normalize_session(session: Dictionary) -> Dictionary:
 	normalized["mission"] = (session.get("mission", normalized["mission"]) as Dictionary).duplicate(true)
 	for group_name: String in ["squad", "enemies", "escorts"]:
 		normalized[group_name] = (session.get(group_name, []) as Array).duplicate(true)
-	normalized["world"] = (session.get("world", normalized["world"]) as Dictionary).duplicate(true)
+	var normalized_world := (normalized["world"] as Dictionary).duplicate(true)
+	var source_world: Variant = session.get("world", {})
+	if source_world is Dictionary:
+		var source_world_dictionary := source_world as Dictionary
+		var raw_presence: Variant = source_world_dictionary.get("snapshot_presence")
+		var snapshot_presence := {
+			"field_pickups": source_world_dictionary.has(
+				"remaining_field_pickup_scene_indices"
+			),
+			"explosive_props": source_world_dictionary.has("explosive_props"),
+		}
+		if raw_presence is Dictionary:
+			for presence_key: String in snapshot_presence:
+				if (raw_presence as Dictionary).get(presence_key) is bool:
+					snapshot_presence[presence_key] = bool(
+						(raw_presence as Dictionary)[presence_key]
+					)
+		for world_key: Variant in (source_world as Dictionary).keys():
+			normalized_world[world_key] = (source_world as Dictionary)[world_key]
+		normalized_world["snapshot_presence"] = snapshot_presence
+	normalized["world"] = normalized_world
 	return normalized
 
 
@@ -290,19 +364,40 @@ func _normalize_campaign(campaign: Dictionary) -> Dictionary:
 func _migrate_document(document: Dictionary, requested_slot_id: String) -> Dictionary:
 	var source_version := int(document.get("schema_version", 0))
 	if source_version == SCHEMA_VERSION:
-		return document.duplicate(true)
+		var normalized_document := document.duplicate(true)
+		normalized_document["saved_at_unix_msec"] = int(
+			document.get(
+				"saved_at_unix_msec",
+				int(document.get("saved_at_unix", 0)) * 1000,
+			)
+		)
+		normalized_document["session"] = _normalize_session(
+			document.get("session", {}) as Dictionary
+		)
+		return normalized_document
 	var raw_session: Dictionary
 	if document.get("session") is Dictionary:
 		raw_session = (document["session"] as Dictionary).duplicate(true)
 	else:
 		raw_session = empty_session(str(document.get("level_id", "m000")))
 		raw_session["elapsed_seconds"] = maxf(float(document.get("elapsed_seconds", 0.0)), 0.0)
+		(raw_session["world"] as Dictionary)["snapshot_presence"] = {
+			"field_pickups": false,
+			"explosive_props": false,
+		}
 	return {
 		"schema_version": SCHEMA_VERSION,
 		"game_id": GAME_ID,
 		"slot_id": requested_slot_id,
 		"revision": maxi(int(document.get("revision", 1)), 1),
 		"saved_at_unix": maxi(int(document.get("saved_at_unix", 0)), 0),
+		"saved_at_unix_msec": maxi(
+			int(document.get(
+				"saved_at_unix_msec",
+				maxi(int(document.get("saved_at_unix", 0)), 0) * 1000,
+			)),
+			0,
+		),
 		"campaign": _normalize_campaign(document.get("campaign", default_campaign()) as Dictionary),
 		"session": _normalize_session(raw_session),
 	}

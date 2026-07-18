@@ -106,6 +106,7 @@ $outputAssets = Join-Path $outputRoot 'LocalAssets'
 $outputExecutable = Join-Path $outputGame '1937Remake.exe'
 $outputPack = Join-Path $outputGame '1937Remake.pck'
 $smokeLog = Join-Path $outputRoot 'smoke-test.log'
+$executableSmokeLog = Join-Path $outputRoot 'executable-smoke-test.log'
 
 Write-Host "Godot: $godot ($version)"
 Write-Host "Output: $outputRoot"
@@ -203,9 +204,30 @@ if ($smokeText -match '(?m)^(SCRIPT ERROR|ERROR:)') {
     throw "Playable smoke test logged an engine or script error. See $smokeLog."
 }
 
+# Exercise the exact copied/exported product binary as well as the PCK through
+# the editor executable. This catches basename, working-directory, runner and
+# side-by-side packaging mistakes that --main-pack alone cannot detect.
+$executableSmoke = Start-Process `
+    -FilePath $outputExecutable `
+    -ArgumentList @(
+        '--headless', '--quit-after', '8', '--log-file', $executableSmokeLog
+    ) `
+    -WorkingDirectory $outputGame `
+    -WindowStyle Hidden `
+    -Wait `
+    -PassThru
+if ($executableSmoke.ExitCode -ne 0) {
+    throw "Playable executable smoke test failed with exit code $($executableSmoke.ExitCode). See $executableSmokeLog."
+}
+$executableSmokeText = Get-Content -LiteralPath $executableSmokeLog -Raw -Encoding utf8
+if ($executableSmokeText -match '(?m)^(SCRIPT ERROR|ERROR:)') {
+    throw "Playable executable smoke test logged an engine or script error. See $executableSmokeLog."
+}
+
 $packHash = (Get-FileHash -LiteralPath $outputPack -Algorithm SHA256).Hash
 Write-Host ''
 Write-Host 'Playable build completed.'
 Write-Host "Launch: $(Join-Path $outputRoot 'Play-1937-Remake.cmd')"
 Write-Host "PCK SHA-256: $packHash"
-Write-Host "Smoke test: passed ($smokeLog)"
+Write-Host "PCK smoke test: passed ($smokeLog)"
+Write-Host "Executable smoke test: passed ($executableSmokeLog)"

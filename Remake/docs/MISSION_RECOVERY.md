@@ -14,7 +14,7 @@
 
 这些内容已经整理在 `game/data/missions.json`，由通用 `MissionState` 计算进度，并通过 `MissionRuntime` 与实际关卡实体连接。当前主场景已能从战斗和交互产生救援、角色击毙、物品拾取、爆破/占点、区域清敌、撤离、限时和必要角色损失事件。任务目标完成、失败和胜利会立即回写到界面。
 
-这表示任务已经具备“世界动作 → 规范化事件 → 目标依赖/计数 → 胜负”的可玩工程闭环，不再只是静态任务清单；但它仍不是十二关逐段演出的完成版。m004、m009、m010 的关键控制流语义已经定案；对白、镜头、专属过场、增援节奏、AI 配合和难度仍需要逐关试玩并人工编排。
+这表示任务已经具备“世界动作 → 规范化事件 → 目标依赖/计数 → 胜负”的可玩工程闭环，不再只是静态任务清单。m004、m009、m010 的关键控制流语义已经定案。十二关第一版对白节奏、scene-binding 镜头提示、教程门控、AI 配合和连续难度曲线现已独立整理在 `mission_direction.json`，由通用导演/AI 协调器执行；其中无法由原资源证明的内容均标为 `remake_editorial`，详情见 `MISSION_DIRECTION.md`。逐关完整通关录像与实机数值校准仍是后续持续工作。
 
 ## 恢复证据链
 
@@ -226,10 +226,14 @@ intended scene binding = 1348..1353
 | `game/scripts/mission_data.gd` | schema 与引用完整性校验 |
 | `game/scripts/mission_state.gd` | 通用目标进度、失败和胜利状态 |
 | `game/scripts/mission_runtime.gd` | scene 绑定校验、持久事实去重/回放、限时与胜负信号 |
+| `game/data/mission_direction.json` | 十二关对白节奏、镜头、教程、AI 配合与难度曲线 |
+| `game/scripts/mission_direction_data.gd` | 编排 schema、来源边界及 mission/objective/binding 交叉校验 |
+| `game/scripts/mission_direction_runtime.gd` | 任务事件到对白、镜头、教程和 AI 指令的通用派发与存档 |
+| `game/scripts/mission_ai_coordinator.gd` | 敌人数值缩放、协同警报、攻击者上限和增援预算 |
 | `game/scripts/main.gd` | 把战斗、交互、出口区域和角色生命转换为规范化任务事件 |
 | `game/scripts/escort_unit.gd` | 可解救、跟随、受伤和死亡的护送角色 |
 | `game/scripts/mission_pickup.gd` | 任务角色掉落与一次性拾取 |
 | `tools/ResourceTool/OriginalAssetConverter.cs` | 导出 `task_anchors` 并校验逐关锚点清单 |
 | `LocalAssets/converted/levels/mNNN/level.json` | 本地生成的实体和任务锚点坐标 |
 
-当前十二关共用同一事件协议和通用交互器；`m000` 已形成明确的营救—护送—撤离胜负闭环，任务角色击毙/掉落、爆破/占点和限时也已接线。93 项确定性回放测试已对十二关最小胜利事件流、失败和重置逐步生成状态哈希。下一阶段不是再造任务状态机，而是逐关人工编排对白、镜头、AI 配合、爆炸演出和难度，并增加真实帧输入的端到端长回放。
+当前十二关共用同一事件协议和通用交互器；`m000` 已形成明确的营救—护送—撤离胜负闭环，任务角色击毙/掉落、爆破/占点和限时也已接线。确定性回放套件会对十二关最小胜利事件流、失败和重置逐步生成状态哈希；导演套件验证十二关 43 个节奏节点、45 行明确标注的补写对白、门控/计时/存档以及 AI 协调。各套件在日志中输出当前检查数，文档不固定复制计数。下一阶段重点是逐关完整通关录像、爆炸/动作演出、数值遥测和真实帧输入的端到端长回放。

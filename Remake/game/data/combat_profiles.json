@@ -262,7 +262,7 @@
         "reload_seconds": "unresolved_remake_default",
         "recovery_seconds": "unresolved_remake_default"
       },
-      "damage_notes": "The original action creates a special world object instead of using the ordinary direct-damage path. Eight damage is a playable remake fallback until that object behavior is recovered."
+      "damage_notes": "The original action creates actor 84/GFL 470 instead of using ordinary direct damage. This schema-required value is not applied directly; the dedicated world-object profile labels its still-unresolved blast damage as a remake default."
     },
     "grenade_attack": {
       "attack_type": 9,
@@ -322,7 +322,7 @@
         "reload_seconds": "unresolved_remake_default",
         "recovery_seconds": "unresolved_remake_default"
       },
-      "damage_notes": "The original action creates a special world object instead of using the ordinary direct-damage path. Eight damage is a playable remake fallback until that object behavior is recovered."
+      "damage_notes": "The original action creates actor 85/GFL 900 instead of using ordinary direct damage. This schema-required value is not applied directly; the dedicated world-object profile labels its still-unresolved blast damage as a remake default."
     },
     "special_attack": {
       "attack_type": 11,
@@ -352,7 +352,7 @@
         "reload_seconds": "unresolved_remake_default",
         "recovery_seconds": "unresolved_remake_default"
       },
-      "damage_notes": "The original path changes a target flag rather than applying ordinary direct damage. Eight damage is a playable remake fallback until the flag semantics are recovered."
+      "damage_notes": "The original path sets target offset +656 and later code clears it; it does not apply ordinary direct damage. This schema-required value is intentionally unused while AI suppression and duration remain labelled remake defaults."
     }
   }
 }

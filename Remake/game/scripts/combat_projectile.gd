@@ -1,6 +1,8 @@
 class_name CombatProjectile
 extends Node2D
 
+const WORLD_DEPTH: Script = preload("res://scripts/world_depth.gd")
+
 signal damage_applied(projectile: Node2D, victim: Node2D, amount: int)
 signal exploded(projectile: Node2D, world_position: Vector2, horizontal_radius: float, vertical_radius: float)
 signal resolved(projectile: Node2D)
@@ -53,7 +55,7 @@ func configure(
 	visual_height = 0.0
 	state = State.FLYING
 	resolved_visual_remaining = 0.0
-	z_index = clampi(int(global_position.y) + 4, -4096, 4095)
+	z_index = WORLD_DEPTH.normal_z(global_position.y, 4)
 	queue_redraw()
 	return true
 
@@ -73,7 +75,7 @@ func advance_simulation(delta: float) -> void:
 		var progress := clampf(flight_elapsed / flight_duration, 0.0, 1.0)
 		global_position = start_world_position.lerp(destination, progress)
 		visual_height = _arc_height_at(progress)
-		z_index = clampi(int(global_position.y) + 4, -4096, 4095)
+		z_index = WORLD_DEPTH.normal_z(global_position.y, 4)
 		if not _has_blast() and _resolve_segment_collision(previous_position, global_position):
 			return
 		if progress >= 1.0:

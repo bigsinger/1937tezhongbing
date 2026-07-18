@@ -2,8 +2,9 @@ class_name GameSettings
 extends RefCounted
 
 const ATOMIC_JSON_STORE: Script = preload("res://scripts/atomic_json_store.gd")
+const GAME_INPUT_BINDINGS: Script = preload("res://scripts/game_input_bindings.gd")
 
-const SCHEMA_VERSION := 1
+const SCHEMA_VERSION := 2
 const DEFAULT_PATH := "user://settings.json"
 const DISPLAY_MODES: Array[String] = ["windowed", "fullscreen", "borderless"]
 const RESOLUTION_POLICIES: Array[String] = ["desktop", "custom"]
@@ -44,6 +45,7 @@ static func default_document() -> Dictionary:
 			"show_briefings": true,
 			"edge_scroll": true,
 		},
+		"controls": GAME_INPUT_BINDINGS.default_bindings(),
 	}
 
 
@@ -152,7 +154,45 @@ func interface_enabled(interface_key: String) -> bool:
 	return bool((values["interface"] as Dictionary).get(interface_key, false))
 
 
+func controls_snapshot() -> Dictionary:
+	return (values.get("controls", {}) as Dictionary).duplicate(true)
+
+
+func set_controls(bindings: Dictionary) -> void:
+	values["controls"] = GAME_INPUT_BINDINGS.normalize_bindings(bindings)
+
+
+func set_control_binding(action: String, binding: Dictionary) -> bool:
+	if not action in GAME_INPUT_BINDINGS.action_ids():
+		return false
+	var raw_keycode: Variant = binding.get("keycode")
+	if (
+		not (raw_keycode is int or raw_keycode is float)
+		or int(raw_keycode) <= 0
+	):
+		return false
+	var normalized_single: Dictionary = GAME_INPUT_BINDINGS.normalize_bindings({action: binding})
+	var normalized_binding := normalized_single[action] as Dictionary
+	if int(normalized_binding.get("keycode", 0)) <= 0:
+		return false
+	var controls := values["controls"] as Dictionary
+	var conflict: String = GAME_INPUT_BINDINGS.conflicting_action(
+		controls, normalized_binding, action
+	)
+	# Swapping is less destructive than silently unbinding the conflicting
+	# action and guarantees that every command stays reachable.
+	if not conflict.is_empty():
+		controls[conflict] = (controls[action] as Dictionary).duplicate(true)
+	controls[action] = normalized_binding.duplicate(true)
+	return true
+
+
+func reset_controls() -> void:
+	values["controls"] = GAME_INPUT_BINDINGS.default_bindings()
+
+
 func apply_audio_to_runtime() -> void:
+	_ensure_audio_buses()
 	var audio := values["audio"] as Dictionary
 	var master_index := AudioServer.get_bus_index("Master")
 	if master_index >= 0:
@@ -164,6 +204,16 @@ func apply_audio_to_runtime() -> void:
 			continue
 		var linear_value := float(audio[channel])
 		AudioServer.set_bus_volume_db(bus_index, -80.0 if linear_value <= 0.0 else linear_to_db(linear_value))
+
+
+static func _ensure_audio_buses() -> void:
+	for bus_name: String in ["Music", "Sfx", "Voice"]:
+		if AudioServer.get_bus_index(bus_name) >= 0:
+			continue
+		AudioServer.add_bus()
+		var bus_index := AudioServer.bus_count - 1
+		AudioServer.set_bus_name(bus_index, bus_name)
+		AudioServer.set_bus_send(bus_index, "Master")
 
 
 func apply_display_to_runtime() -> void:
@@ -200,7 +250,7 @@ func _is_loadable_document(value: Variant) -> bool:
 		)
 	if not _is_number(document["schema_version"]):
 		return false
-	return int(document["schema_version"]) in [0, SCHEMA_VERSION]
+	return int(document["schema_version"]) in [0, 1, SCHEMA_VERSION]
 
 
 func _normalize_document(document: Dictionary) -> Dictionary:
@@ -247,6 +297,7 @@ func _normalize_document(document: Dictionary) -> Dictionary:
 		interface[interface_key] = _normalized_bool(
 			raw_interface.get(interface_key), bool(interface[interface_key])
 		)
+	defaults["controls"] = GAME_INPUT_BINDINGS.normalize_bindings(document.get("controls", {}))
 	return defaults
 
 

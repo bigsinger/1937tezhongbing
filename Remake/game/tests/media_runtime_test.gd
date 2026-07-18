@@ -2,6 +2,7 @@ extends SceneTree
 
 const CATALOG_SCRIPT: Script = preload("res://scripts/legacy_media_catalog.gd")
 const DIRECTOR_SCRIPT: Script = preload("res://scripts/media_director.gd")
+const GAME_INPUT_BINDINGS: Script = preload("res://scripts/game_input_bindings.gd")
 
 var checks := 0
 
@@ -55,11 +56,62 @@ func _run() -> void:
 		"media director creates one fixed eight-player SFX pool",
 		failures,
 	)
+	expect(
+		director.music_player != null
+		and director.music_player.bus == "Music"
+		and director.video_player.bus == "Music",
+		"music and movie soundtrack players consume the Music bus",
+		failures,
+	)
 	var audio_node_count := _audio_player_child_count(director)
 	director.call("_ensure_nodes")
 	expect(
-		audio_node_count == 9 and _audio_player_child_count(director) == 9,
-		"one voice channel plus eight SFX channels stay bounded after repeated initialization",
+		audio_node_count == 10 and _audio_player_child_count(director) == 10,
+		"one music, one voice, and eight SFX channels stay bounded after repeated initialization",
+		failures,
+	)
+	var synthetic_audio_load_calls := [0]
+	director.set_audio_stream_loader(func(_path: String) -> AudioStreamWAV:
+		synthetic_audio_load_calls[0] += 1
+		return AudioStreamWAV.new()
+	)
+	var cached_stream_a: AudioStreamWAV = director.call(
+		"_load_cached_audio_stream",
+		"user://media-cache-fixture/../media-cache-fixture/repeated.wav",
+	)
+	var cached_stream_b: AudioStreamWAV = director.call(
+		"_load_cached_audio_stream",
+		"user://media-cache-fixture/repeated.wav",
+	)
+	director.call("close_for_state_change")
+	var cached_stream_after_state_change: AudioStreamWAV = director.call(
+		"_load_cached_audio_stream",
+		"user://media-cache-fixture/repeated.wav",
+	)
+	expect(
+		cached_stream_a != null
+		and cached_stream_a == cached_stream_b
+		and cached_stream_b == cached_stream_after_state_change
+		and int(synthetic_audio_load_calls[0]) == 1
+		and director.audio_stream_load_count() == 1
+		and director.audio_stream_cache_size() == 1,
+		"normalized repeated audio requests load once and survive state changes",
+		failures,
+	)
+	expect(
+		director.call("_load_cached_audio_stream", "") == null
+		and director.audio_stream_load_count() == 1,
+		"an invalid empty audio path is rejected without invoking the loader",
+		failures,
+	)
+	director.set_audio_stream_loader(Callable())
+	expect(
+		director.call(
+			"_load_cached_audio_stream",
+			"user://definitely-missing-media-cache-fixture.wav",
+		) == null
+		and director.audio_stream_load_count() == 0,
+		"a missing audio file is rejected safely before invoking the native loader",
 		failures,
 	)
 	expect(
@@ -73,9 +125,33 @@ func _run() -> void:
 	expect(
 		DIRECTOR_SCRIPT.audio_channel_for("attack_pistol") == DIRECTOR_SCRIPT.AUDIO_CHANNEL_SFX
 		and DIRECTOR_SCRIPT.audio_channel_for("explosion") == DIRECTOR_SCRIPT.AUDIO_CHANNEL_SFX
-		and DIRECTOR_SCRIPT.audio_channel_for("ui_confirm") == DIRECTOR_SCRIPT.AUDIO_CHANNEL_SFX
-		and DIRECTOR_SCRIPT.audio_channel_for("rain") == DIRECTOR_SCRIPT.AUDIO_CHANNEL_SFX,
-		"weapon, explosion, UI, and environment events route to the overlapping SFX pool",
+		and DIRECTOR_SCRIPT.audio_channel_for("ui_confirm") == DIRECTOR_SCRIPT.AUDIO_CHANNEL_SFX,
+		"weapon, explosion, and UI events route to the overlapping SFX pool",
+		failures,
+	)
+	expect(
+		DIRECTOR_SCRIPT.audio_channel_for("rain", {"category": "ambience"})
+		== DIRECTOR_SCRIPT.AUDIO_CHANNEL_MUSIC
+		and DIRECTOR_SCRIPT.audio_channel_for("direct", {"category": "music"})
+		== DIRECTOR_SCRIPT.AUDIO_CHANNEL_MUSIC
+		and DIRECTOR_SCRIPT.resolve_audio_channel(
+			DIRECTOR_SCRIPT.AUDIO_CHANNEL_MUSIC,
+			"attack_pistol",
+			{"category": "effect"},
+		) == DIRECTOR_SCRIPT.AUDIO_CHANNEL_MUSIC,
+		"music metadata, ambience metadata, and an explicit music override use the Music channel",
+		failures,
+	)
+	expect(
+		DIRECTOR_SCRIPT.resolve_audio_channel(
+			DIRECTOR_SCRIPT.AUDIO_CHANNEL_VOICE,
+			"attack_pistol",
+		) == DIRECTOR_SCRIPT.AUDIO_CHANNEL_VOICE
+		and DIRECTOR_SCRIPT.resolve_audio_channel(
+			DIRECTOR_SCRIPT.AUDIO_CHANNEL_SFX,
+			"dialogue",
+		) == DIRECTOR_SCRIPT.AUDIO_CHANNEL_SFX,
+		"valid voice and SFX overrides retain their existing behavior",
 		failures,
 	)
 	expect(
@@ -105,6 +181,69 @@ func _run() -> void:
 	director.media_unavailable.connect(func(_kind: String, _id: String) -> void: unavailable_count[0] += 1)
 	var initial_process_mode: int = director.process_mode
 	expect(not paused, "media test starts with an unpaused SceneTree", failures)
+	director.call("show_briefing", "m000", "Escape fixture", "release to close")
+	var cancel_press := InputEventAction.new()
+	cancel_press.action = "ui_cancel"
+	cancel_press.pressed = true
+	director.call("_unhandled_input", cancel_press)
+	expect(
+		not director.active_briefing.is_empty() and paused,
+		"Escape press is consumed without closing an original-style media modal",
+		failures,
+	)
+	var cancel_release := InputEventAction.new()
+	cancel_release.action = "ui_cancel"
+	cancel_release.pressed = false
+	director.call("_unhandled_input", cancel_release)
+	expect(
+		director.active_briefing.is_empty() and not paused,
+		"Escape release closes the media modal and restores gameplay",
+		failures,
+	)
+	var remapped_controls: Dictionary = GAME_INPUT_BINDINGS.default_bindings()
+	remapped_controls["pause"] = {
+		"keycode": KEY_Z,
+		"ctrl": false,
+		"alt": false,
+		"shift": false,
+		"meta": false,
+	}
+	director.set_input_bindings(remapped_controls)
+	director.call("show_briefing", "m000", "Remap fixture", "Z release to close")
+	var old_escape_release := InputEventKey.new()
+	old_escape_release.keycode = KEY_ESCAPE
+	old_escape_release.pressed = false
+	director.call("_unhandled_input", old_escape_release)
+	expect(
+		not director.active_briefing.is_empty() and paused,
+		"the old Escape key no longer closes media after pause is remapped",
+		failures,
+	)
+	var remapped_pause_press := InputEventKey.new()
+	remapped_pause_press.keycode = KEY_Z
+	remapped_pause_press.pressed = true
+	director.call("_unhandled_input", remapped_pause_press)
+	var remapped_pause_release := InputEventKey.new()
+	remapped_pause_release.keycode = KEY_Z
+	remapped_pause_release.pressed = false
+	director.call("_unhandled_input", remapped_pause_release)
+	expect(
+		director.active_briefing.is_empty() and not paused,
+		"media cancel follows the remapped pause key and original release cadence",
+		failures,
+	)
+	director.set_input_bindings(GAME_INPUT_BINDINGS.default_bindings())
+	director.call("show_briefing", "m001", "State change fixture", "must close")
+	director.call("close_for_state_change")
+	expect(
+		not director.is_modal_active()
+		and not director.overlay.visible
+		and not paused
+		and not director.audio_player.playing
+		and not director.music_player.playing,
+		"loading, restarting, or switching levels atomically closes old media and releases pause",
+		failures,
+	)
 	expect(not bool(director.call("show_briefing", "m000", "测试简报", "文本降级")), "briefing reports missing image", failures)
 	expect(director.overlay.visible, "briefing text fallback remains visible", failures)
 	expect(director.fallback_label.text.contains("文本降级"), "briefing fallback explains missing local media", failures)

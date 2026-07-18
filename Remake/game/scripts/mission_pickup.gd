@@ -1,6 +1,8 @@
 class_name MissionPickup
 extends Node2D
 
+const WORLD_DEPTH: Script = preload("res://scripts/world_depth.gd")
+
 var item_payload: Dictionary = {}
 var collected := false
 
@@ -8,7 +10,7 @@ var collected := false
 func configure(payload: Dictionary, world_position: Vector2) -> void:
 	item_payload = payload.duplicate(true)
 	position = world_position
-	z_index = clampi(int(position.y) + 2, -4096, 4095)
+	z_index = WORLD_DEPTH.normal_z(position.y, 2)
 	queue_redraw()
 
 

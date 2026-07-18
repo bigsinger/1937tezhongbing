@@ -3,8 +3,12 @@ extends Control
 
 signal world_position_requested(world_position: Vector2)
 
-const MAP_MARGIN := 18.0
+const MAP_MARGIN := 2.0
 const CAMERA_COLOR := Color(0.95, 0.89, 0.53, 0.92)
+const ORIGINAL_WORLD_UNITS_PER_MAP_PIXEL := 16.0
+const ORIGINAL_MAP_BORDER_PIXELS := 13.0
+const MAX_RECOVERED_MAP_BORDER_PIXELS := 32.0
+const BORDER_VALIDATION_TOLERANCE := 0.01
 
 var terrain_texture: Texture2D
 var world_size := Vector2.ONE
@@ -33,6 +37,15 @@ func update_camera_world_rect(new_camera_world_rect: Rect2) -> void:
 	queue_redraw()
 
 
+func update_markers(
+	new_actor_markers: Array[Dictionary],
+	new_mission_markers: Array[Dictionary],
+) -> void:
+	actor_markers = new_actor_markers.duplicate(true)
+	mission_markers = new_mission_markers.duplicate(true)
+	queue_redraw()
+
+
 func _gui_input(event: InputEvent) -> void:
 	if not event is InputEventMouseButton:
 		return
@@ -42,20 +55,20 @@ func _gui_input(event: InputEvent) -> void:
 	var map_rect := _map_rect()
 	if not map_rect.has_point(mouse_event.position):
 		return
-	var normalized := (mouse_event.position - map_rect.position) / map_rect.size
-	world_position_requested.emit(normalized * world_size)
+	world_position_requested.emit(_map_to_world(mouse_event.position, map_rect))
 	accept_event()
 
 
 func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), Color(0.025, 0.031, 0.027, 0.98), true)
+	var texture_rect := _texture_rect()
 	var map_rect := _map_rect()
 	if terrain_texture != null:
-		draw_texture_rect(terrain_texture, map_rect, false)
+		draw_texture_rect(terrain_texture, texture_rect, false)
 	else:
 		draw_rect(map_rect, Color(0.12, 0.16, 0.12), true)
 		_draw_fallback_grid(map_rect)
-	draw_rect(map_rect, Color(0.70, 0.72, 0.58, 0.82), false, 2.0)
+	draw_rect(texture_rect, Color(0.70, 0.72, 0.58, 0.82), false, 2.0)
 
 	for marker: Dictionary in mission_markers:
 		var point := _world_to_map(marker.get("position", Vector2.ZERO) as Vector2, map_rect)
@@ -87,10 +100,31 @@ func _draw() -> void:
 
 
 func _map_rect() -> Rect2:
+	return _content_rect(_texture_rect())
+
+
+func _texture_rect() -> Rect2:
 	var available := (size - Vector2.ONE * MAP_MARGIN * 2.0).max(Vector2.ONE)
-	var scale_factor := minf(available.x / world_size.x, available.y / world_size.y)
-	var fitted_size := world_size * maxf(scale_factor, 0.0001)
+	var source_size := world_size
+	if terrain_texture != null:
+		source_size = terrain_texture.get_size().max(Vector2.ONE)
+	var scale_factor := minf(available.x / source_size.x, available.y / source_size.y)
+	var fitted_size := source_size * maxf(scale_factor, 0.0001)
 	return Rect2((size - fitted_size) * 0.5, fitted_size)
+
+
+func _content_rect(texture_rect: Rect2) -> Rect2:
+	if terrain_texture == null:
+		return texture_rect
+	var texture_size := terrain_texture.get_size()
+	var border := recovered_content_border(texture_size, world_size)
+	if border.x < 0.0:
+		return texture_rect
+	var scale := texture_rect.size / texture_size
+	return Rect2(
+		texture_rect.position + border * scale,
+		texture_rect.size - border * scale * 2.0,
+	)
 
 
 func _world_to_map(world_position: Vector2, map_rect: Rect2) -> Vector2:
@@ -99,6 +133,31 @@ func _world_to_map(world_position: Vector2, map_rect: Rect2) -> Vector2:
 		clampf(world_position.y / world_size.y, 0.0, 1.0),
 	)
 	return map_rect.position + normalized * map_rect.size
+
+
+func _map_to_world(map_position: Vector2, map_rect: Rect2) -> Vector2:
+	var normalized := Vector2(
+		clampf((map_position.x - map_rect.position.x) / map_rect.size.x, 0.0, 1.0),
+		clampf((map_position.y - map_rect.position.y) / map_rect.size.y, 0.0, 1.0),
+	)
+	return normalized * world_size
+
+
+static func recovered_content_border(texture_size: Vector2, level_world_size: Vector2) -> Vector2:
+	if texture_size.x <= 0.0 or texture_size.y <= 0.0:
+		return Vector2(-1.0, -1.0)
+	var recovered_content_size := level_world_size / ORIGINAL_WORLD_UNITS_PER_MAP_PIXEL
+	var border := (texture_size - recovered_content_size) * 0.5
+	if (
+		border.x < 0.0
+		or border.y < 0.0
+		or border.x > MAX_RECOVERED_MAP_BORDER_PIXELS
+		or border.y > MAX_RECOVERED_MAP_BORDER_PIXELS
+		or absf(border.x - roundf(border.x)) > BORDER_VALIDATION_TOLERANCE
+		or absf(border.y - roundf(border.y)) > BORDER_VALIDATION_TOLERANCE
+	):
+		return Vector2(-1.0, -1.0)
+	return border
 
 
 func _draw_fallback_grid(map_rect: Rect2) -> void:

@@ -222,6 +222,15 @@ static func _parse_entity(source: Dictionary) -> Dictionary:
 		sprite_preview = ""
 	elif not sprite_preview is String:
 		return {}
+	var database_header_values: Array[int] = []
+	var raw_database_header_values: Variant = source.get("database_header_values", [])
+	if not raw_database_header_values is Array:
+		return {}
+	for raw_header_value: Variant in raw_database_header_values as Array:
+		var header_value: Variant = _normalize_integer(raw_header_value)
+		if header_value == null:
+			return {}
+		database_header_values.append(int(header_value))
 
 	var raw_waypoints: Variant = source.get("patrol_waypoints")
 	if not raw_waypoints is Array:
@@ -298,6 +307,7 @@ static func _parse_entity(source: Dictionary) -> Dictionary:
 		"reference_x": int(reference_x),
 		"reference_y": int(reference_y),
 		"sprite_preview": sprite_preview as String,
+		"database_header_values": database_header_values,
 		"patrol_waypoints": patrol_waypoints,
 		"patrol_current_waypoint_index": patrol_current_waypoint_index,
 		"patrol_enabled": patrol_enabled,
