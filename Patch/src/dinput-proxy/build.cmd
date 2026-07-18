@@ -19,7 +19,7 @@ if not exist "%~dp0build" mkdir "%~dp0build"
 cl /nologo /LD /O2 /MT /EHsc /W4 /DWIN32 /D_WINDOWS ^
   /Fo"%~dp0build\\" /Fd"%~dp0build\\" ^
   "%~dp0dinput_proxy.cpp" "%~dp0dinput_proxy.def" ^
-  /link /OUT:"%~dp0build\dinput.dll" ^
+  /link /MACHINE:X86 /OUT:"%~dp0build\dinput.dll" ^
   /IMPLIB:"%~dp0build\dinput_proxy.lib" ^
   /PDB:"%~dp0build\dinput.pdb" user32.lib dxguid.lib
 exit /b %errorlevel%

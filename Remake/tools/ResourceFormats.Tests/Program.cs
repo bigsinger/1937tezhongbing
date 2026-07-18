@@ -21,6 +21,13 @@ internal static class Program
             DetectsLegacyHeaders();
             ReadsSyntheticSoundLibrary(temporaryDirectory);
             ReadsSyntheticVwfHeader(temporaryDirectory);
+            _checks += IBlockSyntheticTests.Run(temporaryDirectory);
+            _checks += TlgSyntheticTests.Run();
+            _checks += SprSyntheticTests.Run();
+            _checks += SprAnimationSemanticsTests.Run();
+            _checks += VwfSceneListSyntheticTests.Run(temporaryDirectory);
+            _checks += VwfNavigationGridSyntheticTests.Run();
+            _checks += TerrainRasterizerSyntheticTests.Run();
             Console.WriteLine($"Resource format tests passed ({_checks} checks). No original game data was used.");
             return 0;
         }

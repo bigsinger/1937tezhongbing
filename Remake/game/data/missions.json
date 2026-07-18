@@ -1,0 +1,201 @@
+{
+  "schema_version": 1,
+  "mission_count": 12,
+  "recovery_method": "VWF trigger extraction plus original EXE control-flow recovery",
+  "unused_menu_titles": ["雷区伏击战", "内讧", "最后任务"],
+  "missions": [
+    {
+      "id": "m000",
+      "number": 1,
+      "title": "营救行动",
+      "overview_image_index": 1025,
+      "briefing_image_index": 1048,
+      "scene_bindings": {"rescued": [1427, 1428], "exit": [1600]},
+      "time_limit_seconds": 0,
+      "trigger_inventory": {"markers": 1, "explosion": 0, "exit": 1, "spawns": 4, "entrances": 0},
+      "objectives": [
+        {"id": "rescue_pengxin", "label": "营救彭鑫", "required": true, "condition": {"event": "entity_rescued", "where": {"display_name": "彭鑫"}, "required_count": 1}},
+        {"id": "rescue_luoluo", "label": "营救老罗叔", "required": true, "condition": {"event": "entity_rescued", "where": {"display_name": "老罗叔"}, "required_count": 1}},
+        {"id": "evacuate", "label": "护送获救人员返回撤离点", "required": true, "depends_on": ["rescue_pengxin", "rescue_luoluo"], "condition": {"event": "trigger_activated", "where": {"display_name": "检测出口精灵"}, "required_count": 1, "unique_by": "scene_index"}}
+      ],
+      "failure_conditions": [{"id": "required_character_lost", "event": "required_character_lost"}]
+    },
+    {
+      "id": "m001",
+      "number": 2,
+      "title": "奇袭火车站",
+      "overview_image_index": 1026,
+      "briefing_image_index": 1049,
+      "scene_bindings": {"driver": [2506], "explosion": [2520, 2521], "exit": [2522]},
+      "time_limit_seconds": 9000,
+      "trigger_inventory": {"markers": 4, "explosion": 2, "exit": 1, "spawns": 5, "entrances": 8},
+      "objectives": [
+        {"id": "obtain_uniform", "label": "取得日军军服", "required": true, "condition": {"event": "item_acquired", "where": {"item_name": "日军军服"}, "required_count": 1}},
+        {"id": "rescue_driver", "label": "解救火车司机铁蛋爹", "required": true, "condition": {"event": "entity_rescued", "where": {"display_name": "铁蛋爹"}, "required_count": 1}},
+        {"id": "destroy_barracks", "label": "炸毁日军兵营的两个目标", "required": true, "condition": {"event": "trigger_activated", "where": {"display_name": "检测爆炸精灵"}, "required_count": 2, "unique_by": "scene_index"}},
+        {"id": "board_train", "label": "由古明护送铁蛋爹进入火车", "required": true, "depends_on": ["obtain_uniform", "rescue_driver", "destroy_barracks"], "condition": {"event": "trigger_activated", "where": {"display_name": "检测出口精灵"}, "required_count": 1, "unique_by": "scene_index"}}
+      ],
+      "failure_conditions": [{"id": "time_limit", "event": "time_expired"}, {"id": "required_character_lost", "event": "required_character_lost"}]
+    },
+    {
+      "id": "m002",
+      "number": 3,
+      "title": "劫狱",
+      "overview_image_index": 1027,
+      "briefing_image_index": 1050,
+      "scene_bindings": {"explosion": [889], "exit": [895]},
+      "time_limit_seconds": 0,
+      "trigger_inventory": {"markers": 3, "explosion": 1, "exit": 1, "spawns": 7, "entrances": 2},
+      "objectives": [
+        {"id": "rescue_qiangzi", "label": "从监牢救出强子", "required": true, "condition": {"event": "entity_rescued", "where": {"display_name": "强子"}, "required_count": 1}},
+        {"id": "destroy_supply_truck", "label": "炸毁日军军需卡车", "required": true, "condition": {"event": "trigger_activated", "where": {"display_name": "检测爆炸精灵"}, "required_count": 1, "unique_by": "scene_index"}},
+        {"id": "evacuate", "label": "强子和老赵一同到达撤离点", "required": true, "depends_on": ["rescue_qiangzi", "destroy_supply_truck"], "condition": {"event": "party_at_trigger", "where": {"trigger_scene_index": 895}, "required_count": 1}}
+      ],
+      "failure_conditions": [{"id": "required_character_lost", "event": "required_character_lost"}]
+    },
+    {
+      "id": "m003",
+      "number": 4,
+      "title": "铁路桥",
+      "overview_image_index": 1028,
+      "briefing_image_index": 1051,
+      "scene_bindings": {"truck": [1228], "explosion": [1230, 1231, 1232, 1233, 1234], "exit": [1235]},
+      "time_limit_seconds": 0,
+      "trigger_inventory": {"markers": 6, "explosion": 5, "exit": 1, "spawns": 2, "entrances": 4},
+      "objectives": [
+        {"id": "place_bridge_charges", "label": "在铁路桥的五个指定位置放置炸药", "required": true, "condition": {"event": "trigger_activated", "where": {"display_name": "检测爆炸精灵"}, "required_count": 5, "unique_by": "scene_index"}},
+        {"id": "evacuate_by_truck", "label": "全体队员登上卡车撤离", "required": true, "depends_on": ["place_bridge_charges"], "condition": {"event": "trigger_activated", "where": {"display_name": "检测出口精灵"}, "required_count": 1, "unique_by": "scene_index"}}
+      ],
+      "failure_conditions": [{"id": "required_character_lost", "event": "required_character_lost"}]
+    },
+    {
+      "id": "m004",
+      "number": 5,
+      "title": "火烧粮仓",
+      "overview_image_index": 1029,
+      "briefing_image_index": 1052,
+      "scene_bindings": {"explosion": [2695, 2696]},
+      "time_limit_seconds": 0,
+      "trigger_inventory": {"markers": 3, "explosion": 2, "exit": 0, "spawns": 4, "entrances": 15},
+      "objectives": [
+        {"id": "rescue_guming", "label": "救出被关押的古明", "required": true, "condition": {"event": "entity_rescued", "where": {"display_name": "古明"}, "required_count": 1}},
+        {"id": "eliminate_officer", "label": "击毙携带计划书的日军军官", "required": true, "condition": {"event": "role_eliminated", "where": {"role_id": "m004_plan_officer"}, "required_count": 1}},
+        {"id": "acquire_plan", "label": "取得日军反扑计划书", "required": true, "depends_on": ["eliminate_officer"], "condition": {"event": "item_acquired", "where": {"item_role": "m004_plan_document"}, "required_count": 1}},
+        {"id": "destroy_granaries", "label": "烧毁两座粮仓", "required": true, "condition": {"event": "trigger_activated", "where": {"display_name": "检测爆炸精灵"}, "required_count": 2, "unique_by": "scene_index"}}
+      ],
+      "failure_conditions": [{"id": "required_character_lost", "event": "required_character_lost"}]
+    },
+    {
+      "id": "m005",
+      "number": 6,
+      "title": "大闹寒江镇",
+      "overview_image_index": 1030,
+      "briefing_image_index": 1053,
+      "scene_bindings": {"script_target": [736]},
+      "binding_notes": "原任务称目标为阿贵；关卡对象 scene 736 的引擎角色类型为24，DBL 显示名为阿全。",
+      "time_limit_seconds": 0,
+      "trigger_inventory": {"markers": 1, "explosion": 0, "exit": 0, "spawns": 1, "entrances": 10},
+      "objectives": [
+        {"id": "eliminate_traitor", "label": "击毙叛徒阿贵", "required": true, "condition": {"event": "role_eliminated", "where": {"role_id": "m005_agui"}, "required_count": 1}},
+        {"id": "acquire_document", "label": "取得阿贵携带的重要文件", "required": true, "depends_on": ["eliminate_traitor"], "condition": {"event": "item_acquired", "where": {"item_role": "m005_document"}, "required_count": 1}}
+      ],
+      "failure_conditions": [{"id": "required_character_lost", "event": "required_character_lost"}]
+    },
+    {
+      "id": "m006",
+      "number": 7,
+      "title": "惩罚",
+      "overview_image_index": 1031,
+      "briefing_image_index": 1054,
+      "scene_bindings": {"sun_damazi": [1457], "kato_engine_role": [1460], "exit": [1462]},
+      "binding_notes": "剧情中的加藤由引擎 type22/DBL 王老板资源承担。",
+      "time_limit_seconds": 0,
+      "trigger_inventory": {"markers": 2, "explosion": 0, "exit": 1, "spawns": 4, "entrances": 7},
+      "objectives": [
+        {"id": "follow_contact", "label": "尾随孙大麻子找到接头地点", "required": true, "condition": {"event": "story_anchor_reached", "where": {"role_id": "m006_exchange_point"}, "required_count": 1}},
+        {"id": "eliminate_sun", "label": "刺杀孙大麻子并取得名单", "required": true, "depends_on": ["follow_contact"], "condition": {"event": "role_eliminated", "where": {"role_id": "m006_sun_damazi"}, "required_count": 1}},
+        {"id": "eliminate_kato", "label": "刺杀日军特务加藤孝一", "required": true, "depends_on": ["follow_contact"], "condition": {"event": "role_eliminated", "where": {"role_id": "m006_kato"}, "required_count": 1}},
+        {"id": "leave_area", "label": "离开接头区域", "required": true, "depends_on": ["eliminate_sun", "eliminate_kato"], "condition": {"event": "trigger_activated", "where": {"display_name": "检测出口精灵"}, "required_count": 1, "unique_by": "scene_index"}}
+      ],
+      "failure_conditions": [{"id": "required_character_lost", "event": "required_character_lost"}]
+    },
+    {
+      "id": "m007",
+      "number": 8,
+      "title": "脱困",
+      "overview_image_index": 1032,
+      "briefing_image_index": 1055,
+      "scene_bindings": {"reporter": [2299], "exit": [2391], "father": [2394], "mother": [2395]},
+      "time_limit_seconds": 1800,
+      "trigger_inventory": {"markers": 3, "explosion": 0, "exit": 1, "spawns": 5, "entrances": 8},
+      "objectives": [
+        {"id": "rescue_parents", "label": "解救铁蛋爹和铁蛋娘", "required": true, "condition": {"event": "entity_rescued", "where": {"family_role": "tiedan_parents"}, "required_count": 2, "unique_by": "scene_index"}},
+        {"id": "rescue_reporter", "label": "解救战地记者孙小姐", "required": true, "condition": {"event": "entity_rescued", "where": {"display_name": "孙小姐"}, "required_count": 1}},
+        {"id": "evacuate_everyone", "label": "全体队员和获救人员安全撤离", "required": true, "depends_on": ["rescue_parents", "rescue_reporter"], "condition": {"event": "trigger_activated", "where": {"display_name": "检测出口精灵"}, "required_count": 1, "unique_by": "scene_index"}}
+      ],
+      "failure_conditions": [{"id": "time_limit", "event": "time_expired"}, {"id": "required_character_lost", "event": "required_character_lost"}]
+    },
+    {
+      "id": "m008",
+      "number": 9,
+      "title": "暗战矿坑",
+      "overview_image_index": 1033,
+      "briefing_image_index": 1056,
+      "scene_bindings": {"explosion": [798, 799, 800, 801], "exit": [802]},
+      "time_limit_seconds": 0,
+      "trigger_inventory": {"markers": 5, "explosion": 4, "exit": 1, "spawns": 4, "entrances": 1},
+      "objectives": [
+        {"id": "place_mine_charges", "label": "在四处工事入口放置炸药", "required": true, "condition": {"event": "trigger_activated", "where": {"display_name": "检测爆炸精灵"}, "required_count": 4, "unique_by": "scene_index"}},
+        {"id": "use_elevator", "label": "老赵和大牛从东南升降机撤离", "required": true, "depends_on": ["place_mine_charges"], "condition": {"event": "trigger_activated", "where": {"display_name": "检测出口精灵"}, "required_count": 1, "unique_by": "scene_index"}}
+      ],
+      "failure_conditions": [{"id": "premature_explosion", "event": "explosion", "unless_objective_complete": "place_mine_charges"}, {"id": "required_character_lost", "event": "required_character_lost"}]
+    },
+    {
+      "id": "m009",
+      "number": 10,
+      "title": "夺宝奇兵",
+      "overview_image_index": 1034,
+      "briefing_image_index": 1057,
+      "scene_bindings": {"explosion": [1714, 1715, 1716, 1717]},
+      "time_limit_seconds": 0,
+      "trigger_inventory": {"markers": 4, "explosion": 4, "exit": 0, "spawns": 3, "entrances": 11},
+      "objectives": [
+        {"id": "obtain_documents", "label": "取得两名日军军官携带的交接文件（简报目标）", "required": false, "condition": {"event": "item_acquired", "where": {"item_role": "m009_transfer_document"}, "required_count": 2, "unique_by": "source_scene_index"}},
+        {"id": "clear_station", "label": "清剿临时车站守军（简报目标）", "required": false, "condition": {"event": "area_hostiles_cleared", "where": {"area_role": "m009_station"}, "required_count": 1}},
+        {"id": "destroy_train", "label": "炸毁军火列车的四个目标", "required": true, "condition": {"event": "trigger_activated", "where": {"display_name": "检测爆炸精灵"}, "required_count": 4, "unique_by": "scene_index"}}
+      ],
+      "failure_conditions": [{"id": "required_character_lost", "event": "required_character_lost"}]
+    },
+    {
+      "id": "m010",
+      "number": 11,
+      "title": "血色渡口",
+      "overview_image_index": 1035,
+      "briefing_image_index": 1058,
+      "scene_bindings": {"high_ground": [1620, 1621, 1622, 1623]},
+      "time_limit_seconds": 3600,
+      "trigger_inventory": {"markers": 4, "explosion": 0, "exit": 4, "spawns": 4, "entrances": 11},
+      "objectives": [
+        {"id": "capture_high_ground", "label": "在一小时内占领四处制高点", "required": true, "condition": {"event": "trigger_activated", "where": {"display_name": "检测出口精灵"}, "required_count": 4, "unique_by": "scene_index"}}
+      ],
+      "failure_conditions": [{"id": "time_limit", "event": "time_expired"}, {"id": "required_character_lost", "event": "required_character_lost"}]
+    },
+    {
+      "id": "m011",
+      "number": 12,
+      "title": "破袭机场",
+      "overview_image_index": 1036,
+      "briefing_image_index": 1059,
+      "scene_bindings": {"explosion": [1348, 1349, 1350, 1351, 1352, 1353], "exit": [1359]},
+      "original_quirk": "原版初始化反复覆盖爆破目标指针，实际只检查 scene 1353；重制默认修复为六目标，可另设 strict-original 兼容模式。",
+      "time_limit_seconds": 0,
+      "trigger_inventory": {"markers": 7, "explosion": 6, "exit": 1, "spawns": 7, "entrances": 8},
+      "objectives": [
+        {"id": "eliminate_commander", "label": "刺杀日军空军指挥官", "required": true, "condition": {"event": "role_eliminated", "where": {"role_id": "m011_air_commander"}, "required_count": 1}},
+        {"id": "destroy_airfield", "label": "炸毁军机、指挥塔和油库共六处目标", "required": true, "condition": {"event": "trigger_activated", "where": {"display_name": "检测爆炸精灵"}, "required_count": 6, "unique_by": "scene_index"}},
+        {"id": "evacuate_northwest", "label": "沿西北方向撤离机场", "required": true, "depends_on": ["eliminate_commander", "destroy_airfield"], "condition": {"event": "trigger_activated", "where": {"display_name": "检测出口精灵"}, "required_count": 1, "unique_by": "scene_index"}}
+      ],
+      "failure_conditions": [{"id": "required_character_lost", "event": "required_character_lost"}]
+    }
+  ]
+}

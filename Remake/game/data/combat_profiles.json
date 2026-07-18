@@ -1,0 +1,44 @@
+{
+  "schema_version": 2,
+  "source_status": "M1937.exe field-level reverse engineering; coordinates are original isometric screen pixels",
+  "senses": {
+    "enemy_default": {
+      "horizontal_radius": 640.0,
+      "vertical_radius": 320.0,
+      "near_band_ratio": 0.5,
+      "omnidirectional": false,
+      "requires_line_of_sight": true,
+      "crawling_hidden_in_far_band": true,
+      "scan_step_degrees": 3.0,
+      "original_direction_centers_degrees": [45, 90, 135, 180, 225, 270, 315, 0],
+      "original_direction_half_angles_degrees": [30, 45, 60, 45, 30, 45, 60, 45]
+    },
+    "guard_dog_special": {
+      "dbl_id": 1007,
+      "horizontal_radius": 320.0,
+      "vertical_radius": 160.0,
+      "near_band_ratio": 0.5,
+      "omnidirectional": true,
+      "requires_line_of_sight": false,
+      "crawling_hidden_in_far_band": false
+    }
+  },
+  "alerts": {
+    "ally_death_radius": 256.0,
+    "attack_radius": 640.0,
+    "attack_extended_radius": 800.0
+  },
+  "weapons": {
+    "pistol_attack": {"attack_type": 1, "animation_action": 6, "horizontal_range": 480.0, "vertical_range": 240.0, "requires_line_of_sight": true},
+    "rifle_attack": {"attack_type": 2, "animation_action": 9, "horizontal_range": 700.0, "vertical_range": 350.0, "requires_line_of_sight": true},
+    "machine_gun_attack": {"attack_type": 3, "animation_action": 10, "horizontal_range": 576.0, "vertical_range": 288.0, "requires_line_of_sight": true},
+    "dagger_attack": {"attack_type": 4, "animation_action": 13, "horizontal_range": 32.0, "vertical_range": 16.0, "requires_line_of_sight": true},
+    "broadsword_attack": {"attack_type": 5, "animation_action": 12, "horizontal_range": 32.0, "vertical_range": 16.0, "requires_line_of_sight": true},
+    "dart_attack": {"attack_type": 6, "animation_action": 14, "horizontal_range": 320.0, "vertical_range": 160.0, "requires_line_of_sight": true},
+    "slingshot_attack": {"attack_type": 7, "animation_action": 15, "horizontal_range": 320.0, "vertical_range": 160.0, "requires_line_of_sight": true},
+    "active_action": {"attack_type": 8, "animation_action": 8, "horizontal_range": 32.0, "vertical_range": 16.0, "requires_line_of_sight": true},
+    "grenade_attack": {"attack_type": 9, "animation_action": 11, "horizontal_range": 480.0, "vertical_range": 240.0, "requires_line_of_sight": true},
+    "active_action_alt": {"attack_type": 10, "animation_action": 8, "horizontal_range": 32.0, "vertical_range": 16.0, "requires_line_of_sight": true},
+    "special_attack": {"attack_type": 11, "animation_action": 1, "horizontal_range": 32.0, "vertical_range": 16.0, "requires_line_of_sight": true}
+  }
+}

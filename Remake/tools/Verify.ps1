@@ -8,6 +8,7 @@ $remakeRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $solution = Join-Path $remakeRoot '1937Remake.slnx'
 $tests = Join-Path $PSScriptRoot 'ResourceFormats.Tests\ResourceFormats.Tests.csproj'
 $game = Join-Path $remakeRoot 'game'
+$realAssetManifest = Join-Path $remakeRoot 'LocalAssets\converted\levels\m000\level.json'
 
 & (Join-Path $PSScriptRoot 'Check-NoOriginalAssets.ps1')
 
@@ -61,6 +62,19 @@ Get-ChildItem -LiteralPath $game -Recurse -Filter '*.gd' | ForEach-Object {
 & $GodotExecutable --headless --path $game --script 'res://tests/test_runner.gd'
 if ($LASTEXITCODE -ne 0) {
     throw "Godot logic tests failed with exit code $LASTEXITCODE."
+}
+
+if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
+    & $GodotExecutable --headless --path $game --script 'res://tests/real_assets_test.gd'
+    if ($LASTEXITCODE -ne 0) {
+        throw "Godot real imported-asset tests failed with exit code $LASTEXITCODE."
+    }
+
+    & $GodotExecutable --headless --path $game `
+        --script 'res://tests/navigation_stress_test.gd' -- --level=m004
+    if ($LASTEXITCODE -ne 0) {
+        throw "Godot dense navigation stress test failed with exit code $LASTEXITCODE."
+    }
 }
 
 & $GodotExecutable --headless --path $game --quit-after 2

@@ -11,7 +11,8 @@ if ($LASTEXITCODE -ne 0) {
 
 $bannedExtensions = @(
     '.gfl', '.vwf', '.svt', '.sav', '.dbl', '.slf', '.si0',
-    '.spr', '.spr1', '.tlg', '.tlg1', '.iblock', '.psd', '.wav'
+    '.spr', '.spr1', '.tlg', '.tlg1', '.iblock', '.psd', '.wav',
+    '.i64', '.idb', '.id0', '.id1', '.nam', '.til'
 )
 $bannedNames = @(
     'm1937.exe',
@@ -39,6 +40,13 @@ foreach ($relativePath in $trackedFiles) {
     $extension = [IO.Path]::GetExtension($relativePath).ToLowerInvariant()
     $name = [IO.Path]::GetFileName($relativePath).ToLowerInvariant()
 
+    # `git ls-files` also reports tracked paths deleted in the current worktree.
+    # The guard validates files that would remain in the deliverable, so a pending
+    # deletion must not fail before Git has staged or committed it.
+    if (-not (Test-Path -LiteralPath $absolutePath -PathType Leaf)) {
+        continue
+    }
+
     if ($bannedExtensions -contains $extension) {
         $violations.Add("Banned original extension: $relativePath")
     }
@@ -48,7 +56,6 @@ foreach ($relativePath in $trackedFiles) {
     if ($forwardPath -match '(^|/)raw/gfl(/|$)' -or $name -eq 'gfl-manifest.json') {
         $violations.Add("Generated original-resource import path: $relativePath")
     }
-
     $file = Get-Item -LiteralPath $absolutePath
     if ($file.Length -gt 25MB) {
         $violations.Add("Unexpected tracked file larger than 25 MiB: $relativePath")
@@ -62,6 +69,9 @@ foreach ($relativePath in $trackedFiles) {
                 $entryName = [IO.Path]::GetFileName($entry.FullName).ToLowerInvariant()
                 if ($bannedExtensions -contains $entryExtension -or $bannedNames -contains $entryName) {
                     $violations.Add("Original asset-like entry inside ZIP: $relativePath -> $($entry.FullName)")
+                }
+                if ($forwardPath -match '^Patch/release/' -and $entryExtension -eq '.zip') {
+                    $violations.Add("Nested archive inside release ZIP: $relativePath -> $($entry.FullName)")
                 }
                 if ($entry.Length -gt 0) {
                     $entryStream = $entry.Open()

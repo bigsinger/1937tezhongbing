@@ -151,6 +151,11 @@ internal static class Program
         var rawOutput = System.IO.Path.Combine(outputDirectory, "raw", "gfl");
         var archive = GflArchive.Open(gflPath, File.Exists(gflIndexPath) ? gflIndexPath : null);
         var extracted = archive.ExtractAll(rawOutput);
+        var conversion = OriginalAssetConverter.Convert(
+            gameDirectory,
+            outputDirectory,
+            archive,
+            extracted);
 
         WriteJson(System.IO.Path.Combine(outputDirectory, "manifest.json"), new
         {
@@ -158,18 +163,41 @@ internal static class Program
             tool = "Mission1937.Remake.ResourceTool",
             source = report,
             gfl_entries = extracted,
+            converted_assets = conversion,
             conversion_status = new
             {
                 gfl_container = "extracted",
-                spr1_tlg1_images = "not_implemented",
-                vwf_maps = "not_implemented",
-                dbl_database = "not_implemented",
-                slf_sound_map = "not_implemented"
+                iblock_images = "converted_to_png",
+                spr1_previews = "converted_to_png",
+                spr1_frames = "converted_to_png_with_per_sprite_json_manifests",
+                tlg1_atlases = "converted_to_png",
+                vwf_maps = "m000_through_m011_converted_to_png_and_json",
+                vwf_navigation = "line_of_sight_movement_event_and_manual_correction_layers_converted_to_binary",
+                dbl_database = "parsed_and_linked",
+                slf_sound_map = "validated",
+                wav_audio = "copied"
             }
         });
 
         Console.WriteLine($"Imported {extracted.Count} GFL entries into {outputDirectory}");
-        Console.WriteLine("SPR1/TLG1 image conversion and VWF map conversion are the next milestone.");
+        Console.WriteLine(
+            $"Converted {conversion.IBlockPngCount} IBLOCK images, " +
+            $"{conversion.TileAtlasPngCount} tile atlases, " +
+            $"{conversion.SpritePreviewPngCount} sprite previews, " +
+            $"{conversion.SpriteFramePngCount} sprite frames and " +
+            $"{conversion.WaveFileCount} WAV files.");
+        Console.WriteLine(
+            $"Wrote {conversion.SpriteAnimationManifestCount} sprite animation manifests " +
+            $"covering {conversion.SpriteGroupCount} frame groups.");
+        Console.WriteLine(
+            $"Rendered {conversion.FormalLevelCount} formal levels with " +
+            $"{conversion.TotalLevelEntityCount} entity records.");
+        foreach (var level in conversion.Levels)
+        {
+            Console.WriteLine(
+                $"  {level.LevelId}: {level.TerrainWidth}x{level.TerrainHeight}, " +
+                $"{level.EntityCount} entities");
+        }
         return 0;
     }
 

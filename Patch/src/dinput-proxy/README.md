@@ -11,4 +11,4 @@
 
 使用 `build.cmd` 构建。脚本优先使用当前 PATH 中的 `cl.exe`，否则通过 Visual Studio Installer 的 `vswhere.exe` 自动定位最新 C++ 工具链，并调用 x86 Native Tools 环境。
 
-构建目标为 32 位 DLL，因为游戏主程序是 PE32。
+构建目标为 32 位 DLL，因为游戏主程序是 PE32；链接阶段显式使用 `/MACHINE:X86`，如果 PATH 中误用了 x64 编译器，构建会失败而不会产出无法被游戏加载的 64 位 DLL。
