@@ -1,0 +1,20 @@
+* text=auto
+
+*.cs text eol=lf
+*.csproj text eol=lf
+*.slnx text eol=lf
+*.gd text eol=lf
+*.godot text eol=lf
+*.tscn text eol=lf
+*.tres text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.ps1 text eol=lf
+*.cmd text eol=crlf
+
+*.zip binary
+*.png binary
+*.dll binary
+*.exe binary

@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/Tools/">
+    <Project Path="tools/ResourceFormats/ResourceFormats.csproj" />
+    <Project Path="tools/ResourceTool/ResourceTool.csproj" />
+    <Project Path="tools/ResourceFormats.Tests/ResourceFormats.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -9,6 +9,6 @@
 - 校验目标 PE 特征及原机器码后，只在进程内存中抑制资源库误报；
 - 只在进程内存中跳过两个问题启动影片，不修改磁盘上的 `M1937.exe`。
 
-使用 `build.cmd` 构建。脚本当前引用本项目测试机上的 Visual Studio 路径；其他机器可先运行 Visual Studio x86 Native Tools 命令提示符，再按脚本中的 `cl` 参数构建。
+使用 `build.cmd` 构建。脚本优先使用当前 PATH 中的 `cl.exe`，否则通过 Visual Studio Installer 的 `vswhere.exe` 自动定位最新 C++ 工具链，并调用 x86 Native Tools 环境。
 
 构建目标为 32 位 DLL，因为游戏主程序是 PE32。

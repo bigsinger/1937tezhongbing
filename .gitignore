@@ -6,12 +6,28 @@
 *.exp
 *.map
 *.d
+**/bin/
+**/obj/
+**/build/
+**/.vs/
+**/.vscode/
+**/.idea/
+**/.godot/
 
 # Local test logs and temporary extraction directories
 *.tmp
 *.log
 release-test/
 test-results/
+TestResults/
+
+# Remake assets generated from a locally owned original copy
+Remake/LocalAssets/
+Remake/game/imported/
+Remake/game/assets/original/
+Remake/game/assets/imported/
+Remake/.local/
+local-assets.json
 
 # Original game content must never enter this repository
 1937tzb_1229/
@@ -24,5 +40,17 @@ backups/
 *.svt
 *.SAV
 *.sav
+*.DBL
+*.dbl
+*.SLF
+*.slf
+*.SI0
+*.si0
+M1937.exe
+1937Setup.exe
+1937Resources.*
+InterMedia.GFL
+1937Intro.svt
+GamekingLogo.svt
 
 # Keep the distributable patch binaries and scripts tracked.

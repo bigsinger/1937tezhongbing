@@ -1,4 +1,12 @@
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [ValidateScript({ Test-Path -LiteralPath $_ -PathType Container })]
+    [string]$GameDirectory
+)
+
 $ErrorActionPreference = 'Stop'
+$gameDirectory = (Resolve-Path -LiteralPath $GameDirectory).Path
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type @'
@@ -83,7 +91,6 @@ function Wait-ClientSize([IntPtr]$Window, [int]$Width, [int]$Height,
     throw "Timed out waiting for mode: $Mode"
 }
 
-$gameDirectory = 'E:\1937\1937tzb_1229'
 $startInfo = New-Object System.Diagnostics.ProcessStartInfo
 $startInfo.FileName = Join-Path $gameDirectory 'M1937.exe'
 $startInfo.WorkingDirectory = $gameDirectory

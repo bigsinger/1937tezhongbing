@@ -6,4 +6,4 @@
 - `Test-Fullscreen.ps1`：通过 cnc-ddraw 的窗口消息验证窗口/全屏尺寸切换；
 - PresentMon 原始帧时间数据位于 `../results/`。测试使用 Intel PresentMon 1.10.0，仓库只保留结果，不重复分发其可执行文件。
 
-这些工具中的地址和操作流程只适用于仓库 README 指定 SHA-256 的 `M1937.exe`，不应直接用于其他版本。
+这些工具中的地址和操作流程只适用于 [Patch README](../../README.md#目标主程序) 指定 SHA-256 的 `M1937.exe`，不应直接用于其他版本。
