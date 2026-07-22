@@ -35,6 +35,7 @@ function Resolve-GodotExecutable {
         }
     }
     $candidates.Add((Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links\godot.exe'))
+	$candidates.Add('D:\Godot\Godot_v4.7.1-stable_win64_console.exe')
     $candidates.Add('E:\1937\tools\Godot-WinGet\extracted\Godot_v4.7.1-stable_win64_console.exe')
 
     foreach ($candidate in $candidates) {
