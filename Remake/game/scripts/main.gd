@@ -873,6 +873,7 @@ func _spawn_enemies() -> void:
 
 
 func _process(delta: float) -> void:
+	_update_context_cursor()
 	if burial_target != null and is_instance_valid(burial_target):
 		if burial_worker == null or not is_instance_valid(burial_worker) or not burial_worker.is_alive:
 			burial_target = null
@@ -926,6 +927,14 @@ func _process(delta: float) -> void:
 		direction = direction.normalized()
 	level_camera.position += direction * CAMERA_PAN_SPEED * delta / level_camera.zoom.x
 	clamp_level_camera()
+
+func _update_context_cursor() -> void:
+	if burial_mode:
+		Input.set_default_cursor_shape(Input.CURSOR_POINTING_HAND)
+	elif sight_target_pending:
+		Input.set_default_cursor_shape(Input.CURSOR_HELP)
+	else:
+		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
 
 
 func _mouse_edge_scroll_direction() -> Vector2:
@@ -1243,6 +1252,17 @@ func _try_bury_at(world_point: Vector2) -> bool:
 	if corpse == null:
 		update_status("掩埋模式：请点击阵亡敌人")
 		return false
+	burial_target = corpse
+	burial_worker = selected_units[0] if not selected_units.is_empty() else null
+	burial_progress = 0.0
+	if burial_worker == null:
+		burial_target = null
+		update_status("请先选择执行掩埋的队员")
+		return false
+	if burial_worker.position.distance_to(corpse.position) > 52.0:
+		burial_worker.issue_move(corpse.position)
+	update_status("已下达掩埋命令，队员将先接近目标")
+	return true
 	var scene_index := int(corpse.scene_index)
 	if scene_index >= 0:
 		buried_enemy_scene_indices[scene_index] = true
@@ -1254,6 +1274,12 @@ func _try_bury_at(world_point: Vector2) -> bool:
 func _finish_burial() -> void:
 	# Kept as a small lifecycle hook for the timed interaction path. Existing
 	# recovered corpse state is applied by _try_bury_at when the action resolves.
+	if burial_target != null and is_instance_valid(burial_target):
+		var scene_index := int(burial_target.scene_index)
+		if scene_index >= 0:
+			buried_enemy_scene_indices[scene_index] = true
+		burial_target.visible = false
+		burial_target.process_mode = Node.PROCESS_MODE_DISABLED
 	burial_target = null
 	burial_worker = null
 	burial_progress = 0.0
