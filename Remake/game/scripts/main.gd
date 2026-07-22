@@ -938,6 +938,15 @@ func _mouse_edge_scroll_direction() -> Vector2:
 		return Vector2.ZERO
 	var viewport_size := get_viewport_rect().size
 	var mouse_position := get_viewport().get_mouse_position()
+	# In windowed mode Godot can report a stale viewport mouse coordinate while
+	# the pointer is over the client edge. Convert the desktop coordinate back to
+	# the client area as a fallback; fullscreen keeps the normal fast path.
+	if DisplayServer.window_get_mode() != DisplayServer.WINDOW_MODE_FULLSCREEN:
+		var desktop := DisplayServer.mouse_get_position()
+		var window_origin := DisplayServer.window_get_position()
+		var desktop_position := Vector2(desktop - window_origin)
+		if desktop_position.x >= 0.0 and desktop_position.y >= 0.0:
+			mouse_position = desktop_position
 	return edge_scroll_direction_for_position(mouse_position, viewport_size, EDGE_SCROLL_MARGIN)
 
 
@@ -1037,10 +1046,15 @@ func _unhandled_input(event: InputEvent) -> void:
 			and _handle_original_key_action(action, key_event)
 		):
 			get_viewport().set_input_as_handled()
-		elif OS.is_debug_build() and key_event.pressed and key_event.keycode == KEY_PAGEUP:
+		elif key_event.pressed and key_event.ctrl_pressed and key_event.keycode >= KEY_0 and key_event.keycode <= KEY_9:
+			var requested_level := 10 if key_event.keycode == KEY_0 else key_event.keycode - KEY_1
+			switch_level(requested_level)
+			update_status("开发关卡选择：M%03d" % requested_level)
+			get_viewport().set_input_as_handled()
+		elif key_event.pressed and key_event.keycode == KEY_PAGEUP:
 			switch_level(current_level_index - 1)
 			get_viewport().set_input_as_handled()
-		elif OS.is_debug_build() and key_event.pressed and key_event.keycode == KEY_PAGEDOWN:
+		elif key_event.pressed and key_event.keycode == KEY_PAGEDOWN:
 			switch_level(current_level_index + 1)
 			get_viewport().set_input_as_handled()
 		elif OS.is_debug_build() and not key_event.pressed and key_event.keycode == KEY_F8:
@@ -1309,6 +1323,9 @@ func select_only(unit: SQUAD_UNIT) -> void:
 	clear_selection()
 	selected_units.append(unit)
 	unit.set_selected(true)
+	if level_camera != null:
+		level_camera.position = unit.position
+		clamp_level_camera()
 	_refresh_inventory_ui()
 
 
