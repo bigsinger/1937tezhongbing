@@ -939,9 +939,12 @@ func _draw() -> void:
 		var health_ratio := clampf(
 			float(current_hit_points) / float(maximum_hit_points), 0.0, 1.0
 		)
-		draw_rect(Rect2(-18.0, -34.0, 36.0, 5.0), Color(0.08, 0.08, 0.07, 0.85), true)
+		# Imported sprites have widely varying heights. Anchor the selection bar
+		# above the actual sprite bounds, never across its face/body.
+		var health_y := -maxf(sprite_anchor.y, 28.0) - 12.0
+		draw_rect(Rect2(-18.0, health_y, 36.0, 5.0), Color(0.08, 0.08, 0.07, 0.85), true)
 		draw_rect(
-			Rect2(-17.0, -33.0, 34.0 * health_ratio, 3.0),
+			Rect2(-17.0, health_y + 1.0, 34.0 * health_ratio, 3.0),
 			Color(0.30, 0.78, 0.30) if health_ratio > 0.35 else Color(0.92, 0.25, 0.18),
 			true,
 		)

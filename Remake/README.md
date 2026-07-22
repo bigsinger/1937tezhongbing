@@ -1,5 +1,15 @@
 # 《1937特种兵》复刻工程
 
+## 效果截图
+
+最新本地试玩包请运行 `LocalBuild/1937Remake/Play-1937-Remake.cmd`。
+
+![右下角实时小地图](Screenshots/tactical-map.png)
+
+![五列背包界面](Screenshots/inventory.png)
+
+![任务失败与重玩界面](Screenshots/failure-menu.png)
+
 这是一个从零实现的新游戏工程。游戏运行时使用 Godot 4.7.1 Standard 与 typed GDScript，旧资源研究和本地转换工具使用 .NET 10。
 
 ## 里程碑状态

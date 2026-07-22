@@ -570,9 +570,12 @@ func _draw_tactical_ranges() -> void:
 		float(sense_profile.get("vertical_radius", 0.0)),
 	)
 	if vision_radii.x > 0.0 and vision_radii.y > 0.0:
-		_draw_ellipse_outline(vision_radii, Color(0.25, 0.90, 0.38, 0.82), 2.0)
 		var near_ratio := clampf(float(sense_profile.get("near_band_ratio", 0.5)), 0.1, 1.0)
-		_draw_ellipse_outline(vision_radii * near_ratio, Color(0.30, 0.96, 0.46, 0.72) if not is_crawling else Color(0.92, 0.24, 0.18, 0.82), 1.5)
+		# Commandos-style directional perception: green is detectable while the
+		# target stands, red is the outer band that needs a prone target. Every
+		# ray stops at the first L2 sight obstruction, so walls cut the fan.
+		_draw_visibility_fan(vision_radii, 1.0, Color(0.92, 0.22, 0.16, 0.10), Color(0.92, 0.22, 0.16, 0.74))
+		_draw_visibility_fan(vision_radii, near_ratio, Color(0.20, 0.90, 0.35, 0.16), Color(0.20, 0.96, 0.42, 0.88))
 	var attack_radii := Vector2(
 		float(weapon_profile.get("horizontal_range", 0.0)),
 		float(weapon_profile.get("vertical_range", 0.0)),
@@ -587,3 +590,31 @@ func _draw_ellipse_outline(radii: Vector2, color: Color, width: float) -> void:
 		var angle := TAU * float(index) / 48.0
 		points.append(Vector2(cos(angle) * radii.x, sin(angle) * radii.y))
 	draw_polyline(points, color, width, true)
+
+func _draw_visibility_fan(radii: Vector2, ratio: float, fill: Color, outline: Color) -> void:
+	var center: float = TACTICAL_SENSES.original_direction_center_degrees(original_direction_index)
+	var half_angle: float = TACTICAL_SENSES.original_direction_half_angle_degrees(original_direction_index)
+	if center < 0.0 or half_angle <= 0.0:
+		return
+	var points := PackedVector2Array([Vector2.ZERO])
+	const STEPS := 24
+	for step: int in range(STEPS + 1):
+		var degrees: float = center - half_angle + (2.0 * half_angle * float(step) / float(STEPS))
+		var candidate := Vector2(cos(deg_to_rad(degrees)) * radii.x * ratio, sin(deg_to_rad(degrees)) * radii.y * ratio)
+		var endpoint := _clip_vision_ray(candidate)
+		points.append(endpoint)
+	if points.size() >= 3:
+		draw_colored_polygon(points, fill)
+		draw_polyline(points, outline, 1.5, true)
+
+func _clip_vision_ray(candidate: Vector2) -> Vector2:
+	if dynamic_occupancy == null:
+		return candidate
+	var accepted := Vector2.ZERO
+	const STEPS := 32
+	for step: int in range(1, STEPS + 1):
+		var probe := candidate * (float(step) / float(STEPS))
+		if not dynamic_occupancy.has_line_of_sight(position, position + probe, [scene_index]):
+			break
+		accepted = probe
+	return accepted
