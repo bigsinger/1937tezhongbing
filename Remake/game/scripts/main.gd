@@ -779,7 +779,7 @@ func spawn_squad() -> void:
 		for initial_attack_type: int in [4, 1, 2]:
 			if initial_attack_type == attack_type:
 				continue
-			var initial_profile := COMBAT_PROFILES.weapon_profile_for_attack_type(initial_attack_type)
+			var initial_profile: Dictionary = COMBAT_PROFILES.weapon_profile_for_attack_type(initial_attack_type)
 			if not initial_profile.is_empty():
 				unit.register_inventory_weapon(initial_profile, [], true, false)
 		_connect_combatant(unit)
