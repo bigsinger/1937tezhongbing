@@ -875,6 +875,7 @@ func _spawn_enemies() -> void:
 
 func _process(delta: float) -> void:
 	_update_context_cursor()
+	_process_enemy_ground_pickups()
 	for beacon: Dictionary in sight_beacons:
 		var beacon_position := beacon.get("position", Vector2.ZERO) as Vector2
 		for enemy: ENEMY_UNIT in enemies:
@@ -2031,6 +2032,21 @@ func drop_selected_item_at(world_position: Vector2) -> bool:
 	_refresh_inventory_ui()
 	update_status("已将 %s 丢到地面，附近敌人会前往查看" % item_key)
 	return true
+
+func _process_enemy_ground_pickups() -> void:
+	for pickup: MISSION_PICKUP in mission_pickups.duplicate():
+		if pickup == null or not is_instance_valid(pickup) or pickup.collected:
+			continue
+		for enemy: ENEMY_UNIT in enemies:
+			if enemy.is_alive and enemy.position.distance_to(pickup.position) <= 24.0:
+				var payload := pickup.collect()
+				if payload.is_empty():
+					break
+				mission_pickups.erase(pickup)
+				enemy.last_known_target_position = enemy.position
+				enemy.behavior_state = ENEMY_UNIT.BehaviorState.PATROL
+				update_status("敌人拾取了地面物品")
+				break
 
 
 func _on_attack_hit(
