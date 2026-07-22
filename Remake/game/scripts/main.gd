@@ -184,6 +184,7 @@ var right_drag_current_screen := Vector2.ZERO
 var original_force_target_held := false
 var sight_observation_mode := false
 var sight_target_pending := false
+var sight_beacons: Array[Dictionary] = []
 var burial_mode := false
 var burial_target: ENEMY_UNIT
 var burial_worker: SQUAD_UNIT
@@ -874,6 +875,11 @@ func _spawn_enemies() -> void:
 
 func _process(delta: float) -> void:
 	_update_context_cursor()
+	for beacon: Dictionary in sight_beacons:
+		var beacon_position := beacon.get("position", Vector2.ZERO) as Vector2
+		for enemy: ENEMY_UNIT in enemies:
+			if enemy.is_alive and enemy.position.distance_to(beacon_position) <= 28.0:
+				enemy.set_tactical_ranges_visible(true)
 	if burial_target != null and is_instance_valid(burial_target):
 		if burial_worker == null or not is_instance_valid(burial_worker) or not burial_worker.is_alive:
 			burial_target = null
@@ -933,6 +939,8 @@ func _update_context_cursor() -> void:
 		Input.set_default_cursor_shape(Input.CURSOR_POINTING_HAND)
 	elif sight_target_pending:
 		Input.set_default_cursor_shape(Input.CURSOR_HELP)
+	elif not selected_units.is_empty() and enemy_at_world_point(_mouse_world_position()) != null:
+		Input.set_default_cursor_shape(Input.CURSOR_CROSS)
 	else:
 		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
 
@@ -1326,7 +1334,17 @@ func _select_sight_observation_target(world_point: Vector2) -> void:
 				enemy.set_tactical_ranges_visible(true)
 			update_status("正在以%s观察：黄色为敌军视野，红色为攻击范围" % unit.display_name)
 			return
-	update_status("视线观察模式：请点击一名存活队员")
+	if not selected_units.is_empty():
+		sight_beacons.append({"position": world_point, "owner": selected_units[0].scene_index})
+		sight_target_pending = false
+		sight_observation_mode = false
+		update_status("已设置观察点；敌人经过时将显示其视线区域")
+		queue_redraw()
+		return
+	update_status("视线观察模式：请点击一名存活队员或空地")
+
+func _mouse_world_position() -> Vector2:
+	return get_global_transform_with_canvas().affine_inverse() * get_viewport().get_mouse_position()
 
 
 func _reload_selected_units() -> void:
@@ -3992,6 +4010,10 @@ func _media_actor_key(actor_name: String) -> String:
 
 func _draw() -> void:
 	if terrain_loaded:
+		for beacon: Dictionary in sight_beacons:
+			var beacon_position := beacon.get("position", Vector2.ZERO) as Vector2
+			draw_circle(beacon_position, 7.0, Color(0.25, 0.95, 0.42, 0.9))
+			draw_arc(beacon_position, 15.0, 0.0, TAU, 20, Color(0.25, 0.95, 0.42, 0.7), 2.0)
 		_draw_mission_markers()
 		_draw_selection_marquee()
 		return
