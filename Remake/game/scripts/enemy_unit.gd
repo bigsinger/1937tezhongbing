@@ -80,7 +80,9 @@ func configure_enemy(
 			float(entity.get("reference_y", entity.get("y", 0))),
 		),
 	)
-	move_speed = 92.0
+	# Recovered walk cadence is slower than the old remake default; this keeps
+	# patrols readable and leaves room for the authored run/crawl speeds.
+	move_speed = 72.0
 	blocked_replan_seconds = 0.65 + float(posmod(scene_index * 11, 8)) * 0.05
 	patrol_path_retry_seconds = (
 		PATROL_PATH_RETRY_MIN_SECONDS
@@ -445,6 +447,12 @@ func receive_alert(target: Node2D, world_position: Vector2) -> bool:
 		return false
 	current_target = target
 	last_known_target_position = world_position
+	# Search slightly ahead of the last sound/shot when a moving target exposes a
+	# velocity, giving guards a deterministic intercept point instead of a dumb
+	# beeline to the stale coordinate.
+	var velocity_value: Variant = target.get("velocity")
+	if velocity_value is Vector2:
+		last_known_target_position += (velocity_value as Vector2).normalized() * 48.0
 	search_elapsed = 0.0
 	chase_replan_elapsed = CHASE_REPLAN_SECONDS
 	if behavior_state == BehaviorState.REGROUP:

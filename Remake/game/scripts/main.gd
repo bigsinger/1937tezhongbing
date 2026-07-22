@@ -1054,6 +1054,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 	elif event is InputEventKey and not event.echo:
 		var key_event := event as InputEventKey
+		if key_event.pressed and key_event.keycode == KEY_N:
+			emit_noise_at(_mouse_world_position(), 640.0)
+			get_viewport().set_input_as_handled()
+			return
 		if key_event.pressed:
 			_consume_original_cheat_key(key_event)
 		var controls := runtime_settings.get("controls", {}) as Dictionary
@@ -1987,6 +1991,18 @@ func _queue_or_broadcast_alert(
 		if enemy.receive_alert(target, world_position):
 			alerted_count += 1
 	return alerted_count
+
+func emit_noise_at(world_position: Vector2, radius: float = 640.0) -> int:
+	var source: Node2D = selected_units[0] if not selected_units.is_empty() else null
+	var target: Node2D = source
+	var alerted := 0
+	for enemy: ENEMY_UNIT in enemies:
+		if not enemy.is_alive or source == null:
+			continue
+		if enemy.position.distance_to(world_position) <= radius and enemy.receive_alert(source, world_position):
+			alerted += 1
+	update_status("制造声音：%d 名敌人前往调查" % alerted)
+	return alerted
 
 
 func _on_attack_hit(
