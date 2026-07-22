@@ -876,11 +876,7 @@ func _spawn_enemies() -> void:
 func _process(delta: float) -> void:
 	_update_context_cursor()
 	_process_enemy_ground_pickups()
-	for beacon: Dictionary in sight_beacons:
-		var beacon_position := beacon.get("position", Vector2.ZERO) as Vector2
-		for enemy: ENEMY_UNIT in enemies:
-			if enemy.is_alive and enemy.position.distance_to(beacon_position) <= 28.0:
-				enemy.set_tactical_ranges_visible(true)
+	_update_tactical_sight_visibility()
 	if burial_target != null and is_instance_valid(burial_target):
 		if burial_worker == null or not is_instance_valid(burial_worker) or not burial_worker.is_alive:
 			burial_target = null
@@ -944,6 +940,22 @@ func _update_context_cursor() -> void:
 		Input.set_default_cursor_shape(Input.CURSOR_CROSS)
 	else:
 		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+
+func _update_tactical_sight_visibility() -> void:
+	var hovered_enemy: ENEMY_UNIT = enemy_at_world_point(_mouse_world_position()) if sight_observation_mode else null
+	for enemy: ENEMY_UNIT in enemies:
+		enemy.set_tactical_ranges_visible(enemy == hovered_enemy)
+	# Observation beacons are transient traps: the first enemy that steps onto
+	# one exposes its fan once, then the beacon is consumed and never saved.
+	for index: int in range(sight_beacons.size() - 1, -1, -1):
+		var beacon := sight_beacons[index]
+		var beacon_position := beacon.get("position", Vector2.ZERO) as Vector2
+		for enemy: ENEMY_UNIT in enemies:
+			if enemy.is_alive and enemy.position.distance_to(beacon_position) <= 28.0:
+				enemy.set_tactical_ranges_visible(true)
+				sight_beacons.remove_at(index)
+				queue_redraw()
+				break
 
 
 func _mouse_edge_scroll_direction() -> Vector2:
@@ -1339,9 +1351,7 @@ func _select_sight_observation_target(world_point: Vector2) -> void:
 		if unit.is_alive and unit.contains_parent_point(world_point):
 			select_only(unit)
 			sight_target_pending = false
-			for enemy: ENEMY_UNIT in enemies:
-				enemy.set_tactical_ranges_visible(true)
-			update_status("正在以%s观察：黄色为敌军视野，红色为攻击范围" % unit.display_name)
+			update_status("正在以%s观察：把鼠标移到敌人上方显示其扇形视野" % unit.display_name)
 			return
 	if not selected_units.is_empty():
 		sight_beacons.append({"position": world_point, "owner": selected_units[0].scene_index})
