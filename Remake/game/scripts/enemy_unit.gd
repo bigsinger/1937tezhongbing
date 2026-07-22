@@ -56,6 +56,20 @@ func set_tactical_ranges_visible(value: bool) -> void:
 	tactical_ranges_visible = value
 	queue_redraw()
 
+func _draw() -> void:
+	# Compact Commandos-style tactical overlay: green is the standing visibility
+	# band, red is the weapon ellipse. Crawling reverses the visibility emphasis.
+	if tactical_ranges_visible and is_alive:
+		var vr := Vector2(float(sense_profile.get("horizontal_radius", 0.0)), float(sense_profile.get("vertical_radius", 0.0)))
+		if vr.x > 0.0 and vr.y > 0.0:
+			draw_flat_ellipse(Vector2.ZERO, vr, Color(0.22, 0.82, 0.38, 0.10))
+			var near_ratio := clampf(float(sense_profile.get("near_band_ratio", 0.5)), 0.1, 1.0)
+			draw_flat_ellipse(Vector2.ZERO, vr * near_ratio, Color(0.26, 0.92, 0.42, 0.13) if not is_crawling else Color(0.88, 0.22, 0.18, 0.16))
+		var wr := Vector2(float(weapon_profile.get("horizontal_range", 0.0)), float(weapon_profile.get("vertical_range", 0.0)))
+		if wr.x > 0.0 and wr.y > 0.0:
+			draw_flat_ellipse(Vector2.ZERO, wr, Color(0.92, 0.22, 0.16, 0.08))
+	super._draw()
+
 
 func configure_enemy(
 	entity: Dictionary,
@@ -280,7 +294,7 @@ func _update_detection() -> void:
 		var target_scene_index := int(target.get("scene_index"))
 		if target_scene_index >= 0:
 			ignored.append(target_scene_index)
-		if not TACTICAL_SENSES.can_detect_original(
+		var visible := TACTICAL_SENSES.can_detect_original(
 			dynamic_occupancy,
 			position,
 			target.position,
@@ -288,7 +302,9 @@ func _update_detection() -> void:
 			sense_profile,
 			bool(target.get("is_crawling")),
 			ignored,
-		):
+		)
+		var heard := (not visible) and TACTICAL_SENSES.is_within_hearing_range(position, target.position, sense_profile)
+		if not visible and not heard:
 			continue
 		var distance_squared := position.distance_squared_to(target.position)
 		if distance_squared < nearest_distance_squared:

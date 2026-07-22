@@ -5,6 +5,7 @@
     "enemy_default": {
       "horizontal_radius": 640.0,
       "vertical_radius": 320.0,
+      "hearing_radius": 640.0,
       "near_band_ratio": 0.5,
       "omnidirectional": false,
       "requires_line_of_sight": true,

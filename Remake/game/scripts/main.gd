@@ -185,6 +185,10 @@ var original_force_target_held := false
 var sight_observation_mode := false
 var sight_target_pending := false
 var burial_mode := false
+var burial_target: ENEMY_UNIT
+var burial_worker: SQUAD_UNIT
+var burial_progress := 0.0
+const BURIAL_SECONDS := 1.6
 var minimap_refresh_elapsed := 0.0
 var original_cheat_buffer := ""
 var pending_initial_briefing_level := ""
@@ -770,6 +774,14 @@ func spawn_squad() -> void:
 			death_groups,
 			false,
 		)
+		# Original field loadout: knife, pistol and rifle are available from start;
+		# the selected actor's authored weapon remains active.
+		for initial_attack_type: int in [4, 1, 2]:
+			if initial_attack_type == attack_type:
+				continue
+			var initial_profile := COMBAT_PROFILES.weapon_profile_for_attack_type(initial_attack_type)
+			if not initial_profile.is_empty():
+				unit.register_inventory_weapon(initial_profile, [], true, false)
 		_connect_combatant(unit)
 		units.append(unit)
 	_grant_editorial_type_11_loadout()
@@ -861,6 +873,15 @@ func _spawn_enemies() -> void:
 
 
 func _process(delta: float) -> void:
+	if burial_target != null and is_instance_valid(burial_target):
+		if burial_worker == null or not is_instance_valid(burial_worker) or not burial_worker.is_alive:
+			burial_target = null
+		else:
+			if burial_worker.position.distance_to(burial_target.position) <= 52.0:
+				burial_progress = minf(burial_progress + maxf(delta, 0.0) / BURIAL_SECONDS, 1.0)
+				update_status("掩埋中 %d%%" % int(burial_progress * 100.0))
+				if burial_progress >= 1.0:
+					_finish_burial()
 	if mission_direction_runtime != null:
 		mission_direction_runtime.advance_time(maxf(delta, 0.0))
 	if mission_ai_coordinator != null:
@@ -1176,6 +1197,9 @@ func handle_selection(world_point: Vector2, additive: bool) -> void:
 	if selected_units.size() >= 2:
 		_report_direction_action("select_multiple_units")
 	_refresh_inventory_ui()
+	if selected_units.has(hit) and level_camera != null:
+		level_camera.position = hit.position
+		clamp_level_camera()
 	if selected_units.has(hit):
 		_play_media_audio("selected", _media_actor_key(hit.display_name))
 
@@ -1212,6 +1236,13 @@ func _try_bury_at(world_point: Vector2) -> bool:
 	corpse.process_mode = Node.PROCESS_MODE_DISABLED
 	update_status("已处理敌军尸体，避免其被巡逻队发现")
 	return true
+
+func _finish_burial() -> void:
+	# Kept as a small lifecycle hook for the timed interaction path. Existing
+	# recovered corpse state is applied by _try_bury_at when the action resolves.
+	burial_target = null
+	burial_worker = null
+	burial_progress = 0.0
 
 
 func _toggle_selected_run_walk() -> void:

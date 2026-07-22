@@ -168,6 +168,12 @@ static func can_detect_original(
 		)
 	)
 
+static func is_within_hearing_range(observer_position: Vector2, target_position: Vector2, sense_profile: Dictionary) -> bool:
+	var radius := float(sense_profile.get("hearing_radius", 0.0))
+	if radius <= 0.0:
+		radius = maxf(float(sense_profile.get("horizontal_radius", 0.0)), float(sense_profile.get("vertical_radius", 0.0)))
+	return radius > 0.0 and observer_position.distance_squared_to(target_position) <= radius * radius
+
 
 static func is_within_attack_range(
 	attacker_position: Vector2,

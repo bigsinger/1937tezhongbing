@@ -946,7 +946,9 @@ func _draw() -> void:
 			true,
 		)
 	if selected:
-		draw_arc(Vector2.ZERO, 23.0, 0.0, TAU, 40, Color(0.98, 0.84, 0.25), 3.0)
+		# Selection is communicated by the compact overhead health bar; the old
+		# ground ring obscured the imported sprite and was unlike the original UI.
+		pass
 
 
 func draw_flat_ellipse(center: Vector2, radii: Vector2, color: Color) -> void:
