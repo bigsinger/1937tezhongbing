@@ -460,6 +460,17 @@ func receive_alert(target: Node2D, world_position: Vector2) -> bool:
 	behavior_state = BehaviorState.CHASE
 	return true
 
+func investigate_position(world_position: Vector2) -> bool:
+	if not is_alive:
+		return false
+	current_target = null
+	last_known_target_position = world_position
+	search_elapsed = 0.0
+	chase_replan_elapsed = CHASE_REPLAN_SECONDS
+	behavior_state = BehaviorState.SEARCH
+	_issue_path_to(world_position)
+	return true
+
 
 func _is_hostile_target(target: Node2D) -> bool:
 	return (

@@ -1058,6 +1058,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			emit_noise_at(_mouse_world_position(), 640.0)
 			get_viewport().set_input_as_handled()
 			return
+		if key_event.pressed and key_event.keycode == KEY_T:
+			drop_selected_item_at(_mouse_world_position())
+			get_viewport().set_input_as_handled()
+			return
 		if key_event.pressed:
 			_consume_original_cheat_key(key_event)
 		var controls := runtime_settings.get("controls", {}) as Dictionary
@@ -2003,6 +2007,30 @@ func emit_noise_at(world_position: Vector2, radius: float = 640.0) -> int:
 			alerted += 1
 	update_status("制造声音：%d 名敌人前往调查" % alerted)
 	return alerted
+
+func drop_selected_item_at(world_position: Vector2) -> bool:
+	if selected_units.is_empty():
+		update_status("请先选择队员")
+		return false
+	var item_key := ""
+	for raw_key: Variant in field_inventory.keys():
+		if int(field_inventory[raw_key]) > 0:
+			item_key = str(raw_key)
+			break
+	if item_key.is_empty():
+		update_status("当前没有可丢弃物品")
+		return false
+	field_inventory[item_key] = int(field_inventory[item_key]) - 1
+	var pickup := MISSION_PICKUP.new()
+	add_child(pickup)
+	pickup.configure({"item_name": item_key, "item_key": item_key, "quantity": 1}, world_position)
+	mission_pickups.append(pickup)
+	for enemy: ENEMY_UNIT in enemies:
+		if enemy.is_alive and enemy.position.distance_to(world_position) <= 640.0:
+			enemy.investigate_position(world_position)
+	_refresh_inventory_ui()
+	update_status("已将 %s 丢到地面，附近敌人会前往查看" % item_key)
+	return true
 
 
 func _on_attack_hit(
