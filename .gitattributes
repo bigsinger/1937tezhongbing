@@ -16,6 +16,8 @@
 
 *.zip binary
 *.png binary
+*.jpg binary
+*.jpeg binary
 *.dll binary
 *.exe binary
 

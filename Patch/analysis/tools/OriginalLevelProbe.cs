@@ -21,6 +21,7 @@ internal static class OriginalLevelProbe
     private const int LeftReleased = 0x000E6FB0;
     private const int CurrentMission = 0x000E7060;
     private const int NewGameImmediate = 0x00003B66;
+    private const int FinalMissionVwfName = 0x000CF4A8;
     private const int SmoothScrollEntry = 0x0004C9B0;
     private const int HearingImmediate = 0x0005DD27;
     private const int AlertImmediate = 0x00056E62;
@@ -57,6 +58,10 @@ internal static class OriginalLevelProbe
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool WriteProcessMemory(
         IntPtr process, IntPtr address, byte[] data, int size, out IntPtr written);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    private static extern uint GetPrivateProfileInt(
+        string section, string key, int defaultValue, string fileName);
 
     [DllImport("kernel32.dll")]
     private static extern bool CloseHandle(IntPtr handle);
@@ -113,10 +118,11 @@ internal static class OriginalLevelProbe
             argument, "autostart", StringComparison.OrdinalIgnoreCase));
         bool testMouseInput = args.Any(argument => string.Equals(
             argument, "mouseinput", StringComparison.OrdinalIgnoreCase));
-        if (level < 1 || level > 12)
+        if (level < 1 || level > 13)
         {
             throw new ArgumentOutOfRangeException("level");
         }
+        int expectedEngineLevel = level == 13 ? 12 : level;
 
         Directory.CreateDirectory(outputDirectory);
         string executable = Path.Combine(gameDirectory, "M1937.exe");
@@ -158,6 +164,7 @@ internal static class OriginalLevelProbe
             {
                 long imageBase = game.MainModule.BaseAddress.ToInt64();
                 report.AppendLine("requested_level=" + level);
+                report.AppendLine("expected_engine_level=" + expectedEngineLevel);
 
                 IntPtr window = WaitForWindow(game, TimeSpan.FromSeconds(12));
                 if (window == IntPtr.Zero)
@@ -167,17 +174,30 @@ internal static class OriginalLevelProbe
 
                 int immediate = ReadInt(process, imageBase + NewGameImmediate);
                 report.AppendLine("new_game_immediate=" + immediate);
-                if (immediate != level)
+                if (immediate != expectedEngineLevel)
                 {
                     throw new InvalidOperationException(
                         "The runtime level patch did not apply.");
+                }
+                string finalMissionVwf = ReadAscii(
+                    process, imageBase + FinalMissionVwfName, 12);
+                report.AppendLine("final_mission_vwf=" + finalMissionVwf);
+                if (level == 13 &&
+                    !string.Equals(
+                        finalMissionVwf,
+                        "1937M012.VWF",
+                        StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        "The extension-mission VWF redirect did not apply.");
                 }
                 int scrollOpcode =
                     ReadInt(process, imageBase + SmoothScrollEntry) & 0xFF;
                 int hearing = ReadInt(process, imageBase + HearingImmediate);
                 int alert = ReadInt(process, imageBase + AlertImmediate);
                 report.AppendLine(
-                    "smooth_scroll_hook_opcode=0x" + scrollOpcode.ToString("X2"));
+                    "legacy_scroll_entry_opcode=0x" +
+                    scrollOpcode.ToString("X2"));
                 report.AppendLine("enhanced_hearing_radius=" + hearing);
                 report.AppendLine("enhanced_alert_radius=" + alert);
                 report.AppendLine(
@@ -188,10 +208,19 @@ internal static class OriginalLevelProbe
                     "renderer_viewport=" +
                     ReadInt(process, imageBase + RendererWidth) + "x" +
                     ReadInt(process, imageBase + RendererHeight));
-                if (scrollOpcode != 0xE9 || hearing != 192 || alert != 800)
+                int expectedHearing;
+                int expectedAlert;
+                ExpectedAiRadii(
+                    Path.Combine(gameDirectory, "rungame.ini"),
+                    out expectedHearing, out expectedAlert);
+                report.AppendLine(
+                    "expected_hearing_radius=" + expectedHearing);
+                report.AppendLine(
+                    "expected_alert_radius=" + expectedAlert);
+                if (hearing != expectedHearing || alert != expectedAlert)
                 {
                     throw new InvalidOperationException(
-                        "One or more v1.3 runtime enhancements did not apply.");
+                        "The configured enemy-AI radius patches did not apply.");
                 }
 
                 // Keep the original game in a small corner window without
@@ -447,7 +476,7 @@ internal static class OriginalLevelProbe
                     SaveUiCapture(
                         minimapUi, outputDirectory, "ui-m-minimap.jpg", report);
                 }
-                else
+                else if (latest == null)
                 {
                     report.AppendLine("compressed_window_capture=unavailable");
                     report.AppendLine("local_ocr=unavailable");
@@ -458,10 +487,10 @@ internal static class OriginalLevelProbe
                     throw new InvalidOperationException(
                         "The game process exited before the stability window elapsed.");
                 }
-                if (drive && observedMission != level)
+                if (drive && observedMission != expectedEngineLevel)
                 {
                     throw new InvalidOperationException(
-                        "New Game did not retain the requested mission number.");
+                        "New Game did not retain the expected engine mission number.");
                 }
                 if (testMouseInput &&
                     (!mouseInputSampled ||
@@ -500,6 +529,53 @@ internal static class OriginalLevelProbe
         keybd_event(virtualKey, 0, 0, UIntPtr.Zero);
         Thread.Sleep(80);
         keybd_event(virtualKey, 0, 0x0002, UIntPtr.Zero);
+    }
+
+    private static void ExpectedAiRadii(
+        string iniPath, out int hearing, out int alert)
+    {
+        int enabled = ReadIniInt(iniPath, "Enabled", 1);
+        if (enabled == 0)
+        {
+            hearing = 128;
+            alert = 640;
+            return;
+        }
+
+        int difficulty = Clamp(
+            ReadIniInt(iniPath, "Difficulty", 1), 0, 3);
+        int aiLevel = Clamp(
+            ReadIniInt(iniPath, "AILevel", 2), 0, 3);
+        int configuredHearing = Clamp(
+            ReadIniInt(iniPath, "HearingRadius", 0), 0, 2048);
+        int configuredAlert = Clamp(
+            ReadIniInt(iniPath, "AlertRadius", 0), 0, 4096);
+        int[] hearingBase = { 128, 160, 192, 224 };
+        int[] hearingAdjustment = { -32, 0, 32, 64 };
+        int[] alertBase = { 640, 720, 800, 960 };
+        int[] alertAdjustment = { -160, 0, 160, 320 };
+        hearing = configuredHearing > 0
+            ? configuredHearing
+            : Clamp(
+                hearingBase[aiLevel] + hearingAdjustment[difficulty],
+                64, 2048);
+        alert = configuredAlert > 0
+            ? configuredAlert
+            : Clamp(
+                alertBase[aiLevel] + alertAdjustment[difficulty],
+                320, 4096);
+    }
+
+    private static int ReadIniInt(
+        string iniPath, string key, int defaultValue)
+    {
+        return unchecked((int)GetPrivateProfileInt(
+            "mod", key, defaultValue, iniPath));
+    }
+
+    private static int Clamp(int value, int minimum, int maximum)
+    {
+        return Math.Max(minimum, Math.Min(maximum, value));
     }
 
     private static void SaveUiCapture(
@@ -543,6 +619,20 @@ internal static class OriginalLevelProbe
             throw new InvalidOperationException("ReadProcessMemory failed");
         }
         return BitConverter.ToInt32(bytes, 0);
+    }
+
+    private static string ReadAscii(
+        IntPtr process, long address, int length)
+    {
+        byte[] bytes = new byte[length];
+        IntPtr read;
+        if (!ReadProcessMemory(
+            process, new IntPtr(address), bytes, bytes.Length, out read) ||
+            read.ToInt64() != bytes.Length)
+        {
+            throw new InvalidOperationException("ReadProcessMemory failed");
+        }
+        return Encoding.ASCII.GetString(bytes);
     }
 
     private static void WriteInt(IntPtr process, long address, int value)
@@ -602,6 +692,56 @@ internal static class OriginalLevelProbe
                 return null;
             }
         }
+        if (LooksBlank(bitmap))
+        {
+            bitmap.Dispose();
+            bitmap = CaptureWindowFromScreen(window, rect, width, height);
+        }
+        return bitmap;
+    }
+
+    private static bool LooksBlank(Bitmap bitmap)
+    {
+        int minimum = 255;
+        int maximum = 0;
+        int startX = bitmap.Width / 10;
+        int endX = Math.Max(startX + 1, bitmap.Width * 9 / 10);
+        int startY = Math.Max(32, bitmap.Height / 10);
+        int endY = Math.Max(startY + 1, bitmap.Height * 9 / 10);
+        int stepX = Math.Max(1, (endX - startX) / 24);
+        int stepY = Math.Max(1, (endY - startY) / 18);
+        for (int y = startY; y < endY; y += stepY)
+        {
+            for (int x = startX; x < endX; x += stepX)
+            {
+                Color pixel = bitmap.GetPixel(x, y);
+                minimum = Math.Min(
+                    minimum, Math.Min(pixel.R, Math.Min(pixel.G, pixel.B)));
+                maximum = Math.Max(
+                    maximum, Math.Max(pixel.R, Math.Max(pixel.G, pixel.B)));
+            }
+        }
+        return maximum - minimum < 16 || minimum > 242;
+    }
+
+    private static Bitmap CaptureWindowFromScreen(
+        IntPtr window, Rect rect, int width, int height)
+    {
+        const uint noMoveNoSizeNoActivate = 0x0001 | 0x0002 | 0x0010;
+        SetWindowPos(
+            window, new IntPtr(-1), 0, 0, 0, 0,
+            noMoveNoSizeNoActivate);
+        Thread.Sleep(40);
+        var bitmap = new Bitmap(width, height, PixelFormat.Format24bppRgb);
+        using (Graphics graphics = Graphics.FromImage(bitmap))
+        {
+            graphics.CopyFromScreen(
+                rect.Left, rect.Top, 0, 0,
+                new Size(width, height), CopyPixelOperation.SourceCopy);
+        }
+        SetWindowPos(
+            window, new IntPtr(-2), 0, 0, 0, 0,
+            noMoveNoSizeNoActivate);
         return bitmap;
     }
 

@@ -104,7 +104,7 @@ void LoadModConfig() {
     g_mod_config.system_cursor_mapping =
         read(L"SystemCursorMapping", 1) != 0;
     g_mod_config.auto_start = read(L"AutoStart", 0) != 0;
-    g_mod_config.start_level = ClampSetting(read(L"StartLevel", 0), 0, 12);
+    g_mod_config.start_level = ClampSetting(read(L"StartLevel", 0), 0, 13);
 }
 
 void EnableModernDpiAwareness() {
@@ -191,7 +191,7 @@ int RequestedStartLevel() {
 
     char *end = nullptr;
     const long level = strtol(value, &end, 10);
-    if (end == value || *end != '\0' || level < 1 || level > 12) {
+    if (end == value || *end != '\0' || level < 1 || level > 13) {
         return 0;
     }
     return static_cast<int>(level);
@@ -614,16 +614,33 @@ void ApplyLegacyExecutablePatches() {
 
     // The original "New Game" thunk always writes mission number 1 to
     // M1937.exe+0xE7060. The optional level selector starts the process with
-    // M1937_START_LEVEL=1..12, so replace only that immediate operand. A
+    // M1937_START_LEVEL=1..13, so replace only that immediate operand. A
     // normal launch has no environment variable and keeps the original
-    // first-mission behaviour. This does not touch the executable on disk or
-    // manufacture save files.
+    // first-mission behaviour. The executable hard-codes exactly twelve
+    // mission slots. Extension mission 13 therefore uses the mission-12
+    // objective engine while redirecting its equal-length VWF filename to
+    // 1937M012.VWF. This does not touch the executable on disk or manufacture
+    // save files.
     const int requested_level = RequestedStartLevel();
     if (requested_level != 0) {
+        const int engine_level = requested_level == 13
+            ? 12
+            : requested_level;
+        if (requested_level == 13) {
+            static const unsigned char custom_vwf_expected[] =
+                "1937M011.VWF";
+            static const unsigned char custom_vwf_patch[] =
+                "1937M012.VWF";
+            PatchExecutableBytes(
+                base + 0x000CF4A8,
+                custom_vwf_expected,
+                custom_vwf_patch,
+                sizeof(custom_vwf_patch));
+        }
         static const unsigned char level_expected[] = {
             0x01, 0x00, 0x00, 0x00};
         unsigned char level_patch[sizeof(level_expected)]{};
-        memcpy(level_patch, &requested_level, sizeof(level_patch));
+        memcpy(level_patch, &engine_level, sizeof(level_patch));
         PatchExecutableBytes(
             base + 0x00003B66, level_expected, level_patch,
             sizeof(level_patch));

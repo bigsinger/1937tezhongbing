@@ -100,6 +100,22 @@
         </StackPanel>
         <StackPanel Orientation="Horizontal" DockPanel.Dock="Right"
                     HorizontalAlignment="Right">
+          <CheckBox x:Name="ShowRoutesCheck"
+                    Content="显示活物路线"
+                    IsChecked="True"
+                    Foreground="White"
+                    VerticalAlignment="Center"
+                    Margin="8,0"
+                    Checked="PatrolPreview_Changed"
+                    Unchecked="PatrolPreview_Changed" />
+          <CheckBox x:Name="MotionPreviewCheck"
+                    Content="运动预览"
+                    IsChecked="True"
+                    Foreground="White"
+                    VerticalAlignment="Center"
+                    Margin="8,0"
+                    Checked="PatrolPreview_Changed"
+                    Unchecked="PatrolPreview_Changed" />
           <TextBlock Text="缩放" Foreground="White"
                      VerticalAlignment="Center" Margin="10,0,4,0" />
           <Slider x:Name="ZoomSlider" Width="150" Minimum="0.1" Maximum="3"
@@ -124,6 +140,10 @@
       <Separator />
       <StatusBarItem>
         <TextBlock x:Name="AssetStatusText" Text="素材库：正在检查…" />
+      </StatusBarItem>
+      <Separator />
+      <StatusBarItem>
+        <TextBlock x:Name="RouteStatusText" Text="活动路线：—" />
       </StatusBarItem>
     </StatusBar>
 

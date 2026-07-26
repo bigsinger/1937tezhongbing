@@ -88,8 +88,13 @@ public partial class MainWindow : Window
             $"{document.Objects.Count:N0} 个对象";
         EditorCanvas.Document = document;
         EditorCanvas.Zoom = ZoomSlider.Value;
+        EditorCanvas.ShowPatrolRoutes =
+            ShowRoutesCheck.IsChecked == true;
+        EditorCanvas.MotionPreviewEnabled =
+            MotionPreviewCheck.IsChecked == true;
         AssetList.SelectedIndex = 0;
         SelectMode.IsChecked = true;
+        UpdateRouteStatus();
         dirty = false;
         UpdateTitle();
         StatusText.Text = path is null
@@ -196,6 +201,15 @@ public partial class MainWindow : Window
                 "M1937_MAPEDITOR_OPEN");
             if (!string.IsNullOrWhiteSpace(mapPath) && File.Exists(mapPath))
                 OpenMapFile(mapPath);
+            var selectedScene = Environment.GetEnvironmentVariable(
+                "M1937_MAPEDITOR_SELECT_SCENE");
+            if (int.TryParse(selectedScene, out var sceneIndex))
+            {
+                var selected = document.Objects.FirstOrDefault(
+                    item => item.Id == $"scene-{sceneIndex}");
+                if (selected is not null)
+                    SelectObject(selected);
+            }
             await Dispatcher.InvokeAsync(
                 FitMapToWindow, DispatcherPriority.ContextIdle);
             await Task.Delay(2500);
@@ -399,6 +413,7 @@ public partial class MainWindow : Window
         if (ObjectGrid.SelectedItem is not null)
             ObjectGrid.ScrollIntoView(ObjectGrid.SelectedItem);
         EditorCanvas.SelectedObjectId = item.Id;
+        UpdateRouteStatus(item);
     }
 
     private void DeleteObject_Click(object sender, RoutedEventArgs e)
@@ -446,6 +461,7 @@ public partial class MainWindow : Window
         if (sender is RadioButton button && button.Tag is string mode)
         {
             activeTool = mode;
+            EditorCanvas.ObjectSelectionEnabled = mode == "select";
             if (mode == "paint")
             {
                 document.Layer(activeLayer).Visible = true;
@@ -468,6 +484,18 @@ public partial class MainWindow : Window
             EditorCanvas.Zoom = e.NewValue;
         if (ZoomText is not null)
             ZoomText.Text = $"{e.NewValue * 100:0}%";
+    }
+
+    private void PatrolPreview_Changed(object sender, RoutedEventArgs e)
+    {
+        if (EditorCanvas is null ||
+            ShowRoutesCheck is null ||
+            MotionPreviewCheck is null)
+            return;
+        EditorCanvas.ShowPatrolRoutes =
+            ShowRoutesCheck.IsChecked == true;
+        EditorCanvas.MotionPreviewEnabled =
+            MotionPreviewCheck.IsChecked == true;
     }
 
     private void MapScroll_PreviewMouseWheel(
@@ -539,8 +567,36 @@ public partial class MainWindow : Window
     private void ObjectGrid_SelectionChanged(
         object sender, SelectionChangedEventArgs e)
     {
-        EditorCanvas.SelectedObjectId =
-            (ObjectGrid.SelectedItem as MapObject)?.Id;
+        var selected = ObjectGrid.SelectedItem as MapObject;
+        EditorCanvas.SelectedObjectId = selected?.Id;
+        UpdateRouteStatus(selected);
+    }
+
+    private void UpdateRouteStatus(MapObject? selected = null)
+    {
+        if (RouteStatusText is null)
+            return;
+        if (selected is not null &&
+            selected.IsLiving &&
+            selected.PatrolWaypoints.Count > 0)
+        {
+            RouteStatusText.Text =
+                $"所选路线：{selected.Name}，" +
+                $"{selected.PatrolWaypoints.Count} 个路线点";
+            return;
+        }
+
+        var routeCount = document.Objects.Count(
+            item => item.IsLiving &&
+                    item.PatrolWaypoints.Count > 0);
+        var movingCount = document.Objects.Count(
+            item => item.PatrolEnabled &&
+                    item.PatrolWaypoints.Count > 1 &&
+                    item.PatrolWaypoints.Skip(1).Any(point =>
+                        point.X != item.PatrolWaypoints[0].X ||
+                        point.Y != item.PatrolWaypoints[0].Y));
+        RouteStatusText.Text =
+            $"活动路线：{routeCount} 条，运动 {movingCount} 条";
     }
 
     private void Help_Click(object sender, RoutedEventArgs e) =>

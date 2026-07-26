@@ -21,6 +21,12 @@ public sealed class EditorLayer
     public int[] Cells { get; set; } = [];
 }
 
+public sealed class MapWaypoint
+{
+    public int X { get; set; }
+    public int Y { get; set; }
+}
+
 public sealed class MapObject
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -33,6 +39,14 @@ public sealed class MapObject
     public int Direction { get; set; }
     public string Faction { get; set; } = "neutral";
     public Dictionary<string, string> Properties { get; set; } = [];
+    public List<MapWaypoint> PatrolWaypoints { get; set; } = [];
+    public int PatrolCurrentWaypointIndex { get; set; }
+    public bool PatrolEnabled { get; set; }
+
+    [JsonIgnore]
+    public bool IsLiving =>
+        Kind is "character" or "vehicle" ||
+        PatrolWaypoints.Count > 0;
 }
 
 public sealed class MissionTask
@@ -172,6 +186,18 @@ public static class MapDocumentSerializer
             item.AssetPath ??= "";
             item.Category ??= "其他";
             item.Properties ??= [];
+            item.PatrolWaypoints ??= [];
+            if (item.PatrolWaypoints.Count > 0)
+            {
+                item.PatrolCurrentWaypointIndex = Math.Clamp(
+                    item.PatrolCurrentWaypointIndex,
+                    0, item.PatrolWaypoints.Count - 1);
+            }
+            else
+            {
+                item.PatrolCurrentWaypointIndex = 0;
+                item.PatrolEnabled = false;
+            }
         }
     }
 }
@@ -203,6 +229,19 @@ public static class MapValidator
             if (item.X < 0 || item.X >= document.Width ||
                 item.Y < 0 || item.Y >= document.Height)
                 errors.Add($"对象“{item.Name}”位于地图范围外。");
+            for (var waypointIndex = 0;
+                 waypointIndex < item.PatrolWaypoints.Count;
+                 waypointIndex++)
+            {
+                var waypoint = item.PatrolWaypoints[waypointIndex];
+                if (waypoint.X < 0 || waypoint.X >= document.Width ||
+                    waypoint.Y < 0 || waypoint.Y >= document.Height)
+                {
+                    errors.Add(
+                        $"对象“{item.Name}”的路线点 {waypointIndex + 1} " +
+                        $"({waypoint.X}, {waypoint.Y}) 位于地图范围外。");
+                }
+            }
         }
         foreach (var duplicate in document.Tasks
                      .GroupBy(item => item.Id).Where(group => group.Count() > 1))
@@ -260,6 +299,7 @@ public static class OriginalVwfImporter
 
         foreach (var entity in scenes.Entities)
         {
+            var patrol = entity.Patrol;
             document.Objects.Add(new MapObject
             {
                 Id = $"scene-{entity.SceneIndex}",
@@ -272,12 +312,25 @@ public static class OriginalVwfImporter
                     entity.WorldY / document.EffectiveCellHeight,
                     0, document.Height - 1),
                 Direction = checked((int)entity.DirectionIndex),
+                PatrolWaypoints = patrol?.Waypoints
+                    .Select(point => new MapWaypoint
+                    {
+                        X = checked((int)point.X),
+                        Y = checked((int)point.Y)
+                    })
+                    .ToList() ?? [],
+                PatrolCurrentWaypointIndex = patrol is null
+                    ? 0
+                    : checked((int)patrol.CurrentWaypointIndex),
+                PatrolEnabled = patrol?.PersistentFlag != 0,
                 Properties =
                 {
                     ["database_entry_id"] = entity.DatabaseEntryId.ToString(),
                     ["world_x"] = entity.WorldX.ToString(),
                     ["world_y"] = entity.WorldY.ToString(),
-                    ["hit_points"] = entity.CurrentHitPoints.ToString()
+                    ["hit_points"] = entity.CurrentHitPoints.ToString(),
+                    ["patrol_persistent_flag"] =
+                        (patrol?.PersistentFlag ?? 0).ToString()
                 }
             });
         }
@@ -293,8 +346,10 @@ public static class OriginalVwfImporter
     {
         if (string.IsNullOrWhiteSpace(originalAssetRoot))
             return;
+        var assetLevelId = ResolveAssetLevelId(
+            originalAssetRoot, levelId);
         var levelPath = Path.Combine(
-            originalAssetRoot, "maps", levelId, "level.json");
+            originalAssetRoot, "maps", assetLevelId, "level.json");
         if (!File.Exists(levelPath))
             return;
 
@@ -332,9 +387,28 @@ public static class OriginalVwfImporter
         }
 
         var background = Path.Combine(
-            originalAssetRoot, "maps", levelId, "terrain.png");
+            originalAssetRoot, "maps", assetLevelId, "terrain.png");
         if (File.Exists(background))
-            document.BackgroundAsset = $"maps/{levelId}/terrain.png";
+            document.BackgroundAsset =
+                $"maps/{assetLevelId}/terrain.png";
+    }
+
+    private static string ResolveAssetLevelId(
+        string originalAssetRoot, string levelId)
+    {
+        var aliasPath = Path.Combine(
+            originalAssetRoot, "maps", levelId, "level-alias.json");
+        if (!File.Exists(aliasPath))
+            return levelId;
+        using var alias = JsonDocument.Parse(
+            File.ReadAllText(aliasPath));
+        var baseLevelId = Text(alias.RootElement, "base_level_id");
+        if (baseLevelId.Length == 4 &&
+            baseLevelId[0] == 'm' &&
+            baseLevelId[1..].All(char.IsAsciiDigit))
+            return baseLevelId;
+        throw new InvalidDataException(
+            $"Invalid map asset alias in {aliasPath}.");
     }
 
     private static string Text(JsonElement value, string name) =>

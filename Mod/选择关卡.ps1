@@ -1,5 +1,5 @@
 ﻿param(
-    [ValidateRange(0, 12)]
+    [ValidateRange(0, 13)]
     [int]$Level = 0,
     [switch]$StartImmediately,
     [switch]$SafeWindow
@@ -154,6 +154,10 @@ function Start-M1937Process {
         [int]$ViewportHeight
     )
 
+    if ($MissionNumber -eq 13 -and -not (Test-Path -LiteralPath (
+            Join-Path $gameDirectory '1937m012.vwf') -PathType Leaf)) {
+        throw '第 13 关需要当前目录中的 1937m012.vwf。'
+    }
     $startInfo = New-Object Diagnostics.ProcessStartInfo
     $startInfo.FileName = $gameExecutable
     $startInfo.WorkingDirectory = $gameDirectory
@@ -196,8 +200,8 @@ if ($SafeWindow) {
 }
 
 if ($StartImmediately) {
-    if ($Level -lt 1 -or $Level -gt 12) {
-        throw 'StartImmediately requires Level in the range 1..12.'
+    if ($Level -lt 1 -or $Level -gt 13) {
+        throw 'StartImmediately requires Level in the range 1..13.'
     }
     $screen = [Windows.Forms.Screen]::PrimaryScreen.Bounds
     $startExpanded =
@@ -290,7 +294,7 @@ $missionHeading.Font = New-Object Drawing.Font(
 $missionPanel.Controls.Add($missionHeading)
 
 $missionHint = New-Object Windows.Forms.Label
-$missionHint.Text = '经程序引用和 VWL1 格式双重确认：原版共 12 关'
+$missionHint.Text = '12 个原版任务；检测到 m012 时自动显示扩展任务'
 $missionHint.Location = New-Object Drawing.Point(20, 45)
 $missionHint.AutoSize = $true
 $missionHint.ForeColor = $textMuted
@@ -311,6 +315,11 @@ $missionList.BorderStyle = [Windows.Forms.BorderStyle]::None
 [void]$missionList.Columns.Add('任务名称', 205)
 [void]$missionList.Columns.Add('资源', 120)
 foreach ($mission in $catalog.missions) {
+    if ([int]$mission.number -eq 13 -and -not (
+            Test-Path -LiteralPath (
+                Join-Path $gameDirectory '1937m012.vwf') -PathType Leaf)) {
+        continue
+    }
     $item = New-Object Windows.Forms.ListViewItem(
         ('第 {0:D2} 关' -f [int]$mission.number))
     [void]$item.SubItems.Add([string]$mission.title)
@@ -480,10 +489,20 @@ $status.ForeColor = $textMuted
 $form.Controls.Add($status)
 
 $savedLevel = Get-IniInt $runGameIni 'mod' 'StartLevel' 1
-if ($savedLevel -lt 1 -or $savedLevel -gt 12) { $savedLevel = 1 }
-$missionList.Items[$savedLevel - 1].Selected = $true
-$missionList.Items[$savedLevel - 1].Focused = $true
-$missionList.EnsureVisible($savedLevel - 1)
+if ($savedLevel -lt 1 -or $savedLevel -gt 13) { $savedLevel = 1 }
+$savedItem = $null
+foreach ($candidate in $missionList.Items) {
+    if ([int]$candidate.Tag -eq $savedLevel) {
+        $savedItem = $candidate
+        break
+    }
+}
+if ($null -eq $savedItem) {
+    $savedItem = $missionList.Items[0]
+}
+$savedItem.Selected = $true
+$savedItem.Focused = $true
+$missionList.EnsureVisible($savedItem.Index)
 
 $difficultyCombo.SelectedIndex =
     [Math]::Max(0, [Math]::Min(3, (Get-IniInt $runGameIni 'mod' 'Difficulty' 1)))

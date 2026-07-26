@@ -1,7 +1,8 @@
 using Mission1937.MapEditor.Core;
 
 var root = Path.Combine(
-    Path.GetTempPath(), "1937-map-editor-tests");
+    Path.GetTempPath(), "1937-map-editor-tests",
+    Environment.ProcessId.ToString());
 Directory.CreateDirectory(root);
 var path = Path.Combine(root, "roundtrip.m37map.json");
 var document = MapDocument.Create("往返测试", 16, 12);
@@ -19,7 +20,15 @@ document.Objects.Add(new MapObject
     Category = "角色",
     AssetPath = "sprites/0001.png",
     X = 8,
-    Y = 6
+    Y = 6,
+    Kind = "character",
+    PatrolEnabled = true,
+    PatrolCurrentWaypointIndex = 1,
+    PatrolWaypoints =
+    [
+        new MapWaypoint { X = 8, Y = 6 },
+        new MapWaypoint { X = 12, Y = 6 }
+    ]
 });
 document.Tasks[0].TargetObjectId = "enemy-1";
 MapDocumentSerializer.Save(document, path);
@@ -32,6 +41,10 @@ if (restored.Name != document.Name ||
     restored.Layer(EditorLayerKind.Terrain)
         .Cells[restored.Index(3, 4)] != 37 ||
     restored.Objects.Single().AssetPath != "sprites/0001.png" ||
+    restored.Objects.Single().PatrolWaypoints.Count != 2 ||
+    restored.Objects.Single().PatrolCurrentWaypointIndex != 1 ||
+    !restored.Objects.Single().PatrolEnabled ||
+    !restored.Objects.Single().IsLiving ||
     MapValidator.Validate(restored).Count != 0)
 {
     throw new InvalidOperationException(
@@ -69,9 +82,20 @@ if (!string.IsNullOrWhiteSpace(originalVwf))
         throw new InvalidOperationException(
             "Original asset enrichment test failed.");
     }
+    var importedRoutes = imported.Objects.Count(
+        item => item.PatrolWaypoints.Count > 0);
+    if (importedRoutes == 0 ||
+        imported.Objects
+            .Where(item => item.PatrolWaypoints.Count > 0)
+            .Any(item => !item.IsLiving))
+    {
+        throw new InvalidOperationException(
+            "Original VWF patrol-route import test failed.");
+    }
     Console.WriteLine(
         $"Original VWF import passed: " +
         $"{imported.Width}x{imported.Height}, " +
         $"{imported.Objects.Count} objects, " +
+        $"{importedRoutes} patrol routes, " +
         $"background={imported.BackgroundAsset}.");
 }
