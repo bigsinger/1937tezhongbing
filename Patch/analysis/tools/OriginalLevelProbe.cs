@@ -39,6 +39,13 @@ internal static class OriginalLevelProbe
         public int Bottom;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint
+    {
+        public int X;
+        public int Y;
+    }
+
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern IntPtr OpenProcess(
         uint access, bool inheritHandle, int processId);
@@ -69,11 +76,17 @@ internal static class OriginalLevelProbe
     private static extern bool SetForegroundWindow(IntPtr window);
 
     [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
     private static extern void keybd_event(
         byte virtualKey, byte scanCode, uint flags, UIntPtr extraInfo);
 
     [DllImport("user32.dll")]
     private static extern bool SetCursorPos(int x, int y);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetCursorPos(out NativePoint point);
 
     [DllImport("user32.dll")]
     private static extern void mouse_event(
@@ -84,7 +97,7 @@ internal static class OriginalLevelProbe
         if (args.Length < 3)
         {
             Console.Error.WriteLine(
-                "Usage: OriginalLevelProbe.exe GAME_DIR OUTPUT_DIR LEVEL [SECONDS] [nodrive] [hotkeys|autostart]");
+                "Usage: OriginalLevelProbe.exe GAME_DIR OUTPUT_DIR LEVEL [SECONDS] [nodrive] [hotkeys|autostart|mouseinput]");
             return 2;
         }
 
@@ -98,6 +111,8 @@ internal static class OriginalLevelProbe
             argument, "hotkeys", StringComparison.OrdinalIgnoreCase));
         bool testAutomaticStart = args.Any(argument => string.Equals(
             argument, "autostart", StringComparison.OrdinalIgnoreCase));
+        bool testMouseInput = args.Any(argument => string.Equals(
+            argument, "mouseinput", StringComparison.OrdinalIgnoreCase));
         if (level < 1 || level > 12)
         {
             throw new ArgumentOutOfRangeException("level");
@@ -113,6 +128,8 @@ internal static class OriginalLevelProbe
         startInfo.EnvironmentVariables["M1937_START_LEVEL"] = level.ToString();
         if (testHotkeys || testAutomaticStart)
             startInfo.EnvironmentVariables["M1937_AUTO_START"] = "1";
+        else if (testMouseInput)
+            startInfo.EnvironmentVariables["M1937_AUTO_START"] = "0";
         else
             startInfo.EnvironmentVariables["M1937_AUTOTEST"] = "1";
 
@@ -134,6 +151,9 @@ internal static class OriginalLevelProbe
             }
 
             var report = new StringBuilder();
+            NativePoint originalCursor = new NativePoint();
+            bool restoreCursor =
+                testMouseInput && GetCursorPos(out originalCursor);
             try
             {
                 long imageBase = game.MainModule.BaseAddress.ToInt64();
@@ -206,6 +226,11 @@ internal static class OriginalLevelProbe
                 bool minimapOpened = false;
                 bool minimapClosed = false;
                 double nextPhysicalAdvance = 2.0;
+                bool mouseInputSampled = false;
+                int mouseLogicalStartX = 0;
+                int mouseLogicalEndX = 0;
+                int mouseLeftDown = 0;
+                int mouseLeftPressed = 0;
 
                 while (clock.Elapsed.TotalSeconds < seconds && !game.HasExited)
                 {
@@ -324,6 +349,50 @@ internal static class OriginalLevelProbe
                             minimapClosed = true;
                         }
                     }
+                    if (testMouseInput && !mouseInputSampled && now >= 5.0)
+                    {
+                        Rect mouseRect;
+                        if (!GetWindowRect(window, out mouseRect))
+                        {
+                            throw new InvalidOperationException(
+                                "Could not read the game window for mouse input.");
+                        }
+                        int mouseY = (mouseRect.Top + mouseRect.Bottom) / 2;
+                        int mouseLeft = mouseRect.Left +
+                            (mouseRect.Right - mouseRect.Left) / 4;
+                        int mouseRight = mouseRect.Left +
+                            (mouseRect.Right - mouseRect.Left) * 3 / 4;
+                        SetForegroundWindow(window);
+                        Thread.Sleep(250);
+                        report.AppendLine(
+                            "mouse_window_foreground=" +
+                            (GetForegroundWindow() == window));
+                        SetCursorPos(mouseLeft, mouseY);
+                        Thread.Sleep(300);
+                        mouseLogicalStartX =
+                            ReadInt(process, imageBase + CursorX);
+                        SetCursorPos(mouseRight, mouseY);
+                        Thread.Sleep(400);
+                        mouseLogicalEndX =
+                            ReadInt(process, imageBase + CursorX);
+                        mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
+                        Thread.Sleep(120);
+                        mouseLeftDown =
+                            ReadInt(process, imageBase + LeftDown);
+                        mouseLeftPressed =
+                            ReadInt(process, imageBase + LeftPressed);
+                        mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
+                        report.AppendLine(
+                            "mouse_logical_x=" + mouseLogicalStartX + "->" +
+                            mouseLogicalEndX);
+                        report.AppendLine(
+                            "mouse_logical_delta=" +
+                            (mouseLogicalEndX - mouseLogicalStartX));
+                        report.AppendLine(
+                            "mouse_left_state=" + mouseLeftPressed + "/" +
+                            mouseLeftDown);
+                        mouseInputSampled = true;
+                    }
 
                     if (((int)(now * 10.0)) % 10 == 0)
                     {
@@ -394,6 +463,14 @@ internal static class OriginalLevelProbe
                     throw new InvalidOperationException(
                         "New Game did not retain the requested mission number.");
                 }
+                if (testMouseInput &&
+                    (!mouseInputSampled ||
+                     (Math.Abs(mouseLogicalEndX - mouseLogicalStartX) < 64 &&
+                      mouseLeftDown == 0 && mouseLeftPressed == 0)))
+                {
+                    throw new InvalidOperationException(
+                        "Physical mouse movement did not reach the game cursor.");
+                }
             }
             finally
             {
@@ -402,6 +479,10 @@ internal static class OriginalLevelProbe
                 {
                     game.Kill();
                     game.WaitForExit(3000);
+                }
+                if (restoreCursor)
+                {
+                    SetCursorPos(originalCursor.X, originalCursor.Y);
                 }
                 File.WriteAllText(
                     Path.Combine(outputDirectory, "original-level-probe.txt"),

@@ -1,0 +1,21 @@
+requested_level=1
+new_game_immediate=1
+smooth_scroll_hook_opcode=0xE9
+enhanced_hearing_radius=192
+enhanced_alert_radius=800
+logical_viewport=0x0
+renderer_viewport=800x600
+mouse_window_foreground=True
+mouse_logical_x=0->0
+mouse_logical_delta=0
+mouse_left_state=0/1
+observed_mission=0
+final_logical_viewport=1024x768
+final_renderer_viewport=1024x768
+process_exited=False
+responding=True
+
+说明：隔离测试以正常输入路径启动 1024×768 原生窗口，不设置
+M1937_AUTOTEST。测试窗口成功取得前台焦点；系统鼠标左键按下后，游戏
+内部 DirectInput 左键持续状态为 1，证明真实鼠标输入已到达原版游戏。
+探针结束时自动关闭隔离游戏并恢复测试前的系统鼠标位置。

@@ -1,5 +1,5 @@
 param(
-    [string]$WorkDirectory = 'E:\1937\patch-v132-build'
+    [string]$WorkDirectory = 'E:\1937\patch-v133-build'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,9 +19,9 @@ $basePackage = if ($basePackageItem) { $basePackageItem.FullName } else { '' }
 $packageName = if ($basePackageItem) {
     $basePackageItem.BaseName.Replace(
         'v1.2.0-20260726',
-        'v1.3.2-20260726')
+        'v1.3.3-20260726')
 } else {
-    '1937-compatibility-patch-v1.3.2-20260726'
+    '1937-compatibility-patch-v1.3.3-20260726'
 }
 $stage = Join-Path $workRoot $packageName
 $archive = Join-Path $patchRoot ('release\' + $packageName + '.zip')
@@ -129,16 +129,19 @@ $installPath = Join-Path $stage 'Install-Patch.ps1'
 $installText = Get-Content -LiteralPath $installPath -Raw -Encoding UTF8
 $installText = $installText.Replace(
     '1937 compatibility patch v1.1.1 backup',
-    '1937 compatibility patch v1.3.2 backup')
+    '1937 compatibility patch v1.3.3 backup')
 $installText = $installText.Replace(
     '1937 compatibility patch v1.2.0 backup',
-    '1937 compatibility patch v1.3.2 backup')
+    '1937 compatibility patch v1.3.3 backup')
 $installText = $installText.Replace(
     '1937 compatibility patch v1.3.0 backup',
-    '1937 compatibility patch v1.3.2 backup')
+    '1937 compatibility patch v1.3.3 backup')
+$installText = $installText.Replace(
+    '1937 compatibility patch v1.3.2 backup',
+    '1937 compatibility patch v1.3.3 backup')
 $installText = $installText.Replace(
     'Use the windowed-mode launcher in the game directory. Press Alt+Enter for fullscreen.',
-    'Run the modern enhanced launcher, then choose the recommended borderless maximized mode.')
+    'Run the modern enhanced launcher, then choose the recommended native 1024x768 window mode.')
 [IO.File]::WriteAllText(
     $installPath,
     $installText,

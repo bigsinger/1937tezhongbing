@@ -1,7 +1,8 @@
 ﻿param(
     [ValidateRange(0, 12)]
     [int]$Level = 0,
-    [switch]$StartImmediately
+    [switch]$StartImmediately,
+    [switch]$SafeWindow
 )
 
 $ErrorActionPreference = 'Stop'
@@ -83,18 +84,32 @@ function Set-DdrawProfile {
     Set-IniValue $ddrawIni 'ddraw' 'maxgameticks' '60'
     Set-IniValue $ddrawIni 'ddraw' 'limiter_type' '2'
     Set-IniValue $ddrawIni 'ddraw' 'boxing' 'false'
-    # The game already consumes raw DirectInput deltas through dinput.dll.
-    # Letting cnc-ddraw rescale/hook them a second time causes sensitivity
-    # jumps and pointer drift on stretched desktop-sized output.
-    Set-IniValue $ddrawIni 'ddraw' 'adjmouse' 'false'
-    Set-IniValue $ddrawIni 'ddraw' 'no_dinput_hook' 'true'
+    # Keep the cnc-ddraw input hook available. It is required whenever the
+    # output is scaled; turning it off can make DirectInput appear frozen.
+    Set-IniValue $ddrawIni 'ddraw' 'adjmouse' 'true'
+    Set-IniValue $ddrawIni 'ddraw' 'no_dinput_hook' 'false'
+    Set-IniValue $ddrawIni 'ddraw' 'devmode' 'false'
+    Set-IniValue $ddrawIni 'ddraw' 'resizable' 'true'
+    Set-IniValue $ddrawIni 'ddraw' 'savesettings' '1'
+    Set-IniValue $ddrawIni 'ddraw' 'border' 'true'
+    Set-IniValue $ddrawIni 'ddraw' 'hook_peekmessage' 'false'
+    Set-IniValue $ddrawIni 'ddraw' 'center_cursor_fix' 'false'
+    Set-IniValue $ddrawIni 'ddraw' 'lock_mouse_top_left' 'false'
     switch ($DisplayMode) {
         0 {
             Set-IniValue $ddrawIni 'ddraw' 'fullscreen' 'false'
             Set-IniValue $ddrawIni 'ddraw' 'windowed' 'true'
-            Set-IniValue $ddrawIni 'ddraw' 'width' '1280'
-            Set-IniValue $ddrawIni 'ddraw' 'height' '720'
+            Set-IniValue $ddrawIni 'ddraw' 'width' '1024'
+            Set-IniValue $ddrawIni 'ddraw' 'height' '768'
             Set-IniValue $ddrawIni 'ddraw' 'maintas' 'true'
+            # This mode is 1:1 with the original maximum game surface, so no
+            # sensitivity scaling or cursor confinement is needed.
+            Set-IniValue $ddrawIni 'ddraw' 'adjmouse' 'false'
+            Set-IniValue $ddrawIni 'ddraw' 'devmode' 'true'
+            Set-IniValue $ddrawIni 'ddraw' 'resizable' 'false'
+            Set-IniValue $ddrawIni 'ddraw' 'savesettings' '0'
+            Set-IniValue $ddrawIni 'ddraw' 'posX' '-32000'
+            Set-IniValue $ddrawIni 'ddraw' 'posY' '-32000'
         }
         1 {
             Set-IniValue $ddrawIni 'ddraw' 'fullscreen' 'true'
@@ -157,6 +172,16 @@ if (-not (Test-Path -LiteralPath $gameExecutable -PathType Leaf)) {
 
 $catalog = Get-Content -LiteralPath $catalogPath -Raw -Encoding UTF8 |
     ConvertFrom-Json
+
+if ($SafeWindow) {
+    $safeRenderer =
+        Get-IniValue $runGameIni 'mod' 'Renderer' 'direct3d9'
+    if ($safeRenderer -notin @('direct3d9', 'direct3d9on12', 'opengl')) {
+        $safeRenderer = 'direct3d9'
+    }
+    Set-DdrawProfile 0 $safeRenderer
+    Set-IniValue $runGameIni 'mod' 'DisplayMode' '0'
+}
 
 if ($StartImmediately) {
     if ($Level -lt 1 -or $Level -gt 12) {
@@ -321,8 +346,8 @@ function Add-ComboBox {
 
 Add-SettingLabel '显示模式' 62
 $displayCombo = Add-ComboBox @(
-    '窗口模式 1280×720',
-    '无边框最大窗口（推荐、鼠标稳定）',
+    '原生窗口 1024×768（推荐、最稳定）',
+    '无边框最大窗口（兼容备用）',
     '全屏缩放（保持原比例）',
     '全屏铺满（兼容备用）'
 ) 58
@@ -383,10 +408,9 @@ $settingsPanel.Controls.Add($screenInfo)
 
 $profileInfo = New-Object Windows.Forms.Label
 $profileInfo.Text = (
-    '推荐“无边框最大窗口”：保留 1024×768 完整界面并输出到' +
+    '推荐“原生窗口 1024×768”：不拉伸画面、不锁系统鼠标，' +
     [Environment]::NewLine +
-    ('{0}×{1}，使用原始鼠标增量，兼顾稳定控制与桌面覆盖。' -f
-        $screen.Width, $screen.Height))
+    '优先保证鼠标、底部工具栏、F1 帮助和 M 小地图稳定可用。')
 $profileInfo.Location = New-Object Drawing.Point(22, 343)
 $profileInfo.Size = New-Object Drawing.Size(370, 53)
 $profileInfo.ForeColor = $textMuted

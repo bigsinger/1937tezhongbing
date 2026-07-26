@@ -1,0 +1,22 @@
+test=bad-borderless-config-to-safe-window
+initial_fullscreen=true
+initial_windowed=true
+initial_width=0
+initial_height=0
+initial_no_dinput_hook=true
+launcher_argument=-SafeWindow
+final_fullscreen=false
+final_windowed=true
+final_width=1024
+final_height=768
+final_adjmouse=false
+final_devmode=true
+final_savesettings=0
+final_resizable=false
+final_no_dinput_hook=false
+process_responding=True
+process_exited=False
+
+说明：测试先在隔离副本中故意写入 v1.3.2 的问题无边框配置，再通过
+“启动游戏-窗口模式.cmd”使用的 -SafeWindow 路径启动第一关。启动器
+在创建游戏进程前恢复了全部安全窗口参数；运行 10 秒后进程仍响应。
