@@ -84,8 +84,9 @@ function Set-DdrawProfile {
     Set-IniValue $ddrawIni 'ddraw' 'maxgameticks' '60'
     Set-IniValue $ddrawIni 'ddraw' 'limiter_type' '2'
     Set-IniValue $ddrawIni 'ddraw' 'boxing' 'false'
-    # Keep the cnc-ddraw input hook available. It is required whenever the
-    # output is scaled; turning it off can make DirectInput appear frozen.
+    # Keep the same input path that was stable before the experimental mouse
+    # changes: the game's DirectInput data is forwarded unchanged and
+    # cnc-ddraw only translates coordinates when output scaling needs it.
     Set-IniValue $ddrawIni 'ddraw' 'adjmouse' 'true'
     Set-IniValue $ddrawIni 'ddraw' 'no_dinput_hook' 'false'
     Set-IniValue $ddrawIni 'ddraw' 'devmode' 'false'
@@ -102,10 +103,10 @@ function Set-DdrawProfile {
             Set-IniValue $ddrawIni 'ddraw' 'width' '1024'
             Set-IniValue $ddrawIni 'ddraw' 'height' '768'
             Set-IniValue $ddrawIni 'ddraw' 'maintas' 'true'
-            # This mode is 1:1 with the original maximum game surface, so no
-            # sensitivity scaling or cursor confinement is needed.
-            Set-IniValue $ddrawIni 'ddraw' 'adjmouse' 'false'
-            Set-IniValue $ddrawIni 'ddraw' 'devmode' 'true'
+            # Keep the original cursor confinement/acquisition behaviour.
+            # At 1:1 output adjmouse performs no sensitivity scaling.
+            Set-IniValue $ddrawIni 'ddraw' 'adjmouse' 'true'
+            Set-IniValue $ddrawIni 'ddraw' 'devmode' 'false'
             Set-IniValue $ddrawIni 'ddraw' 'resizable' 'false'
             Set-IniValue $ddrawIni 'ddraw' 'savesettings' '0'
             Set-IniValue $ddrawIni 'ddraw' 'posX' '-32000'
@@ -194,7 +195,9 @@ if ($StartImmediately) {
     $startHeight = Get-IniInt $runGameIni 'mod' 'ViewportHeight' $screen.Height
     if ($startWidth -le 0) { $startWidth = $screen.Width }
     if ($startHeight -le 0) { $startHeight = $screen.Height }
-    Start-M1937Process $Level $true $startExpanded $startWidth $startHeight
+    # Compatibility note: the old switch is retained for existing shortcuts,
+    # but the mission now starts through the original menu and input loop.
+    Start-M1937Process $Level $false $startExpanded $startWidth $startHeight
     exit 0
 }
 
@@ -371,10 +374,12 @@ $aiCombo = Add-ComboBox @(
 ) 187
 
 $smoothScroll = New-Object Windows.Forms.CheckBox
-$smoothScroll.Text = '启用边缘卷屏（2 像素安全热区）'
+$smoothScroll.Text = '使用原版鼠标与原版边缘卷屏（固定）'
 $smoothScroll.Location = New-Object Drawing.Point(22, 236)
 $smoothScroll.AutoSize = $true
 $smoothScroll.ForeColor = $textPrimary
+$smoothScroll.Checked = $false
+$smoothScroll.Enabled = $false
 $settingsPanel.Controls.Add($smoothScroll)
 
 $disableIme = New-Object Windows.Forms.CheckBox
@@ -408,9 +413,9 @@ $settingsPanel.Controls.Add($screenInfo)
 
 $profileInfo = New-Object Windows.Forms.Label
 $profileInfo.Text = (
-    '推荐“原生窗口 1024×768”：不拉伸画面、不锁系统鼠标，' +
+    '推荐“原生窗口 1024×768”：补丁不改鼠标数据和卷屏逻辑，' +
     [Environment]::NewLine +
-    '优先保证鼠标、底部工具栏、F1 帮助和 M 小地图稳定可用。')
+    '任务从原版菜单进入，优先保证鼠标、工具栏和快捷键稳定。')
 $profileInfo.Location = New-Object Drawing.Point(22, 343)
 $profileInfo.Size = New-Object Drawing.Size(370, 53)
 $profileInfo.ForeColor = $textMuted
@@ -438,7 +443,7 @@ Set-FlatButtonStyle $folderButton $false
 $settingsPanel.Controls.Add($folderButton)
 
 $launchSelected = New-Object Windows.Forms.Button
-$launchSelected.Text = '开始所选任务'
+$launchSelected.Text = '进入原版菜单（所选任务）'
 $launchSelected.Location = New-Object Drawing.Point(620, 631)
 $launchSelected.Size = New-Object Drawing.Size(196, 43)
 $launchSelected.Anchor = 'Bottom,Right'
@@ -473,8 +478,7 @@ $difficultyCombo.SelectedIndex =
     [Math]::Max(0, [Math]::Min(3, (Get-IniInt $runGameIni 'mod' 'Difficulty' 1)))
 $aiCombo.SelectedIndex =
     [Math]::Max(0, [Math]::Min(3, (Get-IniInt $runGameIni 'mod' 'AILevel' 2)))
-$smoothScroll.Checked =
-    (Get-IniInt $runGameIni 'mod' 'SmoothEdgeScroll' 1) -ne 0
+$smoothScroll.Checked = $false
 $disableIme.Checked = (Get-IniInt $runGameIni 'mod' 'DisableIME' 1) -ne 0
 $timerCheck.Checked =
     (Get-IniInt $runGameIni 'mod' 'HighResolutionTimer' 1) -ne 0
@@ -513,7 +517,7 @@ function Save-Settings {
     Set-IniValue $runGameIni 'mod' 'AILevel' ([string]$aiCombo.SelectedIndex)
     Set-IniValue $runGameIni 'mod' 'HearingRadius' '0'
     Set-IniValue $runGameIni 'mod' 'AlertRadius' '0'
-    Set-IniValue $runGameIni 'mod' 'SmoothEdgeScroll' $(if ($smoothScroll.Checked) { '1' } else { '0' })
+    Set-IniValue $runGameIni 'mod' 'SmoothEdgeScroll' '0'
     Set-IniValue $runGameIni 'mod' 'EdgeZone' '2'
     Set-IniValue $runGameIni 'mod' 'ScrollResponse' '8'
     Set-IniValue $runGameIni 'mod' 'DisableIME' $(if ($disableIme.Checked) { '1' } else { '0' })
@@ -561,7 +565,7 @@ $folderButton.Add_Click({
 $launchSelected.Add_Click({
     try {
         $saved = Save-Settings
-        Start-M1937Process $saved.Level $true $saved.Expanded $screen.Width $screen.Height
+        Start-M1937Process $saved.Level $false $saved.Expanded $screen.Width $screen.Height
         $form.Close()
     }
     catch {

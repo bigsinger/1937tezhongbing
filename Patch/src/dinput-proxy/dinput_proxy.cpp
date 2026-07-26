@@ -17,9 +17,7 @@ using DirectInputCreateAProc = HRESULT(WINAPI *)(
 HMODULE g_real_dinput = nullptr;
 DirectInputCreateAProc g_real_create = nullptr;
 unsigned char *g_executable_base = nullptr;
-HWND g_game_window = nullptr;
 bool g_timer_period_active = false;
-DWORD g_probe_started_at = 0;
 DWORD g_probe_mission_started_at = 0;
 thread_local bool g_pumping_messages = false;
 volatile LONG g_last_message_pump_tick = 0;
@@ -32,9 +30,6 @@ struct ModConfig {
     bool enabled = true;
     bool disable_ime = true;
     bool high_resolution_timer = true;
-    bool smooth_edge_scroll = true;
-    int edge_zone = 2;
-    int scroll_response = 8;
     int difficulty = 1;
     int ai_level = 2;
     int hearing_radius = 0;
@@ -88,10 +83,6 @@ void LoadModConfig() {
     g_mod_config.enabled = read(L"Enabled", 1) != 0;
     g_mod_config.disable_ime = read(L"DisableIME", 1) != 0;
     g_mod_config.high_resolution_timer = read(L"HighResolutionTimer", 1) != 0;
-    g_mod_config.smooth_edge_scroll = read(L"SmoothEdgeScroll", 1) != 0;
-    g_mod_config.edge_zone = ClampSetting(read(L"EdgeZone", 2), 1, 64);
-    g_mod_config.scroll_response =
-        ClampSetting(read(L"ScrollResponse", 8), 2, 16);
     g_mod_config.difficulty = ClampSetting(read(L"Difficulty", 1), 0, 3);
     g_mod_config.ai_level = ClampSetting(read(L"AILevel", 2), 0, 3);
     g_mod_config.hearing_radius =
@@ -186,152 +177,6 @@ void BeginHighResolutionTimer() {
     }
 }
 
-using OriginalCameraMoveProc = int(__thiscall *)(int *);
-
-int LogicalScreenWidth() {
-    if (!g_executable_base) {
-        return 800;
-    }
-    const int input_width =
-        *reinterpret_cast<int *>(g_executable_base + 0x000E6E0C);
-    if (input_width >= 320) {
-        return input_width;
-    }
-    const int renderer_width =
-        *reinterpret_cast<int *>(g_executable_base + 0x000D6A8C);
-    return renderer_width >= 320 ? renderer_width : 800;
-}
-
-int LogicalScreenHeight() {
-    if (!g_executable_base) {
-        return 600;
-    }
-    const int input_height =
-        *reinterpret_cast<int *>(g_executable_base + 0x000E6E10);
-    if (input_height >= 240) {
-        return input_height;
-    }
-    const int renderer_height =
-        *reinterpret_cast<int *>(g_executable_base + 0x000D6A88);
-    return renderer_height >= 240 ? renderer_height : 600;
-}
-
-int MoveOriginalCamera(int *camera, size_t function_offset) {
-    if (!g_executable_base) {
-        return 0;
-    }
-    const auto move = reinterpret_cast<OriginalCameraMoveProc>(
-        g_executable_base + function_offset);
-    return move(camera);
-}
-
-bool IsGameWindowForeground() {
-    if (!g_game_window) {
-        return true;
-    }
-    const HWND foreground = GetForegroundWindow();
-    if (!foreground) {
-        return false;
-    }
-    return GetAncestor(foreground, GA_ROOT) ==
-        GetAncestor(g_game_window, GA_ROOT);
-}
-
-int __fastcall SmoothEdgeScroll(int *camera, void *) {
-    if (!camera || !g_executable_base) {
-        return 0;
-    }
-
-    // Original fields: [23] current speed, [24] configured maximum,
-    // [25] direction and [28] camera/input lock.
-    if (camera[28] != 0 ||
-        *reinterpret_cast<int *>(g_executable_base + 0x000E6E7C) != 0 ||
-        !IsGameWindowForeground()) {
-        camera[23] = 0;
-        return 0;
-    }
-
-    const int cursor_x =
-        *reinterpret_cast<int *>(g_executable_base + 0x000E6EA0);
-    const int cursor_y =
-        *reinterpret_cast<int *>(g_executable_base + 0x000E6FAC);
-    const int screen_width = LogicalScreenWidth();
-    const int screen_height = LogicalScreenHeight();
-    const int edge_zone = g_mod_config.edge_zone;
-    if (cursor_x < 0 || cursor_x >= screen_width ||
-        cursor_y < 0 || cursor_y >= screen_height) {
-        camera[23] = 0;
-        return 0;
-    }
-
-    const bool left = cursor_x <= edge_zone;
-    const bool right = cursor_x >= screen_width - 1 - edge_zone;
-    const bool top = cursor_y <= edge_zone;
-    const bool bottom = cursor_y >= screen_height - 1 - edge_zone;
-    const bool at_edge = left || right || top || bottom;
-
-    const int maximum = camera[24] > 0 ? camera[24] : 0;
-    int speed = camera[23];
-    if (at_edge) {
-        const int remaining = maximum - speed;
-        if (remaining > 0) {
-            const int response = g_mod_config.scroll_response;
-            speed += (remaining + response - 1) / response;
-        }
-        if (speed > maximum) {
-            speed = maximum;
-        }
-    } else if (speed > 0) {
-        const int response = g_mod_config.scroll_response;
-        speed -= (speed + response - 1) / response;
-        if (speed < 0) {
-            speed = 0;
-        }
-    }
-    camera[23] = speed;
-
-    if (speed <= 0 || !at_edge) {
-        return speed;
-    }
-
-    // Keep all actual movement in the original routines so map bounds, scene
-    // refresh and layer offsets remain controlled by the game.
-    if (top && left) {
-        camera[25] = 8;
-        MoveOriginalCamera(camera, 0x0004A930);
-        return MoveOriginalCamera(camera, 0x0004AA20);
-    }
-    if (top && right) {
-        camera[25] = 2;
-        MoveOriginalCamera(camera, 0x0004AA20);
-        return MoveOriginalCamera(camera, 0x0004A9A0);
-    }
-    if (bottom && right) {
-        camera[25] = 4;
-        MoveOriginalCamera(camera, 0x0004A9A0);
-        return MoveOriginalCamera(camera, 0x0004AA90);
-    }
-    if (bottom && left) {
-        camera[25] = 6;
-        MoveOriginalCamera(camera, 0x0004A930);
-        return MoveOriginalCamera(camera, 0x0004AA90);
-    }
-    if (top) {
-        camera[25] = 1;
-        return MoveOriginalCamera(camera, 0x0004AA20);
-    }
-    if (right) {
-        camera[25] = 3;
-        return MoveOriginalCamera(camera, 0x0004A9A0);
-    }
-    if (bottom) {
-        camera[25] = 5;
-        return MoveOriginalCamera(camera, 0x0004AA90);
-    }
-    camera[25] = 7;
-    return MoveOriginalCamera(camera, 0x0004A930);
-}
-
 int RequestedStartLevel() {
     char value[16]{};
     const DWORD length = GetEnvironmentVariableA(
@@ -363,14 +208,6 @@ bool IsAutomaticMissionStartEnabled() {
         return strcmp(value, "1") == 0;
     }
     return g_mod_config.auto_start;
-}
-
-bool IsSyntheticMouseEnabled() {
-    // Normal launches use the verified menu-command hook below. Synthetic
-    // mouse deltas are exclusively for an explicit background test probe;
-    // tying them to M1937_AUTO_START made the player's pointer drift toward
-    // the old Start button until the mission global became non-zero.
-    return IsAutomatedProbeEnabled();
 }
 
 bool IsAutomatedLaunchEnabled() {
@@ -411,75 +248,6 @@ int ConfiguredAlertRadius() {
         ai_base[ClampSetting(ai, 0, 3)] +
             difficulty_adjustment[g_mod_config.difficulty],
         320, 4096);
-}
-
-LONG ClampProbeDelta(int delta) {
-    if (delta < -80) {
-        return -80;
-    }
-    if (delta > 80) {
-        return 80;
-    }
-    return static_cast<LONG>(delta);
-}
-
-void ApplyAutomatedMouseState(DWORD size, LPVOID data) {
-    if (!IsSyntheticMouseEnabled() || !g_executable_base ||
-        !data || size < sizeof(DIMOUSESTATE)) {
-        return;
-    }
-
-    if (g_probe_started_at == 0) {
-        g_probe_started_at = GetTickCount();
-    }
-    const DWORD now = GetTickCount();
-    const int mission =
-        *reinterpret_cast<int *>(g_executable_base + 0x000E7060);
-    if (mission > 0 && g_probe_mission_started_at == 0) {
-        g_probe_mission_started_at = now;
-    }
-    const bool automated_probe = IsAutomatedProbeEnabled();
-    if (mission > 0 && !automated_probe) {
-        return;
-    }
-
-    const int screen_width = LogicalScreenWidth();
-    const int screen_height = LogicalScreenHeight();
-    const int cursor_x =
-        *reinterpret_cast<int *>(g_executable_base + 0x000E6EA0);
-    const int cursor_y =
-        *reinterpret_cast<int *>(g_executable_base + 0x000E6FAC);
-
-    // Expanded viewports retain the legacy UI artwork coordinates. Scaling
-    // this point with the wider map surface would miss the Start Game button.
-    int target_x = 72;
-    int target_y = 236;
-    bool click = false;
-    const DWORD cycle = (now - g_probe_started_at) % 2000;
-
-    if (mission <= 0) {
-        click = cycle >= 900 && cycle < 1080;
-    } else {
-        const DWORD mission_elapsed = now - g_probe_mission_started_at;
-        if (mission_elapsed < 25000) {
-            target_x = screen_width / 2;
-            target_y = screen_height / 2;
-            click = false;
-        } else {
-            const bool move_right = ((mission_elapsed - 25000) / 1500) % 2 == 0;
-            target_x = move_right ? screen_width - 2 : 2;
-            target_y = screen_height / 2;
-        }
-    }
-
-    auto *mouse = static_cast<DIMOUSESTATE *>(data);
-    mouse->lX = ClampProbeDelta(target_x - cursor_x);
-    mouse->lY = ClampProbeDelta(target_y - cursor_y);
-    mouse->lZ = 0;
-    memset(mouse->rgbButtons, 0, sizeof(mouse->rgbButtons));
-    if (click) {
-        mouse->rgbButtons[0] = 0x80;
-    }
 }
 
 bool PatchExecutableBytes(
@@ -857,17 +625,6 @@ void ApplyLegacyExecutablePatches() {
             sizeof(level_patch));
     }
 
-    // The original detector requires the cursor to land on the outermost
-    // pixel. That is unreliable after modern window scaling. The replacement
-    // uses an 8-pixel game-coordinate edge zone and bounded easing.
-    static const unsigned char scroll_expected[] = {
-        0x56, 0x8B, 0xF1, 0x8B, 0x46, 0x70};
-    if (g_mod_config.enabled && g_mod_config.smooth_edge_scroll) {
-        PatchExecutableJump(
-            base + 0x0004C9B0, scroll_expected, sizeof(scroll_expected),
-            reinterpret_cast<const void *>(&SmoothEdgeScroll));
-    }
-
     if (g_mod_config.enabled) {
         // The original unobstructed close-hearing check is 128 world units.
         // Keep its original no-line-of-sight semantics and configure only the
@@ -1001,8 +758,7 @@ bool LoadRealDInput() {
 
 class DeviceProxy final : public IDirectInputDeviceA {
 public:
-    DeviceProxy(LPDIRECTINPUTDEVICEA real, bool is_mouse)
-        : real_(real), is_mouse_(is_mouse) {}
+    explicit DeviceProxy(LPDIRECTINPUTDEVICEA real) : real_(real) {}
 
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, LPVOID *object) override {
         if (!object) {
@@ -1056,17 +812,7 @@ public:
     }
     HRESULT STDMETHODCALLTYPE GetDeviceState(DWORD size, LPVOID data) override {
         PumpWindowMessages();
-        HRESULT result = real_->GetDeviceState(size, data);
-        const bool automated_mouse =
-            IsSyntheticMouseEnabled() && size == sizeof(DIMOUSESTATE);
-        if (automated_mouse && FAILED(result) && data) {
-            memset(data, 0, size);
-            result = DI_OK;
-        }
-        if (SUCCEEDED(result) && (is_mouse_ || automated_mouse)) {
-            ApplyAutomatedMouseState(size, data);
-        }
-        return result;
+        return real_->GetDeviceState(size, data);
     }
     HRESULT STDMETHODCALLTYPE GetDeviceData(
         DWORD object_size, LPDIDEVICEOBJECTDATA data, LPDWORD count,
@@ -1075,19 +821,12 @@ public:
         return real_->GetDeviceData(object_size, data, count, flags);
     }
     HRESULT STDMETHODCALLTYPE SetDataFormat(LPCDIDATAFORMAT format) override {
-        // Some Windows versions return an enumerated mouse instance GUID
-        // rather than GUID_SysMouse. The original DIMOUSESTATE layout is a
-        // more reliable way to classify that device.
-        if (format && format->dwDataSize == sizeof(DIMOUSESTATE)) {
-            is_mouse_ = true;
-        }
         return real_->SetDataFormat(format);
     }
     HRESULT STDMETHODCALLTYPE SetEventNotification(HANDLE event) override {
         return real_->SetEventNotification(event);
     }
     HRESULT STDMETHODCALLTYPE SetCooperativeLevel(HWND window, DWORD flags) override {
-        g_game_window = window;
         ProtectGameWindowInput(window);
         return real_->SetCooperativeLevel(window, flags);
     }
@@ -1109,7 +848,6 @@ public:
 private:
     ~DeviceProxy() = default;
     LPDIRECTINPUTDEVICEA real_;
-    bool is_mouse_;
     volatile LONG references_ = 1;
 };
 
@@ -1156,8 +894,7 @@ public:
             return result;
         }
 
-        auto *proxy = new (std::nothrow) DeviceProxy(
-            real_device, IsEqualGUID(guid, GUID_SysMouse) != FALSE);
+        auto *proxy = new (std::nothrow) DeviceProxy(real_device);
         if (!proxy) {
             real_device->Release();
             return E_OUTOFMEMORY;
