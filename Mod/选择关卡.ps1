@@ -103,10 +103,11 @@ function Set-DdrawProfile {
             Set-IniValue $ddrawIni 'ddraw' 'width' '1024'
             Set-IniValue $ddrawIni 'ddraw' 'height' '768'
             Set-IniValue $ddrawIni 'ddraw' 'maintas' 'true'
-            # Keep the original cursor confinement/acquisition behaviour.
-            # At 1:1 output adjmouse performs no sensitivity scaling.
-            Set-IniValue $ddrawIni 'ddraw' 'adjmouse' 'true'
-            Set-IniValue $ddrawIni 'ddraw' 'devmode' 'false'
+            # This fixed 1:1 window needs neither sensitivity scaling nor
+            # cnc-ddraw cursor confinement. Confinement can pin the legacy
+            # DirectInput cursor to the lower-right corner on modern Windows.
+            Set-IniValue $ddrawIni 'ddraw' 'adjmouse' 'false'
+            Set-IniValue $ddrawIni 'ddraw' 'devmode' 'true'
             Set-IniValue $ddrawIni 'ddraw' 'resizable' 'false'
             Set-IniValue $ddrawIni 'ddraw' 'savesettings' '0'
             Set-IniValue $ddrawIni 'ddraw' 'posX' '-32000'
