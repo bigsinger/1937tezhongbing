@@ -15,18 +15,22 @@
 --------
 1. 窗口模式 1280×720：适合测试、录屏和日常切换程序。
 2. 全屏缩放：保持原版画面比例。
-3. 原生扩展视口：使用当前桌面分辨率创建游戏逻辑画布，显示更多地图，
-   而不是在宽屏两侧补黑边。默认使用当前系统分辨率。
+3. 全屏铺满：保留原版 1024×768 游戏与界面画布，再由兼容渲染器铺满
+   当前桌面。这样底部工具栏、F1 帮助、M 小地图和原版快捷键均可正常使用。
+
+旧版“原生扩展视口”会让原版没有对应尺寸的 UI 表面为空，造成工具栏消失、
+F1 黑屏及 M 小地图失效，现已停用。全屏输出仍会自动采用当前系统分辨率。
 
 关键增强
 --------
 - cnc-ddraw 将 DirectDraw 转换为 Direct3D 9/OpenGL；
 - dinput.dll 兼容层修复旧输入消息泵、启动弹框和长时间未响应；
 - 屏蔽游戏窗口输入法，避免按键触发中文输入；
-- 1 ms 计时器、60 FPS 上限和垂直同步降低偶发卡顿；
+- 1 ms 计时器、固定 60 FPS、60 次/秒逻辑更新和垂直同步降低偶发卡顿；
+- 窗口消息泵按 8 ms 节流、每次最多处理 4 条维护消息，不抢占键鼠热键；
 - 边缘卷屏使用 8 像素热区与渐进加减速；
 - 敌军难度和智能会调整听觉半径及警报协同传播范围；
-- 高分辨率 UI 复用 1024 素材布局，地图表面按桌面尺寸扩展；
+- 高分辨率输出保留完整的 1024 UI，再缩放到桌面尺寸；
 - 可从启动中心直接进入任意一个正式关卡。
 
 高级配置
@@ -35,8 +39,9 @@ rungame.ini 的 [mod] 支持：
 Enabled、Difficulty、AILevel、HearingRadius、AlertRadius、
 SmoothEdgeScroll、EdgeZone、ScrollResponse、DisableIME、
 HighResolutionTimer、ExpandedViewport、ViewportWidth、
-ViewportHeight、RememberLevel、StartLevel、AutoStart、
-Renderer 和 DisplayMode。
+ViewportHeight、PreserveLegacyUI、MessagePumpIntervalMs、
+MessagePumpBudget、RememberLevel、StartLevel、AutoStart、Renderer
+和 DisplayMode。ExpandedViewport 只保留用于兼容旧配置，安全模式下不会启用。
 
 Difficulty/AILevel 取值均为 0—3。HearingRadius/AlertRadius 为 0 时，
 由难度和智能等级自动计算；非 0 时使用显式世界单位数值。

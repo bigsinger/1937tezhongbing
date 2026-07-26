@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -64,12 +65,26 @@ internal static class OriginalLevelProbe
         IntPtr window, IntPtr insertAfter, int x, int y, int width, int height,
         uint flags);
 
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr window);
+
+    [DllImport("user32.dll")]
+    private static extern void keybd_event(
+        byte virtualKey, byte scanCode, uint flags, UIntPtr extraInfo);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetCursorPos(int x, int y);
+
+    [DllImport("user32.dll")]
+    private static extern void mouse_event(
+        uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
+
     public static int Main(string[] args)
     {
         if (args.Length < 3)
         {
             Console.Error.WriteLine(
-                "Usage: OriginalLevelProbe.exe GAME_DIR OUTPUT_DIR LEVEL [SECONDS] [nodrive]");
+                "Usage: OriginalLevelProbe.exe GAME_DIR OUTPUT_DIR LEVEL [SECONDS] [nodrive] [hotkeys]");
             return 2;
         }
 
@@ -79,6 +94,8 @@ internal static class OriginalLevelProbe
         int seconds = args.Length >= 4 ? int.Parse(args[3]) : 35;
         bool drive = args.Length < 5 ||
             !string.Equals(args[4], "nodrive", StringComparison.OrdinalIgnoreCase);
+        bool testHotkeys = args.Any(argument => string.Equals(
+            argument, "hotkeys", StringComparison.OrdinalIgnoreCase));
         if (level < 1 || level > 12)
         {
             throw new ArgumentOutOfRangeException("level");
@@ -92,7 +109,10 @@ internal static class OriginalLevelProbe
             UseShellExecute = false
         };
         startInfo.EnvironmentVariables["M1937_START_LEVEL"] = level.ToString();
-        startInfo.EnvironmentVariables["M1937_AUTOTEST"] = "1";
+        if (testHotkeys)
+            startInfo.EnvironmentVariables["M1937_AUTO_START"] = "1";
+        else
+            startInfo.EnvironmentVariables["M1937_AUTOTEST"] = "1";
 
         using (Process game = Process.Start(startInfo))
         {
@@ -167,13 +187,23 @@ internal static class OriginalLevelProbe
                 // The proxy returns the original Start Game command through
                 // the menu's own polling function. No physical or synthetic
                 // click is needed, so validation cannot disturb gameplay.
-                double nextClick = double.MaxValue;
+                double nextClick = testHotkeys
+                    ? 2.0
+                    : double.MaxValue;
                 double releaseAt = -1.0;
                 double clearReleaseAt = -1.0;
                 double nextBriefingAdvance = 3.0;
                 int observedMission = ReadInt(
                     process, imageBase + CurrentMission);
                 Bitmap latest = null;
+                Bitmap baselineUi = null;
+                Bitmap helpUi = null;
+                Bitmap minimapUi = null;
+                bool helpOpened = false;
+                bool helpClosed = false;
+                bool minimapOpened = false;
+                bool minimapClosed = false;
+                double nextPhysicalAdvance = 2.0;
 
                 while (clock.Elapsed.TotalSeconds < seconds && !game.HasExited)
                 {
@@ -212,6 +242,8 @@ internal static class OriginalLevelProbe
                         WriteInt(process, imageBase + LeftReleased, 1);
                         clearReleaseAt = now + 0.10;
                         releaseAt = -1.0;
+                        if (testHotkeys && nextClick > 55.0)
+                            nextClick = double.MaxValue;
                     }
                     if (clearReleaseAt >= 0.0 && now >= clearReleaseAt)
                     {
@@ -223,11 +255,71 @@ internal static class OriginalLevelProbe
                     if (current >= 1 && current <= 12)
                     {
                         observedMission = current;
-                        if (now >= nextBriefingAdvance)
+                        if (now >= nextBriefingAdvance &&
+                            (!testHotkeys || now <= 55.0))
                         {
                             WriteByte(
                                 process, imageBase + BriefingAdvance, 1);
                             nextBriefingAdvance += 2.0;
+                        }
+                    }
+
+                    if (testHotkeys && current >= 1 && current <= 12)
+                    {
+                        if (now >= nextPhysicalAdvance && now <= 55.0)
+                        {
+                            Rect advanceRect;
+                            if (GetWindowRect(window, out advanceRect))
+                            {
+                                SetForegroundWindow(window);
+                                SetCursorPos(
+                                    (advanceRect.Left + advanceRect.Right) / 2,
+                                    (advanceRect.Top + advanceRect.Bottom) / 2);
+                                mouse_event(
+                                    0x0002, 0, 0, 0, UIntPtr.Zero);
+                                Thread.Sleep(60);
+                                mouse_event(
+                                    0x0004, 0, 0, 0, UIntPtr.Zero);
+                                PressKey(0x0D);
+                            }
+                            nextPhysicalAdvance += 2.0;
+                        }
+                        if (now >= 60.0 && baselineUi == null)
+                        {
+                            SetWindowPos(
+                                window, new IntPtr(-1), 20, 20, 0, 0,
+                                0x0001 | 0x0040);
+                            SetForegroundWindow(window);
+                            Thread.Sleep(150);
+                            baselineUi = CaptureVisibleWindow(window);
+                        }
+                        if (now >= 63.0 && !helpOpened)
+                        {
+                            PressKey(0x70); // F1
+                            helpOpened = true;
+                        }
+                        if (now >= 65.0 && helpUi == null)
+                        {
+                            helpUi = CaptureVisibleWindow(window);
+                        }
+                        if (now >= 66.0 && !helpClosed)
+                        {
+                            PressKey(0x70);
+                            helpClosed = true;
+                        }
+                        if (now >= 68.0 && !minimapOpened)
+                        {
+                            PressKey(0x4D); // M
+                            minimapOpened = true;
+                        }
+                        if (now >= 70.0 && minimapUi == null)
+                        {
+                            minimapUi = CaptureVisibleWindow(window);
+                        }
+                        if (now >= 71.0 && !minimapClosed)
+                        {
+                            PressKey(0x4D);
+                            minimapClosed = true;
                         }
                     }
 
@@ -275,6 +367,15 @@ internal static class OriginalLevelProbe
                         "local_ocr=" + (
                             string.IsNullOrEmpty(ocrPath) ? "unavailable" : ocrPath));
                 }
+                if (testHotkeys)
+                {
+                    SaveUiCapture(
+                        baselineUi, outputDirectory, "ui-baseline.jpg", report);
+                    SaveUiCapture(
+                        helpUi, outputDirectory, "ui-f1-help.jpg", report);
+                    SaveUiCapture(
+                        minimapUi, outputDirectory, "ui-m-minimap.jpg", report);
+                }
                 else
                 {
                     report.AppendLine("compressed_window_capture=unavailable");
@@ -309,6 +410,28 @@ internal static class OriginalLevelProbe
 
         Console.WriteLine("Original level selector probe passed.");
         return 0;
+    }
+
+    private static void PressKey(byte virtualKey)
+    {
+        keybd_event(virtualKey, 0, 0, UIntPtr.Zero);
+        Thread.Sleep(80);
+        keybd_event(virtualKey, 0, 0x0002, UIntPtr.Zero);
+    }
+
+    private static void SaveUiCapture(
+        Bitmap bitmap, string outputDirectory, string fileName,
+        StringBuilder report)
+    {
+        if (bitmap == null)
+        {
+            report.AppendLine(fileName + "=unavailable");
+            return;
+        }
+        string path = Path.Combine(outputDirectory, fileName);
+        SaveCompressedJpeg(bitmap, path, 1280, 72L);
+        bitmap.Dispose();
+        report.AppendLine(fileName + "=" + path);
     }
 
     private static IntPtr WaitForWindow(Process game, TimeSpan timeout)

@@ -37,8 +37,13 @@ foreach ($relativePath in $trackedFiles) {
     $forwardPath = $relativePath.Replace('\', '/')
     # This guard protects the clean-room Remake subtree and analysis/release
     # artifacts. The independently distributed, explicitly curated original
-    # game Mod is intentionally allowed to contain its runtime assets.
-    if ($forwardPath.StartsWith('Mod/', [StringComparison]::OrdinalIgnoreCase)) {
+    # game Mod is intentionally allowed to contain its runtime assets. The
+    # MapEditor library contains curated converted PNG/JSON authoring assets,
+    # never the proprietary container formats guarded below.
+    if ($forwardPath.StartsWith('Mod/', [StringComparison]::OrdinalIgnoreCase) -or
+        $forwardPath.StartsWith(
+            'MapEditor/Assets/Original/',
+            [StringComparison]::OrdinalIgnoreCase)) {
         continue
     }
     $normalized = $relativePath.Replace('/', [IO.Path]::DirectorySeparatorChar)

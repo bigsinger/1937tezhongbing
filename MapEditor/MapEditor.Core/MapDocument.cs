@@ -24,12 +24,14 @@ public sealed class EditorLayer
 public sealed class MapObject
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
-    public string Kind { get; set; } = "enemy";
+    public string Kind { get; set; } = "decoration";
     public string Name { get; set; } = "新对象";
+    public string Category { get; set; } = "其他";
+    public string AssetPath { get; set; } = "";
     public int X { get; set; }
     public int Y { get; set; }
     public int Direction { get; set; }
-    public string Faction { get; set; } = "enemy";
+    public string Faction { get; set; } = "neutral";
     public Dictionary<string, string> Properties { get; set; } = [];
 }
 
@@ -53,11 +55,22 @@ public sealed class MapDocument
     public string Name { get; set; } = "未命名关卡";
     public int Width { get; set; } = 64;
     public int Height { get; set; } = 48;
+
+    // CellSize remains for compatibility with the first editor release.
     public int CellSize { get; set; } = 20;
+    public int CellWidth { get; set; } = 20;
+    public int CellHeight { get; set; } = 20;
     public string? ImportedFrom { get; set; }
+    public string BackgroundAsset { get; set; } = "";
     public List<EditorLayer> Layers { get; set; } = [];
     public List<MapObject> Objects { get; set; } = [];
     public List<MissionTask> Tasks { get; set; } = [];
+
+    [JsonIgnore]
+    public int EffectiveCellWidth => CellWidth > 0 ? CellWidth : CellSize;
+
+    [JsonIgnore]
+    public int EffectiveCellHeight => CellHeight > 0 ? CellHeight : CellSize;
 
     public static MapDocument Create(string name, int width, int height)
     {
@@ -74,11 +87,14 @@ public sealed class MapDocument
             Height = height,
             Layers =
             [
-                NewLayer("地表", EditorLayerKind.Terrain, count),
-                NewLayer("视线障碍", EditorLayerKind.LineOfSightObstacle, count),
-                NewLayer("移动障碍", EditorLayerKind.MovementObstacle, count),
-                NewLayer("事件", EditorLayerKind.Event, count),
-                NewLayer("人工通行修正", EditorLayerKind.ManualMovementCorrection, count)
+                NewLayer("地表", EditorLayerKind.Terrain, count, true),
+                NewLayer("视线障碍", EditorLayerKind.LineOfSightObstacle, count, false),
+                NewLayer("移动障碍", EditorLayerKind.MovementObstacle, count, false),
+                NewLayer("事件", EditorLayerKind.Event, count, false),
+                NewLayer(
+                    "人工通行修正",
+                    EditorLayerKind.ManualMovementCorrection,
+                    count, false)
             ],
             Tasks =
             [
@@ -98,15 +114,19 @@ public sealed class MapDocument
     public int Index(int x, int y)
     {
         if (x < 0 || x >= Width || y < 0 || y >= Height)
-        {
             throw new ArgumentOutOfRangeException(nameof(x));
-        }
         return checked(y * Width + x);
     }
 
     private static EditorLayer NewLayer(
-        string name, EditorLayerKind kind, int count) =>
-        new() { Name = name, Kind = kind, Cells = new int[count] };
+        string name, EditorLayerKind kind, int count, bool visible) =>
+        new()
+        {
+            Name = name,
+            Kind = kind,
+            Visible = visible,
+            Cells = new int[count]
+        };
 }
 
 public static class MapDocumentSerializer
@@ -123,18 +143,36 @@ public static class MapDocumentSerializer
         var document = JsonSerializer.Deserialize<MapDocument>(
             File.ReadAllText(path), Options)
             ?? throw new InvalidDataException("地图文件没有有效内容。");
+        Normalize(document);
         MapValidator.ThrowIfInvalid(document);
         return document;
     }
 
     public static void Save(MapDocument document, string path)
     {
+        Normalize(document);
         MapValidator.ThrowIfInvalid(document);
         var fullPath = Path.GetFullPath(path);
         Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
         var temporary = fullPath + ".tmp";
         File.WriteAllText(temporary, JsonSerializer.Serialize(document, Options));
         File.Move(temporary, fullPath, true);
+    }
+
+    private static void Normalize(MapDocument document)
+    {
+        if (document.CellWidth <= 0)
+            document.CellWidth = document.CellSize > 0 ? document.CellSize : 20;
+        if (document.CellHeight <= 0)
+            document.CellHeight = document.CellSize > 0 ? document.CellSize : 20;
+        document.CellSize = document.CellWidth;
+        document.BackgroundAsset ??= "";
+        foreach (var item in document.Objects)
+        {
+            item.AssetPath ??= "";
+            item.Category ??= "其他";
+            item.Properties ??= [];
+        }
     }
 }
 
@@ -147,13 +185,18 @@ public static class MapValidator
             errors.Add($"不支持的 schema_version：{document.SchemaVersion}");
         if (document.Width <= 0 || document.Height <= 0)
             errors.Add("地图宽高必须为正数。");
+        if (document.EffectiveCellWidth <= 0 || document.EffectiveCellHeight <= 0)
+            errors.Add("地图格宽和格高必须为正数。");
+
         var expected = (long)document.Width * document.Height;
         foreach (var layer in document.Layers)
         {
             if (layer.Cells.LongLength != expected)
-                errors.Add($"图层“{layer.Name}”包含 {layer.Cells.LongLength} 格，应为 {expected} 格。");
+                errors.Add(
+                    $"图层“{layer.Name}”包含 {layer.Cells.LongLength} 格，应为 {expected} 格。");
         }
-        foreach (var duplicate in document.Objects.GroupBy(item => item.Id).Where(group => group.Count() > 1))
+        foreach (var duplicate in document.Objects
+                     .GroupBy(item => item.Id).Where(group => group.Count() > 1))
             errors.Add($"对象 ID 重复：{duplicate.Key}");
         foreach (var item in document.Objects)
         {
@@ -161,13 +204,14 @@ public static class MapValidator
                 item.Y < 0 || item.Y >= document.Height)
                 errors.Add($"对象“{item.Name}”位于地图范围外。");
         }
-        foreach (var duplicate in document.Tasks.GroupBy(item => item.Id).Where(group => group.Count() > 1))
+        foreach (var duplicate in document.Tasks
+                     .GroupBy(item => item.Id).Where(group => group.Count() > 1))
             errors.Add($"任务 ID 重复：{duplicate.Key}");
         var taskIds = document.Tasks.Select(item => item.Id).ToHashSet();
         foreach (var task in document.Tasks)
         {
             if (task.NextTaskId.Length > 0 && !taskIds.Contains(task.NextTaskId))
-                errors.Add($"任务“{task.Title}”指向不存在的后继任务 {task.NextTaskId}。");
+                errors.Add($"任务“{task.Title}”指向不存在的后续任务 {task.NextTaskId}。");
         }
         return errors;
     }
@@ -182,23 +226,28 @@ public static class MapValidator
 
 public static class OriginalVwfImporter
 {
-    public static MapDocument Import(string vwfPath)
+    public static MapDocument Import(string vwfPath, string? originalAssetRoot = null)
     {
-        var world = VwfWorldHeader.Open(vwfPath);
+        _ = VwfWorldHeader.Open(vwfPath);
         var terrain = VwfTerrainGrid.Open(vwfPath);
         var scenes = VwfSceneList.Open(vwfPath);
+        var levelId = Path.GetFileNameWithoutExtension(vwfPath).ToLowerInvariant();
+        if (levelId.StartsWith("1937m", StringComparison.Ordinal) &&
+            levelId.Length == 8)
+            levelId = levelId[4..];
         var document = MapDocument.Create(
-            Path.GetFileNameWithoutExtension(vwfPath),
-            checked((int)terrain.Width),
-            checked((int)terrain.Height));
-        document.CellSize = VwfWorldHeader.GridCellSize;
+            levelId, checked((int)terrain.Width), checked((int)terrain.Height));
+
+        // Original maps use an isometric 32x16 pixel grid.
+        document.CellSize = 32;
+        document.CellWidth = 32;
+        document.CellHeight = 16;
         document.ImportedFrom = Path.GetFileName(vwfPath);
 
         for (var index = 0; index < document.Width * document.Height; index++)
         {
-            var rawTerrain = terrain.Layers[0].Values[index];
             document.Layer(EditorLayerKind.Terrain).Cells[index] =
-                unchecked((int)rawTerrain);
+                unchecked((int)terrain.Layers[0].Values[index]);
             document.Layer(EditorLayerKind.LineOfSightObstacle).Cells[index] =
                 unchecked((int)terrain.Layers[1].Values[index]);
             document.Layer(EditorLayerKind.MovementObstacle).Cells[index] =
@@ -214,14 +263,14 @@ public static class OriginalVwfImporter
             document.Objects.Add(new MapObject
             {
                 Id = $"scene-{entity.SceneIndex}",
-                Kind = entity.DatabaseEntryId switch
-                {
-                    < 0 => "unknown",
-                    _ => "legacy_object"
-                },
+                Kind = "legacy_object",
                 Name = $"原版对象 {entity.SceneIndex}",
-                X = Math.Clamp(entity.WorldX / document.CellSize, 0, document.Width - 1),
-                Y = Math.Clamp(entity.WorldY / document.CellSize, 0, document.Height - 1),
+                X = Math.Clamp(
+                    entity.WorldX / document.EffectiveCellWidth,
+                    0, document.Width - 1),
+                Y = Math.Clamp(
+                    entity.WorldY / document.EffectiveCellHeight,
+                    0, document.Height - 1),
                 Direction = checked((int)entity.DirectionIndex),
                 Properties =
                 {
@@ -232,8 +281,88 @@ public static class OriginalVwfImporter
                 }
             });
         }
+
+        EnrichFromConvertedLevel(document, levelId, originalAssetRoot);
         document.Tasks[0].Description =
-            $"从 {Path.GetFileName(vwfPath)} 导入；请按原任务脚本补充胜负条件。";
+            $"从 {Path.GetFileName(vwfPath)} 导入；请根据原任务脚本补充胜负条件。";
         return document;
     }
+
+    private static void EnrichFromConvertedLevel(
+        MapDocument document, string levelId, string? originalAssetRoot)
+    {
+        if (string.IsNullOrWhiteSpace(originalAssetRoot))
+            return;
+        var levelPath = Path.Combine(
+            originalAssetRoot, "maps", levelId, "level.json");
+        if (!File.Exists(levelPath))
+            return;
+
+        using var json = JsonDocument.Parse(File.ReadAllText(levelPath));
+        if (!json.RootElement.TryGetProperty("entities", out var entities))
+            return;
+        var byId = document.Objects.ToDictionary(item => item.Id);
+        foreach (var entity in entities.EnumerateArray())
+        {
+            if (!entity.TryGetProperty("scene_index", out var sceneIndex))
+                continue;
+            if (!byId.TryGetValue($"scene-{sceneIndex.GetInt32()}", out var item))
+                continue;
+
+            var resourceName = Text(entity, "resource_name");
+            item.Name = Text(entity, "display_name");
+            if (string.IsNullOrWhiteSpace(item.Name))
+                item.Name = Path.GetFileNameWithoutExtension(resourceName);
+            item.Category = Text(entity, "category_name");
+            if (string.IsNullOrWhiteSpace(item.Category))
+                item.Category = Classify(resourceName);
+            item.Kind = Classify(resourceName);
+
+            var preview = Text(entity, "sprite_preview");
+            if (!string.IsNullOrWhiteSpace(preview))
+                item.AssetPath = "sprites/" + Path.GetFileName(preview);
+
+            if (entity.TryGetProperty("faction_id", out var faction))
+            {
+                var factionId = faction.GetInt32();
+                item.Faction = factionId == 0 ? "neutral" : $"faction-{factionId}";
+                item.Properties["faction_id"] = factionId.ToString();
+            }
+            item.Properties["resource_name"] = resourceName;
+        }
+
+        var background = Path.Combine(
+            originalAssetRoot, "maps", levelId, "terrain.png");
+        if (File.Exists(background))
+            document.BackgroundAsset = $"maps/{levelId}/terrain.png";
+    }
+
+    private static string Text(JsonElement value, string name) =>
+        value.TryGetProperty(name, out var property)
+            ? property.GetString() ?? ""
+            : "";
+
+    private static string Classify(string name)
+    {
+        if (ContainsAny(name, "树", "草", "花", "灌木"))
+            return "vegetation";
+        if (ContainsAny(name, "墙", "栅栏", "铁丝网"))
+            return "wall";
+        if (ContainsAny(name, "房", "屋", "楼", "仓库", "岗楼", "车站"))
+            return "building";
+        if (ContainsAny(name, "门"))
+            return "door";
+        if (ContainsAny(name, "桥", "道路", "地面"))
+            return "terrain";
+        if (ContainsAny(name, "古明", "强子", "王二", "龟田", "兵", "军官", "人"))
+            return "character";
+        if (ContainsAny(name, "箱", "枪", "刀", "药", "弹", "物品"))
+            return "item";
+        if (ContainsAny(name, "石", "木", "桌", "椅", "桶", "车"))
+            return "obstacle";
+        return "decoration";
+    }
+
+    private static bool ContainsAny(string value, params string[] needles) =>
+        needles.Any(value.Contains);
 }

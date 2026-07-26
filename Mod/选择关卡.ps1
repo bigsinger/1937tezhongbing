@@ -80,6 +80,8 @@ function Set-DdrawProfile {
     Set-IniValue $ddrawIni 'ddraw' 'renderer' $Renderer
     Set-IniValue $ddrawIni 'ddraw' 'maxfps' '60'
     Set-IniValue $ddrawIni 'ddraw' 'vsync' 'true'
+    Set-IniValue $ddrawIni 'ddraw' 'maxgameticks' '60'
+    Set-IniValue $ddrawIni 'ddraw' 'limiter_type' '2'
     Set-IniValue $ddrawIni 'ddraw' 'boxing' 'false'
     switch ($DisplayMode) {
         0 {
@@ -309,7 +311,7 @@ Add-SettingLabel '显示模式' 62
 $displayCombo = Add-ComboBox @(
     '窗口模式 1280×720',
     '全屏缩放（保持原比例）',
-    '原生扩展视口（显示更多地图）'
+    '全屏铺满（界面完整、无黑边）'
 ) 58
 
 Add-SettingLabel '渲染后端' 105
@@ -367,7 +369,7 @@ $screenInfo.ForeColor = $textMuted
 $settingsPanel.Controls.Add($screenInfo)
 
 $profileInfo = New-Object Windows.Forms.Label
-$profileInfo.Text = "原生扩展会让引擎创建 $($screen.Width)×$($screen.Height) 逻辑画布，`r`n同屏继续渲染地图，而不是添加黑边或单纯拉伸。"
+$profileInfo.Text = "游戏保持原版 1024×768 完整界面，再由现代渲染器输出到`r`n$($screen.Width)×$($screen.Height)；F1、M、小地图和底部工具栏均可正常使用。"
 $profileInfo.Location = New-Object Drawing.Point(22, 343)
 $profileInfo.Size = New-Object Drawing.Size(370, 53)
 $profileInfo.ForeColor = $textMuted
@@ -436,9 +438,11 @@ $disableIme.Checked = (Get-IniInt $runGameIni 'mod' 'DisableIME' 1) -ne 0
 $timerCheck.Checked =
     (Get-IniInt $runGameIni 'mod' 'HighResolutionTimer' 1) -ne 0
 $rememberLevel.Checked = (Get-IniInt $runGameIni 'mod' 'RememberLevel' 1) -ne 0
-$expanded = (Get-IniInt $runGameIni 'mod' 'ExpandedViewport' 0) -ne 0
 $windowed = (Get-IniValue $ddrawIni 'ddraw' 'windowed' 'true') -eq 'true'
-$displayCombo.SelectedIndex = $(if ($expanded) { 2 } elseif ($windowed) { 0 } else { 1 })
+$maintainAspect =
+    (Get-IniValue $ddrawIni 'ddraw' 'maintas' 'true') -eq 'true'
+$displayCombo.SelectedIndex =
+    $(if ($windowed) { 0 } elseif ($maintainAspect) { 1 } else { 2 })
 $renderer = Get-IniValue $ddrawIni 'ddraw' 'renderer' 'direct3d9'
 $rendererCombo.SelectedIndex = switch ($renderer.ToLowerInvariant()) {
     'direct3d9on12' { 1 }
@@ -451,7 +455,10 @@ function Save-Settings {
         $missionList.Items[0].Selected = $true
     }
     $selectedLevel = [int]$missionList.SelectedItems[0].Tag
-    $isExpanded = $displayCombo.SelectedIndex -eq 2
+    # Keep the original 1024x768 logical UI surface. cnc-ddraw performs the
+    # desktop-sized output scaling; changing the engine surface itself breaks
+    # the original toolbar, help and minimap artwork.
+    $isExpanded = $false
     $rendererName = @('direct3d9', 'direct3d9on12', 'opengl')[
         $rendererCombo.SelectedIndex]
 
@@ -466,8 +473,11 @@ function Save-Settings {
     Set-IniValue $runGameIni 'mod' 'DisableIME' $(if ($disableIme.Checked) { '1' } else { '0' })
     Set-IniValue $runGameIni 'mod' 'HighResolutionTimer' $(if ($timerCheck.Checked) { '1' } else { '0' })
     Set-IniValue $runGameIni 'mod' 'ExpandedViewport' $(if ($isExpanded) { '1' } else { '0' })
+    Set-IniValue $runGameIni 'mod' 'PreserveLegacyUI' '1'
     Set-IniValue $runGameIni 'mod' 'ViewportWidth' $(if ($isExpanded) { [string]$screen.Width } else { '0' })
     Set-IniValue $runGameIni 'mod' 'ViewportHeight' $(if ($isExpanded) { [string]$screen.Height } else { '0' })
+    Set-IniValue $runGameIni 'mod' 'MessagePumpIntervalMs' '8'
+    Set-IniValue $runGameIni 'mod' 'MessagePumpBudget' '4'
     Set-IniValue $runGameIni 'mod' 'RememberLevel' $(if ($rememberLevel.Checked) { '1' } else { '0' })
     Set-IniValue $runGameIni 'mod' 'StartLevel' $(if ($rememberLevel.Checked) { [string]$selectedLevel } else { '0' })
     Set-IniValue $runGameIni 'mod' 'AutoStart' '0'

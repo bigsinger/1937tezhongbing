@@ -36,3 +36,8 @@ Mod/*.slf filter=lfs diff=lfs merge=lfs -text
 Mod/*.SI0 filter=lfs diff=lfs merge=lfs -text
 Mod/*.SI1 filter=lfs diff=lfs merge=lfs -text
 Mod/*.SI2 filter=lfs diff=lfs merge=lfs -text
+
+# Full level composites and rich converted level manifests are large; small
+# sprite thumbnails remain normal Git objects for fast browsing.
+MapEditor/Assets/Original/maps/*/terrain.png filter=lfs diff=lfs merge=lfs -text
+MapEditor/Assets/Original/maps/*/level.json filter=lfs diff=lfs merge=lfs -text

@@ -3,8 +3,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              StartupUri="MainWindow.xaml">
   <Application.Resources>
-    <SolidColorBrush x:Key="PanelBrush" Color="#202631" />
-    <SolidColorBrush x:Key="AccentBrush" Color="#C13C35" />
+    <SolidColorBrush x:Key="PanelBrush" Color="#FCFBF7" />
+    <SolidColorBrush x:Key="AccentBrush" Color="#9E2F2B" />
     <Style TargetType="Button">
       <Setter Property="Padding" Value="12,6" />
       <Setter Property="Margin" Value="3" />

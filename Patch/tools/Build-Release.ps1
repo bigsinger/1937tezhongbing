@@ -1,5 +1,5 @@
 param(
-    [string]$WorkDirectory = 'E:\1937\patch-v130-build'
+    [string]$WorkDirectory = 'E:\1937\patch-v131-build'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,15 +19,16 @@ $basePackage = if ($basePackageItem) { $basePackageItem.FullName } else { '' }
 $packageName = if ($basePackageItem) {
     $basePackageItem.BaseName.Replace(
         'v1.2.0-20260726',
-        'v1.3.0-20260726')
+        'v1.3.1-20260726')
 } else {
-    '1937-compatibility-patch-v1.3.0-20260726'
+    '1937-compatibility-patch-v1.3.1-20260726'
 }
 $stage = Join-Path $workRoot $packageName
 $archive = Join-Path $patchRoot ('release\' + $packageName + '.zip')
 $archiveHash = $archive + '.sha256.txt'
 $proxyRoot = Join-Path $patchRoot 'src\dinput-proxy'
 $selectorRoot = Join-Path $patchRoot 'src\level-selector'
+$modRoot = Join-Path $repositoryRoot 'Mod'
 
 if (-not (Test-Path -LiteralPath $basePackage -PathType Leaf)) {
     throw "Base package is missing: $basePackage"
@@ -72,6 +73,8 @@ foreach ($staleFile in $staleFiles) {
 }
 Copy-Item -LiteralPath (Join-Path $proxyRoot 'build\dinput.dll') `
     -Destination (Join-Path $payload 'dinput.dll') -Force
+Copy-Item -LiteralPath (Join-Path $modRoot 'ddraw.ini') `
+    -Destination (Join-Path $payload 'ddraw.ini') -Force
 Copy-Item -LiteralPath (Join-Path $proxyRoot 'dinput_proxy.cpp') `
     -Destination (Join-Path $source 'dinput-proxy\dinput_proxy.cpp') -Force
 Copy-Item -LiteralPath (Join-Path $proxyRoot 'dinput_proxy.def') `
@@ -126,10 +129,13 @@ $installPath = Join-Path $stage 'Install-Patch.ps1'
 $installText = Get-Content -LiteralPath $installPath -Raw -Encoding UTF8
 $installText = $installText.Replace(
     '1937 compatibility patch v1.1.1 backup',
-    '1937 compatibility patch v1.3.0 backup')
+    '1937 compatibility patch v1.3.1 backup')
 $installText = $installText.Replace(
     '1937 compatibility patch v1.2.0 backup',
-    '1937 compatibility patch v1.3.0 backup')
+    '1937 compatibility patch v1.3.1 backup')
+$installText = $installText.Replace(
+    '1937 compatibility patch v1.3.0 backup',
+    '1937 compatibility patch v1.3.1 backup')
 [IO.File]::WriteAllText(
     $installPath,
     $installText,

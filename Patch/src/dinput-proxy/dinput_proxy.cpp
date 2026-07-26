@@ -21,6 +21,7 @@ bool g_timer_period_active = false;
 DWORD g_probe_started_at = 0;
 DWORD g_probe_mission_started_at = 0;
 thread_local bool g_pumping_messages = false;
+volatile LONG g_last_message_pump_tick = 0;
 void *g_safe_blit_trampoline = nullptr;
 void *g_menu_poll_trampoline = nullptr;
 volatile LONG g_auto_start_consumed = 0;
@@ -38,8 +39,11 @@ struct ModConfig {
     int hearing_radius = 0;
     int alert_radius = 0;
     bool expanded_viewport = false;
+    bool preserve_legacy_ui = true;
     int viewport_width = 0;
     int viewport_height = 0;
+    int message_pump_interval_ms = 8;
+    int message_pump_budget = 4;
     bool auto_start = false;
     int start_level = 0;
 };
@@ -94,10 +98,15 @@ void LoadModConfig() {
     g_mod_config.alert_radius =
         ClampSetting(read(L"AlertRadius", 0), 0, 4096);
     g_mod_config.expanded_viewport = read(L"ExpandedViewport", 0) != 0;
+    g_mod_config.preserve_legacy_ui = read(L"PreserveLegacyUI", 1) != 0;
     g_mod_config.viewport_width =
         ClampSetting(read(L"ViewportWidth", 0), 0, 3840);
     g_mod_config.viewport_height =
         ClampSetting(read(L"ViewportHeight", 0), 0, 2160);
+    g_mod_config.message_pump_interval_ms =
+        ClampSetting(read(L"MessagePumpIntervalMs", 8), 4, 50);
+    g_mod_config.message_pump_budget =
+        ClampSetting(read(L"MessagePumpBudget", 4), 1, 8);
     g_mod_config.auto_start = read(L"AutoStart", 0) != 0;
     g_mod_config.start_level = ClampSetting(read(L"StartLevel", 0), 0, 12);
 }
@@ -619,6 +628,21 @@ bool ReadExpandedViewport(int *width, int *height) {
         return false;
     }
 
+    char unsafe_enabled[8]{};
+    const DWORD unsafe_length = GetEnvironmentVariableA(
+        "M1937_UNSAFE_EXPANDED_VIEWPORT", unsafe_enabled,
+        static_cast<DWORD>(sizeof(unsafe_enabled)));
+    const bool explicitly_unsafe = unsafe_length > 0 &&
+        unsafe_length < sizeof(unsafe_enabled) &&
+        strcmp(unsafe_enabled, "1") == 0;
+    if (g_mod_config.preserve_legacy_ui && !explicitly_unsafe) {
+        // The original interface owns only 640x480, 800x600 and 1024x768
+        // artwork/surfaces. Replacing the engine's logical size with a modern
+        // desktop size hides the bottom toolbar and leaves help/minimap
+        // surfaces null. Modern output scaling remains handled by cnc-ddraw.
+        return false;
+    }
+
     char enabled[8]{};
     const DWORD environment_enabled = GetEnvironmentVariableA(
             "M1937_EXPANDED_VIEWPORT", enabled,
@@ -757,8 +781,12 @@ void ApplyLegacyExecutablePatches() {
     }
     g_executable_base = base;
     if (g_mod_config.enabled) {
-        InstallSafeBlitGuard(base);
-        ApplyExpandedViewportPatches(base);
+        int expanded_width = 0;
+        int expanded_height = 0;
+        if (ReadExpandedViewport(&expanded_width, &expanded_height)) {
+            InstallSafeBlitGuard(base);
+            ApplyExpandedViewportPatches(base);
+        }
     }
     if (IsAutomatedMouseEnabled()) {
         InstallAutoStartMenuHook(base);
@@ -838,6 +866,16 @@ void PumpWindowMessages() {
     if (g_pumping_messages) {
         return;
     }
+    const DWORD now_tick = GetTickCount();
+    const DWORD last_tick =
+        static_cast<DWORD>(InterlockedCompareExchange(
+            &g_last_message_pump_tick, 0, 0));
+    if (now_tick - last_tick <
+        static_cast<DWORD>(g_mod_config.message_pump_interval_ms)) {
+        return;
+    }
+    InterlockedExchange(
+        &g_last_message_pump_tick, static_cast<LONG>(now_tick));
     g_pumping_messages = true;
 
     // Automated validation must get beyond the mission briefing without
@@ -859,32 +897,27 @@ void PumpWindowMessages() {
         }
     }
 
-    LARGE_INTEGER frequency{};
-    LARGE_INTEGER started{};
-    const bool timed = QueryPerformanceFrequency(&frequency) != FALSE &&
-        QueryPerformanceCounter(&started) != FALSE;
-
+    // Do not consume keyboard or mouse messages here. The original loop must
+    // see them in order for F1, M and the other game hotkeys to toggle their
+    // UI. Only service paint/timer/close traffic during synchronous loading.
+    static const UINT background_messages[] = {
+        WM_PAINT, WM_TIMER, WM_NCPAINT, WM_ERASEBKGND, WM_CLOSE};
     MSG message{};
-    for (int count = 0; count < 16; ++count) {
-        if (!PeekMessageA(&message, nullptr, 0, 0, PM_REMOVE)) {
-            break;
-        }
-        if (message.message == WM_QUIT) {
-            PostQuitMessage(static_cast<int>(message.wParam));
-            break;
-        }
-        TranslateMessage(&message);
-        DispatchMessageA(&message);
-
-        if (timed) {
-            LARGE_INTEGER now{};
-            QueryPerformanceCounter(&now);
-            const LONGLONG elapsed = now.QuadPart - started.QuadPart;
-            // Keep the compatibility pump below half a millisecond. The
-            // original game loop will process the remaining messages.
-            if (elapsed * 2000 >= frequency.QuadPart) {
+    int dispatched = 0;
+    while (dispatched < g_mod_config.message_pump_budget) {
+        bool found = false;
+        for (const UINT message_id : background_messages) {
+            if (PeekMessageA(
+                    &message, nullptr, message_id, message_id, PM_REMOVE)) {
+                TranslateMessage(&message);
+                DispatchMessageA(&message);
+                ++dispatched;
+                found = true;
                 break;
             }
+        }
+        if (!found) {
+            break;
         }
     }
     g_pumping_messages = false;
