@@ -119,6 +119,12 @@ function Set-DdrawProfile {
             Set-IniValue $ddrawIni 'ddraw' 'width' '0'
             Set-IniValue $ddrawIni 'ddraw' 'height' '0'
             Set-IniValue $ddrawIni 'ddraw' 'maintas' 'true'
+            Set-IniValue $ddrawIni 'ddraw' 'adjmouse' 'true'
+            Set-IniValue $ddrawIni 'ddraw' 'devmode' 'false'
+            Set-IniValue $ddrawIni 'ddraw' 'resizable' 'false'
+            Set-IniValue $ddrawIni 'ddraw' 'savesettings' '0'
+            Set-IniValue $ddrawIni 'ddraw' 'posX' '-32000'
+            Set-IniValue $ddrawIni 'ddraw' 'posY' '-32000'
         }
         2 {
             Set-IniValue $ddrawIni 'ddraw' 'fullscreen' 'true'
@@ -181,8 +187,12 @@ if ($SafeWindow) {
     if ($safeRenderer -notin @('direct3d9', 'direct3d9on12', 'opengl')) {
         $safeRenderer = 'direct3d9'
     }
-    Set-DdrawProfile 0 $safeRenderer
-    Set-IniValue $runGameIni 'mod' 'DisplayMode' '0'
+    # Borderless maximum window is the safe mouse profile: cnc-ddraw receives
+    # the final desktop size before DirectInput starts and can map relative
+    # mouse deltas consistently. Switching a 1:1 native window to fullscreen
+    # at runtime keeps the old adjmouse setting and pushes the cursor to an edge.
+    Set-DdrawProfile 1 $safeRenderer
+    Set-IniValue $runGameIni 'mod' 'DisplayMode' '1'
 }
 
 if ($StartImmediately) {
@@ -350,8 +360,8 @@ function Add-ComboBox {
 
 Add-SettingLabel '显示模式' 62
 $displayCombo = Add-ComboBox @(
-    '原生窗口 1024×768（推荐、最稳定）',
-    '无边框最大窗口（兼容备用）',
+    '原生窗口 1024×768（兼容备用）',
+    '无边框最大窗口（推荐、鼠标稳定）',
     '全屏缩放（保持原比例）',
     '全屏铺满（兼容备用）'
 ) 58
@@ -414,9 +424,9 @@ $settingsPanel.Controls.Add($screenInfo)
 
 $profileInfo = New-Object Windows.Forms.Label
 $profileInfo.Text = (
-    '推荐“原生窗口 1024×768”：补丁不改鼠标数据和卷屏逻辑，' +
+    '推荐“无边框最大窗口”：启动前完成鼠标坐标映射，' +
     [Environment]::NewLine +
-    '任务从原版菜单进入，优先保证鼠标、工具栏和快捷键稳定。')
+    '不要从原生窗口临时切全屏；补丁仍不改鼠标数据和卷屏逻辑。')
 $profileInfo.Location = New-Object Drawing.Point(22, 343)
 $profileInfo.Size = New-Object Drawing.Size(370, 53)
 $profileInfo.ForeColor = $textMuted

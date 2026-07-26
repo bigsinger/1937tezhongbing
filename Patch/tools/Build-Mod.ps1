@@ -25,15 +25,23 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $proxyDll = Join-Path $proxyRoot 'build\dinput.dll'
-Copy-Item -LiteralPath $proxyDll -Destination (Join-Path $modRoot 'dinput.dll') -Force
+$modDll = Join-Path $modRoot 'dinput.dll'
+$proxyHash = (Get-FileHash -LiteralPath $proxyDll -Algorithm SHA256).Hash
+$copyProxy = -not (Test-Path -LiteralPath $modDll -PathType Leaf)
+if (-not $copyProxy) {
+    $copyProxy =
+        (Get-FileHash -LiteralPath $modDll -Algorithm SHA256).Hash -ne
+        $proxyHash
+}
+if ($copyProxy) {
+    Copy-Item -LiteralPath $proxyDll -Destination $modDll -Force
+}
 foreach ($selectorFile in Get-ChildItem -LiteralPath $selectorRoot -File) {
     Copy-Item -LiteralPath $selectorFile.FullName `
         -Destination (Join-Path $modRoot $selectorFile.Name) -Force
 }
 
-$proxyHash = (Get-FileHash -LiteralPath $proxyDll -Algorithm SHA256).Hash
-$modHash = (Get-FileHash -LiteralPath (Join-Path $modRoot 'dinput.dll') `
-    -Algorithm SHA256).Hash
+$modHash = (Get-FileHash -LiteralPath $modDll -Algorithm SHA256).Hash
 if ($proxyHash -ne $modHash) {
     throw 'Compiled proxy and Mod copy do not match.'
 }
