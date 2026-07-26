@@ -1,0 +1,13 @@
+<Application x:Class="Mission1937.MapEditor.App.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             StartupUri="MainWindow.xaml">
+  <Application.Resources>
+    <SolidColorBrush x:Key="PanelBrush" Color="#202631" />
+    <SolidColorBrush x:Key="AccentBrush" Color="#C13C35" />
+    <Style TargetType="Button">
+      <Setter Property="Padding" Value="12,6" />
+      <Setter Property="Margin" Value="3" />
+    </Style>
+  </Application.Resources>
+</Application>

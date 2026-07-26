@@ -30,7 +30,8 @@ Remake/game/assets/imported/
 Remake/.local/
 local-assets.json
 
-# Original game content must never enter this repository
+# Unmodified local source copies stay outside version control. The curated,
+# runnable community distribution is intentionally scoped to Mod/ below.
 1937tzb_1229/
 backups/
 *.GFL
@@ -53,5 +54,11 @@ M1937.exe
 InterMedia.GFL
 1937Intro.svt
 GamekingLogo.svt
+
+# Allow the complete, tested Mod distribution and keep host-generated files out.
+!Mod/
+!Mod/**
+Mod/dinput_system.dll
+Mod/*.i64
 
 # Keep the distributable patch binaries and scripts tracked.

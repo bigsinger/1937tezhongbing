@@ -1,0 +1,45 @@
+《1937特种兵：敌后武工队》现代增强 Mod
+========================================
+
+推荐启动方式
+------------
+双击“启动游戏-窗口模式.cmd”，或右键运行“选择关卡.ps1”。
+现代启动中心可以选择全部 12 个正式关卡，并设置显示模式、渲染后端、
+游戏难度、敌军智能、丝滑卷屏、输入法屏蔽和高精度计时。
+
+设置会持久化到 rungame.ini 的 [mod] 段；以后直接运行 M1937.exe
+也会继续生效。选择“开始所选任务”时会走原版“开始游戏”入口并进入
+指定关卡，不会伪造存档，也不会修改 M1937.exe。
+
+显示模式
+--------
+1. 窗口模式 1280×720：适合测试、录屏和日常切换程序。
+2. 全屏缩放：保持原版画面比例。
+3. 原生扩展视口：使用当前桌面分辨率创建游戏逻辑画布，显示更多地图，
+   而不是在宽屏两侧补黑边。默认使用当前系统分辨率。
+
+关键增强
+--------
+- cnc-ddraw 将 DirectDraw 转换为 Direct3D 9/OpenGL；
+- dinput.dll 兼容层修复旧输入消息泵、启动弹框和长时间未响应；
+- 屏蔽游戏窗口输入法，避免按键触发中文输入；
+- 1 ms 计时器、60 FPS 上限和垂直同步降低偶发卡顿；
+- 边缘卷屏使用 8 像素热区与渐进加减速；
+- 敌军难度和智能会调整听觉半径及警报协同传播范围；
+- 高分辨率 UI 复用 1024 素材布局，地图表面按桌面尺寸扩展；
+- 可从启动中心直接进入任意一个正式关卡。
+
+高级配置
+--------
+rungame.ini 的 [mod] 支持：
+Enabled、Difficulty、AILevel、HearingRadius、AlertRadius、
+SmoothEdgeScroll、EdgeZone、ScrollResponse、DisableIME、
+HighResolutionTimer、ExpandedViewport、ViewportWidth、
+ViewportHeight、RememberLevel、StartLevel、AutoStart、
+Renderer 和 DisplayMode。
+
+Difficulty/AILevel 取值均为 0—3。HearingRadius/AlertRadius 为 0 时，
+由难度和智能等级自动计算；非 0 时使用显式世界单位数值。
+
+“兼容补丁设置.cmd”可打开 cnc-ddraw 的高级配置界面。遇到渲染问题时，
+优先使用 Direct3D 9；OpenGL 是兼容备用；Direct3D 9 on 12 为实验选项。

@@ -1,5 +1,5 @@
 param(
-    [string]$WorkDirectory = 'E:\1937\patch-v120-build'
+    [string]$WorkDirectory = 'E:\1937\patch-v130-build'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -14,14 +14,14 @@ if (-not ($workRoot.TrimEnd('\') + '\').StartsWith(
 }
 
 $basePackageItem = Get-ChildItem -LiteralPath (Join-Path $patchRoot 'release') `
-    -Filter '*v1.1.1-20260718.zip' -File | Select-Object -First 1
+    -Filter '*v1.2.0-20260726.zip' -File | Select-Object -First 1
 $basePackage = if ($basePackageItem) { $basePackageItem.FullName } else { '' }
 $packageName = if ($basePackageItem) {
     $basePackageItem.BaseName.Replace(
-        'v1.1.1-20260718',
-        'v1.2.0-20260726')
+        'v1.2.0-20260726',
+        'v1.3.0-20260726')
 } else {
-    '1937-compatibility-patch-v1.2.0-20260726'
+    '1937-compatibility-patch-v1.3.0-20260726'
 }
 $stage = Join-Path $workRoot $packageName
 $archive = Join-Path $patchRoot ('release\' + $packageName + '.zip')
@@ -33,10 +33,8 @@ if (-not (Test-Path -LiteralPath $basePackage -PathType Leaf)) {
     throw "Base package is missing: $basePackage"
 }
 
-& (Join-Path $proxyRoot 'build.cmd')
-if ($LASTEXITCODE -ne 0) {
-    throw "dinput proxy build failed with exit code $LASTEXITCODE"
-}
+& (Join-Path $PSScriptRoot 'Build-Mod.ps1') `
+    -RepositoryRoot $repositoryRoot | Out-Null
 
 if (Test-Path -LiteralPath $workRoot) {
     $resolved = [IO.Path]::GetFullPath($workRoot)
@@ -50,6 +48,28 @@ Expand-Archive -LiteralPath $basePackage -DestinationPath $stage
 
 $payload = Join-Path $stage 'payload'
 $source = Join-Path $stage 'source'
+# Older ZIP tools stored several Chinese entry names without the UTF-8 flag.
+# PowerShell extracts those names as literal question marks. Do not propagate
+# those unusable aliases into a new release; current files are copied below
+# from the repository with their real Unicode names.
+Get-ChildItem -LiteralPath $stage -Recurse -File |
+    Where-Object { $_.Name.Contains('?') } |
+    ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
+# Root-level localized aliases from the legacy ZIP are also replaced by the
+# ASCII, UTF-8-safe v1.3 entry points below.
+Get-ChildItem -LiteralPath $stage -File |
+    Where-Object { $_.Name -match '[^\x00-\x7F]' } |
+    ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
+$staleFiles = @(
+    (Join-Path $payload 'M1937.exe.local'),
+    (Join-Path $payload '选择关卡.cmd'),
+    (Join-Path $source 'level-selector\选择关卡.cmd')
+)
+foreach ($staleFile in $staleFiles) {
+    if (Test-Path -LiteralPath $staleFile -PathType Leaf) {
+        Remove-Item -LiteralPath $staleFile -Force
+    }
+}
 Copy-Item -LiteralPath (Join-Path $proxyRoot 'build\dinput.dll') `
     -Destination (Join-Path $payload 'dinput.dll') -Force
 Copy-Item -LiteralPath (Join-Path $proxyRoot 'dinput_proxy.cpp') `
@@ -69,40 +89,47 @@ foreach ($selectorFile in Get-ChildItem -LiteralPath $selectorRoot -File) {
     Copy-Item -LiteralPath $selectorFile.FullName `
         -Destination (Join-Path $selectorSourceTarget $selectorFile.Name) -Force
 }
+# v1.2 shipped a now-obsolete wrapper whose body contains both -NoLogo and
+# -STA. Match its content so PowerShell 5.1 source-file encoding cannot make
+# cleanup depend on a Chinese filename literal.
+Get-ChildItem -LiteralPath $payload,$selectorSourceTarget -Filter '*.cmd' -File |
+    Where-Object {
+        $body = Get-Content -LiteralPath $_.FullName -Raw
+        $body -match '-NoLogo' -and $body -match '-STA'
+    } |
+    ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
 
 $helpSource = Get-ChildItem -LiteralPath (Join-Path $patchRoot 'docs') `
     -Filter 'Win10-Win11*.md' -File | Select-Object -First 1
 $technicalSource = Get-ChildItem -LiteralPath (Join-Path $patchRoot 'docs') `
     -Filter '1937*' -File | Select-Object -First 1
-$stageHelp = Get-ChildItem -LiteralPath $stage -Filter 'README-*.md' -File |
-    Select-Object -First 1
-$stageTechnical = Get-ChildItem -LiteralPath $stage -Filter '*.md' -File |
-    Where-Object { $_.Name -notmatch '^README-' } |
-    Select-Object -First 1
+$stageHelp = Join-Path $stage 'README-Usage.md'
+$stageTechnical = Join-Path $stage 'Technical-Notes.md'
 $versionSource = Get-ChildItem -LiteralPath (Join-Path $patchRoot 'release') `
     -Filter '*.txt' -File |
     Where-Object { $_.Name -notmatch 'sha256' } |
     Select-Object -First 1
-$stageVersion = Get-ChildItem -LiteralPath $stage -Filter '*.txt' -File |
-    Where-Object { $_.Name -notmatch '^SHA256SUMS' } |
-    Select-Object -First 1
+$stageVersion = Join-Path $stage 'Version.txt'
 
 Copy-Item -LiteralPath $helpSource.FullName `
-    -Destination $stageHelp.FullName -Force
+    -Destination $stageHelp -Force
 Copy-Item -LiteralPath $helpSource.FullName `
     -Destination (Join-Path $payload 'Win10-Win11-Patch-README.md') -Force
 Copy-Item -LiteralPath $technicalSource.FullName `
-    -Destination $stageTechnical.FullName -Force
+    -Destination $stageTechnical -Force
 Copy-Item -LiteralPath $technicalSource.FullName `
     -Destination (Join-Path $payload 'Win10-Win11-Patch-Technical.md') -Force
 Copy-Item -LiteralPath $versionSource.FullName `
-    -Destination $stageVersion.FullName -Force
+    -Destination $stageVersion -Force
 
 $installPath = Join-Path $stage 'Install-Patch.ps1'
 $installText = Get-Content -LiteralPath $installPath -Raw -Encoding UTF8
 $installText = $installText.Replace(
     '1937 compatibility patch v1.1.1 backup',
-    '1937 compatibility patch v1.2.0 backup')
+    '1937 compatibility patch v1.3.0 backup')
+$installText = $installText.Replace(
+    '1937 compatibility patch v1.2.0 backup',
+    '1937 compatibility patch v1.3.0 backup')
 [IO.File]::WriteAllText(
     $installPath,
     $installText,

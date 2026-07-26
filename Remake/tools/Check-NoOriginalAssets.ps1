@@ -35,6 +35,12 @@ $violations = [Collections.Generic.List[string]]::new()
 
 foreach ($relativePath in $trackedFiles) {
     $forwardPath = $relativePath.Replace('\', '/')
+    # This guard protects the clean-room Remake subtree and analysis/release
+    # artifacts. The independently distributed, explicitly curated original
+    # game Mod is intentionally allowed to contain its runtime assets.
+    if ($forwardPath.StartsWith('Mod/', [StringComparison]::OrdinalIgnoreCase)) {
+        continue
+    }
     $normalized = $relativePath.Replace('/', [IO.Path]::DirectorySeparatorChar)
     $absolutePath = Join-Path $repositoryRoot $normalized
     $extension = [IO.Path]::GetExtension($relativePath).ToLowerInvariant()

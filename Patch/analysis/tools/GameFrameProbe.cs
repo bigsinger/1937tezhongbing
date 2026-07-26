@@ -25,6 +25,10 @@ internal static class GameFrameProbe
     private const int LeftDown = 0x000E6E74;
     private const int LeftReleased = 0x000E6FB0;
     private const int MenuSelection = 0x000E7060;
+    private const int CameraX = 0x000E7024;
+    private const int CameraY = 0x000E7028;
+    private const int ScreenWidth = 0x000E6E0C;
+    private const int ScreenHeight = 0x000E6E10;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct RECT { public int Left, Top, Right, Bottom; }
@@ -45,6 +49,10 @@ internal static class GameFrameProbe
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool WriteProcessMemory(IntPtr process, IntPtr address,
         byte[] data, int size, out IntPtr written);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool ReadProcessMemory(IntPtr process, IntPtr address,
+        byte[] data, int size, out IntPtr read);
 
     [DllImport("kernel32.dll")]
     private static extern bool CloseHandle(IntPtr handle);
@@ -86,6 +94,9 @@ internal static class GameFrameProbe
         public bool Responding;
         public ulong ReadBytes;
         public double CpuMilliseconds;
+        public int CameraX;
+        public int CameraY;
+        public int Mission;
     }
 
     public static int Main(string[] args)
@@ -102,7 +113,10 @@ internal static class GameFrameProbe
         double durationSeconds = args.Length >= 4
             ? double.Parse(args[3], CultureInfo.InvariantCulture) : 24.0;
         bool captureFrames = args.Length < 5 ||
-            !string.Equals(args[4], "nocapture", StringComparison.OrdinalIgnoreCase);
+            !args.Any(argument => string.Equals(
+                argument, "nocapture", StringComparison.OrdinalIgnoreCase));
+        bool nonIntrusive = args.Any(argument => string.Equals(
+            argument, "nonintrusive", StringComparison.OrdinalIgnoreCase));
         string executable = Path.Combine(gameDirectory, "M1937.exe");
         Directory.CreateDirectory(outputDirectory);
 
@@ -111,6 +125,8 @@ internal static class GameFrameProbe
             WorkingDirectory = gameDirectory,
             UseShellExecute = false
         };
+        if (nonIntrusive)
+            startInfo.EnvironmentVariables["M1937_AUTOTEST"] = "1";
 
         using (Process game = Process.Start(startInfo))
         {
@@ -120,8 +136,15 @@ internal static class GameFrameProbe
             // Direct3D9 surfaces do not implement PrintWindow reliably. Keep the
             // small test window visible so desktop-composition capture measures
             // what the player actually sees.
-            SetWindowPos(window, new IntPtr(-1), 40, 40, 0, 0, 0x0001 | 0x0040);
-            SetForegroundWindow(window);
+            SetWindowPos(
+                window,
+                nonIntrusive ? IntPtr.Zero : new IntPtr(-1),
+                40,
+                40,
+                0,
+                0,
+                nonIntrusive ? 0x0001u | 0x0004u | 0x0010u : 0x0001u | 0x0040u);
+            if (!nonIntrusive) SetForegroundWindow(window);
 
             IntPtr processHandle = OpenProcess(
                 PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE,
@@ -134,7 +157,8 @@ internal static class GameFrameProbe
                 long imageBase = game.MainModule.BaseAddress.ToInt64();
                 var clock = Stopwatch.StartNew();
                 var driveThread = new Thread(() => DriveGame(
-                    processHandle, imageBase, window, clock, durationSeconds));
+                    processHandle, imageBase, window, clock, durationSeconds,
+                    nonIntrusive));
                 driveThread.IsBackground = true;
                 driveThread.Start();
 
@@ -148,7 +172,7 @@ internal static class GameFrameProbe
                 else
                 {
                     CollectProcessSamples(game, processHandle, clock,
-                        durationSeconds, out samples);
+                        durationSeconds, imageBase, out samples);
                     finalFrame = null;
                 }
                 driveThread.Join(1000);
@@ -187,7 +211,7 @@ internal static class GameFrameProbe
     }
 
     private static void DriveGame(IntPtr process, long imageBase, IntPtr window,
-        Stopwatch clock, double durationSeconds)
+        Stopwatch clock, double durationSeconds, bool nonIntrusive)
     {
         // Enter the first mission without relying on the physical mouse. The
         // write targets are volatile input-state globals, never executable code.
@@ -200,39 +224,51 @@ internal static class GameFrameProbe
         while (clock.Elapsed.TotalSeconds < durationSeconds)
         {
             double t = clock.Elapsed.TotalSeconds;
+            int screenWidth = ReadInt(process, imageBase + ScreenWidth);
+            int screenHeight = ReadInt(process, imageBase + ScreenHeight);
+            if (screenWidth < 320 || screenWidth > 4096) screenWidth = 800;
+            if (screenHeight < 240 || screenHeight > 2160) screenHeight = 600;
+            int menuX = (int)Math.Round(screenWidth * 0.265);
+            int menuY = (int)Math.Round(screenHeight * 0.473);
             if (t < 2.60)
             {
-                WriteInt(process, imageBase + CursorX, 270);
-                WriteInt(process, imageBase + CursorY, 365);
-                WriteInt(process, imageBase + MenuSelection, 1);
+                WriteInt(process, imageBase + CursorX, menuX);
+                WriteInt(process, imageBase + CursorY, menuY);
             }
             else if (t >= 22.00)
             {
                 // Alternate edges so the camera never remains pinned at a map
                 // boundary. This supplies deterministic continuous motion.
-                int edgeX = ((int)((t - 22.0) / 1.5) & 1) == 0 ? 635 : 5;
+                int edgeX = ((int)((t - 22.0) / 1.5) & 1) == 0
+                    ? screenWidth - 2 : 2;
                 WriteInt(process, imageBase + CursorX, edgeX);
-                WriteInt(process, imageBase + CursorY, 240);
+                WriteInt(process, imageBase + CursorY, screenHeight / 2);
             }
 
             for (int i = 0; i < clickTimes.Length; ++i)
             {
                 if (!clickStarted[i] && t >= clickTimes[i])
                 {
-                    POINT point = new POINT { X = 270, Y = 365 };
-                    ClientToScreen(window, ref point);
-                    SetForegroundWindow(window);
-                    SetCursorPos(point.X, point.Y);
-                    mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
-                    if (i > 0) keybd_event(0x0D, 0, 0, UIntPtr.Zero);
+                    if (!nonIntrusive)
+                    {
+                        POINT point = new POINT { X = menuX, Y = menuY };
+                        ClientToScreen(window, ref point);
+                        SetForegroundWindow(window);
+                        SetCursorPos(point.X, point.Y);
+                        mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
+                        if (i > 0) keybd_event(0x0D, 0, 0, UIntPtr.Zero);
+                    }
                     WriteInt(process, imageBase + LeftPressed, 1);
                     WriteInt(process, imageBase + LeftDown, 1);
                     clickStarted[i] = true;
                 }
                 if (!clickReleased[i] && t >= clickTimes[i] + 0.10)
                 {
-                    mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
-                    if (i > 0) keybd_event(0x0D, 0, 0x0002, UIntPtr.Zero);
+                    if (!nonIntrusive)
+                    {
+                        mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
+                        if (i > 0) keybd_event(0x0D, 0, 0x0002, UIntPtr.Zero);
+                    }
                     WriteInt(process, imageBase + LeftPressed, 0);
                     WriteInt(process, imageBase + LeftDown, 0);
                     WriteInt(process, imageBase + LeftReleased, 1);
@@ -246,23 +282,29 @@ internal static class GameFrameProbe
             if (t >= 22.00)
             {
                 int direction = ((int)((t - 22.0) / 1.5) & 1);
-                int edgeX = direction == 0 ? 635 : 5;
-                POINT edge = new POINT { X = edgeX, Y = 240 };
-                ClientToScreen(window, ref edge);
-                SetCursorPos(edge.X, edge.Y);
-                if (direction != previousDirection)
+                int edgeX = direction == 0 ? screenWidth - 2 : 2;
+                if (!nonIntrusive)
                 {
-                    keybd_event(0x25, 0, 0x0002, UIntPtr.Zero);
-                    keybd_event(0x27, 0, 0x0002, UIntPtr.Zero);
-                    keybd_event(direction == 0 ? (byte)0x27 : (byte)0x25,
-                        0, 0, UIntPtr.Zero);
-                    previousDirection = direction;
+                    POINT edge = new POINT { X = edgeX, Y = screenHeight / 2 };
+                    ClientToScreen(window, ref edge);
+                    SetCursorPos(edge.X, edge.Y);
+                    if (direction != previousDirection)
+                    {
+                        keybd_event(0x25, 0, 0x0002, UIntPtr.Zero);
+                        keybd_event(0x27, 0, 0x0002, UIntPtr.Zero);
+                        keybd_event(direction == 0 ? (byte)0x27 : (byte)0x25,
+                            0, 0, UIntPtr.Zero);
+                        previousDirection = direction;
+                    }
                 }
             }
             Thread.Sleep(2);
         }
-        keybd_event(0x25, 0, 0x0002, UIntPtr.Zero);
-        keybd_event(0x27, 0, 0x0002, UIntPtr.Zero);
+        if (!nonIntrusive)
+        {
+            keybd_event(0x25, 0, 0x0002, UIntPtr.Zero);
+            keybd_event(0x27, 0, 0x0002, UIntPtr.Zero);
+        }
     }
 
     private static void WriteInt(IntPtr process, long address, int value)
@@ -326,7 +368,8 @@ internal static class GameFrameProbe
     }
 
     private static void CollectProcessSamples(Process game, IntPtr processHandle,
-        Stopwatch clock, double durationSeconds, out List<Sample> samples)
+        Stopwatch clock, double durationSeconds, long imageBase,
+        out List<Sample> samples)
     {
         samples = new List<Sample>();
         while (clock.Elapsed.TotalSeconds < durationSeconds && !game.HasExited)
@@ -340,7 +383,10 @@ internal static class GameFrameProbe
                 ChangedPixels = 0,
                 Responding = game.Responding,
                 ReadBytes = io.ReadTransferCount,
-                CpuMilliseconds = game.TotalProcessorTime.TotalMilliseconds
+                CpuMilliseconds = game.TotalProcessorTime.TotalMilliseconds,
+                CameraX = ReadInt(processHandle, imageBase + CameraX),
+                CameraY = ReadInt(processHandle, imageBase + CameraY),
+                Mission = ReadInt(processHandle, imageBase + MenuSelection)
             });
             Thread.Sleep(20);
         }
@@ -378,17 +424,30 @@ internal static class GameFrameProbe
         finally { bitmap.UnlockBits(data); }
     }
 
+    private static int ReadInt(IntPtr process, long address)
+    {
+        byte[] bytes = new byte[4];
+        IntPtr read;
+        return ReadProcessMemory(
+            process, new IntPtr(address), bytes, bytes.Length, out read) &&
+            read.ToInt64() == bytes.Length
+            ? BitConverter.ToInt32(bytes, 0)
+            : int.MinValue;
+    }
+
     private static void WriteCsv(string path, List<Sample> samples)
     {
         using (var writer = new StreamWriter(path, false, new UTF8Encoding(false)))
         {
-            writer.WriteLine("time_ms,changed_pixels,responding,read_bytes,cpu_ms");
+            writer.WriteLine(
+                "time_ms,changed_pixels,responding,read_bytes,cpu_ms,camera_x,camera_y,mission");
             foreach (Sample sample in samples)
             {
                 writer.WriteLine(string.Format(CultureInfo.InvariantCulture,
-                    "{0:F3},{1},{2},{3},{4:F3}", sample.Milliseconds,
+                    "{0:F3},{1},{2},{3},{4:F3},{5},{6},{7}", sample.Milliseconds,
                     sample.ChangedPixels, sample.Responding ? 1 : 0,
-                    sample.ReadBytes, sample.CpuMilliseconds));
+                    sample.ReadBytes, sample.CpuMilliseconds,
+                    sample.CameraX, sample.CameraY, sample.Mission));
             }
         }
     }
@@ -411,6 +470,14 @@ internal static class GameFrameProbe
         ulong readBytes = samples.Count >= 2
             ? samples[samples.Count - 1].ReadBytes - samples[0].ReadBytes : 0;
         int unresponsive = samples.Count(s => !s.Responding);
+        var validCamera = samples.Where(
+            s => s.CameraX != int.MinValue && s.CameraY != int.MinValue).ToList();
+        int cameraRangeX = validCamera.Count == 0
+            ? 0 : validCamera.Max(s => s.CameraX) - validCamera.Min(s => s.CameraX);
+        int cameraRangeY = validCamera.Count == 0
+            ? 0 : validCamera.Max(s => s.CameraY) - validCamera.Min(s => s.CameraY);
+        int observedMission = validCamera.Count == 0
+            ? 0 : validCamera.Max(s => s.Mission);
 
         Func<double, double> percentile = p =>
         {
@@ -432,13 +499,17 @@ internal static class GameFrameProbe
             "gaps_over_120ms={9}\r\n" +
             "cpu_one_logical_core_percent={10:F1}\r\n" +
             "read_during_gameplay_bytes={11}\r\n" +
-            "unresponsive_samples={12}\r\n",
+            "unresponsive_samples={12}\r\n" +
+            "camera_range_x={13}\r\n" +
+            "camera_range_y={14}\r\n" +
+            "observed_mission={15}\r\n",
             name, durationSeconds, samples.Count, changedTimes.Count,
             percentile(0.50), percentile(0.95), percentile(0.99),
             intervals.Count == 0 ? 0 : intervals[intervals.Count - 1],
             intervals.Count(x => x > 80), intervals.Count(x => x > 120),
             elapsedMs <= 0 ? 0 : cpuMs / elapsedMs * 100.0,
-            readBytes, unresponsive);
+            readBytes, unresponsive, cameraRangeX, cameraRangeY,
+            observedMission);
     }
 
     private static void StopLaunchedGame(Process game)

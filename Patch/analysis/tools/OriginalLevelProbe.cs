@@ -20,6 +20,14 @@ internal static class OriginalLevelProbe
     private const int LeftReleased = 0x000E6FB0;
     private const int CurrentMission = 0x000E7060;
     private const int NewGameImmediate = 0x00003B66;
+    private const int SmoothScrollEntry = 0x0004C9B0;
+    private const int HearingImmediate = 0x0005DD27;
+    private const int AlertImmediate = 0x00056E62;
+    private const int BriefingAdvance = 0x000E6EA9;
+    private const int ScreenWidth = 0x000E6E0C;
+    private const int ScreenHeight = 0x000E6E10;
+    private const int RendererWidth = 0x000D6A8C;
+    private const int RendererHeight = 0x000D6A88;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct Rect
@@ -47,6 +55,9 @@ internal static class OriginalLevelProbe
 
     [DllImport("user32.dll")]
     private static extern bool GetWindowRect(IntPtr window, out Rect rect);
+
+    [DllImport("user32.dll")]
+    private static extern bool PrintWindow(IntPtr window, IntPtr dc, uint flags);
 
     [DllImport("user32.dll")]
     private static extern bool SetWindowPos(
@@ -81,6 +92,7 @@ internal static class OriginalLevelProbe
             UseShellExecute = false
         };
         startInfo.EnvironmentVariables["M1937_START_LEVEL"] = level.ToString();
+        startInfo.EnvironmentVariables["M1937_AUTOTEST"] = "1";
 
         using (Process game = Process.Start(startInfo))
         {
@@ -118,6 +130,27 @@ internal static class OriginalLevelProbe
                     throw new InvalidOperationException(
                         "The runtime level patch did not apply.");
                 }
+                int scrollOpcode =
+                    ReadInt(process, imageBase + SmoothScrollEntry) & 0xFF;
+                int hearing = ReadInt(process, imageBase + HearingImmediate);
+                int alert = ReadInt(process, imageBase + AlertImmediate);
+                report.AppendLine(
+                    "smooth_scroll_hook_opcode=0x" + scrollOpcode.ToString("X2"));
+                report.AppendLine("enhanced_hearing_radius=" + hearing);
+                report.AppendLine("enhanced_alert_radius=" + alert);
+                report.AppendLine(
+                    "logical_viewport=" +
+                    ReadInt(process, imageBase + ScreenWidth) + "x" +
+                    ReadInt(process, imageBase + ScreenHeight));
+                report.AppendLine(
+                    "renderer_viewport=" +
+                    ReadInt(process, imageBase + RendererWidth) + "x" +
+                    ReadInt(process, imageBase + RendererHeight));
+                if (scrollOpcode != 0xE9 || hearing != 192 || alert != 800)
+                {
+                    throw new InvalidOperationException(
+                        "One or more v1.3 runtime enhancements did not apply.");
+                }
 
                 // Keep the original game in a small corner window without
                 // activating it or moving the physical mouse.
@@ -131,20 +164,42 @@ internal static class OriginalLevelProbe
                     0x0001 | 0x0010);
 
                 var clock = Stopwatch.StartNew();
-                double nextClick = drive ? 1.0 : double.MaxValue;
+                // The proxy returns the original Start Game command through
+                // the menu's own polling function. No physical or synthetic
+                // click is needed, so validation cannot disturb gameplay.
+                double nextClick = double.MaxValue;
                 double releaseAt = -1.0;
                 double clearReleaseAt = -1.0;
+                double nextBriefingAdvance = 3.0;
                 int observedMission = ReadInt(
                     process, imageBase + CurrentMission);
                 Bitmap latest = null;
 
                 while (clock.Elapsed.TotalSeconds < seconds && !game.HasExited)
                 {
+                    game.Refresh();
+                    if (game.MainWindowHandle != IntPtr.Zero &&
+                        game.MainWindowHandle != window)
+                    {
+                        // DirectDraw can recreate the top-level window while
+                        // switching from the menu to the mission renderer.
+                        window = game.MainWindowHandle;
+                        SetWindowPos(
+                            window,
+                            IntPtr.Zero,
+                            20,
+                            20,
+                            0,
+                            0,
+                            0x0001 | 0x0010);
+                    }
                     double now = clock.Elapsed.TotalSeconds;
                     if (now >= nextClick)
                     {
-                        WriteInt(process, imageBase + CursorX, 270);
-                        WriteInt(process, imageBase + CursorY, 365);
+                        // Expanded viewports keep the original UI artwork
+                        // coordinates; this is the centre of "开始游戏".
+                        WriteInt(process, imageBase + CursorX, 72);
+                        WriteInt(process, imageBase + CursorY, 236);
                         WriteInt(process, imageBase + LeftPressed, 1);
                         WriteInt(process, imageBase + LeftDown, 1);
                         releaseAt = now + 0.10;
@@ -168,6 +223,12 @@ internal static class OriginalLevelProbe
                     if (current >= 1 && current <= 12)
                     {
                         observedMission = current;
+                        if (now >= nextBriefingAdvance)
+                        {
+                            WriteByte(
+                                process, imageBase + BriefingAdvance, 1);
+                            nextBriefingAdvance += 2.0;
+                        }
                     }
 
                     if (((int)(now * 10.0)) % 10 == 0)
@@ -183,10 +244,20 @@ internal static class OriginalLevelProbe
                         }
                     }
                     Thread.Sleep(20);
-                    game.Refresh();
                 }
 
                 report.AppendLine("observed_mission=" + observedMission);
+                if (!game.HasExited)
+                {
+                    report.AppendLine(
+                        "final_logical_viewport=" +
+                        ReadInt(process, imageBase + ScreenWidth) + "x" +
+                        ReadInt(process, imageBase + ScreenHeight));
+                    report.AppendLine(
+                        "final_renderer_viewport=" +
+                        ReadInt(process, imageBase + RendererWidth) + "x" +
+                        ReadInt(process, imageBase + RendererHeight));
+                }
                 report.AppendLine("process_exited=" + game.HasExited);
                 report.AppendLine(
                     "responding=" + (!game.HasExited && game.Responding));
@@ -210,6 +281,11 @@ internal static class OriginalLevelProbe
                     report.AppendLine("local_ocr=unavailable");
                 }
 
+                if (game.HasExited)
+                {
+                    throw new InvalidOperationException(
+                        "The game process exited before the stability window elapsed.");
+                }
                 if (drive && observedMission != level)
                 {
                     throw new InvalidOperationException(
@@ -275,6 +351,18 @@ internal static class OriginalLevelProbe
         }
     }
 
+    private static void WriteByte(IntPtr process, long address, byte value)
+    {
+        byte[] bytes = { value };
+        IntPtr written;
+        if (!WriteProcessMemory(
+            process, new IntPtr(address), bytes, bytes.Length, out written) ||
+            written.ToInt64() != bytes.Length)
+        {
+            throw new InvalidOperationException("WriteProcessMemory byte failed");
+        }
+    }
+
     private static Bitmap CaptureVisibleWindow(IntPtr window)
     {
         Rect rect;
@@ -292,12 +380,21 @@ internal static class OriginalLevelProbe
         var bitmap = new Bitmap(width, height, PixelFormat.Format24bppRgb);
         using (Graphics graphics = Graphics.FromImage(bitmap))
         {
-            graphics.CopyFromScreen(
-                rect.Left,
-                rect.Top,
-                0,
-                0,
-                new Size(width, height));
+            IntPtr dc = graphics.GetHdc();
+            bool rendered;
+            try
+            {
+                rendered = PrintWindow(window, dc, 2);
+            }
+            finally
+            {
+                graphics.ReleaseHdc(dc);
+            }
+            if (!rendered)
+            {
+                bitmap.Dispose();
+                return null;
+            }
         }
         return bitmap;
     }

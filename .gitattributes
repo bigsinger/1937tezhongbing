@@ -18,3 +18,21 @@
 *.png binary
 *.dll binary
 *.exe binary
+
+# Complete Mod assets are distributed through Git LFS. This includes the
+# 110 MiB GFL archive, which cannot be stored as a normal GitHub blob.
+Mod/*.GFL filter=lfs diff=lfs merge=lfs -text
+Mod/*.gfl filter=lfs diff=lfs merge=lfs -text
+Mod/*.VWF filter=lfs diff=lfs merge=lfs -text
+Mod/*.vwf filter=lfs diff=lfs merge=lfs -text
+Mod/*.SVT filter=lfs diff=lfs merge=lfs -text
+Mod/*.svt filter=lfs diff=lfs merge=lfs -text
+Mod/*.SAV filter=lfs diff=lfs merge=lfs -text
+Mod/*.sav filter=lfs diff=lfs merge=lfs -text
+Mod/*.DBL filter=lfs diff=lfs merge=lfs -text
+Mod/*.dbl filter=lfs diff=lfs merge=lfs -text
+Mod/*.SLF filter=lfs diff=lfs merge=lfs -text
+Mod/*.slf filter=lfs diff=lfs merge=lfs -text
+Mod/*.SI0 filter=lfs diff=lfs merge=lfs -text
+Mod/*.SI1 filter=lfs diff=lfs merge=lfs -text
+Mod/*.SI2 filter=lfs diff=lfs merge=lfs -text

@@ -1,0 +1,56 @@
+《1937特种兵：敌后武工队》Win10/Win11 兼容补丁
+
+使用方法
+1. 双击“启动游戏-窗口模式.cmd”。
+2. Alt+Enter 可在窗口与全屏之间切换。
+3. Ctrl+Tab 可临时释放被游戏锁定的鼠标。
+4. 如需调整画质、窗口大小或帧率，双击“兼容补丁设置.cmd”。
+
+已经解决的问题
+- 使用现代 Direct3D 9 后端替代旧版 DirectDraw 显示路径。
+- 消除启动、任务简报及游戏循环长期不处理 Windows 消息造成的“未响应”。
+- 自动跳过绿色版错误弹框“Can't Load Game Files Library!”。
+- 自动跳过两个耗时且会假死的启动片头；任务和关卡视频不受影响。
+- 默认窗口模式运行，避免老游戏独占全屏影响其他操作。
+- 将呈现和游戏更新限制在 60 次/秒，避免旧循环占满单核并产生卡顿。
+
+补丁组成
+- ddraw.dll：官方 cnc-ddraw 7.1.0.0（MIT 许可证）。
+- ddraw.ini：本游戏验证过的窗口、渲染和限速参数。
+- dinput.dll：本游戏专用兼容层，转发到 Windows 系统 DirectInput，并在旧输入
+  循环中处理窗口消息；启动时仅在进程内存中跳过错误弹框和两个片头。
+- M1937.exe.local：让 Windows 从游戏目录加载上述 DirectInput 兼容层。
+- cnc-ddraw config.exe、Shaders：图形设置工具及可选缩放滤镜。
+
+重要说明
+- 磁盘上的 M1937.exe 保持原版，未再做二进制改写。
+- M1937.exe SHA-256：
+  F4DD1131DF6C993C01EA011F9439BC725E6DC6491B5FBBA47724D7D5B64DA3F3
+- dinput.dll 源码和构建脚本位于：
+  E:\1937\patch-project\dinput-proxy
+- Windows Defender 已分别扫描最终 M1937.exe 和 dinput.dll，结果均为未发现威胁。
+
+当前默认设置
+- 1024x768 游戏原生分辨率，窗口模式并保持 4:3 比例。
+- Direct3D 9 渲染后端。
+- maxfps=60，maxgameticks=60，limiter_type=4（PeekMessage）。
+- 不强制绑定单个 CPU 核心。
+
+已完成的实际测试
+- 冷启动约 8 秒进入主菜单，无错误弹框，窗口持续响应。
+- 自动进入第一关“营救行动”，越过任务简报并进入地图。
+- 在地图内下达移动命令，角色实际行走；6 秒、30 次/秒连续采样中，
+  181 个相邻画面对有 136 对发生有效更新，进程始终保持响应。
+
+恢复原版
+关闭游戏后，将下列三个文件改名即可停用全部兼容层：
+  ddraw.dll
+  dinput.dll
+  M1937.exe.local
+改回原文件名即可重新启用。游戏关卡、存档和其他资源没有被修改。
+
+原配置与原程序备份
+E:\1937\backups\1937tzb_1229-before-win10-win11-compat-20260717
+
+cnc-ddraw 官方项目
+https://github.com/FunkyFr3sh/cnc-ddraw

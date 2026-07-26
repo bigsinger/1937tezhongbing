@@ -3,7 +3,9 @@
 
 #include <windows.h>
 #include <dinput.h>
+#include <mmsystem.h>
 #include <cstddef>
+#include <cstdlib>
 #include <cstring>
 #include <new>
 
@@ -14,13 +16,299 @@ using DirectInputCreateAProc = HRESULT(WINAPI *)(
 
 HMODULE g_real_dinput = nullptr;
 DirectInputCreateAProc g_real_create = nullptr;
+unsigned char *g_executable_base = nullptr;
+bool g_timer_period_active = false;
+DWORD g_probe_started_at = 0;
+DWORD g_probe_mission_started_at = 0;
+thread_local bool g_pumping_messages = false;
+void *g_safe_blit_trampoline = nullptr;
+void *g_menu_poll_trampoline = nullptr;
+volatile LONG g_auto_start_consumed = 0;
+DWORD g_probe_last_advance_at = 0;
+
+struct ModConfig {
+    bool enabled = true;
+    bool disable_ime = true;
+    bool high_resolution_timer = true;
+    bool smooth_edge_scroll = true;
+    int edge_zone = 8;
+    int scroll_response = 4;
+    int difficulty = 1;
+    int ai_level = 2;
+    int hearing_radius = 0;
+    int alert_radius = 0;
+    bool expanded_viewport = false;
+    int viewport_width = 0;
+    int viewport_height = 0;
+    bool auto_start = false;
+    int start_level = 0;
+};
+
+ModConfig g_mod_config;
+wchar_t g_rungame_ini[MAX_PATH]{};
+
+using ImmDisableIMEProc = BOOL(WINAPI *)(DWORD);
+using ImmAssociateContextExProc = BOOL(WINAPI *)(HWND, HANDLE, DWORD);
+using SetProcessDpiAwarenessContextProc = BOOL(WINAPI *)(HANDLE);
+
+int ClampSetting(int value, int minimum, int maximum) {
+    if (value < minimum) {
+        return minimum;
+    }
+    if (value > maximum) {
+        return maximum;
+    }
+    return value;
+}
+
+void LoadModConfig() {
+    wchar_t executable[MAX_PATH]{};
+    const DWORD length =
+        GetModuleFileNameW(nullptr, executable, static_cast<DWORD>(MAX_PATH));
+    if (length == 0 || length >= MAX_PATH) {
+        return;
+    }
+    wchar_t *separator = wcsrchr(executable, L'\\');
+    if (!separator) {
+        return;
+    }
+    *(separator + 1) = L'\0';
+    lstrcpynW(g_rungame_ini, executable, MAX_PATH);
+    lstrcatW(g_rungame_ini, L"rungame.ini");
+
+    auto read = [](const wchar_t *key, int fallback) {
+        return static_cast<int>(GetPrivateProfileIntW(
+            L"mod", key, fallback, g_rungame_ini));
+    };
+    g_mod_config.enabled = read(L"Enabled", 1) != 0;
+    g_mod_config.disable_ime = read(L"DisableIME", 1) != 0;
+    g_mod_config.high_resolution_timer = read(L"HighResolutionTimer", 1) != 0;
+    g_mod_config.smooth_edge_scroll = read(L"SmoothEdgeScroll", 1) != 0;
+    g_mod_config.edge_zone = ClampSetting(read(L"EdgeZone", 8), 1, 64);
+    g_mod_config.scroll_response =
+        ClampSetting(read(L"ScrollResponse", 4), 2, 16);
+    g_mod_config.difficulty = ClampSetting(read(L"Difficulty", 1), 0, 3);
+    g_mod_config.ai_level = ClampSetting(read(L"AILevel", 2), 0, 3);
+    g_mod_config.hearing_radius =
+        ClampSetting(read(L"HearingRadius", 0), 0, 2048);
+    g_mod_config.alert_radius =
+        ClampSetting(read(L"AlertRadius", 0), 0, 4096);
+    g_mod_config.expanded_viewport = read(L"ExpandedViewport", 0) != 0;
+    g_mod_config.viewport_width =
+        ClampSetting(read(L"ViewportWidth", 0), 0, 3840);
+    g_mod_config.viewport_height =
+        ClampSetting(read(L"ViewportHeight", 0), 0, 2160);
+    g_mod_config.auto_start = read(L"AutoStart", 0) != 0;
+    g_mod_config.start_level = ClampSetting(read(L"StartLevel", 0), 0, 12);
+}
+
+void EnableModernDpiAwareness() {
+    HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    if (!user32) {
+        return;
+    }
+
+    const auto set_context =
+        reinterpret_cast<SetProcessDpiAwarenessContextProc>(
+            GetProcAddress(user32, "SetProcessDpiAwarenessContext"));
+    if (set_context) {
+        // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 is ((HANDLE)-4).
+        if (set_context(reinterpret_cast<HANDLE>(-4))) {
+            return;
+        }
+    }
+
+    using SetProcessDPIAwareProc = BOOL(WINAPI *)();
+    const auto set_legacy = reinterpret_cast<SetProcessDPIAwareProc>(
+        GetProcAddress(user32, "SetProcessDPIAware"));
+    if (set_legacy) {
+        set_legacy();
+    }
+}
+
+void DisableInputMethodForProcess() {
+    HMODULE imm32 = LoadLibraryW(L"imm32.dll");
+    if (!imm32) {
+        return;
+    }
+
+    const auto disable_ime = reinterpret_cast<ImmDisableIMEProc>(
+        GetProcAddress(imm32, "ImmDisableIME"));
+    if (disable_ime) {
+        disable_ime(static_cast<DWORD>(-1));
+    }
+    FreeLibrary(imm32);
+}
+
+void DisableInputMethodForWindow(HWND window) {
+    if (!window) {
+        return;
+    }
+
+    HMODULE imm32 = LoadLibraryW(L"imm32.dll");
+    if (!imm32) {
+        return;
+    }
+
+    const auto associate = reinterpret_cast<ImmAssociateContextExProc>(
+        GetProcAddress(imm32, "ImmAssociateContextEx"));
+    if (associate) {
+        associate(window, nullptr, 0);
+    }
+    FreeLibrary(imm32);
+}
+
+void ProtectGameWindowInput(HWND window) {
+    if (!window) {
+        return;
+    }
+    if (!g_mod_config.enabled) {
+        return;
+    }
+    if (g_mod_config.enabled && g_mod_config.disable_ime) {
+        DisableInputMethodForWindow(window);
+    }
+}
+
+void BeginHighResolutionTimer() {
+    if (!g_timer_period_active && timeBeginPeriod(1) == TIMERR_NOERROR) {
+        g_timer_period_active = true;
+    }
+}
+
+using OriginalCameraMoveProc = int(__thiscall *)(int *);
+
+int LogicalScreenWidth() {
+    if (!g_executable_base) {
+        return 800;
+    }
+    const int input_width =
+        *reinterpret_cast<int *>(g_executable_base + 0x000E6E0C);
+    if (input_width >= 320) {
+        return input_width;
+    }
+    const int renderer_width =
+        *reinterpret_cast<int *>(g_executable_base + 0x000D6A8C);
+    return renderer_width >= 320 ? renderer_width : 800;
+}
+
+int LogicalScreenHeight() {
+    if (!g_executable_base) {
+        return 600;
+    }
+    const int input_height =
+        *reinterpret_cast<int *>(g_executable_base + 0x000E6E10);
+    if (input_height >= 240) {
+        return input_height;
+    }
+    const int renderer_height =
+        *reinterpret_cast<int *>(g_executable_base + 0x000D6A88);
+    return renderer_height >= 240 ? renderer_height : 600;
+}
+
+int MoveOriginalCamera(int *camera, size_t function_offset) {
+    if (!g_executable_base) {
+        return 0;
+    }
+    const auto move = reinterpret_cast<OriginalCameraMoveProc>(
+        g_executable_base + function_offset);
+    return move(camera);
+}
+
+int __fastcall SmoothEdgeScroll(int *camera, void *) {
+    if (!camera || !g_executable_base) {
+        return 0;
+    }
+
+    // Original fields: [23] current speed, [24] configured maximum,
+    // [25] direction and [28] camera/input lock.
+    if (camera[28] != 0 ||
+        *reinterpret_cast<int *>(g_executable_base + 0x000E6E7C) != 0) {
+        return 0;
+    }
+
+    const int cursor_x =
+        *reinterpret_cast<int *>(g_executable_base + 0x000E6EA0);
+    const int cursor_y =
+        *reinterpret_cast<int *>(g_executable_base + 0x000E6FAC);
+    const int screen_width = LogicalScreenWidth();
+    const int screen_height = LogicalScreenHeight();
+    const int edge_zone = g_mod_config.edge_zone;
+
+    const bool left = cursor_x <= edge_zone;
+    const bool right = cursor_x >= screen_width - 1 - edge_zone;
+    const bool top = cursor_y <= edge_zone;
+    const bool bottom = cursor_y >= screen_height - 1 - edge_zone;
+    const bool at_edge = left || right || top || bottom;
+
+    const int maximum = camera[24] > 0 ? camera[24] : 0;
+    int speed = camera[23];
+    if (at_edge) {
+        const int remaining = maximum - speed;
+        if (remaining > 0) {
+            const int response = g_mod_config.scroll_response;
+            speed += (remaining + response - 1) / response;
+        }
+        if (speed > maximum) {
+            speed = maximum;
+        }
+    } else if (speed > 0) {
+        const int response = g_mod_config.scroll_response;
+        speed -= (speed + response - 1) / response;
+        if (speed < 0) {
+            speed = 0;
+        }
+    }
+    camera[23] = speed;
+
+    if (speed <= 0 || !at_edge) {
+        return speed;
+    }
+
+    // Keep all actual movement in the original routines so map bounds, scene
+    // refresh and layer offsets remain controlled by the game.
+    if (top && left) {
+        camera[25] = 8;
+        MoveOriginalCamera(camera, 0x0004A930);
+        return MoveOriginalCamera(camera, 0x0004AA20);
+    }
+    if (top && right) {
+        camera[25] = 2;
+        MoveOriginalCamera(camera, 0x0004AA20);
+        return MoveOriginalCamera(camera, 0x0004A9A0);
+    }
+    if (bottom && right) {
+        camera[25] = 4;
+        MoveOriginalCamera(camera, 0x0004A9A0);
+        return MoveOriginalCamera(camera, 0x0004AA90);
+    }
+    if (bottom && left) {
+        camera[25] = 6;
+        MoveOriginalCamera(camera, 0x0004A930);
+        return MoveOriginalCamera(camera, 0x0004AA90);
+    }
+    if (top) {
+        camera[25] = 1;
+        return MoveOriginalCamera(camera, 0x0004AA20);
+    }
+    if (right) {
+        camera[25] = 3;
+        return MoveOriginalCamera(camera, 0x0004A9A0);
+    }
+    if (bottom) {
+        camera[25] = 5;
+        return MoveOriginalCamera(camera, 0x0004AA90);
+    }
+    camera[25] = 7;
+    return MoveOriginalCamera(camera, 0x0004A930);
+}
 
 int RequestedStartLevel() {
     char value[16]{};
     const DWORD length = GetEnvironmentVariableA(
         "M1937_START_LEVEL", value, static_cast<DWORD>(sizeof(value)));
     if (length == 0 || length >= sizeof(value)) {
-        return 0;
+        return g_mod_config.start_level;
     }
 
     char *end = nullptr;
@@ -29,6 +317,132 @@ int RequestedStartLevel() {
         return 0;
     }
     return static_cast<int>(level);
+}
+
+bool IsAutomatedProbeEnabled() {
+    char value[8]{};
+    return GetEnvironmentVariableA(
+               "M1937_AUTOTEST", value, static_cast<DWORD>(sizeof(value))) > 0 &&
+        strcmp(value, "1") == 0;
+}
+
+bool IsAutomaticMissionStartEnabled() {
+    char value[8]{};
+    const DWORD length = GetEnvironmentVariableA(
+        "M1937_AUTO_START", value, static_cast<DWORD>(sizeof(value)));
+    if (length > 0 && length < sizeof(value)) {
+        return strcmp(value, "1") == 0;
+    }
+    return g_mod_config.auto_start;
+}
+
+bool IsAutomatedMouseEnabled() {
+    return IsAutomatedProbeEnabled() || IsAutomaticMissionStartEnabled();
+}
+
+bool UseEnhancedEnemyAI() {
+    char value[8]{};
+    const DWORD length = GetEnvironmentVariableA(
+        "M1937_AI_ORIGINAL", value, static_cast<DWORD>(sizeof(value)));
+    if (length > 0 && length < sizeof(value)) {
+        return strcmp(value, "1") != 0;
+    }
+    return g_mod_config.ai_level > 0;
+}
+
+int ConfiguredHearingRadius() {
+    if (g_mod_config.hearing_radius > 0) {
+        return g_mod_config.hearing_radius;
+    }
+    static const int ai_base[] = {128, 160, 192, 224};
+    static const int difficulty_adjustment[] = {-32, 0, 32, 64};
+    const int ai = UseEnhancedEnemyAI() ? g_mod_config.ai_level : 0;
+    return ClampSetting(
+        ai_base[ClampSetting(ai, 0, 3)] +
+            difficulty_adjustment[g_mod_config.difficulty],
+        64, 2048);
+}
+
+int ConfiguredAlertRadius() {
+    if (g_mod_config.alert_radius > 0) {
+        return g_mod_config.alert_radius;
+    }
+    static const int ai_base[] = {640, 720, 800, 960};
+    static const int difficulty_adjustment[] = {-160, 0, 160, 320};
+    const int ai = UseEnhancedEnemyAI() ? g_mod_config.ai_level : 0;
+    return ClampSetting(
+        ai_base[ClampSetting(ai, 0, 3)] +
+            difficulty_adjustment[g_mod_config.difficulty],
+        320, 4096);
+}
+
+LONG ClampProbeDelta(int delta) {
+    if (delta < -80) {
+        return -80;
+    }
+    if (delta > 80) {
+        return 80;
+    }
+    return static_cast<LONG>(delta);
+}
+
+void ApplyAutomatedMouseState(DWORD size, LPVOID data) {
+    if (!IsAutomatedMouseEnabled() || !g_executable_base ||
+        !data || size < sizeof(DIMOUSESTATE)) {
+        return;
+    }
+
+    if (g_probe_started_at == 0) {
+        g_probe_started_at = GetTickCount();
+    }
+    const DWORD now = GetTickCount();
+    const int mission =
+        *reinterpret_cast<int *>(g_executable_base + 0x000E7060);
+    if (mission > 0 && g_probe_mission_started_at == 0) {
+        g_probe_mission_started_at = now;
+    }
+    const bool automated_probe = IsAutomatedProbeEnabled();
+    if (mission > 0 && !automated_probe) {
+        return;
+    }
+
+    const int screen_width = LogicalScreenWidth();
+    const int screen_height = LogicalScreenHeight();
+    const int cursor_x =
+        *reinterpret_cast<int *>(g_executable_base + 0x000E6EA0);
+    const int cursor_y =
+        *reinterpret_cast<int *>(g_executable_base + 0x000E6FAC);
+
+    // Expanded viewports retain the legacy UI artwork coordinates. Scaling
+    // this point with the wider map surface would miss the Start Game button.
+    int target_x = 72;
+    int target_y = 236;
+    bool click = false;
+    const DWORD cycle = (now - g_probe_started_at) % 2000;
+
+    if (mission <= 0) {
+        click = cycle >= 900 && cycle < 1080;
+    } else {
+        const DWORD mission_elapsed = now - g_probe_mission_started_at;
+        if (mission_elapsed < 25000) {
+            target_x = screen_width / 2;
+            target_y = screen_height / 2;
+            click = false;
+        } else {
+            const bool move_right = ((mission_elapsed - 25000) / 1500) % 2 == 0;
+            target_x = move_right ? screen_width - 2 : 2;
+            target_y = screen_height / 2;
+        }
+    }
+
+    auto *mouse = static_cast<DIMOUSESTATE *>(data);
+    mouse->lX = ClampProbeDelta(target_x - cursor_x);
+    mouse->lY = ClampProbeDelta(target_y - cursor_y);
+    mouse->lZ = 0;
+    memset(mouse->rgbButtons, 0, sizeof(mouse->rgbButtons));
+    if (click) {
+        mouse->rgbButtons[0] = 0x80;
+    }
 }
 
 bool PatchExecutableBytes(
@@ -49,6 +463,282 @@ bool PatchExecutableBytes(
     return true;
 }
 
+bool PatchExecutableJump(
+    unsigned char *address, const unsigned char *expected, size_t size,
+    const void *destination) {
+    if (size < 5 || size > 16 || memcmp(address, expected, size) != 0) {
+        return false;
+    }
+
+    unsigned char replacement[16]{};
+    memset(replacement, 0x90, size);
+    replacement[0] = 0xE9;
+    const auto from = reinterpret_cast<intptr_t>(address + 5);
+    const auto to = reinterpret_cast<intptr_t>(destination);
+    const intptr_t relative = to - from;
+    if (relative < INT32_MIN || relative > INT32_MAX) {
+        return false;
+    }
+    const int32_t displacement = static_cast<int32_t>(relative);
+    memcpy(replacement + 1, &displacement, sizeof(displacement));
+    return PatchExecutableBytes(address, expected, replacement, size);
+}
+
+using OriginalBlitProc = int(__thiscall *)(
+    void *, int, int, void *, int, int);
+
+int __fastcall SafeBlit(
+    void *surface, void *, int x, int y, void *source, int flags, int clip) {
+    // Several original UI code paths deliberately leave an optional artwork
+    // surface empty. Legacy widths never expose all of them, but a wider
+    // viewport does. sub_40EE30 assumes ECX is non-null and crashes before it
+    // can inspect the source/clip arguments.
+    if (!surface || !g_safe_blit_trampoline) {
+        return 0;
+    }
+    return reinterpret_cast<OriginalBlitProc>(g_safe_blit_trampoline)(
+        surface, x, y, source, flags, clip);
+}
+
+bool InstallSafeBlitGuard(unsigned char *base) {
+    static const unsigned char expected[] = {
+        0x83, 0xEC, 0x2C, 0x53, 0x55, 0x56};
+    auto *entry = base + 0x0000EE30;
+    if (memcmp(entry, expected, sizeof(expected)) != 0) {
+        return false;
+    }
+
+    constexpr size_t trampoline_size = sizeof(expected) + 5;
+    auto *trampoline = static_cast<unsigned char *>(VirtualAlloc(
+        nullptr, trampoline_size, MEM_COMMIT | MEM_RESERVE,
+        PAGE_EXECUTE_READWRITE));
+    if (!trampoline) {
+        return false;
+    }
+    memcpy(trampoline, expected, sizeof(expected));
+    trampoline[sizeof(expected)] = 0xE9;
+    const auto resume_from =
+        reinterpret_cast<intptr_t>(trampoline + trampoline_size);
+    const auto resume_to =
+        reinterpret_cast<intptr_t>(entry + sizeof(expected));
+    const intptr_t relative = resume_to - resume_from;
+    if (relative < INT32_MIN || relative > INT32_MAX) {
+        VirtualFree(trampoline, 0, MEM_RELEASE);
+        return false;
+    }
+    const int32_t displacement = static_cast<int32_t>(relative);
+    memcpy(
+        trampoline + sizeof(expected) + 1, &displacement,
+        sizeof(displacement));
+    FlushInstructionCache(
+        GetCurrentProcess(), trampoline, trampoline_size);
+
+    g_safe_blit_trampoline = trampoline;
+    if (!PatchExecutableJump(
+            entry, expected, sizeof(expected),
+            reinterpret_cast<const void *>(&SafeBlit))) {
+        g_safe_blit_trampoline = nullptr;
+        VirtualFree(trampoline, 0, MEM_RELEASE);
+        return false;
+    }
+    return true;
+}
+
+using OriginalMenuPollProc = int(__thiscall *)(void *, int, int);
+
+int __fastcall AutoStartMenuPoll(
+    void *menu, void *, int animation_state, int flags) {
+    if (IsAutomatedMouseEnabled() && g_executable_base &&
+        *reinterpret_cast<int *>(g_executable_base + 0x000E7060) == 0 &&
+        InterlockedCompareExchange(&g_auto_start_consumed, 1, 0) == 0) {
+        // Button identifier 1 is the original Start Game entry. Returning it
+        // here follows the exact normal menu path instead of fabricating a
+        // mission state or relying on physical mouse coordinates.
+        if (IsAutomatedProbeEnabled()) {
+            // sub_4031C0 enters its synchronous briefing loop before the
+            // regular input poll can run again. Prime the original briefing
+            // acknowledgement for non-interactive validation only.
+            *reinterpret_cast<unsigned char *>(
+                g_executable_base + 0x000E6EA9) = 1;
+        }
+        return 1;
+    }
+    if (!g_menu_poll_trampoline) {
+        return 0;
+    }
+    return reinterpret_cast<OriginalMenuPollProc>(g_menu_poll_trampoline)(
+        menu, animation_state, flags);
+}
+
+bool InstallAutoStartMenuHook(unsigned char *base) {
+    static const unsigned char expected[] = {
+        0x8B, 0x44, 0x24, 0x04, 0x53, 0x55};
+    auto *entry = base + 0x00044800;
+    if (memcmp(entry, expected, sizeof(expected)) != 0) {
+        return false;
+    }
+
+    constexpr size_t trampoline_size = sizeof(expected) + 5;
+    auto *trampoline = static_cast<unsigned char *>(VirtualAlloc(
+        nullptr, trampoline_size, MEM_COMMIT | MEM_RESERVE,
+        PAGE_EXECUTE_READWRITE));
+    if (!trampoline) {
+        return false;
+    }
+    memcpy(trampoline, expected, sizeof(expected));
+    trampoline[sizeof(expected)] = 0xE9;
+    const auto resume_from =
+        reinterpret_cast<intptr_t>(trampoline + trampoline_size);
+    const auto resume_to =
+        reinterpret_cast<intptr_t>(entry + sizeof(expected));
+    const intptr_t relative = resume_to - resume_from;
+    if (relative < INT32_MIN || relative > INT32_MAX) {
+        VirtualFree(trampoline, 0, MEM_RELEASE);
+        return false;
+    }
+    const int32_t displacement = static_cast<int32_t>(relative);
+    memcpy(
+        trampoline + sizeof(expected) + 1, &displacement,
+        sizeof(displacement));
+    FlushInstructionCache(
+        GetCurrentProcess(), trampoline, trampoline_size);
+
+    g_menu_poll_trampoline = trampoline;
+    if (!PatchExecutableJump(
+            entry, expected, sizeof(expected),
+            reinterpret_cast<const void *>(&AutoStartMenuPoll))) {
+        g_menu_poll_trampoline = nullptr;
+        VirtualFree(trampoline, 0, MEM_RELEASE);
+        return false;
+    }
+    return true;
+}
+
+bool ReadExpandedViewport(int *width, int *height) {
+    if (!width || !height) {
+        return false;
+    }
+
+    char enabled[8]{};
+    const DWORD environment_enabled = GetEnvironmentVariableA(
+            "M1937_EXPANDED_VIEWPORT", enabled,
+            static_cast<DWORD>(sizeof(enabled)));
+    const bool expanded = environment_enabled > 0 &&
+            environment_enabled < sizeof(enabled)
+        ? strcmp(enabled, "1") == 0
+        : g_mod_config.expanded_viewport;
+    if (!expanded) {
+        return false;
+    }
+
+    int requested_width = g_mod_config.viewport_width > 0
+        ? g_mod_config.viewport_width
+        : GetSystemMetrics(SM_CXSCREEN);
+    int requested_height = g_mod_config.viewport_height > 0
+        ? g_mod_config.viewport_height
+        : GetSystemMetrics(SM_CYSCREEN);
+    char value[16]{};
+    if (GetEnvironmentVariableA(
+            "M1937_VIEWPORT_WIDTH", value,
+            static_cast<DWORD>(sizeof(value))) > 0) {
+        requested_width = static_cast<int>(strtol(value, nullptr, 10));
+    }
+    memset(value, 0, sizeof(value));
+    if (GetEnvironmentVariableA(
+            "M1937_VIEWPORT_HEIGHT", value,
+            static_cast<DWORD>(sizeof(value))) > 0) {
+        requested_height = static_cast<int>(strtol(value, nullptr, 10));
+    }
+
+    // The renderer uses 16-bit surfaces. Keep the expanded viewport within
+    // well-tested modern desktop sizes while allowing 16:9 and ultrawide
+    // layouts that the original three-item settings menu could not express.
+    if (requested_width < 800 || requested_width > 3840 ||
+        requested_height < 600 || requested_height > 2160) {
+        return false;
+    }
+    *width = requested_width & ~1;
+    *height = requested_height & ~1;
+    return true;
+}
+
+bool PatchImmediate32(
+    unsigned char *base, size_t operand_offset, int expected, int replacement) {
+    unsigned char expected_bytes[sizeof(int)]{};
+    unsigned char replacement_bytes[sizeof(int)]{};
+    memcpy(expected_bytes, &expected, sizeof(expected));
+    memcpy(replacement_bytes, &replacement, sizeof(replacement));
+    return PatchExecutableBytes(
+        base + operand_offset, expected_bytes, replacement_bytes,
+        sizeof(replacement_bytes));
+}
+
+void ApplyExpandedViewportPatches(unsigned char *base) {
+    int width = 0;
+    int height = 0;
+    if (!ReadExpandedViewport(&width, &height)) {
+        return;
+    }
+
+    // Startup selects one of 640x480, 800x600 and 1024x768 from M1937.cfg.
+    // Replace all three assignments before the central surface-creation call,
+    // so its existing code continues to pass the global width and height.
+    struct ResolutionOperand {
+        size_t offset;
+        int expected;
+        bool is_width;
+    };
+    static const ResolutionOperand startup_operands[] = {
+        {0x00007706, 1024, true}, {0x00007710, 768, false},
+        {0x0000771C, 800, true},  {0x00007726, 600, false},
+        {0x00007732, 640, true},  {0x0000773C, 480, false},
+    };
+    for (const auto &operand : startup_operands) {
+        PatchImmediate32(
+            base, operand.offset, operand.expected,
+            operand.is_width ? width : height);
+    }
+
+    // The original settings menu can recreate graphics surfaces at runtime.
+    // Keep that entry point operational: every legacy resolution choice maps
+    // back to the expanded viewport while this launch profile is active.
+    static const ResolutionOperand settings_operands[] = {
+        {0x00003E05, 640, true},  {0x00003E0F, 480, false},
+        {0x00003E2F, 480, false}, {0x00003E34, 640, true},
+        {0x00003EE2, 800, true},  {0x00003EEC, 600, false},
+        {0x00003F0C, 600, false}, {0x00003F11, 800, true},
+        {0x00003FBF, 1024, true}, {0x00003FC9, 768, false},
+        {0x00003FE9, 768, false}, {0x00003FEE, 1024, true},
+    };
+    for (const auto &operand : settings_operands) {
+        PatchImmediate32(
+            base, operand.offset, operand.expected,
+            operand.is_width ? width : height);
+    }
+
+    // UI artwork is available only in 640, 800 and 1024 variants. The
+    // original branch leaves the startup image pointer null for any other
+    // width, then sub_4031C0 dereferences it in sub_40EE30. Treat every
+    // non-640/non-800 width as the 1024 artwork layout while keeping the
+    // renderer globals at the requested desktop-sized viewport.
+    static const unsigned char intro_1024_guard[] = {
+        0x0F, 0x85, 0xC0, 0x00, 0x00, 0x00};
+    static const unsigned char six_nops[] = {
+        0x90, 0x90, 0x90, 0x90, 0x90, 0x90};
+    PatchExecutableBytes(
+        base + 0x00002F79, intro_1024_guard, six_nops,
+        sizeof(six_nops));
+
+    // The matching menu-layout branch supplies the 1024 artwork offset
+    // (192,144). Without it an expanded viewport is usable but the old menu
+    // panel is no longer centred relative to its 1024 reference layout.
+    static const unsigned char layout_1024_guard[] = {0x75, 0x2C};
+    static const unsigned char two_nops[] = {0x90, 0x90};
+    PatchExecutableBytes(
+        base + 0x00003288, layout_1024_guard, two_nops,
+        sizeof(two_nops));
+}
+
 void ApplyLegacyExecutablePatches() {
     auto *base = reinterpret_cast<unsigned char *>(GetModuleHandleW(nullptr));
     if (!base) {
@@ -64,6 +754,14 @@ void ApplyLegacyExecutablePatches() {
         nt->OptionalHeader.ImageBase != 0x00400000 ||
         nt->OptionalHeader.SizeOfImage != 0x00124000) {
         return;
+    }
+    g_executable_base = base;
+    if (g_mod_config.enabled) {
+        InstallSafeBlitGuard(base);
+        ApplyExpandedViewportPatches(base);
+    }
+    if (IsAutomatedMouseEnabled()) {
+        InstallAutoStartMenuHook(base);
     }
 
     // The green release reports a false resource-library error even though
@@ -102,11 +800,72 @@ void ApplyLegacyExecutablePatches() {
             base + 0x00003B66, level_expected, level_patch,
             sizeof(level_patch));
     }
+
+    // The original detector requires the cursor to land on the outermost
+    // pixel. That is unreliable after modern window scaling. The replacement
+    // uses an 8-pixel game-coordinate edge zone and bounded easing.
+    static const unsigned char scroll_expected[] = {
+        0x56, 0x8B, 0xF1, 0x8B, 0x46, 0x70};
+    if (g_mod_config.enabled && g_mod_config.smooth_edge_scroll) {
+        PatchExecutableJump(
+            base + 0x0004C9B0, scroll_expected, sizeof(scroll_expected),
+            reinterpret_cast<const void *>(&SmoothEdgeScroll));
+    }
+
+    if (g_mod_config.enabled) {
+        // The original unobstructed close-hearing check is 128 world units.
+        // Keep its original no-line-of-sight semantics and configure only the
+        // comparison operand.
+        PatchImmediate32(
+            base, 0x0005DD27, 128, ConfiguredHearingRadius());
+
+        // Four combat paths broadcast the target's last-known position to
+        // nearby allies. The original alert propagation routine still decides
+        // eligibility and pathing.
+        static const size_t alert_call_offsets[] = {
+            0x00056E61, 0x00056E93, 0x00057048, 0x00057186};
+        for (const size_t offset : alert_call_offsets) {
+            PatchImmediate32(
+                base, offset + 1, 640, ConfiguredAlertRadius());
+        }
+    }
 }
 
 void PumpWindowMessages() {
+    // Dispatching a window message can synchronously ask DirectInput for
+    // another device state. Without a guard that re-enters this pump and can
+    // eventually overflow the 32-bit game's stack on a newly copied path.
+    if (g_pumping_messages) {
+        return;
+    }
+    g_pumping_messages = true;
+
+    // Automated validation must get beyond the mission briefing without
+    // activating the window or moving the user's physical mouse. This flag is
+    // the same acknowledgement the original briefing click path sets.
+    if (IsAutomatedProbeEnabled() && g_executable_base) {
+        const int mission =
+            *reinterpret_cast<int *>(g_executable_base + 0x000E7060);
+        if (mission >= 1 && mission <= 12) {
+            if (g_probe_mission_started_at == 0) {
+                g_probe_mission_started_at = GetTickCount();
+            } else if (
+                GetTickCount() - g_probe_mission_started_at >= 1500 &&
+                GetTickCount() - g_probe_last_advance_at >= 2000) {
+                *reinterpret_cast<unsigned char *>(
+                    g_executable_base + 0x000E6EA9) = 1;
+                g_probe_last_advance_at = GetTickCount();
+            }
+        }
+    }
+
+    LARGE_INTEGER frequency{};
+    LARGE_INTEGER started{};
+    const bool timed = QueryPerformanceFrequency(&frequency) != FALSE &&
+        QueryPerformanceCounter(&started) != FALSE;
+
     MSG message{};
-    for (int count = 0; count < 64; ++count) {
+    for (int count = 0; count < 16; ++count) {
         if (!PeekMessageA(&message, nullptr, 0, 0, PM_REMOVE)) {
             break;
         }
@@ -116,7 +875,19 @@ void PumpWindowMessages() {
         }
         TranslateMessage(&message);
         DispatchMessageA(&message);
+
+        if (timed) {
+            LARGE_INTEGER now{};
+            QueryPerformanceCounter(&now);
+            const LONGLONG elapsed = now.QuadPart - started.QuadPart;
+            // Keep the compatibility pump below half a millisecond. The
+            // original game loop will process the remaining messages.
+            if (elapsed * 2000 >= frequency.QuadPart) {
+                break;
+            }
+        }
     }
+    g_pumping_messages = false;
 }
 
 bool LoadRealDInput() {
@@ -124,25 +895,53 @@ bool LoadRealDInput() {
         return true;
     }
 
-    wchar_t system_directory[MAX_PATH]{};
-    const UINT length = GetSystemDirectoryW(system_directory, MAX_PATH);
-    if (length == 0 || length >= MAX_PATH - 12) {
+    wchar_t system_dinput[MAX_PATH]{};
+    const UINT system_length = GetSystemDirectoryW(system_dinput, MAX_PATH);
+    if (system_length == 0 || system_length >= MAX_PATH - 13) {
         return false;
     }
-    lstrcatW(system_directory, L"\\dinput.dll");
+    lstrcatW(system_dinput, L"\\dinput.dll");
 
-    g_real_dinput = LoadLibraryW(system_directory);
+    // A loaded module with the same basename can win over an absolute path
+    // on legacy DLL-redirection configurations, recursively resolving this
+    // proxy as the "real" dinput.dll. Copy the OS-matched 32-bit DLL to a
+    // unique basename before loading it. CopyFile is subject to WOW64 file
+    // redirection, which intentionally selects SysWOW64 for this 32-bit game.
+    wchar_t real_copy[MAX_PATH]{};
+    const DWORD executable_length =
+        GetModuleFileNameW(nullptr, real_copy, MAX_PATH);
+    if (executable_length == 0 || executable_length >= MAX_PATH) {
+        return false;
+    }
+    wchar_t *separator = wcsrchr(real_copy, L'\\');
+    if (!separator ||
+        static_cast<size_t>(separator - real_copy) + 21 >= MAX_PATH) {
+        return false;
+    }
+    *(separator + 1) = L'\0';
+    lstrcatW(real_copy, L"dinput_system.dll");
+    if (!CopyFileW(system_dinput, real_copy, FALSE)) {
+        return false;
+    }
+
+    g_real_dinput = LoadLibraryW(real_copy);
     if (!g_real_dinput) {
         return false;
     }
     g_real_create = reinterpret_cast<DirectInputCreateAProc>(
         GetProcAddress(g_real_dinput, "DirectInputCreateA"));
-    return g_real_create != nullptr;
+    if (!g_real_create) {
+        FreeLibrary(g_real_dinput);
+        g_real_dinput = nullptr;
+        return false;
+    }
+    return true;
 }
 
 class DeviceProxy final : public IDirectInputDeviceA {
 public:
-    explicit DeviceProxy(LPDIRECTINPUTDEVICEA real) : real_(real) {}
+    DeviceProxy(LPDIRECTINPUTDEVICEA real, bool is_mouse)
+        : real_(real), is_mouse_(is_mouse) {}
 
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, LPVOID *object) override {
         if (!object) {
@@ -196,7 +995,17 @@ public:
     }
     HRESULT STDMETHODCALLTYPE GetDeviceState(DWORD size, LPVOID data) override {
         PumpWindowMessages();
-        return real_->GetDeviceState(size, data);
+        HRESULT result = real_->GetDeviceState(size, data);
+        const bool automated_mouse =
+            IsAutomatedMouseEnabled() && size == sizeof(DIMOUSESTATE);
+        if (automated_mouse && FAILED(result) && data) {
+            memset(data, 0, size);
+            result = DI_OK;
+        }
+        if (SUCCEEDED(result) && (is_mouse_ || automated_mouse)) {
+            ApplyAutomatedMouseState(size, data);
+        }
+        return result;
     }
     HRESULT STDMETHODCALLTYPE GetDeviceData(
         DWORD object_size, LPDIDEVICEOBJECTDATA data, LPDWORD count,
@@ -205,12 +1014,19 @@ public:
         return real_->GetDeviceData(object_size, data, count, flags);
     }
     HRESULT STDMETHODCALLTYPE SetDataFormat(LPCDIDATAFORMAT format) override {
+        // Some Windows versions return an enumerated mouse instance GUID
+        // rather than GUID_SysMouse. The original DIMOUSESTATE layout is a
+        // more reliable way to classify that device.
+        if (format && format->dwDataSize == sizeof(DIMOUSESTATE)) {
+            is_mouse_ = true;
+        }
         return real_->SetDataFormat(format);
     }
     HRESULT STDMETHODCALLTYPE SetEventNotification(HANDLE event) override {
         return real_->SetEventNotification(event);
     }
     HRESULT STDMETHODCALLTYPE SetCooperativeLevel(HWND window, DWORD flags) override {
+        ProtectGameWindowInput(window);
         return real_->SetCooperativeLevel(window, flags);
     }
     HRESULT STDMETHODCALLTYPE GetObjectInfo(
@@ -231,6 +1047,7 @@ public:
 private:
     ~DeviceProxy() = default;
     LPDIRECTINPUTDEVICEA real_;
+    bool is_mouse_;
     volatile LONG references_ = 1;
 };
 
@@ -277,7 +1094,8 @@ public:
             return result;
         }
 
-        auto *proxy = new (std::nothrow) DeviceProxy(real_device);
+        auto *proxy = new (std::nothrow) DeviceProxy(
+            real_device, IsEqualGUID(guid, GUID_SysMouse) != FALSE);
         if (!proxy) {
             real_device->Release();
             return E_OUTOFMEMORY;
@@ -316,6 +1134,13 @@ extern "C" HRESULT WINAPI ProxyDirectInputCreateA(
         return E_POINTER;
     }
     *direct_input = nullptr;
+    EnableModernDpiAwareness();
+    if (g_mod_config.enabled && g_mod_config.disable_ime) {
+        DisableInputMethodForProcess();
+    }
+    if (g_mod_config.enabled && g_mod_config.high_resolution_timer) {
+        BeginHighResolutionTimer();
+    }
     if (!LoadRealDInput()) {
         return DIERR_NOTINITIALIZED;
     }
@@ -338,7 +1163,11 @@ extern "C" HRESULT WINAPI ProxyDirectInputCreateA(
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(instance);
+        LoadModConfig();
         ApplyLegacyExecutablePatches();
+    } else if (reason == DLL_PROCESS_DETACH && g_timer_period_active) {
+        timeEndPeriod(1);
+        g_timer_period_active = false;
     }
     return TRUE;
 }

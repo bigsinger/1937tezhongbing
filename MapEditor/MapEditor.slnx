@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="MapEditor.Core/MapEditor.Core.csproj" />
+  <Project Path="MapEditor.App/MapEditor.App.csproj" />
+  <Project Path="MapEditor.Tests/MapEditor.Tests.csproj" />
+</Solution>

@@ -1,16 +1,28 @@
-# dinput-proxy 源码说明
+# 1937 DirectInput 兼容与增强层
 
-这里是《1937特种兵：敌后武工队》专用 DirectInput 兼容层源码。
+这是 32 位 `dinput.dll` 代理源码，只对已验证的
+`M1937.exe`（SHA-256 `F4DD1131...B64DA3F3`）应用内存补丁。
 
-功能：
+主要功能：
 
-- 转发 `DirectInputCreateA` 到 Windows 系统 `dinput.dll`；
-- 包装 DirectInput 设备接口，在旧输入轮询中处理 Windows 消息；
-- 校验目标 PE 特征及原机器码后，只在进程内存中抑制资源库误报；
-- 只在进程内存中跳过两个问题启动影片，不修改磁盘上的 `M1937.exe`；
-- 当关卡选择器传入 `M1937_START_LEVEL=1..12` 时，校验并替换“新游戏”
-  入口中的关卡立即数；普通启动没有该变量，仍从第一关开始。
+- 使用唯一文件名 `dinput_system.dll` 加载 Windows 的 32 位系统
+  DirectInput，避免同名代理递归加载和栈溢出；
+- 限时处理 Windows 消息，消除旧输入循环造成的“未响应”；
+- 屏蔽游戏窗口 IME，启用 DPI 感知和 1 ms 高精度计时；
+- 修复错误的资源库警告并跳过两个有问题的启动影片；
+- 通过 `M1937_START_LEVEL=1..12` 解锁并进入全部正式关卡；
+- 通过原菜单命令路径自动开始所选任务，不伪造存档；
+- 丝滑边缘卷屏：可配置热区、渐进加速和渐进减速；
+- 按难度和 AI 等级调整敌军听觉与盟友警报传播；
+- 支持最多 3840×2160 的扩展逻辑视口；UI 复用 1024 素材，
+  地图渲染表面使用实际桌面尺寸；
+- 为旧引擎可选 UI 素材增加空指针防护。
 
-使用 `build.cmd` 构建。脚本优先使用当前 PATH 中的 `cl.exe`，否则通过 Visual Studio Installer 的 `vswhere.exe` 自动定位最新 C++ 工具链，并调用 x86 Native Tools 环境。
+配置来自游戏目录的 `rungame.ini` `[mod]`。构建：
 
-构建目标为 32 位 DLL，因为游戏主程序是 PE32；链接阶段显式使用 `/MACHINE:X86`，如果 PATH 中误用了 x64 编译器，构建会失败而不会产出无法被游戏加载的 64 位 DLL。
+```bat
+build.cmd
+```
+
+脚本自动定位 Visual Studio C++ x86 工具链，输出
+`build\dinput.dll`。目标必须是 x86，因为游戏是 PE32。

@@ -37,12 +37,47 @@ internal static class Program
         return args[0].ToLowerInvariant() switch
         {
             "inspect" => Inspect(args),
+            "inspect-vwf" => InspectVwf(args),
             "list-gfl" => ListGfl(args),
             "extract-gfl" => ExtractGfl(args),
             "import" => Import(args),
             "media-catalog" => MediaCatalog(args),
             _ => UnknownCommand(args[0])
         };
+    }
+
+    private static int InspectVwf(string[] args)
+    {
+        RequireArgumentCount(args, 2, 3, "inspect-vwf <path.vwf> [1937db.dbl]");
+        var vwfPath = System.IO.Path.GetFullPath(args[1]);
+        DblDatabase? database = args.Length == 3
+            ? DblDatabase.Open(System.IO.Path.GetFullPath(args[2]))
+            : null;
+        var world = VwfWorldHeader.Open(vwfPath);
+        var terrain = VwfTerrainGrid.Open(vwfPath, database);
+        var sceneList = VwfSceneList.Open(vwfPath, database);
+        var factionCounts = sceneList.Entities
+            .GroupBy(entity => entity.ExtendedFields.Count > 8 ? entity.ExtendedFields[8] : 0)
+            .OrderBy(group => group.Key)
+            .ToDictionary(group => group.Key, group => group.Count());
+
+        Console.WriteLine($"Path: {vwfPath}");
+        Console.WriteLine($"Length: {new FileInfo(vwfPath).Length}");
+        Console.WriteLine($"Grid: {world.GridWidth}x{world.GridHeight}");
+        Console.WriteLine(
+            $"World pixels: {checked(world.GridWidth * 32)}x{checked(world.GridHeight * 16)}");
+        Console.WriteLine(
+            $"Viewport: {world.ViewportWidth}x{world.ViewportHeight} " +
+            $"({world.ViewportLeft},{world.ViewportTop})-({world.ViewportRight},{world.ViewportBottom})");
+        Console.WriteLine($"Terrain layers: {terrain.Layers.Count}");
+        Console.WriteLine($"SLIST1 offset: 0x{world.SceneListOffset:X}");
+        Console.WriteLine(
+            $"SLIST1: version {sceneList.FormatVersion}, slots {sceneList.SlotCount}, " +
+            $"entities {sceneList.Entities.Count}, empty {sceneList.EmptySlotCount}");
+        Console.WriteLine(
+            "Factions: " +
+            string.Join(", ", factionCounts.Select(pair => $"{pair.Key}={pair.Value}")));
+        return 0;
     }
 
     private static int Inspect(string[] args)
@@ -323,6 +358,7 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine("  inspect <game-directory>");
+        Console.WriteLine("  inspect-vwf <path.vwf> [1937db.dbl]");
         Console.WriteLine("  list-gfl <1937Resources.GFL> [InterMedia.GFL]");
         Console.WriteLine("  extract-gfl <1937Resources.GFL> <output-directory> [InterMedia.GFL]");
         Console.WriteLine("  import <game-directory> <output-directory>");
