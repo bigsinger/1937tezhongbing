@@ -84,12 +84,13 @@ function Set-DdrawProfile {
     Set-IniValue $ddrawIni 'ddraw' 'maxgameticks' '60'
     Set-IniValue $ddrawIni 'ddraw' 'limiter_type' '2'
     Set-IniValue $ddrawIni 'ddraw' 'boxing' 'false'
-    # Keep the same input path that was stable before the experimental mouse
-    # changes: the game's DirectInput data is forwarded unchanged and
-    # cnc-ddraw only translates coordinates when output scaling needs it.
-    Set-IniValue $ddrawIni 'ddraw' 'adjmouse' 'true'
-    Set-IniValue $ddrawIni 'ddraw' 'no_dinput_hook' 'false'
-    Set-IniValue $ddrawIni 'ddraw' 'devmode' 'false'
+    # The proxy maps the free Windows cursor to the original 1024x768
+    # DirectInput coordinates. Do not install a second cnc-ddraw mouse hook.
+    Set-IniValue $ddrawIni 'ddraw' 'adjmouse' 'false'
+    Set-IniValue $ddrawIni 'ddraw' 'no_dinput_hook' 'true'
+    # Never confine or recenter the user's system cursor.
+    Set-IniValue $ddrawIni 'ddraw' 'devmode' 'true'
+    Set-IniValue $runGameIni 'mod' 'SystemCursorMapping' '1'
     Set-IniValue $ddrawIni 'ddraw' 'resizable' 'true'
     Set-IniValue $ddrawIni 'ddraw' 'savesettings' '1'
     Set-IniValue $ddrawIni 'ddraw' 'border' 'true'
@@ -119,8 +120,9 @@ function Set-DdrawProfile {
             Set-IniValue $ddrawIni 'ddraw' 'width' '0'
             Set-IniValue $ddrawIni 'ddraw' 'height' '0'
             Set-IniValue $ddrawIni 'ddraw' 'maintas' 'true'
-            Set-IniValue $ddrawIni 'ddraw' 'adjmouse' 'true'
-            Set-IniValue $ddrawIni 'ddraw' 'devmode' 'false'
+            Set-IniValue $ddrawIni 'ddraw' 'adjmouse' 'false'
+            Set-IniValue $ddrawIni 'ddraw' 'no_dinput_hook' 'true'
+            Set-IniValue $ddrawIni 'ddraw' 'devmode' 'true'
             Set-IniValue $ddrawIni 'ddraw' 'resizable' 'false'
             Set-IniValue $ddrawIni 'ddraw' 'savesettings' '0'
             Set-IniValue $ddrawIni 'ddraw' 'posX' '-32000'
@@ -187,12 +189,10 @@ if ($SafeWindow) {
     if ($safeRenderer -notin @('direct3d9', 'direct3d9on12', 'opengl')) {
         $safeRenderer = 'direct3d9'
     }
-    # Borderless maximum window is the safe mouse profile: cnc-ddraw receives
-    # the final desktop size before DirectInput starts and can map relative
-    # mouse deltas consistently. Switching a 1:1 native window to fullscreen
-    # at runtime keeps the old adjmouse setting and pushes the cursor to an edge.
-    Set-DdrawProfile 1 $safeRenderer
-    Set-IniValue $runGameIni 'mod' 'DisplayMode' '1'
+    # Reset to the profile validated in both the original menu and mission:
+    # a centred 1024x768 window with no cursor confinement or ddraw input hook.
+    Set-DdrawProfile 0 $safeRenderer
+    Set-IniValue $runGameIni 'mod' 'DisplayMode' '0'
 }
 
 if ($StartImmediately) {
@@ -360,10 +360,10 @@ function Add-ComboBox {
 
 Add-SettingLabel '显示模式' 62
 $displayCombo = Add-ComboBox @(
-    '原生窗口 1024×768（兼容备用）',
-    '无边框最大窗口（推荐、鼠标稳定）',
-    '全屏缩放（保持原比例）',
-    '全屏铺满（兼容备用）'
+    '稳定窗口 1024×768（推荐、已验证）',
+    '无边框最大窗口（实验）',
+    '全屏缩放（实验、保持原比例）',
+    '全屏铺满（实验）'
 ) 58
 
 Add-SettingLabel '渲染后端' 105
@@ -424,9 +424,9 @@ $settingsPanel.Controls.Add($screenInfo)
 
 $profileInfo = New-Object Windows.Forms.Label
 $profileInfo.Text = (
-    '推荐“无边框最大窗口”：启动前完成鼠标坐标映射，' +
+    '推荐“稳定窗口 1024×768”：菜单、第一关和窗口卷屏均已验证；' +
     [Environment]::NewLine +
-    '不要从原生窗口临时切全屏；补丁仍不改鼠标数据和卷屏逻辑。')
+    '补丁不会锁定、重置或主动移动 Windows 系统光标。')
 $profileInfo.Location = New-Object Drawing.Point(22, 343)
 $profileInfo.Size = New-Object Drawing.Size(370, 53)
 $profileInfo.ForeColor = $textMuted
@@ -539,6 +539,7 @@ function Save-Settings {
     Set-IniValue $runGameIni 'mod' 'ViewportHeight' $(if ($isExpanded) { [string]$screen.Height } else { '0' })
     Set-IniValue $runGameIni 'mod' 'MessagePumpIntervalMs' '8'
     Set-IniValue $runGameIni 'mod' 'MessagePumpBudget' '4'
+    Set-IniValue $runGameIni 'mod' 'SystemCursorMapping' '1'
     Set-IniValue $runGameIni 'mod' 'RememberLevel' $(if ($rememberLevel.Checked) { '1' } else { '0' })
     Set-IniValue $runGameIni 'mod' 'StartLevel' $(if ($rememberLevel.Checked) { [string]$selectedLevel } else { '0' })
     Set-IniValue $runGameIni 'mod' 'AutoStart' '0'

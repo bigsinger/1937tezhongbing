@@ -6,8 +6,8 @@
 双击“启动游戏-窗口模式.cmd”，或右键运行“选择关卡.ps1”。
 现代启动中心可以选择全部 12 个正式关卡，并设置显示模式、渲染后端、
 游戏难度、敌军智能、输入法屏蔽和高精度计时。
-“启动游戏-窗口模式.cmd”每次都会先恢复无边框最大窗口安全配置，
-可用于从错误的临时全屏切换或锁鼠标设置中恢复。
+“启动游戏-窗口模式.cmd”每次都会先恢复已经实机验证的 1024×768
+稳定窗口配置，可用于从错误的全屏、窗口尺寸或锁鼠标设置中恢复。
 
 设置会持久化到 rungame.ini 的 [mod] 段；以后直接运行 M1937.exe
 也会继续生效。选择“进入原版菜单（所选任务）”后，补丁只预置关卡编号；
@@ -16,11 +16,11 @@
 
 显示模式
 --------
-1. 原生窗口 1024×768：兼容备用；部分机器上游戏光标可能不可见。
-2. 无边框最大窗口（推荐）：启动前按桌面尺寸建立坐标映射，避免从原生
-   窗口临时切全屏后光标被推到右边缘。
-3. 全屏缩放：保持原版画面比例。
-4. 全屏铺满：保留原版 1024×768 游戏与界面画布，再由兼容渲染器铺满
+1. 稳定窗口 1024×768（推荐、已验证）：不约束 Windows 光标，菜单、
+   第一关操作和窗口边缘卷屏均已通过重复测试。
+2. 无边框最大窗口（实验）：按桌面尺寸缩放输出。
+3. 全屏缩放（实验）：保持原版画面比例。
+4. 全屏铺满（实验）：保留原版 1024×768 游戏与界面画布，再由兼容渲染器铺满
    当前桌面。这样底部工具栏、F1 帮助、M 小地图和原版快捷键均可正常使用。
 
 旧版“原生扩展视口”会让原版没有对应尺寸的 UI 表面为空，造成工具栏消失、
@@ -30,11 +30,12 @@ F1 黑屏及 M 小地图失效，现已停用。全屏输出仍会自动采用�
 --------
 - cnc-ddraw 将 DirectDraw 转换为 Direct3D 9/OpenGL；
 - dinput.dll 兼容层修复旧输入消息泵、启动弹框和长时间未响应；
-- DirectInput 鼠标状态逐字转发给原版，不再合成、平滑或重写鼠标数据；
+- dinput.dll 只读取 Windows 光标在游戏客户区内的位置，并换算为原版
+  1024×768 DirectInput 相对位移；不会调用 SetCursorPos、ClipCursor，
+  不会锁定、回中或主动移动系统光标；
 - 已撤销自制边缘卷屏挂钩，恢复原版卷屏函数；
 - 关卡选择只预置编号并进入原版菜单，不再提前触发任务介绍；
-- 无边框最大窗口启动前完成 cnc-ddraw 坐标转换，避免拉伸输出时游戏
-  光标被推到边缘；不要从原生窗口临时切全屏；
+- cnc-ddraw 的鼠标缩放和约束已关闭，避免与本游戏专用坐标映射重复处理；
 - 屏蔽游戏窗口输入法，避免按键触发中文输入；
 - 1 ms 计时器、固定 60 FPS、60 次/秒逻辑更新和垂直同步降低偶发卡顿；
 - 窗口消息泵按 8 ms 节流、每次最多处理 4 条维护消息，不抢占键鼠热键；
@@ -49,7 +50,7 @@ Enabled、Difficulty、AILevel、HearingRadius、AlertRadius、
 DisableIME、
 HighResolutionTimer、ExpandedViewport、ViewportWidth、
 ViewportHeight、PreserveLegacyUI、MessagePumpIntervalMs、
-MessagePumpBudget、RememberLevel、StartLevel、AutoStart、Renderer
+MessagePumpBudget、SystemCursorMapping、RememberLevel、StartLevel、AutoStart、Renderer
 和 DisplayMode。ExpandedViewport、SmoothEdgeScroll、EdgeZone 和
 ScrollResponse 只保留用于兼容旧配置，当前版本不会启用。
 

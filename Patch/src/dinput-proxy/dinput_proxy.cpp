@@ -17,6 +17,7 @@ using DirectInputCreateAProc = HRESULT(WINAPI *)(
 HMODULE g_real_dinput = nullptr;
 DirectInputCreateAProc g_real_create = nullptr;
 unsigned char *g_executable_base = nullptr;
+HWND g_game_window = nullptr;
 bool g_timer_period_active = false;
 DWORD g_probe_mission_started_at = 0;
 thread_local bool g_pumping_messages = false;
@@ -40,6 +41,7 @@ struct ModConfig {
     int viewport_height = 0;
     int message_pump_interval_ms = 8;
     int message_pump_budget = 4;
+    bool system_cursor_mapping = true;
     bool auto_start = false;
     int start_level = 0;
 };
@@ -99,6 +101,8 @@ void LoadModConfig() {
         ClampSetting(read(L"MessagePumpIntervalMs", 8), 4, 50);
     g_mod_config.message_pump_budget =
         ClampSetting(read(L"MessagePumpBudget", 4), 1, 8);
+    g_mod_config.system_cursor_mapping =
+        read(L"SystemCursorMapping", 1) != 0;
     g_mod_config.auto_start = read(L"AutoStart", 0) != 0;
     g_mod_config.start_level = ClampSetting(read(L"StartLevel", 0), 0, 12);
 }
@@ -756,9 +760,114 @@ bool LoadRealDInput() {
     return true;
 }
 
+int LogicalScreenWidth() {
+    if (!g_executable_base) {
+        return 1024;
+    }
+    const int width =
+        *reinterpret_cast<int *>(g_executable_base + 0x000E6E0C);
+    return width >= 320 && width <= 4096 ? width : 1024;
+}
+
+int LogicalScreenHeight() {
+    if (!g_executable_base) {
+        return 768;
+    }
+    const int height =
+        *reinterpret_cast<int *>(g_executable_base + 0x000E6E10);
+    return height >= 240 && height <= 2160 ? height : 768;
+}
+
+bool IsGameWindowForeground() {
+    if (!g_game_window) {
+        return false;
+    }
+    const HWND foreground = GetForegroundWindow();
+    return foreground &&
+        GetAncestor(foreground, GA_ROOT) ==
+            GetAncestor(g_game_window, GA_ROOT);
+}
+
+void MapSystemCursorToGameState(DWORD size, LPVOID data) {
+    if (!g_mod_config.system_cursor_mapping || !g_game_window ||
+        !g_executable_base || !data || size < sizeof(DIMOUSESTATE)) {
+        return;
+    }
+
+    auto *mouse = static_cast<DIMOUSESTATE *>(data);
+    if (!IsGameWindowForeground()) {
+        mouse->lX = 0;
+        mouse->lY = 0;
+        mouse->lZ = 0;
+        memset(mouse->rgbButtons, 0, sizeof(mouse->rgbButtons));
+        return;
+    }
+
+    POINT cursor{};
+    RECT client{};
+    if (!GetCursorPos(&cursor) ||
+        !ScreenToClient(g_game_window, &cursor) ||
+        !GetClientRect(g_game_window, &client)) {
+        mouse->lX = 0;
+        mouse->lY = 0;
+        return;
+    }
+
+    const int client_width = client.right - client.left;
+    const int client_height = client.bottom - client.top;
+    const int logical_width = LogicalScreenWidth();
+    const int logical_height = LogicalScreenHeight();
+    if (client_width <= 1 || client_height <= 1 ||
+        logical_width <= 1 || logical_height <= 1) {
+        mouse->lX = 0;
+        mouse->lY = 0;
+        return;
+    }
+
+    // cnc-ddraw preserves the original 4:3 aspect ratio. Map only the actual
+    // rendered rectangle, excluding any pillarbox/letterbox area.
+    int render_width = client_width;
+    int render_height = MulDiv(client_width, logical_height, logical_width);
+    int render_left = 0;
+    int render_top = 0;
+    if (render_height > client_height) {
+        render_height = client_height;
+        render_width = MulDiv(
+            client_height, logical_width, logical_height);
+        render_left = (client_width - render_width) / 2;
+    } else {
+        render_top = (client_height - render_height) / 2;
+    }
+    if (render_width <= 1 || render_height <= 1) {
+        mouse->lX = 0;
+        mouse->lY = 0;
+        return;
+    }
+
+    const int render_x = ClampSetting(
+        cursor.x - render_left, 0, render_width - 1);
+    const int render_y = ClampSetting(
+        cursor.y - render_top, 0, render_height - 1);
+    const int target_x =
+        MulDiv(render_x, logical_width - 1, render_width - 1);
+    const int target_y =
+        MulDiv(render_y, logical_height - 1, render_height - 1);
+    const int current_x =
+        *reinterpret_cast<int *>(g_executable_base + 0x000E6EA0);
+    const int current_y =
+        *reinterpret_cast<int *>(g_executable_base + 0x000E6FAC);
+
+    // The original DirectInput 3 loop accumulates relative deltas. Limit a
+    // single correction so focus changes cannot teleport the in-game cursor.
+    mouse->lX = ClampSetting(target_x - current_x, -80, 80);
+    mouse->lY = ClampSetting(target_y - current_y, -80, 80);
+    // Preserve the real wheel and button state returned by DirectInput.
+}
+
 class DeviceProxy final : public IDirectInputDeviceA {
 public:
-    explicit DeviceProxy(LPDIRECTINPUTDEVICEA real) : real_(real) {}
+    DeviceProxy(LPDIRECTINPUTDEVICEA real, bool is_mouse)
+        : real_(real), is_mouse_(is_mouse) {}
 
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, LPVOID *object) override {
         if (!object) {
@@ -812,7 +921,11 @@ public:
     }
     HRESULT STDMETHODCALLTYPE GetDeviceState(DWORD size, LPVOID data) override {
         PumpWindowMessages();
-        return real_->GetDeviceState(size, data);
+        const HRESULT result = real_->GetDeviceState(size, data);
+        if (SUCCEEDED(result) && is_mouse_) {
+            MapSystemCursorToGameState(size, data);
+        }
+        return result;
     }
     HRESULT STDMETHODCALLTYPE GetDeviceData(
         DWORD object_size, LPDIDEVICEOBJECTDATA data, LPDWORD count,
@@ -821,14 +934,24 @@ public:
         return real_->GetDeviceData(object_size, data, count, flags);
     }
     HRESULT STDMETHODCALLTYPE SetDataFormat(LPCDIDATAFORMAT format) override {
+        if (format && format->dwDataSize == sizeof(DIMOUSESTATE)) {
+            is_mouse_ = true;
+        }
         return real_->SetDataFormat(format);
     }
     HRESULT STDMETHODCALLTYPE SetEventNotification(HANDLE event) override {
         return real_->SetEventNotification(event);
     }
     HRESULT STDMETHODCALLTYPE SetCooperativeLevel(HWND window, DWORD flags) override {
+        if (is_mouse_) {
+            g_game_window = window;
+        }
         ProtectGameWindowInput(window);
-        return real_->SetCooperativeLevel(window, flags);
+        const DWORD effective_flags =
+            is_mouse_ && g_mod_config.system_cursor_mapping
+            ? DISCL_BACKGROUND | DISCL_NONEXCLUSIVE
+            : flags;
+        return real_->SetCooperativeLevel(window, effective_flags);
     }
     HRESULT STDMETHODCALLTYPE GetObjectInfo(
         LPDIDEVICEOBJECTINSTANCEA info, DWORD object, DWORD how) override {
@@ -848,6 +971,7 @@ public:
 private:
     ~DeviceProxy() = default;
     LPDIRECTINPUTDEVICEA real_;
+    bool is_mouse_;
     volatile LONG references_ = 1;
 };
 
@@ -894,7 +1018,8 @@ public:
             return result;
         }
 
-        auto *proxy = new (std::nothrow) DeviceProxy(real_device);
+        auto *proxy = new (std::nothrow) DeviceProxy(
+            real_device, IsEqualGUID(guid, GUID_SysMouse) != FALSE);
         if (!proxy) {
             real_device->Release();
             return E_OUTOFMEMORY;

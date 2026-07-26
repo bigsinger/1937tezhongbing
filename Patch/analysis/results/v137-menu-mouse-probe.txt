@@ -1,0 +1,17 @@
+profile=final-menu-pass-3
+phase=menu
+dinput_sha256=AB577D1517B7B59A3964367DE8A9F634CD03E1D3A616E3AFDE542E1339AC58BC
+client=1024x768@448,156
+logical=1024x768
+foreground=True
+position_0=actual:1055,540;internal:607,384
+position_1=actual:1151,540;internal:703,384
+position_2=actual:1247,540;internal:799,384
+stationary_physical_drift=0
+stationary_internal_drift=0
+left_input=0/1
+actual_x_span=192
+internal_x_span=192
+centre_warp_error=0
+final_state=mission:0;cursor:512,384;responding:True
+result=PASS
