@@ -15,6 +15,22 @@ using DirectInputCreateAProc = HRESULT(WINAPI *)(
 HMODULE g_real_dinput = nullptr;
 DirectInputCreateAProc g_real_create = nullptr;
 
+int RequestedStartLevel() {
+    char value[16]{};
+    const DWORD length = GetEnvironmentVariableA(
+        "M1937_START_LEVEL", value, static_cast<DWORD>(sizeof(value)));
+    if (length == 0 || length >= sizeof(value)) {
+        return 0;
+    }
+
+    char *end = nullptr;
+    const long level = strtol(value, &end, 10);
+    if (end == value || *end != '\0' || level < 1 || level > 12) {
+        return 0;
+    }
+    return static_cast<int>(level);
+}
+
 bool PatchExecutableBytes(
     unsigned char *address, const unsigned char *expected,
     const unsigned char *replacement, size_t size) {
@@ -69,6 +85,23 @@ void ApplyLegacyExecutablePatches() {
     PatchExecutableBytes(
         base + 0x0000762C, movies_expected, movies_nops,
         sizeof(movies_nops));
+
+    // The original "New Game" thunk always writes mission number 1 to
+    // M1937.exe+0xE7060. The optional level selector starts the process with
+    // M1937_START_LEVEL=1..12, so replace only that immediate operand. A
+    // normal launch has no environment variable and keeps the original
+    // first-mission behaviour. This does not touch the executable on disk or
+    // manufacture save files.
+    const int requested_level = RequestedStartLevel();
+    if (requested_level != 0) {
+        static const unsigned char level_expected[] = {
+            0x01, 0x00, 0x00, 0x00};
+        unsigned char level_patch[sizeof(level_expected)]{};
+        memcpy(level_patch, &requested_level, sizeof(level_patch));
+        PatchExecutableBytes(
+            base + 0x00003B66, level_expected, level_patch,
+            sizeof(level_patch));
+    }
 }
 
 void PumpWindowMessages() {

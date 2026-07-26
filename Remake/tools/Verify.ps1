@@ -9,6 +9,9 @@ $solution = Join-Path $remakeRoot '1937Remake.slnx'
 $tests = Join-Path $PSScriptRoot 'ResourceFormats.Tests\ResourceFormats.Tests.csproj'
 $game = Join-Path $remakeRoot 'game'
 $realAssetManifest = Join-Path $remakeRoot 'LocalAssets\converted\levels\m000\level.json'
+$localOcrScript = Join-Path `
+    ([System.IO.Path]::GetDirectoryName($remakeRoot)) `
+    'Patch\analysis\tools\Invoke-LocalScreenshotOcr.ps1'
 
 & (Join-Path $PSScriptRoot 'Check-NoOriginalAssets.ps1')
 
@@ -151,6 +154,16 @@ if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
         "--output-dir=$productUiProbeOutput"
     if ($LASTEXITCODE -ne 0) {
         throw "Godot product UI screenshot probe failed with exit code $LASTEXITCODE."
+    }
+    if (Test-Path -LiteralPath $localOcrScript -PathType Leaf) {
+        Get-ChildItem -LiteralPath $productUiProbeOutput -Filter '*.jpg' -File |
+            ForEach-Object {
+                & powershell.exe -NoProfile -ExecutionPolicy Bypass `
+                    -File $localOcrScript -ImagePath $_.FullName
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Warning "Local OCR was unavailable for $($_.Name)."
+                }
+            }
     }
 }
 

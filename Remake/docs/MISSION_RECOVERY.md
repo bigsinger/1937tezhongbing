@@ -115,7 +115,7 @@ VWF/SLIST 本身保存场景事实，不保存一份完整的高层任务图。�
 
 每个 cue 必须把 `source_status` 标为 `recovered_media_mapping`、`remake_editorial` 或 `mixed`；未知标签、引用不存在的目标/锚点，或缺少相应媒体字段都会让任务目录校验失败。当前实际接线只有：
 
-- m000：关闭简报后显示明确标为 `remake_editorial` 的教程提示；首次完成 `rescue_pengxin` 后播放老赵 `acknowledge`，其触发编排同样标为重制编辑；
+- m000：关闭简报后显示明确标为 `remake_editorial` 的教程提示；首次完成 `rescue_pengxin` 后播放强子 `acknowledge`，其触发编排同样标为重制编辑；强子是 m000 原 VWF 中唯一可控队员（scene 1436），早期误用老赵语音的接线已经修正；
 - m006：scene 1461 的接头锚点首次完成 `follow_contact` 时显示 `remake_editorial` 提示对白；重复发布同一持久事实不会重播模态对白；
 - m011：胜利时按 `recovered_media_mapping` 打开与原资源映射一致的结局图，并在资源缺失时显示“十二关任务全部完成”。
 

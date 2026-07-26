@@ -24,7 +24,7 @@
 - 十二关现有 43 个数据驱动节奏节点、45 行明确标为 `remake_editorial` 的提示对白，以及镜头、教程门控、延迟警报、协同搜索/夹击/压制、增援预算和逐关 Easy/Normal/Hard 换算曲线；原版 scene/objective 约束与补写呈现严格区分来源；
 - 第十二关 `m011` 已识别原版“爆破目标指针被反复覆盖、实际只检查最后一个目标”的缺陷，复刻数据按任务简报恢复为六个爆破目标。
 
-这还不是逐像素、逐帧、逐剧情完全复刻版。当前十二关都具备可执行任务目标和胜负路径，m004 的计划书军官、m009 的全关清敌修复语义和 m010 的四人同时占点已经定案；type 8/10/11 生命周期、按键重映射和十二关导演第一版也已完成。剩余重点是以原版逐关录像校对白/镜头/S-B 精确语义，恢复多层 SPR 的逐层 baseline 与特殊动作精确数值，并做十二关完整通关、长时间帧输入和性能/内存校准。详见 [开发路线图](Remake/docs/ROADMAP.md)、[十二关导演说明](Remake/docs/MISSION_DIRECTION.md)、[原版行为取证摘要](Remake/docs/ORIGINAL_BEHAVIOR_FORENSICS.md)、[投射物、背包与世界交互物](Remake/docs/PROJECTILES_AND_INVENTORY.md)、[媒体恢复说明](Remake/docs/MEDIA_RECOVERY.md) 和 [任务恢复说明](Remake/docs/MISSION_RECOVERY.md)。
+这还不是逐像素、逐帧、逐剧情完全复刻版。当前十二关都具备可执行任务目标和胜负路径，m004 的计划书军官、m009 的全关清敌修复语义和 m010 的四人同时占点已经定案；type 8/10/11 生命周期、按键重映射和十二关导演第一版也已完成。剩余重点是以原版逐关录像校对白/镜头/S-B 精确语义，恢复多层 SPR 的逐层 baseline 与特殊动作精确数值，并做十二关完整通关、长时间帧输入和性能/内存校准。重制版连续叙事见 [十二关故事稿](doc/十二关故事.md)；工程细节见 [开发路线图](Remake/docs/ROADMAP.md)、[十二关导演说明](Remake/docs/MISSION_DIRECTION.md)、[原版行为取证摘要](Remake/docs/ORIGINAL_BEHAVIOR_FORENSICS.md)、[投射物、背包与世界交互物](Remake/docs/PROJECTILES_AND_INVENTORY.md)、[媒体恢复说明](Remake/docs/MEDIA_RECOVERY.md) 和 [任务恢复说明](Remake/docs/MISSION_RECOVERY.md)。
 
 ## 快速开始
 
@@ -57,5 +57,6 @@ Patch/                  原版 Win10/Win11 兼容补丁子项目
 Remake/game/            Godot 4.7 游戏工程与任务数据
 Remake/tools/           .NET 10 资源解析、转换与验证工具
 Remake/docs/            架构、格式、任务恢复、开发与路线图文档
+doc/                    项目级文档与十二关故事稿
 Remake/LocalAssets/     本地导入结果，已被 Git 忽略
 ```

@@ -325,9 +325,23 @@ func run_probe() -> void:
 		if directory_error == OK:
 			await process_frame
 			await RenderingServer.frame_post_draw
-			screenshot_path = output_directory.path_join("runtime-probe.png")
+			screenshot_path = output_directory.path_join("runtime-probe.jpg")
 			var screenshot := root.get_texture().get_image()
-			expect(screenshot.save_png(screenshot_path) == OK, "runtime screenshot saves", failures)
+			if screenshot.get_width() > 960:
+				var resized_height := maxi(
+					1,
+					roundi(
+						float(screenshot.get_height())
+						* 960.0
+						/ float(screenshot.get_width())
+					),
+				)
+				screenshot.resize(960, resized_height, Image.INTERPOLATE_LANCZOS)
+			expect(
+				screenshot.save_jpg(screenshot_path, 0.62) == OK,
+				"compressed runtime screenshot saves",
+				failures,
+			)
 			report_path = output_directory.path_join("runtime-probe.json")
 
 	var report := {

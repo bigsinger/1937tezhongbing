@@ -2,6 +2,29 @@
 
 这里保存本次兼容性排查使用的可复核工具源码，不属于最终游戏运行补丁。
 
+`OriginalLevelProbe.cs` 用隔离目录启动原版，设置 1—12 关启动参数，
+只写入原版已知的内存输入状态，不移动物理鼠标或激活窗口；同时校验
+“新游戏”立即数、实际关卡全局值并截取该游戏窗口。原始帧只在内存中
+短暂存在，落盘时限制到 960 像素宽、JPEG 质量 62；若
+`Invoke-LocalScreenshotOcr.ps1` 与探针程序位于同一目录，会使用 Windows
+本地简体中文 OCR 生成同名 `.ocr.txt`，不上传图片。
+
+编译时把两个文件放在同一输出目录：
+
+```powershell
+Add-Type -TypeDefinition (Get-Content .\OriginalLevelProbe.cs -Raw) `
+  -ReferencedAssemblies System,System.Core,System.Drawing `
+  -OutputAssembly .\OriginalLevelProbe.exe -OutputType ConsoleApplication
+```
+
+也可以单独对已有压缩窗口图执行 OCR：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File .\Invoke-LocalScreenshotOcr.ps1 `
+  -ImagePath .\original-level-01-window.jpg
+```
+
 - `GameFrameProbe.cs`：启动游戏、自动进入第一关并采集进程响应、CPU 和读取量；可选桌面画面差分；
 - `Test-Fullscreen.ps1`：通过 cnc-ddraw 的窗口消息验证窗口/全屏尺寸切换；
 - PresentMon 原始帧时间数据位于 `../results/`。测试使用 Intel PresentMon 1.10.0，仓库只保留结果，不重复分发其可执行文件。

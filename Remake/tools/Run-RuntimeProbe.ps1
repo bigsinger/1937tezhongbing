@@ -8,6 +8,9 @@ $ErrorActionPreference = 'Stop'
 $remakeRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $gameDirectory = Join-Path $remakeRoot 'game'
 $levelManifest = Join-Path $remakeRoot 'LocalAssets\converted\levels\m000\level.json'
+$localOcrScript = Join-Path `
+    ([System.IO.Path]::GetDirectoryName($remakeRoot)) `
+    'Patch\analysis\tools\Invoke-LocalScreenshotOcr.ps1'
 
 if (-not (Test-Path -LiteralPath $levelManifest -PathType Leaf)) {
     throw 'The m000 local asset import is missing. Run Import-OriginalAssets.cmd first.'
@@ -76,5 +79,16 @@ if ($LASTEXITCODE -ne 0) {
     throw "Godot product UI probe failed with exit code $LASTEXITCODE."
 }
 
+if (Test-Path -LiteralPath $localOcrScript -PathType Leaf) {
+    Get-ChildItem -LiteralPath $OutputDirectory -Filter '*.jpg' -File -Recurse |
+        ForEach-Object {
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass `
+                -File $localOcrScript -ImagePath $_.FullName
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "Local OCR was unavailable for $($_.Name)."
+            }
+        }
+}
+
 Write-Host "Runtime probe output: $OutputDirectory"
-Write-Host "Product UI screenshots: $productUiOutput"
+Write-Host "Compressed window captures and local OCR: $OutputDirectory"

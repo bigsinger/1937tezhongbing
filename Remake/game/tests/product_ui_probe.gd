@@ -33,7 +33,7 @@ func _run() -> void:
 		and main.game_shell.is_tactical_map_visible(),
 		"M tactical map opens as a live non-pausing HUD window",
 	)
-	_capture("tactical-map.png")
+	_capture("tactical-map.jpg")
 	main.game_shell.close_for_state_change()
 
 	main._open_inventory()
@@ -43,7 +43,7 @@ func _run() -> void:
 		main.game_shell.overlay_mode == GAME_SHELL_SCRIPT.OverlayMode.INVENTORY,
 		"A/W inventory opens",
 	)
-	_capture("inventory.png")
+	_capture("inventory.jpg")
 	main.game_shell.close_for_state_change()
 
 	main._open_pause_menu()
@@ -53,14 +53,14 @@ func _run() -> void:
 		main.game_shell.overlay_mode == GAME_SHELL_SCRIPT.OverlayMode.PAUSE_MENU,
 		"Esc pause menu opens",
 	)
-	_capture("pause-menu.png")
+	_capture("pause-menu.jpg")
 	main.game_shell.close_for_state_change()
 
 	main.game_shell.show_failure("自动验收：任务失败\n可重新开始本关或从多槽选择器读取存档。", false)
 	paused = false
 	_expect(await _wait_for_render_frame(), "failure menu frame renders")
 	_expect(main.game_shell.is_failure_open(), "forced failure menu opens")
-	_capture("failure-menu.png")
+	_capture("failure-menu.jpg")
 	main.game_shell.close_for_state_change()
 
 	root.remove_child(main)
@@ -116,7 +116,13 @@ func _capture(file_name: String) -> void:
 	var path := output_directory.path_join(file_name)
 	_expect(image != null and not image.is_empty(), "%s image is available" % file_name)
 	if image != null and not image.is_empty():
-		_expect(image.save_png(path) == OK, "%s screenshot saves" % file_name)
+		if image.get_width() > 960:
+			var resized_height := maxi(
+				1,
+				roundi(float(image.get_height()) * 960.0 / float(image.get_width())),
+			)
+			image.resize(960, resized_height, Image.INTERPOLATE_LANCZOS)
+		_expect(image.save_jpg(path, 0.62) == OK, "%s compressed screenshot saves" % file_name)
 
 
 func _expect(condition: bool, message: String) -> void:

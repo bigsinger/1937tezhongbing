@@ -756,7 +756,7 @@ func spawn_squad() -> void:
 			)
 		)
 		unit.configure_movement_modes(run_groups, walk_groups, crawl_groups)
-		var attack_type := int(PLAYABLE_LOADOUT_ATTACK_TYPES.get(name, 1))
+		var attack_type := playable_initial_attack_type(entity, name)
 		var weapon_profile: Dictionary = COMBAT_PROFILES.weapon_profile_for_attack_type(
 			attack_type
 		)
@@ -775,8 +775,8 @@ func spawn_squad() -> void:
 			death_groups,
 			false,
 		)
-		# Original field loadout: knife, pistol and rifle are available from start;
-		# the selected actor's authored weapon remains active.
+		# The common field loadout exposes knife, pistol and rifle. When a real
+		# VWF actor is present, its authored default_attack_type stays active.
 		for initial_attack_type: int in [4, 1, 2]:
 			if initial_attack_type == attack_type:
 				continue
@@ -806,6 +806,13 @@ func spawn_squad() -> void:
 	projectile_world.set_combatants(projectile_combatants)
 	if not units.is_empty():
 		select_only(units[0])
+
+
+static func playable_initial_attack_type(entity: Dictionary, display_name: String) -> int:
+	var authored_attack_type := int(entity.get("default_attack_type", 0))
+	if authored_attack_type >= 1 and authored_attack_type <= 11:
+		return authored_attack_type
+	return int(PLAYABLE_LOADOUT_ATTACK_TYPES.get(display_name, 1))
 
 
 func _spawn_escorts() -> void:

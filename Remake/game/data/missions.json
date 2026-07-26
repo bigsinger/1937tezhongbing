@@ -13,7 +13,7 @@
       "scene_bindings": {"rescued": [1427, 1428], "exit": [1600]},
       "media_cues": {
         "on_start": {"kind": "dialogue", "sequence_id": "m000_tutorial", "source_status": "remake_editorial", "lines": [{"speaker": "任务提示", "text": "营救彭鑫和老罗叔，然后护送所有存活人员抵达撤离点。", "minimum_seconds": 0.0, "auto_advance": false}]},
-        "on_objective": {"rescue_pengxin": {"kind": "audio", "event_key": "acknowledge", "actor_key": "laozhao", "source_status": "remake_editorial"}}
+        "on_objective": {"rescue_pengxin": {"kind": "audio", "event_key": "acknowledge", "actor_key": "qiangzi", "source_status": "remake_editorial"}}
       },
       "time_limit_seconds": 0,
       "trigger_inventory": {"markers": 1, "explosion": 0, "exit": 1, "spawns": 4, "entrances": 0},

@@ -1,0 +1,23 @@
+{
+  "window_title": "《1937特种兵》全关卡选择器",
+  "heading": "选择任意关卡，然后在原版主菜单点击“新游戏”",
+  "hint": "选择器只向本次游戏进程传入关卡号；原 EXE、资源和存档不会被修改。",
+  "missing_executable": "没有在下列目录找到 M1937.exe：\r\n{0}\r\n\r\n请先把兼容补丁安装到原版游戏目录。",
+  "launch_failed": "启动失败",
+  "cancel": "取消",
+  "button_template": "第{0,2}关  {1}",
+  "missions": [
+    {"number": 1, "id": "m000", "title": "营救行动"},
+    {"number": 2, "id": "m001", "title": "奇袭火车站"},
+    {"number": 3, "id": "m002", "title": "劫狱"},
+    {"number": 4, "id": "m003", "title": "铁路桥"},
+    {"number": 5, "id": "m004", "title": "火烧粮仓"},
+    {"number": 6, "id": "m005", "title": "大闹寒江镇"},
+    {"number": 7, "id": "m006", "title": "惩罚"},
+    {"number": 8, "id": "m007", "title": "脱困"},
+    {"number": 9, "id": "m008", "title": "暗战矿坑"},
+    {"number": 10, "id": "m009", "title": "夺宝奇兵"},
+    {"number": 11, "id": "m010", "title": "血色渡口"},
+    {"number": 12, "id": "m011", "title": "破袭机场"}
+  ]
+}

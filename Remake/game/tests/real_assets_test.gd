@@ -208,6 +208,7 @@ func _init() -> void:
 	validate_sprite_manifests()
 	validate_special_action_assets()
 	validate_m000_farmland_depth()
+	validate_m000_fidelity_baseline()
 	validate_level_independent_inventory_icons()
 
 	if failures.is_empty():
@@ -389,6 +390,159 @@ func validate_m000_farmland_depth() -> void:
 	expect(rice_count == 70 and rice_uses_y_depth, "m000's 70 individual rice plants retain baseline depth sorting")
 
 
+func validate_m000_fidelity_baseline() -> void:
+	var catalog := load_json_dictionary("res://data/level_fidelity_baselines.json")
+	expect(int(catalog.get("schema_version", 0)) == 1, "level fidelity baseline schema loads")
+	var baseline: Dictionary = {}
+	for value: Variant in catalog.get("levels", []) as Array:
+		var candidate := value as Dictionary
+		if str(candidate.get("id", "")) == "m000":
+			baseline = candidate
+			break
+	expect(not baseline.is_empty(), "m000 fidelity baseline is present")
+	if baseline.is_empty():
+		return
+
+	var level: Dictionary = IMPORTED_LEVEL_DATA.load_level("m000")
+	var world_size := level.get("world_size", {}) as Dictionary
+	var expected_world := baseline.get("world_size", {}) as Dictionary
+	expect(
+		int(world_size.get("width", 0)) == int(expected_world.get("width", -1))
+		and int(world_size.get("height", 0)) == int(expected_world.get("height", -1)),
+		"m000 world dimensions match the recovered 4960x2240 baseline",
+	)
+	var navigation := level.get("navigation", {}) as Dictionary
+	var expected_navigation := baseline.get("navigation", {}) as Dictionary
+	expect(
+		int(navigation.get("width", 0)) == int(expected_navigation.get("width", -1))
+		and int(navigation.get("height", 0)) == int(expected_navigation.get("height", -1))
+		and int(navigation.get("cell_width", 0)) == int(expected_navigation.get("cell_width", -1))
+		and int(navigation.get("cell_height", 0)) == int(expected_navigation.get("cell_height", -1)),
+		"m000 navigation dimensions and cells match the recovered baseline",
+	)
+
+	var entities := level.get("entities", []) as Array
+	expect(entities.size() == int(baseline.get("entity_count", -1)), "m000 preserves all 1,630 entities")
+	var entities_by_scene: Dictionary = {}
+	var faction_counts: Dictionary = {}
+	var queue_counts := {"0": 0, "1": 0, "2": 0, "3": 0}
+	var enemy_attack_counts: Dictionary = {}
+	var enemy_hit_point_counts: Dictionary = {}
+	var enemy_count := 0
+	var enemy_patrol_count := 0
+	var enemy_special_sensor_count := 0
+	for entity_value: Variant in entities:
+		var entity := entity_value as Dictionary
+		entities_by_scene[int(entity.get("scene_index", -1))] = entity
+		var faction_key := str(int(entity.get("faction_id", 0)))
+		faction_counts[faction_key] = int(faction_counts.get(faction_key, 0)) + 1
+		var header := entity.get("database_header_values", []) as Array
+		var queue_key := str(int(header[0]) if not header.is_empty() else 0)
+		queue_counts[queue_key] = int(queue_counts.get(queue_key, 0)) + 1
+		if int(entity.get("faction_id", 0)) == 1:
+			enemy_count += 1
+			if not (entity.get("patrol_waypoints", []) as Array).is_empty():
+				enemy_patrol_count += 1
+			if bool(entity.get("special_sensor_mode", false)):
+				enemy_special_sensor_count += 1
+			var attack_key := str(int(entity.get("default_attack_type", 0)))
+			enemy_attack_counts[attack_key] = int(enemy_attack_counts.get(attack_key, 0)) + 1
+			var hit_point_key := str(int(entity.get("current_hit_points", 0)))
+			enemy_hit_point_counts[hit_point_key] = int(enemy_hit_point_counts.get(hit_point_key, 0)) + 1
+
+	expect(
+		integer_dictionary_matches(
+			faction_counts,
+			baseline.get("faction_counts", {}) as Dictionary,
+		),
+		"m000 faction composition matches the original VWF",
+	)
+	expect(
+		integer_dictionary_matches(
+			queue_counts,
+			baseline.get("draw_queue_counts", {}) as Dictionary,
+		),
+		"m000 all four recovered draw queues retain their entity counts",
+	)
+	var expected_enemy := baseline.get("enemy", {}) as Dictionary
+	expect(enemy_count == int(expected_enemy.get("count", -1)), "m000 preserves all 54 enemies")
+	expect(
+		enemy_patrol_count == int(expected_enemy.get("nonempty_patrol_count", -1)),
+		"m000 preserves all 43 non-empty enemy patrol routes",
+	)
+	expect(
+		integer_dictionary_matches(
+			enemy_attack_counts,
+			expected_enemy.get("attack_type_counts", {}) as Dictionary,
+		),
+		"m000 enemy attack-type composition matches the original VWF",
+	)
+	expect(
+		integer_dictionary_matches(
+			enemy_hit_point_counts,
+			expected_enemy.get("hit_point_counts", {}) as Dictionary,
+		),
+		"m000 enemy hit-point composition matches the original VWF",
+	)
+	expect(
+		enemy_special_sensor_count == int(expected_enemy.get("special_sensor_count", -1)),
+		"m000 preserves its one special-sensor guard dog",
+	)
+
+	for expected_value: Variant in baseline.get("key_entities", []) as Array:
+		var expected := expected_value as Dictionary
+		var scene_index := int(expected.get("scene_index", -1))
+		expect(entities_by_scene.has(scene_index), "m000 key scene %d exists" % scene_index)
+		if not entities_by_scene.has(scene_index):
+			continue
+		var actual := entities_by_scene[scene_index] as Dictionary
+		var matches := true
+		for key_value: Variant in expected.keys():
+			var key := str(key_value)
+			if key == "scene_index":
+				continue
+			matches = matches and actual.get(key) == expected[key]
+		expect(matches, "m000 key scene %d retains identity, role and position" % scene_index)
+
+	var anchor_counts: Dictionary = {}
+	for anchor_value: Variant in level.get("task_anchors", []) as Array:
+		var anchor := anchor_value as Dictionary
+		var kind := str(anchor.get("kind", ""))
+		anchor_counts[kind] = int(anchor_counts.get(kind, 0)) + 1
+	expect(
+		integer_dictionary_matches(
+			anchor_counts,
+			baseline.get("task_anchor_counts", {}) as Dictionary,
+		),
+		"m000 preserves four spawn anchors, one marker and one exit detector",
+	)
+
+	var playable := entities_by_scene.get(1436, {}) as Dictionary
+	expect(
+		MAIN_SCRIPT.playable_initial_attack_type(playable, "强子") == 4,
+		"m000 starts its recovered playable actor Qiangzi with authored dagger attack type 4",
+	)
+
+	var direction_catalog := load_json_dictionary("res://data/mission_direction.json")
+	var first_mission: Dictionary = {}
+	for mission_value: Variant in direction_catalog.get("missions", []) as Array:
+		var mission := mission_value as Dictionary
+		if str(mission.get("id", "")) == "m000":
+			first_mission = mission
+			break
+	var dialogue_speakers: Array[String] = []
+	for beat_value: Variant in first_mission.get("beats", []) as Array:
+		var beat := beat_value as Dictionary
+		for line_value: Variant in (
+			(beat.get("dialogue", {}) as Dictionary).get("lines", []) as Array
+		):
+			dialogue_speakers.append(str((line_value as Dictionary).get("speaker", "")))
+	expect(
+		not dialogue_speakers.has("老赵") and dialogue_speakers.has("强子"),
+		"m000 editorial dialogue names its recovered playable actor Qiangzi instead of Lao Zhao",
+	)
+
+
 func validate_mission_runtime_bindings(level_id: String, level: Dictionary) -> void:
 	var mission: Dictionary = MISSION_DATA.load_mission(level_id)
 	expect(not mission.is_empty(), "%s mission definition loads" % level_id)
@@ -431,6 +585,16 @@ func load_json_dictionary(path: String) -> Dictionary:
 	if json.parse(file.get_as_text()) != OK or not json.data is Dictionary:
 		return {}
 	return json.data as Dictionary
+
+
+func integer_dictionary_matches(actual: Dictionary, expected: Dictionary) -> bool:
+	if actual.size() != expected.size():
+		return false
+	for key_value: Variant in expected.keys():
+		var key := str(key_value)
+		if not actual.has(key) or int(actual[key]) != int(expected[key_value]):
+			return false
+	return true
 
 
 func count_nonzero(values: PackedInt64Array) -> int:

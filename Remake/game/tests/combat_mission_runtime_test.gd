@@ -747,7 +747,7 @@ func _test_mission_media_cues(failures: Array[String]) -> void:
 		director.calls.size() == 3
 		and str(director.calls[1].get("event_key", "")) == "ui_confirm"
 		and str(director.calls[2].get("event_key", "")) == "acknowledge"
-		and str(director.calls[2].get("actor_key", "")) == "laozhao",
+		and str(director.calls[2].get("actor_key", "")) == "qiangzi",
 		"objective completion dispatches its configured recovered-audio cue",
 		failures,
 	)
