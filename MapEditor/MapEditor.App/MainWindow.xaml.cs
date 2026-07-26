@@ -19,7 +19,7 @@ public partial class MainWindow : Window
     private readonly string? assetRoot;
     private string? currentPath;
     private EditorLayerKind activeLayer = EditorLayerKind.MovementObstacle;
-    private string activeTool = "asset";
+    private string activeTool = "select";
     private bool dirty;
 
     public MainWindow()
@@ -33,7 +33,18 @@ public partial class MainWindow : Window
             ApplicationCommands.Save, Save_Click));
 
         assetRoot = AssetLibrary.FindRoot();
-        allAssets = AssetLibrary.Load(assetRoot);
+        allAssets =
+        [
+            new AssetEntry
+            {
+                Id = 0,
+                Name = "鼠标箭头（仅查看）",
+                Category = "常用",
+                Kind = "none",
+                IsNone = true
+            },
+            .. AssetLibrary.Load(assetRoot)
+        ];
         ConfigureAssetLibrary();
         EditorCanvas.AssetRoot = assetRoot;
         LoadDocument(document, null);
@@ -44,6 +55,7 @@ public partial class MainWindow : Window
     {
         AssetCategoryCombo.Items.Add("全部素材");
         foreach (var category in allAssets
+                     .Where(asset => !asset.IsNone)
                      .Select(asset => asset.Category)
                      .Where(value => !string.IsNullOrWhiteSpace(value))
                      .Distinct(StringComparer.CurrentCultureIgnoreCase)
@@ -53,7 +65,7 @@ public partial class MainWindow : Window
         RefreshAssetFilter();
         AssetStatusText.Text = assetRoot is null
             ? "素材库：未找到（仍可编辑图层）"
-            : $"素材库：{allAssets.Count:N0} 项";
+            : $"素材库：{allAssets.Count - 1:N0} 项";
     }
 
     private void LoadDocument(MapDocument value, string? path)
@@ -76,6 +88,8 @@ public partial class MainWindow : Window
             $"{document.Objects.Count:N0} 个对象";
         EditorCanvas.Document = document;
         EditorCanvas.Zoom = ZoomSlider.Value;
+        AssetList.SelectedIndex = 0;
+        SelectMode.IsChecked = true;
         dirty = false;
         UpdateTitle();
         StatusText.Text = path is null
@@ -324,6 +338,11 @@ public partial class MainWindow : Window
                 StatusText.Text = "请先从左侧选择一个素材。";
                 return;
             }
+            if (asset.IsNone)
+            {
+                StatusText.Text = "当前为仅查看模式，不会向地图添加素材。";
+                return;
+            }
             if (asset.Kind == "map_background")
             {
                 document.BackgroundAsset = asset.RelativePath;
@@ -475,16 +494,16 @@ public partial class MainWindow : Window
                        ?? "全部素材";
         var search = AssetSearchText.Text.Trim();
         var filtered = allAssets.Where(asset =>
-            (category == "全部素材" ||
-             string.Equals(
-                 asset.Category, category,
-                 StringComparison.CurrentCultureIgnoreCase)) &&
-            (search.Length == 0 ||
-             asset.Name.Contains(
-                 search, StringComparison.CurrentCultureIgnoreCase) ||
-             asset.SourceName.Contains(
-                 search, StringComparison.CurrentCultureIgnoreCase)))
-            .Take(800)
+            asset.IsNone ||
+            ((category == "全部素材" ||
+              string.Equals(
+                  asset.Category, category,
+                  StringComparison.CurrentCultureIgnoreCase)) &&
+             (search.Length == 0 ||
+              asset.Name.Contains(
+                  search, StringComparison.CurrentCultureIgnoreCase) ||
+              asset.SourceName.Contains(
+                  search, StringComparison.CurrentCultureIgnoreCase))))
             .ToList();
         AssetList.ItemsSource = filtered;
         if (filtered.Count > 0)
@@ -496,6 +515,14 @@ public partial class MainWindow : Window
     {
         if (AssetList.SelectedItem is not AssetEntry asset)
             return;
+        if (asset.IsNone)
+        {
+            SelectMode.IsChecked = true;
+            SelectedAssetText.Text = "鼠标箭头：仅查看，不放置素材";
+            StatusText.Text = "仅查看模式：可以浏览地图或选择已有对象";
+            return;
+        }
+        PlaceAssetMode.IsChecked = true;
         SelectedAssetText.Text = $"{asset.Name}\n{asset.Category}";
         StatusText.Text = $"当前素材：{asset.Name}；在地图上单击即可放置";
     }
@@ -522,7 +549,8 @@ public partial class MainWindow : Window
             "只需三步：\n\n" +
             "1. 点击“打开地图”，直接选择 Mod 目录中的 .vwf 原版关卡，" +
             "或打开以前保存的 .m37map.json。\n\n" +
-            "2. 从左侧选择素材，在地图上单击放置；右键可擦除，" +
+            "2. 默认选中素材列表第一项“鼠标箭头”，此时只查看、不添加。" +
+            "需要编辑时再选择其他素材并在地图上单击放置；右键可擦除，" +
             "Shift+单击可选择已有对象。\n\n" +
             "3. 点击“另存为新地图”，原版文件永远不会被覆盖。\n\n" +
             "高级图层和任务编辑仍然保留，但默认收起，不影响简单使用。",

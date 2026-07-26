@@ -84,7 +84,7 @@ internal static class OriginalLevelProbe
         if (args.Length < 3)
         {
             Console.Error.WriteLine(
-                "Usage: OriginalLevelProbe.exe GAME_DIR OUTPUT_DIR LEVEL [SECONDS] [nodrive] [hotkeys]");
+                "Usage: OriginalLevelProbe.exe GAME_DIR OUTPUT_DIR LEVEL [SECONDS] [nodrive] [hotkeys|autostart]");
             return 2;
         }
 
@@ -96,6 +96,8 @@ internal static class OriginalLevelProbe
             !string.Equals(args[4], "nodrive", StringComparison.OrdinalIgnoreCase);
         bool testHotkeys = args.Any(argument => string.Equals(
             argument, "hotkeys", StringComparison.OrdinalIgnoreCase));
+        bool testAutomaticStart = args.Any(argument => string.Equals(
+            argument, "autostart", StringComparison.OrdinalIgnoreCase));
         if (level < 1 || level > 12)
         {
             throw new ArgumentOutOfRangeException("level");
@@ -109,7 +111,7 @@ internal static class OriginalLevelProbe
             UseShellExecute = false
         };
         startInfo.EnvironmentVariables["M1937_START_LEVEL"] = level.ToString();
-        if (testHotkeys)
+        if (testHotkeys || testAutomaticStart)
             startInfo.EnvironmentVariables["M1937_AUTO_START"] = "1";
         else
             startInfo.EnvironmentVariables["M1937_AUTOTEST"] = "1";

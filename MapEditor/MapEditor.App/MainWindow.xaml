@@ -185,8 +185,14 @@
                   <DockPanel>
                     <Border Width="88" Height="66" Margin="0,0,8,0"
                             Background="#E8E4DA" DockPanel.Dock="Left">
-                      <Image Source="{Binding ThumbnailPath}"
-                             Stretch="Uniform" SnapsToDevicePixels="True" />
+                      <Grid>
+                        <Image Source="{Binding ThumbnailPath}"
+                               Stretch="Uniform" SnapsToDevicePixels="True" />
+                        <TextBlock Text="{Binding IconGlyph}" FontSize="42"
+                                   FontWeight="Bold" Foreground="#22262B"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" />
+                      </Grid>
                     </Border>
                     <StackPanel VerticalAlignment="Center">
                       <TextBlock Text="{Binding Name}"
@@ -232,10 +238,12 @@
 
                 <TextBlock Text="当前操作" FontWeight="SemiBold" />
                 <UniformGrid Columns="2" Margin="0,5,0,10">
-                  <RadioButton Content="放置素材" Tag="asset"
-                               IsChecked="True"
+                  <RadioButton x:Name="PlaceAssetMode"
+                               Content="放置素材" Tag="asset"
                                Checked="ToolMode_Checked" Margin="5" />
-                  <RadioButton Content="选择对象" Tag="select"
+                  <RadioButton x:Name="SelectMode"
+                               Content="仅查看/选择" Tag="select"
+                               IsChecked="True"
                                Checked="ToolMode_Checked" Margin="5" />
                   <RadioButton Content="画障碍" Tag="paint"
                                Checked="ToolMode_Checked" Margin="5" />
@@ -248,7 +256,7 @@
                   <StackPanel>
                     <TextBlock Text="当前素材" FontWeight="SemiBold" />
                     <TextBlock x:Name="SelectedAssetText"
-                               Text="请从左侧选择素材"
+                               Text="鼠标箭头：仅查看，不放置素材"
                                TextWrapping="Wrap" Margin="0,4,0,0" />
                   </StackPanel>
                 </Border>

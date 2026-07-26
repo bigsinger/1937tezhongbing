@@ -17,6 +17,7 @@ using DirectInputCreateAProc = HRESULT(WINAPI *)(
 HMODULE g_real_dinput = nullptr;
 DirectInputCreateAProc g_real_create = nullptr;
 unsigned char *g_executable_base = nullptr;
+HWND g_game_window = nullptr;
 bool g_timer_period_active = false;
 DWORD g_probe_started_at = 0;
 DWORD g_probe_mission_started_at = 0;
@@ -32,8 +33,8 @@ struct ModConfig {
     bool disable_ime = true;
     bool high_resolution_timer = true;
     bool smooth_edge_scroll = true;
-    int edge_zone = 8;
-    int scroll_response = 4;
+    int edge_zone = 2;
+    int scroll_response = 8;
     int difficulty = 1;
     int ai_level = 2;
     int hearing_radius = 0;
@@ -88,9 +89,9 @@ void LoadModConfig() {
     g_mod_config.disable_ime = read(L"DisableIME", 1) != 0;
     g_mod_config.high_resolution_timer = read(L"HighResolutionTimer", 1) != 0;
     g_mod_config.smooth_edge_scroll = read(L"SmoothEdgeScroll", 1) != 0;
-    g_mod_config.edge_zone = ClampSetting(read(L"EdgeZone", 8), 1, 64);
+    g_mod_config.edge_zone = ClampSetting(read(L"EdgeZone", 2), 1, 64);
     g_mod_config.scroll_response =
-        ClampSetting(read(L"ScrollResponse", 4), 2, 16);
+        ClampSetting(read(L"ScrollResponse", 8), 2, 16);
     g_mod_config.difficulty = ClampSetting(read(L"Difficulty", 1), 0, 3);
     g_mod_config.ai_level = ClampSetting(read(L"AILevel", 2), 0, 3);
     g_mod_config.hearing_radius =
@@ -224,6 +225,18 @@ int MoveOriginalCamera(int *camera, size_t function_offset) {
     return move(camera);
 }
 
+bool IsGameWindowForeground() {
+    if (!g_game_window) {
+        return true;
+    }
+    const HWND foreground = GetForegroundWindow();
+    if (!foreground) {
+        return false;
+    }
+    return GetAncestor(foreground, GA_ROOT) ==
+        GetAncestor(g_game_window, GA_ROOT);
+}
+
 int __fastcall SmoothEdgeScroll(int *camera, void *) {
     if (!camera || !g_executable_base) {
         return 0;
@@ -232,7 +245,9 @@ int __fastcall SmoothEdgeScroll(int *camera, void *) {
     // Original fields: [23] current speed, [24] configured maximum,
     // [25] direction and [28] camera/input lock.
     if (camera[28] != 0 ||
-        *reinterpret_cast<int *>(g_executable_base + 0x000E6E7C) != 0) {
+        *reinterpret_cast<int *>(g_executable_base + 0x000E6E7C) != 0 ||
+        !IsGameWindowForeground()) {
+        camera[23] = 0;
         return 0;
     }
 
@@ -243,6 +258,11 @@ int __fastcall SmoothEdgeScroll(int *camera, void *) {
     const int screen_width = LogicalScreenWidth();
     const int screen_height = LogicalScreenHeight();
     const int edge_zone = g_mod_config.edge_zone;
+    if (cursor_x < 0 || cursor_x >= screen_width ||
+        cursor_y < 0 || cursor_y >= screen_height) {
+        camera[23] = 0;
+        return 0;
+    }
 
     const bool left = cursor_x <= edge_zone;
     const bool right = cursor_x >= screen_width - 1 - edge_zone;
@@ -345,7 +365,15 @@ bool IsAutomaticMissionStartEnabled() {
     return g_mod_config.auto_start;
 }
 
-bool IsAutomatedMouseEnabled() {
+bool IsSyntheticMouseEnabled() {
+    // Normal launches use the verified menu-command hook below. Synthetic
+    // mouse deltas are exclusively for an explicit background test probe;
+    // tying them to M1937_AUTO_START made the player's pointer drift toward
+    // the old Start button until the mission global became non-zero.
+    return IsAutomatedProbeEnabled();
+}
+
+bool IsAutomatedLaunchEnabled() {
     return IsAutomatedProbeEnabled() || IsAutomaticMissionStartEnabled();
 }
 
@@ -396,7 +424,7 @@ LONG ClampProbeDelta(int delta) {
 }
 
 void ApplyAutomatedMouseState(DWORD size, LPVOID data) {
-    if (!IsAutomatedMouseEnabled() || !g_executable_base ||
+    if (!IsSyntheticMouseEnabled() || !g_executable_base ||
         !data || size < sizeof(DIMOUSESTATE)) {
         return;
     }
@@ -557,7 +585,7 @@ using OriginalMenuPollProc = int(__thiscall *)(void *, int, int);
 
 int __fastcall AutoStartMenuPoll(
     void *menu, void *, int animation_state, int flags) {
-    if (IsAutomatedMouseEnabled() && g_executable_base &&
+    if (IsAutomatedLaunchEnabled() && g_executable_base &&
         *reinterpret_cast<int *>(g_executable_base + 0x000E7060) == 0 &&
         InterlockedCompareExchange(&g_auto_start_consumed, 1, 0) == 0) {
         // Button identifier 1 is the original Start Game entry. Returning it
@@ -788,7 +816,7 @@ void ApplyLegacyExecutablePatches() {
             ApplyExpandedViewportPatches(base);
         }
     }
-    if (IsAutomatedMouseEnabled()) {
+    if (IsAutomatedLaunchEnabled()) {
         InstallAutoStartMenuHook(base);
     }
 
@@ -1030,7 +1058,7 @@ public:
         PumpWindowMessages();
         HRESULT result = real_->GetDeviceState(size, data);
         const bool automated_mouse =
-            IsAutomatedMouseEnabled() && size == sizeof(DIMOUSESTATE);
+            IsSyntheticMouseEnabled() && size == sizeof(DIMOUSESTATE);
         if (automated_mouse && FAILED(result) && data) {
             memset(data, 0, size);
             result = DI_OK;
@@ -1059,6 +1087,7 @@ public:
         return real_->SetEventNotification(event);
     }
     HRESULT STDMETHODCALLTYPE SetCooperativeLevel(HWND window, DWORD flags) override {
+        g_game_window = window;
         ProtectGameWindowInput(window);
         return real_->SetCooperativeLevel(window, flags);
     }

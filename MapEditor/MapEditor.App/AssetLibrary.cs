@@ -13,6 +13,8 @@ public sealed class AssetEntry
     public string ThumbnailRelativePath { get; set; } = "";
     public string SourceName { get; set; } = "";
     public string ThumbnailPath { get; set; } = "";
+    public bool IsNone { get; set; }
+    public string IconGlyph => IsNone ? "↖" : "";
 }
 
 public sealed class AssetCatalog

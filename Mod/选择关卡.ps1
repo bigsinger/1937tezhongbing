@@ -83,6 +83,11 @@ function Set-DdrawProfile {
     Set-IniValue $ddrawIni 'ddraw' 'maxgameticks' '60'
     Set-IniValue $ddrawIni 'ddraw' 'limiter_type' '2'
     Set-IniValue $ddrawIni 'ddraw' 'boxing' 'false'
+    # The game already consumes raw DirectInput deltas through dinput.dll.
+    # Letting cnc-ddraw rescale/hook them a second time causes sensitivity
+    # jumps and pointer drift on stretched desktop-sized output.
+    Set-IniValue $ddrawIni 'ddraw' 'adjmouse' 'false'
+    Set-IniValue $ddrawIni 'ddraw' 'no_dinput_hook' 'true'
     switch ($DisplayMode) {
         0 {
             Set-IniValue $ddrawIni 'ddraw' 'fullscreen' 'false'
@@ -92,6 +97,13 @@ function Set-DdrawProfile {
             Set-IniValue $ddrawIni 'ddraw' 'maintas' 'true'
         }
         1 {
+            Set-IniValue $ddrawIni 'ddraw' 'fullscreen' 'true'
+            Set-IniValue $ddrawIni 'ddraw' 'windowed' 'true'
+            Set-IniValue $ddrawIni 'ddraw' 'width' '0'
+            Set-IniValue $ddrawIni 'ddraw' 'height' '0'
+            Set-IniValue $ddrawIni 'ddraw' 'maintas' 'true'
+        }
+        2 {
             Set-IniValue $ddrawIni 'ddraw' 'fullscreen' 'true'
             Set-IniValue $ddrawIni 'ddraw' 'windowed' 'false'
             Set-IniValue $ddrawIni 'ddraw' 'width' '0'
@@ -310,8 +322,9 @@ function Add-ComboBox {
 Add-SettingLabel '显示模式' 62
 $displayCombo = Add-ComboBox @(
     '窗口模式 1280×720',
+    '无边框最大窗口（推荐、鼠标稳定）',
     '全屏缩放（保持原比例）',
-    '全屏铺满（界面完整、无黑边）'
+    '全屏铺满（兼容备用）'
 ) 58
 
 Add-SettingLabel '渲染后端' 105
@@ -333,7 +346,7 @@ $aiCombo = Add-ComboBox @(
 ) 187
 
 $smoothScroll = New-Object Windows.Forms.CheckBox
-$smoothScroll.Text = '启用丝滑边缘卷屏'
+$smoothScroll.Text = '启用边缘卷屏（2 像素安全热区）'
 $smoothScroll.Location = New-Object Drawing.Point(22, 236)
 $smoothScroll.AutoSize = $true
 $smoothScroll.ForeColor = $textPrimary
@@ -369,7 +382,11 @@ $screenInfo.ForeColor = $textMuted
 $settingsPanel.Controls.Add($screenInfo)
 
 $profileInfo = New-Object Windows.Forms.Label
-$profileInfo.Text = "游戏保持原版 1024×768 完整界面，再由现代渲染器输出到`r`n$($screen.Width)×$($screen.Height)；F1、M、小地图和底部工具栏均可正常使用。"
+$profileInfo.Text = (
+    '推荐“无边框最大窗口”：保留 1024×768 完整界面并输出到' +
+    [Environment]::NewLine +
+    ('{0}×{1}，使用原始鼠标增量，兼顾稳定控制与桌面覆盖。' -f
+        $screen.Width, $screen.Height))
 $profileInfo.Location = New-Object Drawing.Point(22, 343)
 $profileInfo.Size = New-Object Drawing.Size(370, 53)
 $profileInfo.ForeColor = $textMuted
@@ -439,10 +456,15 @@ $timerCheck.Checked =
     (Get-IniInt $runGameIni 'mod' 'HighResolutionTimer' 1) -ne 0
 $rememberLevel.Checked = (Get-IniInt $runGameIni 'mod' 'RememberLevel' 1) -ne 0
 $windowed = (Get-IniValue $ddrawIni 'ddraw' 'windowed' 'true') -eq 'true'
+$fullscreen =
+    (Get-IniValue $ddrawIni 'ddraw' 'fullscreen' 'false') -eq 'true'
 $maintainAspect =
     (Get-IniValue $ddrawIni 'ddraw' 'maintas' 'true') -eq 'true'
 $displayCombo.SelectedIndex =
-    $(if ($windowed) { 0 } elseif ($maintainAspect) { 1 } else { 2 })
+    $(if ($windowed -and $fullscreen) { 1 }
+      elseif ($windowed) { 0 }
+      elseif ($maintainAspect) { 2 }
+      else { 3 })
 $renderer = Get-IniValue $ddrawIni 'ddraw' 'renderer' 'direct3d9'
 $rendererCombo.SelectedIndex = switch ($renderer.ToLowerInvariant()) {
     'direct3d9on12' { 1 }
@@ -468,8 +490,8 @@ function Save-Settings {
     Set-IniValue $runGameIni 'mod' 'HearingRadius' '0'
     Set-IniValue $runGameIni 'mod' 'AlertRadius' '0'
     Set-IniValue $runGameIni 'mod' 'SmoothEdgeScroll' $(if ($smoothScroll.Checked) { '1' } else { '0' })
-    Set-IniValue $runGameIni 'mod' 'EdgeZone' '8'
-    Set-IniValue $runGameIni 'mod' 'ScrollResponse' '4'
+    Set-IniValue $runGameIni 'mod' 'EdgeZone' '2'
+    Set-IniValue $runGameIni 'mod' 'ScrollResponse' '8'
     Set-IniValue $runGameIni 'mod' 'DisableIME' $(if ($disableIme.Checked) { '1' } else { '0' })
     Set-IniValue $runGameIni 'mod' 'HighResolutionTimer' $(if ($timerCheck.Checked) { '1' } else { '0' })
     Set-IniValue $runGameIni 'mod' 'ExpandedViewport' $(if ($isExpanded) { '1' } else { '0' })

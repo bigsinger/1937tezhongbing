@@ -1,0 +1,14 @@
+test_date=2026-07-26
+test_mode=automatic_start_without_physical_or_synthetic_mouse_input
+requested_level=1
+new_game_immediate=1
+smooth_scroll_hook_opcode=0xE9
+enhanced_hearing_radius=192
+enhanced_alert_radius=800
+observed_mission=1
+final_logical_viewport=1024x768
+final_renderer_viewport=1024x768
+process_exited=False
+responding=True
+dinput_sha256=EB1949B32CC36D9E77F70E50444D7FAB11D0FC1DFA6BB37B9431D182F765338E
+package_sha256=F73D0F2EAD02C9AF0B84033536EDCDBE2BB283E9D4073D89C829CB82FD8BC4CE
