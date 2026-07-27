@@ -53,11 +53,21 @@ public sealed record VwfSceneEntity(
 public sealed class VwfSceneList
 {
     public const int HeaderSize = 137;
+    public const uint SupportedFormatVersion = 2;
+    public const uint SupportedEntityVersion = 5;
+    public const uint SupportedPatrolVersion = 1;
+    public const uint PatrolSignature = 1001;
+    public const int EntityPrefixSize = 200;
+    public const int EntityDirectionOffset = 44;
+    public const int EntityWorldXOffset = 60;
+    public const int EntityWorldYOffset = 64;
+    public const int EntityReferenceXOffset = 104;
+    public const int EntityReferenceYOffset = 112;
+    public const int EntityPatrolPresenceOffset = EntityPrefixSize;
+    public const int EntityPatrolRecordOffset =
+        EntityPatrolPresenceOffset + sizeof(uint);
 
     private const string Magic = "SLIST1 U.M.E Guowei 2000\0";
-    private const uint SupportedEntityVersion = 5;
-    private const uint PatrolSignature = 1001;
-    private const uint SupportedPatrolVersion = 1;
     private const int ExtendedFieldCount = 41;
     private const int ExtendedTailByteCount = 24 * sizeof(uint);
 
@@ -122,6 +132,11 @@ public sealed class VwfSceneList
         }
 
         var formatVersion = ReadUInt32(header, 25);
+        if (formatVersion != SupportedFormatVersion)
+        {
+            throw new InvalidDataException(
+                $"Unsupported SLIST1 format version {formatVersion}.");
+        }
         var slotCountValue = ReadUInt32(header, 29);
         if (slotCountValue > 1_000_000)
         {
@@ -182,7 +197,8 @@ public sealed class VwfSceneList
     private static VwfSceneEntity ReadEntity(BufferReader reader, int sceneIndex, DblDatabase? database)
     {
         var recordOffset = reader.Position;
-        var prefix = reader.ReadSpan(200, $"SLIST1 entity {sceneIndex} prefix");
+        var prefix = reader.ReadSpan(
+            EntityPrefixSize, $"SLIST1 entity {sceneIndex} prefix");
         var formatVersion = ReadUInt32(prefix, 0);
         if (formatVersion != SupportedEntityVersion)
         {

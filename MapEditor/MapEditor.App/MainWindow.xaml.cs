@@ -18,9 +18,14 @@ public partial class MainWindow : Window
     private readonly IReadOnlyList<AssetEntry> allAssets;
     private readonly string? assetRoot;
     private string? currentPath;
+    private string? currentVwfSourcePath;
     private EditorLayerKind activeLayer = EditorLayerKind.MovementObstacle;
     private string activeTool = "select";
     private bool dirty;
+    private readonly MapEditHistory history = new(150);
+    private MapDocument? pendingGridEdit;
+    private MapDocument? pendingNameEdit;
+    private MapDocument? pendingLayerVisibilityEdit;
 
     public MainWindow()
     {
@@ -31,6 +36,10 @@ public partial class MainWindow : Window
             ApplicationCommands.Open, Open_Click));
         CommandBindings.Add(new CommandBinding(
             ApplicationCommands.Save, Save_Click));
+        CommandBindings.Add(new CommandBinding(
+            ApplicationCommands.Undo, Undo_Click));
+        CommandBindings.Add(new CommandBinding(
+            ApplicationCommands.Redo, Redo_Click));
 
         assetRoot = AssetLibrary.FindRoot();
         allAssets =
@@ -47,7 +56,7 @@ public partial class MainWindow : Window
         ];
         ConfigureAssetLibrary();
         EditorCanvas.AssetRoot = assetRoot;
-        LoadDocument(document, null);
+        LoadDocument(document, null, null);
         Loaded += AutomatedPreview_Loaded;
     }
 
@@ -68,10 +77,16 @@ public partial class MainWindow : Window
             : $"素材库：{allAssets.Count - 1:N0} 项";
     }
 
-    private void LoadDocument(MapDocument value, string? path)
+    private void LoadDocument(
+        MapDocument value,
+        string? path,
+        string? vwfSourcePath = null,
+        bool resetHistory = true,
+        bool restoredDirty = false)
     {
         document = value;
         currentPath = path;
+        currentVwfSourcePath = vwfSourcePath;
         LayerList.ItemsSource = document.Layers;
         LayerList.SelectedItem = document.Layers.FirstOrDefault(
             layer => layer.Kind == EditorLayerKind.MovementObstacle)
@@ -95,7 +110,15 @@ public partial class MainWindow : Window
         AssetList.SelectedIndex = 0;
         SelectMode.IsChecked = true;
         UpdateRouteStatus();
-        dirty = false;
+        RefreshQualityIssues();
+        var nativeAvailable =
+            document.ImportedFrom is not null;
+        NativeVwfSaveMenu.IsEnabled = nativeAvailable;
+        NativeVwfSaveButton.IsEnabled = nativeAvailable;
+        if (resetHistory)
+            history.Clear();
+        dirty = restoredDirty;
+        UpdateHistoryUi();
         UpdateTitle();
         StatusText.Text = path is null
             ? document.ImportedFrom is null
@@ -134,6 +157,68 @@ public partial class MainWindow : Window
         UpdateTitle();
     }
 
+    private MapDocument Snapshot() =>
+        MapDocumentSerializer.Clone(document);
+
+    private void CommitEdit(
+        MapDocument before,
+        string description,
+        string? coalesceKey = null)
+    {
+        SyncCollections();
+        history.Commit(
+            description,
+            before,
+            document,
+            coalesceKey);
+        MarkDirty();
+        UpdateHistoryUi();
+    }
+
+    private void UpdateHistoryUi()
+    {
+        if (UndoMenu is null || RedoMenu is null)
+            return;
+        UndoMenu.IsEnabled = history.CanUndo;
+        RedoMenu.IsEnabled = history.CanRedo;
+        UndoMenu.Header = history.CanUndo
+            ? $"撤销：{history.UndoDescription}"
+            : "撤销";
+        RedoMenu.Header = history.CanRedo
+            ? $"重做：{history.RedoDescription}"
+            : "重做";
+    }
+
+    private void Undo_Click(object sender, RoutedEventArgs e)
+    {
+        if (!history.CanUndo)
+            return;
+        var description = history.UndoDescription;
+        LoadDocument(
+            history.Undo(),
+            currentPath,
+            currentVwfSourcePath,
+            resetHistory: false,
+            restoredDirty: true);
+        StatusText.Text = $"已撤销：{description}";
+        UpdateHistoryUi();
+    }
+
+    private void Redo_Click(object sender, RoutedEventArgs e)
+    {
+        if (!history.CanRedo)
+            return;
+        var description = history.RedoDescription;
+        LoadDocument(
+            history.Redo(),
+            currentPath,
+            currentVwfSourcePath,
+            resetHistory: false,
+            restoredDirty: true);
+        StatusText.Text = $"已重做：{description}";
+        UpdateHistoryUi();
+    }
+
     private void New_Click(object sender, RoutedEventArgs e)
     {
         if (!ConfirmDiscard())
@@ -143,6 +228,7 @@ public partial class MainWindow : Window
             LoadDocument(
                 MapDocument.Create(
                     dialog.MapName, dialog.MapWidth, dialog.MapHeight),
+                null,
                 null);
     }
 
@@ -180,11 +266,13 @@ public partial class MainWindow : Window
                 StringComparison.OrdinalIgnoreCase))
         {
             LoadDocument(
-                OriginalVwfImporter.Import(path, assetRoot), null);
+                OriginalVwfImporter.Import(path, assetRoot),
+                null,
+                Path.GetFullPath(path));
         }
         else
         {
-            LoadDocument(MapDocumentSerializer.Load(path), path);
+            LoadDocument(MapDocumentSerializer.Load(path), path, null);
         }
     }
 
@@ -284,6 +372,88 @@ public partial class MainWindow : Window
         Save_Click(sender, e);
     }
 
+    private void NativeVwfSaveAs_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        try
+        {
+            SyncCollections();
+            var sourcePath = ResolveNativeVwfSource();
+            if (sourcePath is null)
+                return;
+            var diff = NativeVwfWriter.Analyze(document, sourcePath);
+            var preview = new NativeVwfDiffDialog(
+                Path.GetFileName(sourcePath), diff)
+            {
+                Owner = this
+            };
+            if (preview.ShowDialog() != true)
+                return;
+
+            var dialog = new SaveFileDialog
+            {
+                Filter = "原生关卡 (*.vwf)|*.vwf",
+                InitialDirectory = Path.GetDirectoryName(sourcePath),
+                FileName =
+                    $"{Path.GetFileNameWithoutExtension(sourcePath)}" +
+                    "-编辑副本.vwf",
+                AddExtension = true,
+                DefaultExt = ".vwf",
+                OverwritePrompt = true
+            };
+            if (dialog.ShowDialog(this) != true)
+                return;
+            var result = NativeVwfWriter.SaveAs(
+                document, sourcePath, dialog.FileName);
+            StatusText.Text =
+                $"原生 VWF 已安全另存：{result.OutputPath}";
+            MessageBox.Show(
+                this,
+                $"已写入：{result.OutputPath}\n" +
+                $"变化字节：{result.Diff.ChangedByteCount:N0}\n" +
+                $"语义变化：{result.Diff.SemanticChanges.Count:N0}\n" +
+                (result.BackupPath is null
+                    ? "输出为新文件，没有覆盖任何已有文件。"
+                    : $"原输出备份：{result.BackupPath}"),
+                "原生 VWF 另存完成",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(
+                this,
+                exception.Message,
+                "原生 VWF 另存被安全拒绝",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+    }
+
+    private string? ResolveNativeVwfSource()
+    {
+        if (!string.IsNullOrWhiteSpace(currentVwfSourcePath) &&
+            File.Exists(currentVwfSourcePath))
+        {
+            return currentVwfSourcePath;
+        }
+        if (string.IsNullOrWhiteSpace(document.ImportedFrom))
+            return null;
+        var dialog = new OpenFileDialog
+        {
+            Title = $"定位导入源 {document.ImportedFrom}",
+            Filter = "原生关卡 (*.vwf)|*.vwf",
+            FileName = document.ImportedFrom,
+            InitialDirectory = FindInitialMapDirectory(),
+            CheckFileExists = true
+        };
+        if (dialog.ShowDialog(this) != true)
+            return null;
+        currentVwfSourcePath = Path.GetFullPath(dialog.FileName);
+        return currentVwfSourcePath;
+    }
+
     private void ImportVwf_Click(object sender, RoutedEventArgs e) =>
         Open_Click(sender, e);
 
@@ -314,15 +484,74 @@ public partial class MainWindow : Window
     {
         SyncCollections();
         var errors = MapValidator.Validate(document);
+        RefreshQualityIssues();
+        var qualityErrors = IssueGrid.Items
+            .Cast<MapIssue>()
+            .Count(issue => issue.Severity == MapIssueSeverity.Error);
+        var qualityWarnings = IssueGrid.Items
+            .Cast<MapIssue>()
+            .Count(issue => issue.Severity == MapIssueSeverity.Warning);
         MessageBox.Show(
             this,
             errors.Count == 0
-                ? "地图、图层、对象引用和任务链均通过校验。"
+                ? $"结构校验通过；质量面板有 {qualityErrors} 个错误、" +
+                  $"{qualityWarnings} 个警告。点击问题行可定位。"
                 : string.Join(Environment.NewLine, errors),
             "校验结果", MessageBoxButton.OK,
             errors.Count == 0
                 ? MessageBoxImage.Information
                 : MessageBoxImage.Warning);
+    }
+
+    private void RefreshIssues_Click(
+        object sender,
+        RoutedEventArgs e) =>
+        RefreshQualityIssues();
+
+    private void RefreshQualityIssues()
+    {
+        if (IssueGrid is null || IssueSummaryText is null)
+            return;
+        SyncCollections();
+        var issues = MapQualityAnalyzer.Analyze(document);
+        IssueGrid.ItemsSource =
+            new ObservableCollection<MapIssue>(issues);
+        var errors = issues.Count(
+            issue => issue.Severity == MapIssueSeverity.Error);
+        var warnings = issues.Count(
+            issue => issue.Severity == MapIssueSeverity.Warning);
+        var information = issues.Count(
+            issue => issue.Severity == MapIssueSeverity.Info);
+        IssueSummaryText.Text =
+            $"Error {errors} · Warning {warnings} · Info {information}；" +
+            "单击问题会定位到地图和对象。";
+    }
+
+    private void IssueGrid_SelectionChanged(
+        object sender,
+        SelectionChangedEventArgs e)
+    {
+        if (IssueGrid.SelectedItem is not MapIssue issue)
+            return;
+        if (!string.IsNullOrWhiteSpace(issue.ObjectId))
+        {
+            var item = document.Objects.FirstOrDefault(
+                candidate => candidate.Id == issue.ObjectId);
+            if (item is not null)
+                SelectObject(item);
+        }
+        if (issue.X is not int x || issue.Y is not int y)
+            return;
+        var targetX =
+            (x + 0.5) * document.EffectiveCellWidth *
+            EditorCanvas.Zoom - MapScroll.ViewportWidth / 2;
+        var targetY =
+            (y + 0.5) * document.EffectiveCellHeight *
+            EditorCanvas.Zoom - MapScroll.ViewportHeight / 2;
+        MapScroll.ScrollToHorizontalOffset(Math.Max(0, targetX));
+        MapScroll.ScrollToVerticalOffset(Math.Max(0, targetY));
+        StatusText.Text =
+            $"已定位问题 {issue.Code}：({x}, {y})";
     }
 
     private void ClearLayer_Click(object sender, RoutedEventArgs e)
@@ -332,8 +561,9 @@ public partial class MainWindow : Window
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Warning) != MessageBoxResult.Yes)
             return;
+        var before = Snapshot();
         Array.Clear(document.Layer(activeLayer).Cells);
-        MarkDirty();
+        CommitEdit(before, $"清空图层 {activeLayer}");
         EditorCanvas.Refresh();
     }
 
@@ -344,6 +574,7 @@ public partial class MainWindow : Window
     private void EditorCanvas_CellInvoked(
         object? sender, CellEventArgs e)
     {
+        var before = Snapshot();
         var erase = e.Erase || activeTool == "erase";
         if (activeTool == "asset" && !erase)
         {
@@ -360,7 +591,7 @@ public partial class MainWindow : Window
             if (asset.Kind == "map_background")
             {
                 document.BackgroundAsset = asset.RelativePath;
-                MarkDirty();
+                CommitEdit(before, $"更换背景 {asset.Name}");
                 EditorCanvas.Refresh();
                 StatusText.Text = $"已更换地图背景：{asset.Name}";
                 return;
@@ -382,6 +613,10 @@ public partial class MainWindow : Window
             };
             document.Objects.Add(item);
             RefreshObjects(item);
+            CommitEdit(
+                before,
+                $"放置 {asset.Name}",
+                "place-asset");
             StatusText.Text = $"已放置：{asset.Name}";
         }
         else if (activeTool == "select")
@@ -398,7 +633,13 @@ public partial class MainWindow : Window
             document.Layer(activeLayer).Cells[
                 document.Index(e.X, e.Y)] = erase ? 0 : 1;
         }
-        MarkDirty();
+        if (activeTool == "paint" || erase)
+        {
+            CommitEdit(
+                before,
+                erase ? "擦除格点" : "绘制格点",
+                $"paint-{activeLayer}-{erase}");
+        }
         EditorCanvas.Refresh();
     }
 
@@ -420,27 +661,30 @@ public partial class MainWindow : Window
     {
         if (ObjectGrid.SelectedItem is not MapObject selected)
             return;
+        var before = Snapshot();
         document.Objects.RemoveAll(item => item.Id == selected.Id);
         RefreshObjects();
         EditorCanvas.SelectedObjectId = null;
-        MarkDirty();
+        CommitEdit(before, $"删除对象 {selected.Name}");
         EditorCanvas.Refresh();
     }
 
     private void AddTask_Click(object sender, RoutedEventArgs e)
     {
+        var before = Snapshot();
         document.Tasks.Add(new MissionTask());
         RefreshTasks();
-        MarkDirty();
+        CommitEdit(before, "新增任务");
     }
 
     private void DeleteTask_Click(object sender, RoutedEventArgs e)
     {
         if (TaskGrid.SelectedItem is not MissionTask selected)
             return;
+        var before = Snapshot();
         document.Tasks.RemoveAll(item => item.Id == selected.Id);
         RefreshTasks();
-        MarkDirty();
+        CommitEdit(before, $"删除任务 {selected.Title}");
     }
 
     private void LayerList_SelectionChanged(
@@ -450,9 +694,20 @@ public partial class MainWindow : Window
             activeLayer = layer.Kind;
     }
 
+    private void LayerVisibility_PreviewMouseDown(
+        object sender,
+        MouseButtonEventArgs e) =>
+        pendingLayerVisibilityEdit = Snapshot();
+
     private void LayerVisibility_Click(object sender, RoutedEventArgs e)
     {
-        MarkDirty();
+        if (pendingLayerVisibilityEdit is not null)
+        {
+            CommitEdit(
+                pendingLayerVisibilityEdit,
+                "切换图层显示");
+            pendingLayerVisibilityEdit = null;
+        }
         EditorCanvas.Refresh();
     }
 
@@ -561,7 +816,54 @@ public partial class MainWindow : Window
         if (document is null || MapNameText.Text == document.Name)
             return;
         document.Name = MapNameText.Text;
-        MarkDirty();
+    }
+
+    private void MapNameText_GotKeyboardFocus(
+        object sender,
+        KeyboardFocusChangedEventArgs e) =>
+        pendingNameEdit = Snapshot();
+
+    private void MapNameText_LostKeyboardFocus(
+        object sender,
+        KeyboardFocusChangedEventArgs e)
+    {
+        if (pendingNameEdit is null)
+            return;
+        CommitEdit(
+            pendingNameEdit,
+            "修改关卡名称",
+            "map-name");
+        pendingNameEdit = null;
+    }
+
+    private void Grid_BeginningEdit(
+        object sender,
+        DataGridBeginningEditEventArgs e) =>
+        pendingGridEdit = Snapshot();
+
+    private void Grid_CellEditEnding(
+        object sender,
+        DataGridCellEditEndingEventArgs e)
+    {
+        if (pendingGridEdit is null)
+            return;
+        var before = pendingGridEdit;
+        pendingGridEdit = null;
+        var description = sender == ObjectGrid
+            ? "修改对象属性"
+            : "修改任务属性";
+        Dispatcher.BeginInvoke(
+            DispatcherPriority.DataBind,
+            new Action(() =>
+            {
+                CommitEdit(
+                    before,
+                    description,
+                    sender == ObjectGrid
+                        ? "object-grid"
+                        : "task-grid");
+                EditorCanvas.Refresh();
+            }));
     }
 
     private void ObjectGrid_SelectionChanged(
@@ -609,6 +911,9 @@ public partial class MainWindow : Window
             "需要编辑时再选择其他素材并在地图上单击放置；右键可擦除，" +
             "Shift+单击可选择已有对象。\n\n" +
             "3. 点击“另存为新地图”，原版文件永远不会被覆盖。\n\n" +
+            "从 VWF 打开的地图还可使用“安全另存为原生 VWF”：编辑器会先" +
+            "显示二进制/语义差异，再写临时文件、重解析并原子替换输出；" +
+            "已有输出会保留 .bak。\n\n" +
             "高级图层和任务编辑仍然保留，但默认收起，不影响简单使用。",
             "三步使用说明",
             MessageBoxButton.OK, MessageBoxImage.Information);
@@ -659,6 +964,114 @@ public partial class MainWindow : Window
             Path.GetInvalidFileNameChars().Contains(character)
                 ? '_'
                 : character));
+}
+
+internal sealed class NativeVwfDiffDialog : Window
+{
+    public NativeVwfDiffDialog(
+        string sourceName,
+        NativeVwfDiff diff)
+    {
+        Title = "原生 VWF 写入前差异";
+        Width = 920;
+        Height = 680;
+        MinWidth = 720;
+        MinHeight = 520;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        Background = Brushes.White;
+        Foreground = Brushes.Black;
+
+        var root = new DockPanel { Margin = new Thickness(18) };
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 12, 0, 0)
+        };
+        var cancel = new Button
+        {
+            Content = "取消",
+            IsCancel = true,
+            MinWidth = 90
+        };
+        var accept = new Button
+        {
+            Content = "确认并选择输出文件",
+            IsDefault = true,
+            MinWidth = 180
+        };
+        accept.Click += (_, _) => DialogResult = true;
+        buttons.Children.Add(cancel);
+        buttons.Children.Add(accept);
+        DockPanel.SetDock(buttons, Dock.Bottom);
+        root.Children.Add(buttons);
+
+        var summary = new TextBlock
+        {
+            Text =
+                $"只读源：{sourceName}\n" +
+                $"变化字节：{diff.ChangedByteCount:N0}；" +
+                $"二进制区段：{diff.BinaryChanges.Count:N0}；" +
+                $"语义变化：{diff.SemanticChanges.Count:N0}\n" +
+                $"源 SHA-256：{diff.SourceSha256}\n" +
+                $"输出 SHA-256：{diff.OutputSha256}",
+            TextWrapping = TextWrapping.Wrap,
+            FontFamily = new FontFamily("Consolas"),
+            Margin = new Thickness(0, 0, 0, 12)
+        };
+        DockPanel.SetDock(summary, Dock.Top);
+        root.Children.Add(summary);
+
+        var tabs = new TabControl();
+        tabs.Items.Add(new TabItem
+        {
+            Header = $"语义差异 ({diff.SemanticChanges.Count})",
+            Content = NewGrid(
+                diff.SemanticChanges,
+                ("类别", "Category"),
+                ("目标", "Target"),
+                ("说明", "Description"))
+        });
+        tabs.Items.Add(new TabItem
+        {
+            Header = $"二进制差异 ({diff.BinaryChanges.Count})",
+            Content = NewGrid(
+                diff.BinaryChanges,
+                ("偏移", "Offset"),
+                ("长度", "Length"),
+                ("原字节预览", "BeforeHex"),
+                ("新字节预览", "AfterHex"))
+        });
+        root.Children.Add(tabs);
+        Content = root;
+    }
+
+    private static DataGrid NewGrid<T>(
+        IReadOnlyList<T> items,
+        params (string Header, string Property)[] columns)
+    {
+        var grid = new DataGrid
+        {
+            ItemsSource = items,
+            AutoGenerateColumns = false,
+            IsReadOnly = true,
+            CanUserAddRows = false,
+            HeadersVisibility = DataGridHeadersVisibility.Column,
+            GridLinesVisibility = DataGridGridLinesVisibility.Horizontal
+        };
+        foreach (var column in columns)
+        {
+            grid.Columns.Add(new DataGridTextColumn
+            {
+                Header = column.Header,
+                Binding = new System.Windows.Data.Binding(column.Property),
+                Width = column.Property == "Description"
+                    ? new DataGridLength(1, DataGridLengthUnitType.Star)
+                    : DataGridLength.Auto
+            });
+        }
+        return grid;
+    }
 }
 
 internal sealed class NewMapDialog : Window

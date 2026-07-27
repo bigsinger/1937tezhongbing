@@ -75,9 +75,18 @@
         <MenuItem Header="保存" Click="Save_Click"
                   InputGestureText="Ctrl+S" />
         <MenuItem Header="另存为新地图…" Click="SaveAs_Click" />
+        <MenuItem x:Name="NativeVwfSaveMenu"
+                  Header="安全另存为原生 VWF…"
+                  Click="NativeVwfSaveAs_Click" />
         <MenuItem Header="导出任务包…" Click="Export_Click" />
         <Separator />
         <MenuItem Header="退出" Click="Exit_Click" />
+      </MenuItem>
+      <MenuItem Header="编辑">
+        <MenuItem x:Name="UndoMenu" Header="撤销"
+                  Click="Undo_Click" InputGestureText="Ctrl+Z" />
+        <MenuItem x:Name="RedoMenu" Header="重做"
+                  Click="Redo_Click" InputGestureText="Ctrl+Y" />
       </MenuItem>
       <MenuItem Header="地图">
         <MenuItem Header="校验地图和任务" Click="Validate_Click" />
@@ -179,6 +188,7 @@
                   <CheckBox Content="{Binding Name}"
                             IsChecked="{Binding Visible}"
                             Foreground="#24272C" Margin="5"
+                            PreviewMouseDown="LayerVisibility_PreviewMouseDown"
                             Click="LayerVisibility_Click" />
                 </DataTemplate>
               </ListBox.ItemTemplate>
@@ -252,7 +262,9 @@
               <StackPanel Margin="14">
                 <TextBlock Text="关卡名称" FontWeight="SemiBold" />
                 <TextBox x:Name="MapNameText" Margin="0,5,0,12"
-                         TextChanged="MapNameText_TextChanged" />
+                         TextChanged="MapNameText_TextChanged"
+                         GotKeyboardFocus="MapNameText_GotKeyboardFocus"
+                         LostKeyboardFocus="MapNameText_LostKeyboardFocus" />
                 <TextBlock x:Name="MapSizeText" Foreground="#5E6268"
                            Margin="0,0,0,12" />
 
@@ -289,6 +301,10 @@
                 <Button Content="保存为新的地图文件"
                         Click="SaveAs_Click"
                         Style="{StaticResource PrimaryButton}" />
+                <Button x:Name="NativeVwfSaveButton"
+                        Content="安全另存为可运行 VWF"
+                        Click="NativeVwfSaveAs_Click"
+                        ToolTip="仅对从原版 VWF 导入的工程可用；不会覆盖源文件" />
               </StackPanel>
             </ScrollViewer>
           </TabItem>
@@ -302,7 +318,9 @@
               </StackPanel>
               <DataGrid x:Name="ObjectGrid" AutoGenerateColumns="False"
                         CanUserAddRows="False"
-                        SelectionChanged="ObjectGrid_SelectionChanged">
+                        SelectionChanged="ObjectGrid_SelectionChanged"
+                        BeginningEdit="Grid_BeginningEdit"
+                        CellEditEnding="Grid_CellEditEnding">
                 <DataGrid.Columns>
                   <DataGridTextColumn Header="名称"
                                       Binding="{Binding Name}" Width="*" />
@@ -326,7 +344,9 @@
                 <Button Content="校验" Click="Validate_Click" />
               </StackPanel>
               <DataGrid x:Name="TaskGrid" AutoGenerateColumns="False"
-                        CanUserAddRows="False">
+                        CanUserAddRows="False"
+                        BeginningEdit="Grid_BeginningEdit"
+                        CellEditEnding="Grid_CellEditEnding">
                 <DataGrid.Columns>
                   <DataGridTextColumn Header="ID"
                                       Binding="{Binding Id}" Width="100" />
@@ -340,6 +360,40 @@
                                       Binding="{Binding RequiredCount}" Width="48" />
                   <DataGridTextColumn Header="后续"
                                       Binding="{Binding NextTaskId}" Width="80" />
+                </DataGrid.Columns>
+              </DataGrid>
+            </DockPanel>
+          </TabItem>
+
+          <TabItem Header="问题">
+            <DockPanel Margin="10">
+              <StackPanel DockPanel.Dock="Top">
+                <Button Content="重新分析地图质量"
+                        Click="RefreshIssues_Click"
+                        Style="{StaticResource PrimaryButton}" />
+                <TextBlock x:Name="IssueSummaryText"
+                           TextWrapping="Wrap"
+                           Foreground="#555A60"
+                           Margin="3,6,3,10" />
+              </StackPanel>
+              <DataGrid x:Name="IssueGrid"
+                        AutoGenerateColumns="False"
+                        IsReadOnly="True"
+                        CanUserAddRows="False"
+                        SelectionChanged="IssueGrid_SelectionChanged">
+                <DataGrid.Columns>
+                  <DataGridTextColumn Header="级别"
+                                      Binding="{Binding Severity}"
+                                      Width="58" />
+                  <DataGridTextColumn Header="位置"
+                                      Binding="{Binding Location}"
+                                      Width="70" />
+                  <DataGridTextColumn Header="问题"
+                                      Binding="{Binding Message}"
+                                      Width="*" />
+                  <DataGridTextColumn Header="数值来源"
+                                      Binding="{Binding ValueSource}"
+                                      Width="110" />
                 </DataGrid.Columns>
               </DataGrid>
             </DockPanel>

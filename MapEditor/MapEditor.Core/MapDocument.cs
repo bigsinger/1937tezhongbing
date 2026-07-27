@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Security.Cryptography;
 using Mission1937.Remake.Resources;
 
 namespace Mission1937.MapEditor.Core;
@@ -75,6 +76,9 @@ public sealed class MapDocument
     public int CellWidth { get; set; } = 20;
     public int CellHeight { get; set; } = 20;
     public string? ImportedFrom { get; set; }
+    public string ImportedSourceSha256 { get; set; } = "";
+    public List<int> QualityVerticalSeams { get; set; } = [];
+    public List<int> QualityHorizontalSeams { get; set; } = [];
     public string BackgroundAsset { get; set; } = "";
     public List<EditorLayer> Layers { get; set; } = [];
     public List<MapObject> Objects { get; set; } = [];
@@ -173,6 +177,17 @@ public static class MapDocumentSerializer
         File.Move(temporary, fullPath, true);
     }
 
+    public static MapDocument Clone(MapDocument document)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        var clone = JsonSerializer.Deserialize<MapDocument>(
+            JsonSerializer.Serialize(document, Options),
+            Options)
+            ?? throw new InvalidDataException("无法克隆地图工程。");
+        Normalize(clone);
+        return clone;
+    }
+
     private static void Normalize(MapDocument document)
     {
         if (document.CellWidth <= 0)
@@ -252,6 +267,16 @@ public static class MapValidator
             if (task.NextTaskId.Length > 0 && !taskIds.Contains(task.NextTaskId))
                 errors.Add($"任务“{task.Title}”指向不存在的后续任务 {task.NextTaskId}。");
         }
+        foreach (var seam in document.QualityVerticalSeams)
+        {
+            if (seam <= 0 || seam >= document.Width)
+                errors.Add($"垂直接缝 X={seam} 位于地图范围外。");
+        }
+        foreach (var seam in document.QualityHorizontalSeams)
+        {
+            if (seam <= 0 || seam >= document.Height)
+                errors.Add($"水平接缝 Y={seam} 位于地图范围外。");
+        }
         return errors;
     }
 
@@ -282,6 +307,16 @@ public static class OriginalVwfImporter
         document.CellWidth = 32;
         document.CellHeight = 16;
         document.ImportedFrom = Path.GetFileName(vwfPath);
+        using (var source = File.OpenRead(vwfPath))
+        {
+            document.ImportedSourceSha256 =
+                Convert.ToHexString(SHA256.HashData(source));
+        }
+        if (levelId.Equals("m014", StringComparison.Ordinal))
+        {
+            document.QualityVerticalSeams = [40, 80];
+            document.QualityHorizontalSeams = [100];
+        }
 
         for (var index = 0; index < document.Width * document.Height; index++)
         {
@@ -322,7 +357,8 @@ public static class OriginalVwfImporter
                 PatrolCurrentWaypointIndex = patrol is null
                     ? 0
                     : checked((int)patrol.CurrentWaypointIndex),
-                PatrolEnabled = patrol?.PersistentFlag != 0,
+                PatrolEnabled =
+                    patrol is not null && patrol.PersistentFlag != 0,
                 Properties =
                 {
                     ["database_entry_id"] = entity.DatabaseEntryId.ToString(),

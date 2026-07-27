@@ -171,6 +171,18 @@ public sealed class VwfTerrainGrid
     public DblEntry? ResolveTileGroup(VwfTerrainCell cell) =>
         database?.ResolveTileGroupMapId(cell.TileGroupMapId);
 
+    public static long LayerDataOffset(
+        uint width, uint height, int zeroBasedLayer)
+    {
+        if (zeroBasedLayer < 0 || zeroBasedLayer >= LayerCount)
+            throw new ArgumentOutOfRangeException(nameof(zeroBasedLayer));
+        var cellCount = checked((long)width * height);
+        return checked(
+            PreambleSize +
+            zeroBasedLayer * (LayerHeaderSize + cellCount * sizeof(uint)) +
+            LayerHeaderSize);
+    }
+
     private sealed class BufferReader(byte[] data, int position)
     {
         public int Position { get; private set; } = position;
