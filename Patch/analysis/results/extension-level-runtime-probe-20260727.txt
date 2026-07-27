@@ -1,0 +1,34 @@
+扩展关原版运行时探针
+日期：2026-07-27
+方式：隔离小窗口；不激活窗口、不移动系统鼠标；每关观测 45 秒
+
+[第 13 关：余烬行动]
+requested_level=13
+expected_engine_level=12
+new_game_immediate=12
+mission_vwf=1937M012.VWF
+observed_mission=12
+final_logical_viewport=1024x768
+final_renderer_viewport=1024x768
+process_exited=False
+responding=True
+
+[第 14 关：锄奸行动]
+requested_level=14
+expected_engine_level=7
+new_game_immediate=7
+mission_vwf=1937M013.VWF
+observed_mission=7
+final_logical_viewport=1024x768
+final_renderer_viewport=1024x768
+process_exited=False
+responding=True
+
+两次运行同时验证：
+enhanced_hearing_radius=224
+enhanced_alert_radius=960
+
+说明：
+DirectDraw 窗口在 PrintWindow 路径下返回白色表面，因此压缩截图只用于
+确认窗口存在，不作为画面内容证据。地图内容由 MapEditor 直接解析最终
+VWF 后截图，路径与出生安全由 VwfMissionBuilder 验证。

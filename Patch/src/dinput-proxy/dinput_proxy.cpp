@@ -104,7 +104,7 @@ void LoadModConfig() {
     g_mod_config.system_cursor_mapping =
         read(L"SystemCursorMapping", 1) != 0;
     g_mod_config.auto_start = read(L"AutoStart", 0) != 0;
-    g_mod_config.start_level = ClampSetting(read(L"StartLevel", 0), 0, 13);
+    g_mod_config.start_level = ClampSetting(read(L"StartLevel", 0), 0, 14);
 }
 
 void EnableModernDpiAwareness() {
@@ -191,7 +191,7 @@ int RequestedStartLevel() {
 
     char *end = nullptr;
     const long level = strtol(value, &end, 10);
-    if (end == value || *end != '\0' || level < 1 || level > 13) {
+    if (end == value || *end != '\0' || level < 1 || level > 14) {
         return 0;
     }
     return static_cast<int>(level);
@@ -614,18 +614,21 @@ void ApplyLegacyExecutablePatches() {
 
     // The original "New Game" thunk always writes mission number 1 to
     // M1937.exe+0xE7060. The optional level selector starts the process with
-    // M1937_START_LEVEL=1..13, so replace only that immediate operand. A
+    // M1937_START_LEVEL=1..14, so replace only that immediate operand. A
     // normal launch has no environment variable and keeps the original
     // first-mission behaviour. The executable hard-codes exactly twelve
     // mission slots. Extension mission 13 therefore uses the mission-12
     // objective engine while redirecting its equal-length VWF filename to
-    // 1937M012.VWF. This does not touch the executable on disk or manufacture
-    // save files.
+    // 1937M012.VWF. Extension mission 14 uses mission 7's follow-contact,
+    // two-target and extraction objective engine while redirecting
+    // 1937M006.VWF to 1937M013.VWF. This does not touch the executable on
+    // disk or manufacture save files.
     const int requested_level = RequestedStartLevel();
     if (requested_level != 0) {
-        const int engine_level = requested_level == 13
-            ? 12
-            : requested_level;
+        const int engine_level =
+            requested_level == 13 ? 12 :
+            requested_level == 14 ? 7 :
+            requested_level;
         if (requested_level == 13) {
             static const unsigned char custom_vwf_expected[] =
                 "1937M011.VWF";
@@ -633,6 +636,17 @@ void ApplyLegacyExecutablePatches() {
                 "1937M012.VWF";
             PatchExecutableBytes(
                 base + 0x000CF4A8,
+                custom_vwf_expected,
+                custom_vwf_patch,
+                sizeof(custom_vwf_patch));
+        }
+        if (requested_level == 14) {
+            static const unsigned char custom_vwf_expected[] =
+                "1937M006.VWF";
+            static const unsigned char custom_vwf_patch[] =
+                "1937M013.VWF";
+            PatchExecutableBytes(
+                base + 0x000CF4F8,
                 custom_vwf_expected,
                 custom_vwf_patch,
                 sizeof(custom_vwf_patch));

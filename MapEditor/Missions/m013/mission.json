@@ -1,0 +1,236 @@
+{
+  "id": "m013",
+  "title": "第十四关：锄奸行动",
+  "story": "1944 年，鲁西敌后根据地外缘的平安镇出现了一条向日军特务机关输送地下交通员名单的暗线。武工队员强子奉命从镇西侧暗巷潜入，必须先尾随汉奸孙大麻子确认接头事实，再分别处置孙大麻子与化名王老板的日军特务加藤，取得名单后从东侧秘密交通口撤离。",
+  "source_sha256": "28A48B7295A8C390BB4D35DE1E2D6B154FA0F7536ACB7A9DA3EB8D5C7CEE2090",
+  "player_scene_indices": [1458],
+  "enemy_scene_indices": [
+    1340, 1341, 1348, 1349, 1350, 1351, 1352, 1353,
+    1354, 1355, 1356, 1357, 1358, 1359, 1367, 1378,
+    1406, 1407, 1408, 1409, 1427, 1428, 1429, 1430,
+    1448, 1452, 1453, 1454, 1455, 1456, 1457, 1460
+  ],
+  "minimum_spawn_enemy_distance_world": 800,
+  "minimum_spawn_patrol_distance_world": 600,
+  "player_spawn": {
+    "x": 1,
+    "y": 114
+  },
+  "required_scene_reachability": [
+    { "name": "孙大麻子", "scene_index": 1457 },
+    { "name": "接头确认点", "scene_index": 1461 },
+    { "name": "日军特务加藤", "scene_index": 1460 },
+    { "name": "东侧秘密交通口", "scene_index": 1462 }
+  ],
+  "entity_edits": [
+    {
+      "scene_index": 1458,
+      "cell_x": 1,
+      "cell_y": 114,
+      "direction": 1
+    },
+    {
+      "scene_index": 1457,
+      "cell_x": 8,
+      "cell_y": 35,
+      "direction": 6
+    },
+    {
+      "scene_index": 1460,
+      "cell_x": 32,
+      "cell_y": 157,
+      "direction": 2
+    },
+    {
+      "scene_index": 1357,
+      "cell_x": 22,
+      "cell_y": 85,
+      "direction": 8,
+      "patrol": [
+        { "x": 22, "y": 85 },
+        { "x": 37, "y": 103 }
+      ]
+    },
+    {
+      "scene_index": 1355,
+      "cell_x": 28,
+      "cell_y": 95,
+      "direction": 1,
+      "patrol": [
+        { "x": 28, "y": 95 },
+        { "x": 44, "y": 114 },
+        { "x": 49, "y": 103 },
+        { "x": 37, "y": 103 }
+      ]
+    },
+    {
+      "scene_index": 1351,
+      "cell_x": 33,
+      "cell_y": 131,
+      "direction": 6,
+      "patrol": [
+        { "x": 33, "y": 131 },
+        { "x": 44, "y": 114 },
+        { "x": 55, "y": 134 },
+        { "x": 72, "y": 153 },
+        { "x": 61, "y": 179 }
+      ]
+    },
+    {
+      "scene_index": 1358,
+      "cell_x": 62,
+      "cell_y": 40,
+      "direction": 6,
+      "patrol": [
+        { "x": 62, "y": 40 },
+        { "x": 48, "y": 50 }
+      ]
+    },
+    {
+      "scene_index": 1359,
+      "cell_x": 74,
+      "cell_y": 88,
+      "direction": 5,
+      "patrol": [
+        { "x": 74, "y": 88 },
+        { "x": 62, "y": 98 }
+      ]
+    },
+    {
+      "scene_index": 1367,
+      "cell_x": 79,
+      "cell_y": 113,
+      "direction": 4,
+      "patrol": [
+        { "x": 79, "y": 113 },
+        { "x": 92, "y": 116 }
+      ]
+    },
+    {
+      "scene_index": 1378,
+      "cell_x": 96,
+      "cell_y": 132,
+      "direction": 6,
+      "patrol": [
+        { "x": 96, "y": 132 },
+        { "x": 105, "y": 120 }
+      ]
+    },
+    {
+      "scene_index": 1427,
+      "cell_x": 16,
+      "cell_y": 154,
+      "direction": 1,
+      "patrol": [
+        { "x": 16, "y": 154 },
+        { "x": 33, "y": 131 }
+      ]
+    },
+    {
+      "scene_index": 1428,
+      "cell_x": 47,
+      "cell_y": 110,
+      "direction": 4,
+      "patrol": [
+        { "x": 47, "y": 110 },
+        { "x": 55, "y": 134 }
+      ]
+    },
+    {
+      "scene_index": 1429,
+      "cell_x": 29,
+      "cell_y": 41,
+      "direction": 6,
+      "patrol": [
+        { "x": 29, "y": 41 },
+        { "x": 18, "y": 31 }
+      ]
+    },
+    {
+      "scene_index": 1430,
+      "cell_x": 88,
+      "cell_y": 61,
+      "direction": 4,
+      "patrol": [
+        { "x": 88, "y": 61 },
+        { "x": 62, "y": 40 }
+      ]
+    },
+    {
+      "scene_index": 1452,
+      "cell_x": 37,
+      "cell_y": 58,
+      "direction": 2,
+      "patrol": [
+        { "x": 37, "y": 58 },
+        { "x": 62, "y": 36 }
+      ]
+    },
+    {
+      "scene_index": 1350,
+      "cell_x": 44,
+      "cell_y": 114,
+      "direction": 6
+    },
+    {
+      "scene_index": 1352,
+      "cell_x": 78,
+      "cell_y": 128,
+      "direction": 5
+    },
+    {
+      "scene_index": 1353,
+      "cell_x": 100,
+      "cell_y": 108,
+      "direction": 6
+    },
+    {
+      "scene_index": 1407,
+      "cell_x": 55,
+      "cell_y": 134,
+      "direction": 3
+    },
+    {
+      "scene_index": 1408,
+      "cell_x": 72,
+      "cell_y": 153,
+      "direction": 1
+    },
+    {
+      "scene_index": 1409,
+      "cell_x": 89,
+      "cell_y": 164,
+      "direction": 3
+    },
+    {
+      "scene_index": 1448,
+      "cell_x": 98,
+      "cell_y": 151,
+      "direction": 5
+    },
+    {
+      "scene_index": 1453,
+      "cell_x": 96,
+      "cell_y": 145,
+      "direction": 4
+    },
+    {
+      "scene_index": 1454,
+      "cell_x": 100,
+      "cell_y": 170,
+      "direction": 7
+    },
+    {
+      "scene_index": 1455,
+      "cell_x": 76,
+      "cell_y": 195,
+      "direction": 3
+    },
+    {
+      "scene_index": 1456,
+      "cell_x": 34,
+      "cell_y": 178,
+      "direction": 7
+    }
+  ]
+}

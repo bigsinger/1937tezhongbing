@@ -22,6 +22,7 @@ internal static class OriginalLevelProbe
     private const int CurrentMission = 0x000E7060;
     private const int NewGameImmediate = 0x00003B66;
     private const int FinalMissionVwfName = 0x000CF4A8;
+    private const int PunishmentMissionVwfName = 0x000CF4F8;
     private const int SmoothScrollEntry = 0x0004C9B0;
     private const int HearingImmediate = 0x0005DD27;
     private const int AlertImmediate = 0x00056E62;
@@ -118,11 +119,14 @@ internal static class OriginalLevelProbe
             argument, "autostart", StringComparison.OrdinalIgnoreCase));
         bool testMouseInput = args.Any(argument => string.Equals(
             argument, "mouseinput", StringComparison.OrdinalIgnoreCase));
-        if (level < 1 || level > 13)
+        if (level < 1 || level > 14)
         {
             throw new ArgumentOutOfRangeException("level");
         }
-        int expectedEngineLevel = level == 13 ? 12 : level;
+        int expectedEngineLevel =
+            level == 13 ? 12 :
+            level == 14 ? 7 :
+            level;
 
         Directory.CreateDirectory(outputDirectory);
         string executable = Path.Combine(gameDirectory, "M1937.exe");
@@ -179,17 +183,29 @@ internal static class OriginalLevelProbe
                     throw new InvalidOperationException(
                         "The runtime level patch did not apply.");
                 }
-                string finalMissionVwf = ReadAscii(
-                    process, imageBase + FinalMissionVwfName, 12);
-                report.AppendLine("final_mission_vwf=" + finalMissionVwf);
+                int missionVwfNameAddress = level == 14
+                    ? PunishmentMissionVwfName
+                    : FinalMissionVwfName;
+                string missionVwf = ReadAscii(
+                    process, imageBase + missionVwfNameAddress, 12);
+                report.AppendLine("mission_vwf=" + missionVwf);
                 if (level == 13 &&
                     !string.Equals(
-                        finalMissionVwf,
+                        missionVwf,
                         "1937M012.VWF",
                         StringComparison.Ordinal))
                 {
                     throw new InvalidOperationException(
                         "The extension-mission VWF redirect did not apply.");
+                }
+                if (level == 14 &&
+                    !string.Equals(
+                        missionVwf,
+                        "1937M013.VWF",
+                        StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        "The anti-traitor mission VWF redirect did not apply.");
                 }
                 int scrollOpcode =
                     ReadInt(process, imageBase + SmoothScrollEntry) & 0xFF;

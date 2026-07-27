@@ -1,5 +1,5 @@
 ﻿param(
-    [ValidateRange(0, 13)]
+    [ValidateRange(0, 14)]
     [int]$Level = 0,
     [switch]$StartImmediately,
     [switch]$SafeWindow
@@ -158,6 +158,10 @@ function Start-M1937Process {
             Join-Path $gameDirectory '1937m012.vwf') -PathType Leaf)) {
         throw '第 13 关需要当前目录中的 1937m012.vwf。'
     }
+    if ($MissionNumber -eq 14 -and -not (Test-Path -LiteralPath (
+            Join-Path $gameDirectory '1937m013.vwf') -PathType Leaf)) {
+        throw '第 14 关需要当前目录中的 1937m013.vwf。'
+    }
     $startInfo = New-Object Diagnostics.ProcessStartInfo
     $startInfo.FileName = $gameExecutable
     $startInfo.WorkingDirectory = $gameDirectory
@@ -200,8 +204,8 @@ if ($SafeWindow) {
 }
 
 if ($StartImmediately) {
-    if ($Level -lt 1 -or $Level -gt 13) {
-        throw 'StartImmediately requires Level in the range 1..13.'
+    if ($Level -lt 1 -or $Level -gt 14) {
+        throw 'StartImmediately requires Level in the range 1..14.'
     }
     $screen = [Windows.Forms.Screen]::PrimaryScreen.Bounds
     $startExpanded =
@@ -294,7 +298,7 @@ $missionHeading.Font = New-Object Drawing.Font(
 $missionPanel.Controls.Add($missionHeading)
 
 $missionHint = New-Object Windows.Forms.Label
-$missionHint.Text = '12 个原版任务；检测到 m012 时自动显示扩展任务'
+$missionHint.Text = '12 个原版任务；检测到扩展 VWF 时自动显示第 13/14 关'
 $missionHint.Location = New-Object Drawing.Point(20, 45)
 $missionHint.AutoSize = $true
 $missionHint.ForeColor = $textMuted
@@ -315,10 +319,12 @@ $missionList.BorderStyle = [Windows.Forms.BorderStyle]::None
 [void]$missionList.Columns.Add('任务名称', 205)
 [void]$missionList.Columns.Add('资源', 120)
 foreach ($mission in $catalog.missions) {
-    if ([int]$mission.number -eq 13 -and -not (
-            Test-Path -LiteralPath (
-                Join-Path $gameDirectory '1937m012.vwf') -PathType Leaf)) {
-        continue
+    if ([int]$mission.number -gt 12) {
+        $extensionMap = Join-Path $gameDirectory (
+            '1937{0}.vwf' -f [string]$mission.id)
+        if (-not (Test-Path -LiteralPath $extensionMap -PathType Leaf)) {
+            continue
+        }
     }
     $item = New-Object Windows.Forms.ListViewItem(
         ('第 {0:D2} 关' -f [int]$mission.number))
@@ -489,7 +495,7 @@ $status.ForeColor = $textMuted
 $form.Controls.Add($status)
 
 $savedLevel = Get-IniInt $runGameIni 'mod' 'StartLevel' 1
-if ($savedLevel -lt 1 -or $savedLevel -gt 13) { $savedLevel = 1 }
+if ($savedLevel -lt 1 -or $savedLevel -gt 14) { $savedLevel = 1 }
 $savedItem = $null
 foreach ($candidate in $missionList.Items) {
     if ([int]$candidate.Tag -eq $savedLevel) {

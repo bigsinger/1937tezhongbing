@@ -42,9 +42,14 @@ internal sealed class MissionDefinition
     public string Title { get; set; } = "";
     public string Story { get; set; } = "";
     public string SourceSha256 { get; set; } = "";
+    public List<int> PlayerSceneIndices { get; set; } = [];
+    public List<int> EnemySceneIndices { get; set; } = [];
+    public int MinimumSpawnEnemyDistanceWorld { get; set; }
+    public int MinimumSpawnPatrolDistanceWorld { get; set; }
     public GridCell PlayerSpawn { get; set; } = new();
     public List<EntityEdit> EntityEdits { get; set; } = [];
     public List<ReachabilityTarget> RequiredReachability { get; set; } = [];
+    public List<SceneReachabilityTarget> RequiredSceneReachability { get; set; } = [];
 }
 
 internal sealed class EntityEdit
@@ -65,6 +70,12 @@ internal class GridCell
 internal sealed class ReachabilityTarget : GridCell
 {
     public string Name { get; set; } = "";
+}
+
+internal sealed class SceneReachabilityTarget
+{
+    public string Name { get; set; } = "";
+    public int SceneIndex { get; set; }
 }
 
 internal sealed class MissionBuilder
@@ -114,6 +125,7 @@ internal sealed class MissionBuilder
         foreach (var edit in definition.EntityEdits)
             ApplyEntityEdit(edit);
 
+        var spawnSafety = ValidateSpawnSafety();
         var validations = ValidateNavigation();
         Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
         var temporary = outputPath + ".tmp";
@@ -135,7 +147,7 @@ internal sealed class MissionBuilder
 
         return BuildReport(
             sourceHash, Hash(outputPath), outputPath,
-            outputScenes, validations);
+            outputScenes, spawnSafety, validations);
     }
 
     private void ValidateDefinition()
@@ -145,6 +157,13 @@ internal sealed class MissionBuilder
             throw new InvalidDataException("Mission id and title are required.");
         if (definition.EntityEdits.Count == 0)
             throw new InvalidDataException("At least one entity edit is required.");
+        if (definition.PlayerSceneIndices.Count == 0)
+            throw new InvalidDataException(
+                "At least one player_scene_indices entry is required.");
+        if (definition.MinimumSpawnEnemyDistanceWorld < 0 ||
+            definition.MinimumSpawnPatrolDistanceWorld < 0)
+            throw new InvalidDataException(
+                "Spawn safety distances cannot be negative.");
 
         var duplicates = definition.EntityEdits
             .GroupBy(edit => edit.SceneIndex)
@@ -191,6 +210,47 @@ internal sealed class MissionBuilder
             "player spawn");
         foreach (var target in definition.RequiredReachability)
             ValidateCell(target.X, target.Y, target.Name);
+        foreach (var target in definition.RequiredSceneReachability)
+        {
+            if (string.IsNullOrWhiteSpace(target.Name))
+                throw new InvalidDataException(
+                    "Every required scene target needs a name.");
+            if (!entities.ContainsKey(target.SceneIndex))
+                throw new InvalidDataException(
+                    $"Required scene {target.SceneIndex} does not exist.");
+        }
+
+        var playerSet = definition.PlayerSceneIndices.ToHashSet();
+        if (playerSet.Count != definition.PlayerSceneIndices.Count)
+            throw new InvalidDataException(
+                "player_scene_indices contains duplicates.");
+        foreach (var sceneIndex in playerSet)
+        {
+            if (!definition.EntityEdits.Any(
+                    edit => edit.SceneIndex == sceneIndex))
+                throw new InvalidDataException(
+                    $"Player scene {sceneIndex} must have an entity edit.");
+        }
+        var primaryPlayer = definition.EntityEdits.First(
+            edit => edit.SceneIndex == definition.PlayerSceneIndices[0]);
+        if (primaryPlayer.CellX != definition.PlayerSpawn.X ||
+            primaryPlayer.CellY != definition.PlayerSpawn.Y)
+            throw new InvalidDataException(
+                "player_spawn must match the first player scene position.");
+
+        var enemySet = definition.EnemySceneIndices.ToHashSet();
+        if (enemySet.Count != definition.EnemySceneIndices.Count)
+            throw new InvalidDataException(
+                "enemy_scene_indices contains duplicates.");
+        foreach (var sceneIndex in enemySet)
+        {
+            if (playerSet.Contains(sceneIndex))
+                throw new InvalidDataException(
+                    $"Scene {sceneIndex} cannot be both player and enemy.");
+            if (!entities.ContainsKey(sceneIndex))
+                throw new InvalidDataException(
+                    $"Enemy scene {sceneIndex} does not exist.");
+        }
     }
 
     private void ValidateSourceHash()
@@ -272,7 +332,41 @@ internal sealed class MissionBuilder
         if (value != 0)
             throw new InvalidDataException(
                 $"Entity {edit.SceneIndex} target cell " +
-                $"({edit.CellX}, {edit.CellY}) is occupied by grid value {value}.");
+                $"({edit.CellX}, {edit.CellY}) is occupied by grid value {value}. " +
+                $"Nearby open cells: {NearbyOpenCells(edit.CellX, edit.CellY)}.");
+    }
+
+    private string NearbyOpenCells(int originX, int originY)
+    {
+        var candidates = new List<string>();
+        for (var radius = 1; radius <= 12 && candidates.Count < 8; radius++)
+        {
+            for (var y = originY - radius;
+                 y <= originY + radius && candidates.Count < 8;
+                 y++)
+            {
+                for (var x = originX - radius;
+                     x <= originX + radius && candidates.Count < 8;
+                     x++)
+                {
+                    if (Math.Max(
+                            Math.Abs(x - originX),
+                            Math.Abs(y - originY)) != radius ||
+                        !InBounds(x, y))
+                        continue;
+                    var index = CellIndex(x, y);
+                    var lineOfSight = ReadUInt32(checked(
+                        lineOfSightLayerOffset + index * sizeof(uint)));
+                    var movement = ReadUInt32(checked(
+                        movementLayerOffset + index * sizeof(uint)));
+                    if (lineOfSight == 0 && movement == 0)
+                        candidates.Add($"({x},{y})");
+                }
+            }
+        }
+        return candidates.Count == 0
+            ? "none within 12 cells"
+            : string.Join(", ", candidates);
     }
 
     private void ApplyPatrolEdit(
@@ -341,15 +435,36 @@ internal sealed class MissionBuilder
                     spawn.X, spawn.Y, target.X, target.Y, length));
             }
         }
-
-        foreach (var edit in definition.EntityEdits
-                     .Where(edit => edit.Patrol is { Count: > 0 }))
+        foreach (var target in definition.RequiredSceneReachability)
         {
+            var targetCell = EffectiveCell(target.SceneIndex);
+            var length = FindPathLength(spawn, targetCell);
+            if (length < 0)
+            {
+                failures.Add(
+                    $"No traversable path from player spawn to scene " +
+                    $"{target.SceneIndex} “{target.Name}” at " +
+                    $"({targetCell.X}, {targetCell.Y}).");
+            }
+            else
+            {
+                results.Add(new PathValidation(
+                    $"玩家出生点 → {target.Name}（scene {target.SceneIndex}）",
+                    spawn.X, spawn.Y,
+                    targetCell.X, targetCell.Y, length));
+            }
+        }
+
+        foreach (var edit in definition.EntityEdits)
+        {
+            var route = EffectivePatrol(edit.SceneIndex);
+            if (route.Count == 0)
+                continue;
             var points = new List<GridCell>
             {
                 new() { X = edit.CellX, Y = edit.CellY }
             };
-            points.AddRange(edit.Patrol!);
+            points.AddRange(route);
             for (var index = 1; index < points.Count; index++)
             {
                 var length = FindPathLength(points[index - 1], points[index]);
@@ -374,6 +489,133 @@ internal sealed class MissionBuilder
             throw new InvalidDataException(string.Join(
                 Environment.NewLine, failures));
         return results;
+    }
+
+    private SpawnSafetyValidation ValidateSpawnSafety()
+    {
+        var playerSet = definition.PlayerSceneIndices.ToHashSet();
+        var players = definition.EntityEdits
+            .Where(edit => playerSet.Contains(edit.SceneIndex))
+            .ToList();
+        var enemySceneIndices = definition.EnemySceneIndices.Count > 0
+            ? definition.EnemySceneIndices
+            : definition.EntityEdits
+                .Where(edit => !playerSet.Contains(edit.SceneIndex))
+                .Select(edit => edit.SceneIndex)
+                .ToList();
+        if (enemySceneIndices.Count == 0)
+            throw new InvalidDataException(
+                "Spawn safety validation requires at least one enemy scene.");
+
+        var failures = new List<string>();
+        var minimumInitial = int.MaxValue;
+        var minimumPatrol = int.MaxValue;
+        var initialPair = "";
+        var patrolPair = "";
+        foreach (var player in players)
+        {
+            var playerCell = new GridCell
+            {
+                X = player.CellX,
+                Y = player.CellY
+            };
+            foreach (var enemySceneIndex in enemySceneIndices)
+            {
+                var enemyCell = EffectiveCell(enemySceneIndex);
+                var initialDistance = WorldDistance(
+                    playerCell, enemyCell);
+                if (initialDistance < minimumInitial)
+                {
+                    minimumInitial = initialDistance;
+                    initialPair =
+                        $"玩家 {player.SceneIndex} / 敌方 {enemySceneIndex}";
+                }
+                if (initialDistance <
+                    definition.MinimumSpawnEnemyDistanceWorld)
+                {
+                    failures.Add(
+                        $"Player {player.SceneIndex} is only " +
+                        $"{initialDistance} world units from enemy " +
+                        $"{enemySceneIndex}; required minimum is " +
+                        $"{definition.MinimumSpawnEnemyDistanceWorld}.");
+                }
+
+                foreach (var point in EffectivePatrol(enemySceneIndex))
+                {
+                    var patrolDistance = WorldDistance(
+                        playerCell, point);
+                    if (patrolDistance < minimumPatrol)
+                    {
+                        minimumPatrol = patrolDistance;
+                        patrolPair =
+                            $"玩家 {player.SceneIndex} / 敌方 " +
+                            $"{enemySceneIndex} 巡逻点 " +
+                            $"({point.X},{point.Y})";
+                    }
+                    if (patrolDistance <
+                        definition.MinimumSpawnPatrolDistanceWorld)
+                    {
+                        failures.Add(
+                            $"Player {player.SceneIndex} is only " +
+                            $"{patrolDistance} world units from enemy " +
+                            $"{enemySceneIndex} patrol point " +
+                            $"({point.X}, {point.Y}); required minimum is " +
+                            $"{definition.MinimumSpawnPatrolDistanceWorld}.");
+                    }
+                }
+            }
+        }
+        if (failures.Count > 0)
+            throw new InvalidDataException(string.Join(
+                Environment.NewLine, failures));
+        if (minimumPatrol == int.MaxValue)
+        {
+            minimumPatrol = minimumInitial;
+            patrolPair = "无独立巡逻点；采用最近初始部署";
+        }
+        return new SpawnSafetyValidation(
+            minimumInitial, initialPair,
+            minimumPatrol, patrolPair);
+    }
+
+    private GridCell EffectiveCell(int sceneIndex)
+    {
+        var edit = definition.EntityEdits.FirstOrDefault(
+            item => item.SceneIndex == sceneIndex);
+        if (edit is not null)
+            return new GridCell { X = edit.CellX, Y = edit.CellY };
+        var entity = entities[sceneIndex];
+        return new GridCell
+        {
+            X = entity.WorldX / 32,
+            Y = entity.WorldY / 16
+        };
+    }
+
+    private IReadOnlyList<GridCell> EffectivePatrol(int sceneIndex)
+    {
+        var edit = definition.EntityEdits.FirstOrDefault(
+            item => item.SceneIndex == sceneIndex);
+        if (edit?.Patrol is not null)
+            return edit.Patrol;
+        var patrol = entities[sceneIndex].Patrol;
+        if (patrol is null)
+            return [];
+        return patrol.Waypoints
+            .Select(point => new GridCell
+            {
+                X = checked((int)point.X),
+                Y = checked((int)point.Y)
+            })
+            .ToList();
+    }
+
+    private static int WorldDistance(GridCell left, GridCell right)
+    {
+        var deltaX = checked((left.X - right.X) * 32L);
+        var deltaY = checked((left.Y - right.Y) * 16L);
+        return checked((int)Math.Round(
+            Math.Sqrt(deltaX * deltaX + deltaY * deltaY)));
     }
 
     private int FindPathLength(GridCell start, GridCell goal)
@@ -442,6 +684,7 @@ internal sealed class MissionBuilder
         string outputHash,
         string outputPath,
         VwfSceneList outputScenes,
+        SpawnSafetyValidation spawnSafety,
         IReadOnlyList<PathValidation> validations)
     {
         var builder = new StringBuilder();
@@ -459,6 +702,19 @@ internal sealed class MissionBuilder
         builder.AppendLine($"- 重部署活动对象：{definition.EntityEdits.Count}");
         builder.AppendLine($"- 源 SHA-256：`{sourceHash}`");
         builder.AppendLine($"- 输出 SHA-256：`{outputHash}`");
+        builder.AppendLine();
+        builder.AppendLine("## 出生区安全");
+        builder.AppendLine();
+        builder.AppendLine(
+            $"- 最近敌方初始部署：{spawnSafety.MinimumInitialDistance} " +
+            $"世界单位（{spawnSafety.InitialPair}）");
+        builder.AppendLine(
+            $"- 最近敌方巡逻点：{spawnSafety.MinimumPatrolDistance} " +
+            $"世界单位（{spawnSafety.PatrolPair}）");
+        builder.AppendLine(
+            $"- 硬性阈值：初始部署 " +
+            $"{definition.MinimumSpawnEnemyDistanceWorld}，巡逻点 " +
+            $"{definition.MinimumSpawnPatrolDistanceWorld} 世界单位");
         builder.AppendLine();
         builder.AppendLine("## 可达性验证");
         builder.AppendLine();
@@ -526,4 +782,10 @@ internal sealed class MissionBuilder
         int EndX,
         int EndY,
         int Length);
+
+    private sealed record SpawnSafetyValidation(
+        int MinimumInitialDistance,
+        string InitialPair,
+        int MinimumPatrolDistance,
+        string PatrolPair);
 }
