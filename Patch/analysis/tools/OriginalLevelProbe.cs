@@ -119,13 +119,13 @@ internal static class OriginalLevelProbe
             argument, "autostart", StringComparison.OrdinalIgnoreCase));
         bool testMouseInput = args.Any(argument => string.Equals(
             argument, "mouseinput", StringComparison.OrdinalIgnoreCase));
-        if (level < 1 || level > 14)
+        if (level < 1 || level > 15)
         {
             throw new ArgumentOutOfRangeException("level");
         }
         int expectedEngineLevel =
             level == 13 ? 12 :
-            level == 14 ? 7 :
+            level == 14 || level == 15 ? 7 :
             level;
 
         Directory.CreateDirectory(outputDirectory);
@@ -183,7 +183,7 @@ internal static class OriginalLevelProbe
                     throw new InvalidOperationException(
                         "The runtime level patch did not apply.");
                 }
-                int missionVwfNameAddress = level == 14
+                int missionVwfNameAddress = level is 14 or 15
                     ? PunishmentMissionVwfName
                     : FinalMissionVwfName;
                 string missionVwf = ReadAscii(
@@ -206,6 +206,15 @@ internal static class OriginalLevelProbe
                 {
                     throw new InvalidOperationException(
                         "The anti-traitor mission VWF redirect did not apply.");
+                }
+                if (level == 15 &&
+                    !string.Equals(
+                        missionVwf,
+                        "1937M014.VWF",
+                        StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        "The recomposed mission VWF redirect did not apply.");
                 }
                 int scrollOpcode =
                     ReadInt(process, imageBase + SmoothScrollEntry) & 0xFF;

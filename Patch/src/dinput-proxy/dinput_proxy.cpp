@@ -9,6 +9,8 @@
 #include <cstring>
 #include <new>
 
+#include <M1937SDK/M1937SDK.hpp>
+
 namespace {
 
 using DirectInputCreateAProc = HRESULT(WINAPI *)(
@@ -104,7 +106,7 @@ void LoadModConfig() {
     g_mod_config.system_cursor_mapping =
         read(L"SystemCursorMapping", 1) != 0;
     g_mod_config.auto_start = read(L"AutoStart", 0) != 0;
-    g_mod_config.start_level = ClampSetting(read(L"StartLevel", 0), 0, 14);
+    g_mod_config.start_level = ClampSetting(read(L"StartLevel", 0), 0, 15);
 }
 
 void EnableModernDpiAwareness() {
@@ -191,7 +193,7 @@ int RequestedStartLevel() {
 
     char *end = nullptr;
     const long level = strtol(value, &end, 10);
-    if (end == value || *end != '\0' || level < 1 || level > 14) {
+    if (end == value || *end != '\0' || level < 1 || level > 15) {
         return 0;
     }
     return static_cast<int>(level);
@@ -257,40 +259,15 @@ int ConfiguredAlertRadius() {
 bool PatchExecutableBytes(
     unsigned char *address, const unsigned char *expected,
     const unsigned char *replacement, size_t size) {
-    if (memcmp(address, expected, size) != 0) {
-        return false;
-    }
-
-    DWORD old_protection = 0;
-    if (!VirtualProtect(address, size, PAGE_EXECUTE_READWRITE, &old_protection)) {
-        return false;
-    }
-    memcpy(address, replacement, size);
-    FlushInstructionCache(GetCurrentProcess(), address, size);
-    DWORD ignored = 0;
-    VirtualProtect(address, size, old_protection, &ignored);
-    return true;
+    return m1937::sdk::patch::bytes(
+        address, expected, replacement, size);
 }
 
 bool PatchExecutableJump(
     unsigned char *address, const unsigned char *expected, size_t size,
     const void *destination) {
-    if (size < 5 || size > 16 || memcmp(address, expected, size) != 0) {
-        return false;
-    }
-
-    unsigned char replacement[16]{};
-    memset(replacement, 0x90, size);
-    replacement[0] = 0xE9;
-    const auto from = reinterpret_cast<intptr_t>(address + 5);
-    const auto to = reinterpret_cast<intptr_t>(destination);
-    const intptr_t relative = to - from;
-    if (relative < INT32_MIN || relative > INT32_MAX) {
-        return false;
-    }
-    const int32_t displacement = static_cast<int32_t>(relative);
-    memcpy(replacement + 1, &displacement, sizeof(displacement));
-    return PatchExecutableBytes(address, expected, replacement, size);
+    return m1937::sdk::patch::relative_jump(
+        address, expected, size, destination);
 }
 
 using OriginalBlitProc = int(__thiscall *)(
@@ -312,7 +289,7 @@ int __fastcall SafeBlit(
 bool InstallSafeBlitGuard(unsigned char *base) {
     static const unsigned char expected[] = {
         0x83, 0xEC, 0x2C, 0x53, 0x55, 0x56};
-    auto *entry = base + 0x0000EE30;
+    auto *entry = base + m1937::sdk::rva::safe_blit;
     if (memcmp(entry, expected, sizeof(expected)) != 0) {
         return false;
     }
@@ -358,7 +335,8 @@ using OriginalMenuPollProc = int(__thiscall *)(void *, int, int);
 int __fastcall AutoStartMenuPoll(
     void *menu, void *, int animation_state, int flags) {
     if (IsAutomatedLaunchEnabled() && g_executable_base &&
-        *reinterpret_cast<int *>(g_executable_base + 0x000E7060) == 0 &&
+        *reinterpret_cast<int *>(
+            g_executable_base + m1937::sdk::rva::current_mission) == 0 &&
         InterlockedCompareExchange(&g_auto_start_consumed, 1, 0) == 0) {
         // Button identifier 1 is the original Start Game entry. Returning it
         // here follows the exact normal menu path instead of fabricating a
@@ -368,7 +346,8 @@ int __fastcall AutoStartMenuPoll(
             // regular input poll can run again. Prime the original briefing
             // acknowledgement for non-interactive validation only.
             *reinterpret_cast<unsigned char *>(
-                g_executable_base + 0x000E6EA9) = 1;
+                g_executable_base +
+                m1937::sdk::rva::briefing_advance) = 1;
         }
         return 1;
     }
@@ -382,7 +361,7 @@ int __fastcall AutoStartMenuPoll(
 bool InstallAutoStartMenuHook(unsigned char *base) {
     static const unsigned char expected[] = {
         0x8B, 0x44, 0x24, 0x04, 0x53, 0x55};
-    auto *entry = base + 0x00044800;
+    auto *entry = base + m1937::sdk::rva::menu_poll;
     if (memcmp(entry, expected, sizeof(expected)) != 0) {
         return false;
     }
@@ -488,13 +467,12 @@ bool ReadExpandedViewport(int *width, int *height) {
 
 bool PatchImmediate32(
     unsigned char *base, size_t operand_offset, int expected, int replacement) {
-    unsigned char expected_bytes[sizeof(int)]{};
-    unsigned char replacement_bytes[sizeof(int)]{};
-    memcpy(expected_bytes, &expected, sizeof(expected));
-    memcpy(replacement_bytes, &replacement, sizeof(replacement));
-    return PatchExecutableBytes(
-        base + operand_offset, expected_bytes, replacement_bytes,
-        sizeof(replacement_bytes));
+    return m1937::sdk::patch::immediate_i32(
+        m1937::sdk::ModuleView(
+            reinterpret_cast<HMODULE>(base)),
+        operand_offset,
+        expected,
+        replacement);
 }
 
 void ApplyExpandedViewportPatches(unsigned char *base) {
@@ -513,9 +491,12 @@ void ApplyExpandedViewportPatches(unsigned char *base) {
         bool is_width;
     };
     static const ResolutionOperand startup_operands[] = {
-        {0x00007706, 1024, true}, {0x00007710, 768, false},
-        {0x0000771C, 800, true},  {0x00007726, 600, false},
-        {0x00007732, 640, true},  {0x0000773C, 480, false},
+        {m1937::sdk::rva::startup_width_1024, 1024, true},
+        {m1937::sdk::rva::startup_height_768, 768, false},
+        {m1937::sdk::rva::startup_width_800, 800, true},
+        {m1937::sdk::rva::startup_height_600, 600, false},
+        {m1937::sdk::rva::startup_width_640, 640, true},
+        {m1937::sdk::rva::startup_height_480, 480, false},
     };
     for (const auto &operand : startup_operands) {
         PatchImmediate32(
@@ -550,7 +531,8 @@ void ApplyExpandedViewportPatches(unsigned char *base) {
     static const unsigned char six_nops[] = {
         0x90, 0x90, 0x90, 0x90, 0x90, 0x90};
     PatchExecutableBytes(
-        base + 0x00002F79, intro_1024_guard, six_nops,
+        base + m1937::sdk::rva::intro_1024_layout_guard,
+        intro_1024_guard, six_nops,
         sizeof(six_nops));
 
     // The matching menu-layout branch supplies the 1024 artwork offset
@@ -559,26 +541,17 @@ void ApplyExpandedViewportPatches(unsigned char *base) {
     static const unsigned char layout_1024_guard[] = {0x75, 0x2C};
     static const unsigned char two_nops[] = {0x90, 0x90};
     PatchExecutableBytes(
-        base + 0x00003288, layout_1024_guard, two_nops,
+        base + m1937::sdk::rva::menu_1024_layout_guard,
+        layout_1024_guard, two_nops,
         sizeof(two_nops));
 }
 
 void ApplyLegacyExecutablePatches() {
-    auto *base = reinterpret_cast<unsigned char *>(GetModuleHandleW(nullptr));
-    if (!base) {
+    const auto module = m1937::sdk::ModuleView::current_process();
+    if (!module.is_supported()) {
         return;
     }
-
-    const auto *dos = reinterpret_cast<const IMAGE_DOS_HEADER *>(base);
-    if (dos->e_magic != IMAGE_DOS_SIGNATURE) {
-        return;
-    }
-    const auto *nt = reinterpret_cast<const IMAGE_NT_HEADERS32 *>(base + dos->e_lfanew);
-    if (nt->Signature != IMAGE_NT_SIGNATURE ||
-        nt->OptionalHeader.ImageBase != 0x00400000 ||
-        nt->OptionalHeader.SizeOfImage != 0x00124000) {
-        return;
-    }
+    auto *base = reinterpret_cast<unsigned char *>(module.base());
     g_executable_base = base;
     if (g_mod_config.enabled) {
         int expanded_width = 0;
@@ -597,7 +570,8 @@ void ApplyLegacyExecutablePatches() {
     static const unsigned char warning_expected[] = {0x74, 0x0C};
     static const unsigned char warning_patch[] = {0xEB, 0x0C};
     PatchExecutableBytes(
-        base + 0x0000734A, warning_expected, warning_patch,
+        base + m1937::sdk::rva::false_resource_warning_branch,
+        warning_expected, warning_patch,
         sizeof(warning_patch));
 
     // Skip only the two startup movie enqueue calls. Mission movies and all
@@ -609,25 +583,28 @@ void ApplyLegacyExecutablePatches() {
     unsigned char movies_nops[sizeof(movies_expected)];
     memset(movies_nops, 0x90, sizeof(movies_nops));
     PatchExecutableBytes(
-        base + 0x0000762C, movies_expected, movies_nops,
+        base + m1937::sdk::rva::startup_movie_enqueue,
+        movies_expected, movies_nops,
         sizeof(movies_nops));
 
     // The original "New Game" thunk always writes mission number 1 to
     // M1937.exe+0xE7060. The optional level selector starts the process with
-    // M1937_START_LEVEL=1..14, so replace only that immediate operand. A
+    // M1937_START_LEVEL=1..15, so replace only that immediate operand. A
     // normal launch has no environment variable and keeps the original
     // first-mission behaviour. The executable hard-codes exactly twelve
     // mission slots. Extension mission 13 therefore uses the mission-12
     // objective engine while redirecting its equal-length VWF filename to
     // 1937M012.VWF. Extension mission 14 uses mission 7's follow-contact,
     // two-target and extraction objective engine while redirecting
-    // 1937M006.VWF to 1937M013.VWF. This does not touch the executable on
-    // disk or manufacture save files.
+    // 1937M006.VWF to 1937M013.VWF. Extension mission 15 uses the same
+    // objective engine and redirects it to the genuinely recomposed
+    // 1937M014.VWF world. This does not touch the executable on disk or
+    // manufacture save files.
     const int requested_level = RequestedStartLevel();
     if (requested_level != 0) {
         const int engine_level =
             requested_level == 13 ? 12 :
-            requested_level == 14 ? 7 :
+            requested_level == 14 || requested_level == 15 ? 7 :
             requested_level;
         if (requested_level == 13) {
             static const unsigned char custom_vwf_expected[] =
@@ -635,28 +612,35 @@ void ApplyLegacyExecutablePatches() {
             static const unsigned char custom_vwf_patch[] =
                 "1937M012.VWF";
             PatchExecutableBytes(
-                base + 0x000CF4A8,
+                base + m1937::sdk::rva::mission_12_vwf_name,
                 custom_vwf_expected,
                 custom_vwf_patch,
                 sizeof(custom_vwf_patch));
         }
-        if (requested_level == 14) {
+        if (requested_level == 14 || requested_level == 15) {
             static const unsigned char custom_vwf_expected[] =
                 "1937M006.VWF";
-            static const unsigned char custom_vwf_patch[] =
+            static const unsigned char mission_14_vwf_patch[] =
                 "1937M013.VWF";
+            static const unsigned char mission_15_vwf_patch[] =
+                "1937M014.VWF";
+            const auto *custom_vwf_patch =
+                requested_level == 14
+                ? mission_14_vwf_patch
+                : mission_15_vwf_patch;
             PatchExecutableBytes(
-                base + 0x000CF4F8,
+                base + m1937::sdk::rva::mission_7_vwf_name,
                 custom_vwf_expected,
                 custom_vwf_patch,
-                sizeof(custom_vwf_patch));
+                sizeof(mission_14_vwf_patch));
         }
         static const unsigned char level_expected[] = {
             0x01, 0x00, 0x00, 0x00};
         unsigned char level_patch[sizeof(level_expected)]{};
         memcpy(level_patch, &engine_level, sizeof(level_patch));
         PatchExecutableBytes(
-            base + 0x00003B66, level_expected, level_patch,
+            base + m1937::sdk::rva::new_game_level_immediate,
+            level_expected, level_patch,
             sizeof(level_patch));
     }
 
@@ -665,16 +649,22 @@ void ApplyLegacyExecutablePatches() {
         // Keep its original no-line-of-sight semantics and configure only the
         // comparison operand.
         PatchImmediate32(
-            base, 0x0005DD27, 128, ConfiguredHearingRadius());
+            base,
+            m1937::sdk::rva::close_hearing_radius_immediate,
+            128,
+            ConfiguredHearingRadius());
 
         // Four combat paths broadcast the target's last-known position to
         // nearby allies. The original alert propagation routine still decides
         // eligibility and pathing.
-        static const size_t alert_call_offsets[] = {
-            0x00056E61, 0x00056E93, 0x00057048, 0x00057186};
-        for (const size_t offset : alert_call_offsets) {
+        static const size_t alert_operand_offsets[] = {
+            m1937::sdk::rva::alert_radius_operand_1,
+            m1937::sdk::rva::alert_radius_operand_2,
+            m1937::sdk::rva::alert_radius_operand_3,
+            m1937::sdk::rva::alert_radius_operand_4};
+        for (const size_t offset : alert_operand_offsets) {
             PatchImmediate32(
-                base, offset + 1, 640, ConfiguredAlertRadius());
+                base, offset, 640, ConfiguredAlertRadius());
         }
     }
 }
@@ -703,7 +693,9 @@ void PumpWindowMessages() {
     // the same acknowledgement the original briefing click path sets.
     if (IsAutomatedProbeEnabled() && g_executable_base) {
         const int mission =
-            *reinterpret_cast<int *>(g_executable_base + 0x000E7060);
+            *reinterpret_cast<int *>(
+                g_executable_base +
+                m1937::sdk::rva::current_mission);
         if (mission >= 1 && mission <= 12) {
             if (g_probe_mission_started_at == 0) {
                 g_probe_mission_started_at = GetTickCount();
@@ -711,7 +703,8 @@ void PumpWindowMessages() {
                 GetTickCount() - g_probe_mission_started_at >= 1500 &&
                 GetTickCount() - g_probe_last_advance_at >= 2000) {
                 *reinterpret_cast<unsigned char *>(
-                    g_executable_base + 0x000E6EA9) = 1;
+                    g_executable_base +
+                    m1937::sdk::rva::briefing_advance) = 1;
                 g_probe_last_advance_at = GetTickCount();
             }
         }
@@ -796,7 +789,8 @@ int LogicalScreenWidth() {
         return 1024;
     }
     const int width =
-        *reinterpret_cast<int *>(g_executable_base + 0x000E6E0C);
+        *reinterpret_cast<int *>(
+            g_executable_base + m1937::sdk::rva::screen_width);
     return width >= 320 && width <= 4096 ? width : 1024;
 }
 
@@ -805,7 +799,8 @@ int LogicalScreenHeight() {
         return 768;
     }
     const int height =
-        *reinterpret_cast<int *>(g_executable_base + 0x000E6E10);
+        *reinterpret_cast<int *>(
+            g_executable_base + m1937::sdk::rva::screen_height);
     return height >= 240 && height <= 2160 ? height : 768;
 }
 
@@ -884,9 +879,11 @@ void MapSystemCursorToGameState(DWORD size, LPVOID data) {
     const int target_y =
         MulDiv(render_y, logical_height - 1, render_height - 1);
     const int current_x =
-        *reinterpret_cast<int *>(g_executable_base + 0x000E6EA0);
+        *reinterpret_cast<int *>(
+            g_executable_base + m1937::sdk::rva::cursor_x);
     const int current_y =
-        *reinterpret_cast<int *>(g_executable_base + 0x000E6FAC);
+        *reinterpret_cast<int *>(
+            g_executable_base + m1937::sdk::rva::cursor_y);
 
     // The original DirectInput 3 loop accumulates relative deltas. Limit a
     // single correction so focus changes cannot teleport the in-game cursor.

@@ -1,0 +1,25 @@
+name: M1937 SDK CI
+
+on:
+  push:
+    paths:
+      - "SDK/**"
+      - "Patch/src/dinput-proxy/**"
+      - ".github/workflows/sdk-ci.yml"
+  pull_request:
+    paths:
+      - "SDK/**"
+      - "Patch/src/dinput-proxy/**"
+      - ".github/workflows/sdk-ci.yml"
+
+jobs:
+  native-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile SDK tests
+        shell: cmd
+        run: SDK\build.cmd --compile-only
+      - name: Compile DirectInput plugin against SDK
+        shell: cmd
+        run: Patch\src\dinput-proxy\build.cmd

@@ -46,6 +46,7 @@ internal sealed class MissionDefinition
     public List<int> EnemySceneIndices { get; set; } = [];
     public int MinimumSpawnEnemyDistanceWorld { get; set; }
     public int MinimumSpawnPatrolDistanceWorld { get; set; }
+    public double MinimumReachableWalkableRatio { get; set; }
     public GridCell PlayerSpawn { get; set; } = new();
     public List<EntityEdit> EntityEdits { get; set; } = [];
     public List<ReachabilityTarget> RequiredReachability { get; set; } = [];
@@ -127,6 +128,7 @@ internal sealed class MissionBuilder
 
         var spawnSafety = ValidateSpawnSafety();
         var validations = ValidateNavigation();
+        var navigationCoverage = ValidateNavigationCoverage();
         Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
         var temporary = outputPath + ".tmp";
         File.WriteAllBytes(temporary, data);
@@ -147,7 +149,7 @@ internal sealed class MissionBuilder
 
         return BuildReport(
             sourceHash, Hash(outputPath), outputPath,
-            outputScenes, spawnSafety, validations);
+            outputScenes, spawnSafety, navigationCoverage, validations);
     }
 
     private void ValidateDefinition()
@@ -164,6 +166,9 @@ internal sealed class MissionBuilder
             definition.MinimumSpawnPatrolDistanceWorld < 0)
             throw new InvalidDataException(
                 "Spawn safety distances cannot be negative.");
+        if (definition.MinimumReachableWalkableRatio is < 0 or > 1)
+            throw new InvalidDataException(
+                "minimum_reachable_walkable_ratio must be between 0 and 1.");
 
         var duplicates = definition.EntityEdits
             .GroupBy(edit => edit.SceneIndex)
@@ -672,6 +677,62 @@ internal sealed class MissionBuilder
         int x, int y, int goalX, int goalY) =>
         Math.Max(Math.Abs(goalX - x), Math.Abs(goalY - y));
 
+    private NavigationCoverage ValidateNavigationCoverage()
+    {
+        var traversable = Enumerable.Range(0, cellCount)
+            .Count(IsTraversable);
+        var visited = new bool[cellCount];
+        var queue = new Queue<int>();
+        var start = CellIndex(
+            definition.PlayerSpawn.X,
+            definition.PlayerSpawn.Y);
+        if (!IsTraversable(start))
+            throw new InvalidDataException(
+                "Player spawn is not on a traversable cell.");
+
+        visited[start] = true;
+        queue.Enqueue(start);
+        var reachable = 0;
+        ReadOnlySpan<int> dx = [-1, 1, 0, 0, -1, 1, -1, 1];
+        ReadOnlySpan<int> dy = [0, 0, -1, 1, -1, -1, 1, 1];
+        while (queue.TryDequeue(out var current))
+        {
+            reachable++;
+            var x = current % checked((int)world.GridWidth);
+            var y = current / checked((int)world.GridWidth);
+            for (var direction = 0; direction < dx.Length; direction++)
+            {
+                var nextX = x + dx[direction];
+                var nextY = y + dy[direction];
+                if (!InBounds(nextX, nextY))
+                    continue;
+                var next = CellIndex(nextX, nextY);
+                if (visited[next] || !IsTraversable(next))
+                    continue;
+                if (dx[direction] != 0 && dy[direction] != 0 &&
+                    (!IsTraversable(CellIndex(x + dx[direction], y)) ||
+                     !IsTraversable(CellIndex(x, y + dy[direction]))))
+                    continue;
+                visited[next] = true;
+                queue.Enqueue(next);
+            }
+        }
+
+        var ratio = traversable == 0
+            ? 0
+            : reachable / (double)traversable;
+        if (ratio + 1e-9 <
+            definition.MinimumReachableWalkableRatio)
+        {
+            throw new InvalidDataException(
+                $"Only {reachable}/{traversable} traversable cells " +
+                $"({ratio:P2}) are reachable from the player spawn; " +
+                $"required minimum is " +
+                $"{definition.MinimumReachableWalkableRatio:P2}.");
+        }
+        return new NavigationCoverage(reachable, traversable, ratio);
+    }
+
     private bool IsTraversable(int index)
     {
         var value = ReadUInt32(
@@ -685,6 +746,7 @@ internal sealed class MissionBuilder
         string outputPath,
         VwfSceneList outputScenes,
         SpawnSafetyValidation spawnSafety,
+        NavigationCoverage navigationCoverage,
         IReadOnlyList<PathValidation> validations)
     {
         var builder = new StringBuilder();
@@ -715,6 +777,17 @@ internal sealed class MissionBuilder
             $"- 硬性阈值：初始部署 " +
             $"{definition.MinimumSpawnEnemyDistanceWorld}，巡逻点 " +
             $"{definition.MinimumSpawnPatrolDistanceWorld} 世界单位");
+        builder.AppendLine();
+        builder.AppendLine("## 全图连通性");
+        builder.AppendLine();
+        builder.AppendLine(
+            $"- 从出生点可达通行格：" +
+            $"{navigationCoverage.ReachableCells:N0}/" +
+            $"{navigationCoverage.TraversableCells:N0} " +
+            $"（{navigationCoverage.Ratio:P2}）");
+        builder.AppendLine(
+            $"- 蓝图要求的最低覆盖率：" +
+            $"{definition.MinimumReachableWalkableRatio:P2}");
         builder.AppendLine();
         builder.AppendLine("## 可达性验证");
         builder.AppendLine();
@@ -788,4 +861,9 @@ internal sealed class MissionBuilder
         string InitialPair,
         int MinimumPatrolDistance,
         string PatrolPair);
+
+    private sealed record NavigationCoverage(
+        int ReachableCells,
+        int TraversableCells,
+        double Ratio);
 }

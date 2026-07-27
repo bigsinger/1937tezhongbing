@@ -346,10 +346,11 @@ public static class OriginalVwfImporter
     {
         if (string.IsNullOrWhiteSpace(originalAssetRoot))
             return;
-        var assetLevelId = ResolveAssetLevelId(
+        var assetLevels = ResolveAssetLevels(
             originalAssetRoot, levelId);
         var levelPath = Path.Combine(
-            originalAssetRoot, "maps", assetLevelId, "level.json");
+            originalAssetRoot, "maps",
+            assetLevels.EntityLevelId, "level.json");
         if (!File.Exists(levelPath))
             return;
 
@@ -387,28 +388,42 @@ public static class OriginalVwfImporter
         }
 
         var background = Path.Combine(
-            originalAssetRoot, "maps", assetLevelId, "terrain.png");
+            originalAssetRoot, "maps",
+            assetLevels.TerrainLevelId, "terrain.png");
         if (File.Exists(background))
             document.BackgroundAsset =
-                $"maps/{assetLevelId}/terrain.png";
+                $"maps/{assetLevels.TerrainLevelId}/terrain.png";
     }
 
-    private static string ResolveAssetLevelId(
+    private static AssetLevelResolution ResolveAssetLevels(
         string originalAssetRoot, string levelId)
     {
         var aliasPath = Path.Combine(
             originalAssetRoot, "maps", levelId, "level-alias.json");
         if (!File.Exists(aliasPath))
-            return levelId;
+            return new AssetLevelResolution(levelId, levelId);
         using var alias = JsonDocument.Parse(
             File.ReadAllText(aliasPath));
         var baseLevelId = Text(alias.RootElement, "base_level_id");
-        if (baseLevelId.Length == 4 &&
-            baseLevelId[0] == 'm' &&
-            baseLevelId[1..].All(char.IsAsciiDigit))
-            return baseLevelId;
+        ValidateLevelId(baseLevelId, aliasPath, "base_level_id");
+        var terrainLevelId =
+            Text(alias.RootElement, "terrain_level_id");
+        if (string.IsNullOrWhiteSpace(terrainLevelId))
+            terrainLevelId = baseLevelId;
+        ValidateLevelId(
+            terrainLevelId, aliasPath, "terrain_level_id");
+        return new AssetLevelResolution(baseLevelId, terrainLevelId);
+    }
+
+    private static void ValidateLevelId(
+        string value, string aliasPath, string propertyName)
+    {
+        if (value.Length == 4 &&
+            value[0] == 'm' &&
+            value[1..].All(char.IsAsciiDigit))
+            return;
         throw new InvalidDataException(
-            $"Invalid map asset alias in {aliasPath}.");
+            $"Invalid {propertyName} in map asset alias {aliasPath}.");
     }
 
     private static string Text(JsonElement value, string name) =>
@@ -439,4 +454,8 @@ public static class OriginalVwfImporter
 
     private static bool ContainsAny(string value, params string[] needles) =>
         needles.Any(value.Contains);
+
+    private sealed record AssetLevelResolution(
+        string EntityLevelId,
+        string TerrainLevelId);
 }

@@ -1,0 +1,6 @@
+{
+  "schema_version": 2,
+  "base_level_id": "m006",
+  "terrain_level_id": "m014",
+  "note": "m014 keeps m006 scene resource identities for the original mission state machine, but its terrain and all eight districts are recomposed into a new spatial layout."
+}

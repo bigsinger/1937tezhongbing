@@ -16,11 +16,16 @@ if errorlevel 1 (
   if errorlevel 1 exit /b 1
 )
 if not exist "%~dp0build" mkdir "%~dp0build"
-cl /nologo /LD /O2 /MT /EHsc /std:c++17 /W4 /DWIN32 /D_WINDOWS ^
-  /I"%~dp0..\..\..\SDK\include" ^
-  /Fo"%~dp0build\\" /Fd"%~dp0build\\" ^
-  "%~dp0dinput_proxy.cpp" "%~dp0dinput_proxy.def" ^
-  /link /MACHINE:X86 /Brepro /OUT:"%~dp0build\dinput.dll" ^
-  /IMPLIB:"%~dp0build\dinput_proxy.lib" ^
-  /PDB:"%~dp0build\dinput.pdb" user32.lib winmm.lib dxguid.lib
+cl /nologo /EHsc /std:c++17 /O2 /MT /W4 /WX ^
+  /I"%~dp0include" ^
+  "%~dp0tests\sdk_tests.cpp" ^
+  /Fe:"%~dp0build\M1937SDK.Tests.exe" ^
+  /Fo:"%~dp0build\\" ^
+  /link /MACHINE:X86 /Brepro
+if errorlevel 1 exit /b %errorlevel%
+if /i "%~1"=="--compile-only" (
+  echo M1937SDK compile-only validation passed.
+  exit /b 0
+)
+"%~dp0build\M1937SDK.Tests.exe" "%~dp0..\Mod\M1937.exe"
 exit /b %errorlevel%

@@ -1,0 +1,26 @@
+[第 15 关：破晓密令（全新合成地图）]
+requested_level=15
+expected_engine_level=7
+new_game_immediate=7
+mission_vwf=1937M014.VWF
+legacy_scroll_entry_opcode=0x56
+enhanced_hearing_radius=224
+enhanced_alert_radius=960
+logical_viewport=0x0
+renderer_viewport=800x600
+expected_hearing_radius=224
+expected_alert_radius=960
+observed_mission=7
+final_logical_viewport=1024x768
+final_renderer_viewport=1024x768
+process_exited=False
+responding=True
+
+测试方式：
+- OriginalLevelProbe 通过进程内原版输入状态进入任务，不移动物理鼠标；
+- 运行 40 秒，确认关卡 15 映射到引擎任务 7；
+- 确认原始 1937M006.VWF 字符串仅在该进程中重定向为 1937M014.VWF；
+- 游戏窗口保持响应，最终逻辑/渲染尺寸均为 1024×768；
+- 截图先压缩到 30,834 字节，再使用 Windows 本地简体中文 OCR；
+- 地图结构、出生安全和任务路径另由 VwfBlueprintComposer /
+  VwfMissionBuilder 验证。

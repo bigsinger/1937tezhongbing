@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "address_kind": "rva_from_loaded_M1937_exe_base",
+  "supported_executable": {
+    "sha256": "F4DD1131DF6C993C01EA011F9439BC725E6DC6491B5FBBA47724D7D5B64DA3F3",
+    "file_size": 1114162,
+    "pe_timestamp": "0x3AE9BFE6",
+    "preferred_image_base": "0x00400000",
+    "size_of_image": "0x00124000",
+    "entry_point_rva": "0x0006D567"
+  },
+  "addresses": [
+    {"name": "SafeBlit", "rva": "0x0000EE30", "kind": "function", "confidence": "verified", "expected_hex": "83EC2C535556"},
+    {"name": "MenuPoll", "rva": "0x00044800", "kind": "function", "confidence": "verified", "expected_hex": "8B4424045355"},
+    {"name": "SmoothScroll", "rva": "0x0004C9B0", "kind": "function", "confidence": "observed"},
+    {"name": "FalseResourceWarningBranch", "rva": "0x0000734A", "kind": "instruction", "confidence": "verified", "expected_hex": "740C"},
+    {"name": "StartupMovieEnqueue", "rva": "0x0000762C", "kind": "instruction_sequence", "confidence": "verified", "expected_hex": "688CF74C0053538BCEE87E9BFFFF687CF74C006A64538BCEE86F9BFFFF"},
+    {"name": "NewGameLevelImmediate", "rva": "0x00003B66", "kind": "int32_operand", "confidence": "verified", "expected_hex": "01000000"},
+    {"name": "Mission12VwfName", "rva": "0x000CF4A8", "kind": "ascii_string", "confidence": "verified", "expected_ascii": "1937M011.VWF"},
+    {"name": "Mission7VwfName", "rva": "0x000CF4F8", "kind": "ascii_string", "confidence": "verified", "expected_ascii": "1937M006.VWF"},
+    {"name": "CloseHearingRadiusImmediate", "rva": "0x0005DD27", "kind": "int32_operand", "confidence": "verified", "original_value": 128},
+    {"name": "AlertRadiusOperand1", "rva": "0x00056E62", "kind": "int32_operand", "confidence": "verified", "original_value": 640},
+    {"name": "AlertRadiusOperand2", "rva": "0x00056E94", "kind": "int32_operand", "confidence": "verified", "original_value": 640},
+    {"name": "AlertRadiusOperand3", "rva": "0x00057049", "kind": "int32_operand", "confidence": "verified", "original_value": 640},
+    {"name": "AlertRadiusOperand4", "rva": "0x00057187", "kind": "int32_operand", "confidence": "verified", "original_value": 640},
+    {"name": "ScreenWidth", "rva": "0x000E6E0C", "kind": "int32_global", "confidence": "runtime_verified"},
+    {"name": "ScreenHeight", "rva": "0x000E6E10", "kind": "int32_global", "confidence": "runtime_verified"},
+    {"name": "MouseLeftPressed", "rva": "0x000E6E64", "kind": "int32_global", "confidence": "runtime_verified"},
+    {"name": "MouseLeftDown", "rva": "0x000E6E74", "kind": "int32_global", "confidence": "runtime_verified"},
+    {"name": "CursorX", "rva": "0x000E6EA0", "kind": "int32_global", "confidence": "runtime_verified"},
+    {"name": "BriefingAdvance", "rva": "0x000E6EA9", "kind": "byte_global", "confidence": "runtime_verified"},
+    {"name": "CursorY", "rva": "0x000E6FAC", "kind": "int32_global", "confidence": "runtime_verified"},
+    {"name": "MouseLeftReleased", "rva": "0x000E6FB0", "kind": "int32_global", "confidence": "runtime_verified"},
+    {"name": "CurrentMission", "rva": "0x000E7060", "kind": "int32_global", "confidence": "runtime_verified"},
+    {"name": "RendererHeight", "rva": "0x000D6A88", "kind": "int32_global", "confidence": "runtime_verified"},
+    {"name": "RendererWidth", "rva": "0x000D6A8C", "kind": "int32_global", "confidence": "runtime_verified"}
+  ]
+}

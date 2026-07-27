@@ -82,6 +82,16 @@ if (!string.IsNullOrWhiteSpace(originalVwf))
         throw new InvalidOperationException(
             "Original asset enrichment test failed.");
     }
+    if (Path.GetFileName(originalVwf)
+            .Equals("1937m014.vwf",
+                StringComparison.OrdinalIgnoreCase) &&
+        !imported.BackgroundAsset.Equals(
+            "maps/m014/terrain.png",
+            StringComparison.OrdinalIgnoreCase))
+    {
+        throw new InvalidOperationException(
+            "Composite terrain/entity alias test failed.");
+    }
     var importedRoutes = imported.Objects.Count(
         item => item.PatrolWaypoints.Count > 0);
     if (importedRoutes == 0 ||
