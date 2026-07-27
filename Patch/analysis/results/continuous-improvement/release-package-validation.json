@@ -1,0 +1,16 @@
+﻿{
+    "schema":  1,
+    "archive":  "1937特种兵-Win10-Win11兼容补丁-v1.4.0-20260727.zip",
+    "archive_sha256":  "5B94FC2EA5CE87CD6A493A2413068AF4737C609C8A61286131CFC58E2B3830D3",
+    "package_entries":  70,
+    "installer":  "passed",
+    "uninstaller":  "passed",
+    "executable_unchanged":  true,
+    "preexisting_configuration_restored":  true,
+    "stable_window_cursor_profile":  true,
+    "mission_sidecar_included":  true,
+    "mission_sidecar_manifest_verified":  true,
+    "packaged_sidecar_source_compiles":  true,
+    "packaged_plugin_source_compiles":  true,
+    "original_game_data_files":  0
+}

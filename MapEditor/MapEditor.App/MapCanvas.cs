@@ -22,6 +22,27 @@ public sealed class MapObjectEventArgs(MapObject mapObject) : EventArgs
     public MapObject MapObject { get; } = mapObject;
 }
 
+public sealed class MapRectangleEventArgs(
+    int x1, int y1, int x2, int y2) : EventArgs
+{
+    public int X1 { get; } = x1;
+    public int Y1 { get; } = y1;
+    public int X2 { get; } = x2;
+    public int Y2 { get; } = y2;
+}
+
+public sealed class PatrolWaypointMoveEventArgs(
+    MapObject mapObject,
+    int waypointIndex,
+    int x,
+    int y) : EventArgs
+{
+    public MapObject MapObject { get; } = mapObject;
+    public int WaypointIndex { get; } = waypointIndex;
+    public int X { get; } = x;
+    public int Y { get; } = y;
+}
+
 public readonly record struct MapRenderStatistics(
     MapGridWindow VisibleCells,
     int DrawnObjects,
@@ -42,9 +63,14 @@ public sealed class MapCanvas : FrameworkElement
     private HashSet<int>? livingOccupants;
     private string? assetRoot;
     private string? selectedObjectId;
+    private HashSet<string> selectedObjectIds =
+        new(StringComparer.Ordinal);
     private double zoom = 1;
     private bool dragging;
     private bool eraseDrag;
+    private (int X, int Y)? rectangleStart;
+    private (int X, int Y)? rectangleCurrent;
+    private int draggingWaypointIndex = -1;
     private bool showPatrolRoutes = true;
     private bool motionPreviewEnabled = true;
     private bool showConnectivityHeatmap;
@@ -73,6 +99,9 @@ public sealed class MapCanvas : FrameworkElement
     public event EventHandler<CellEventArgs>? CellHovered;
     public event EventHandler<CellEventArgs>? CellInvoked;
     public event EventHandler<MapObjectEventArgs>? ObjectSelected;
+    public event EventHandler<MapRectangleEventArgs>? RectangleSelected;
+    public event EventHandler<PatrolWaypointMoveEventArgs>?
+        PatrolWaypointMoved;
 
     public MapDocument? Document
     {
@@ -81,6 +110,7 @@ public sealed class MapCanvas : FrameworkElement
         {
             document = value;
             selectedObjectId = null;
+            selectedObjectIds.Clear();
             expandedRouteCache.Clear();
             livingOccupants = null;
             ClearAnalysisCache();
@@ -109,6 +139,25 @@ public sealed class MapCanvas : FrameworkElement
         set
         {
             selectedObjectId = value;
+            selectedObjectIds.Clear();
+            if (!string.IsNullOrWhiteSpace(value))
+                selectedObjectIds.Add(value);
+            ClearAnalysisCache();
+            InvalidateVisual();
+            DrawPatrolRoutes();
+            DrawMotionOverlay();
+        }
+    }
+
+    public IReadOnlyCollection<string> SelectedObjectIds
+    {
+        get => selectedObjectIds;
+        set
+        {
+            selectedObjectIds = value is null
+                ? new HashSet<string>(StringComparer.Ordinal)
+                : value.ToHashSet(StringComparer.Ordinal);
+            selectedObjectId = selectedObjectIds.FirstOrDefault();
             ClearAnalysisCache();
             InvalidateVisual();
             DrawPatrolRoutes();
@@ -154,6 +203,8 @@ public sealed class MapCanvas : FrameworkElement
     }
 
     public bool ObjectSelectionEnabled { get; set; } = true;
+    public bool RectangleDragEnabled { get; set; } = true;
+    public bool PatrolEditingEnabled { get; set; }
 
     public bool ShowConnectivityHeatmap
     {
@@ -292,6 +343,7 @@ public sealed class MapCanvas : FrameworkElement
             DrawGrid(drawing, cellWidth, cellHeight, visibleCells);
         var drawnObjects = DrawObjects(
             drawing, cellWidth, cellHeight, viewport);
+        DrawSelectionRectangle(drawing, cellWidth, cellHeight);
         LastRenderStatistics = new MapRenderStatistics(
             visibleCells,
             drawnObjects,
@@ -306,6 +358,12 @@ public sealed class MapCanvas : FrameworkElement
         if (!TryCell(e.GetPosition(this), out var x, out var y))
             return;
         CellHovered?.Invoke(this, new CellEventArgs(x, y, false));
+        if (rectangleStart is not null)
+        {
+            rectangleCurrent = (x, y);
+            InvalidateVisual();
+            return;
+        }
         if (dragging)
             CellInvoked?.Invoke(this, new CellEventArgs(x, y, eraseDrag));
     }
@@ -318,12 +376,25 @@ public sealed class MapCanvas : FrameworkElement
             return;
         if (e.ChangedButton == MouseButton.Left)
         {
+            if (PatrolEditingEnabled &&
+                TryBeginWaypointDrag(x, y))
+            {
+                CaptureMouse();
+                return;
+            }
             var hit = FindObjectAt(x, y);
             if (hit is not null &&
                 (ObjectSelectionEnabled ||
                  Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)))
             {
                 ObjectSelected?.Invoke(this, new MapObjectEventArgs(hit));
+                return;
+            }
+            if (RectangleDragEnabled && ObjectSelectionEnabled)
+            {
+                rectangleStart = (x, y);
+                rectangleCurrent = (x, y);
+                CaptureMouse();
                 return;
             }
         }
@@ -336,8 +407,85 @@ public sealed class MapCanvas : FrameworkElement
     protected override void OnMouseUp(MouseButtonEventArgs e)
     {
         base.OnMouseUp(e);
+        if (draggingWaypointIndex >= 0 &&
+            TryCell(e.GetPosition(this), out var waypointX, out var waypointY))
+        {
+            var item = document?.Objects.FirstOrDefault(candidate =>
+                candidate.Id == selectedObjectId);
+            if (item is not null)
+                PatrolWaypointMoved?.Invoke(
+                    this,
+                    new PatrolWaypointMoveEventArgs(
+                        item,
+                        draggingWaypointIndex,
+                        waypointX,
+                        waypointY));
+            draggingWaypointIndex = -1;
+            ReleaseMouseCapture();
+            return;
+        }
+        if (rectangleStart is { } start)
+        {
+            var end = rectangleCurrent ?? start;
+            rectangleStart = null;
+            rectangleCurrent = null;
+            ReleaseMouseCapture();
+            InvalidateVisual();
+            if (start != end)
+                RectangleSelected?.Invoke(
+                    this,
+                    new MapRectangleEventArgs(
+                        start.X, start.Y, end.X, end.Y));
+            else
+                CellInvoked?.Invoke(
+                    this,
+                    new CellEventArgs(start.X, start.Y, false));
+            return;
+        }
         dragging = false;
         ReleaseMouseCapture();
+    }
+
+    private bool TryBeginWaypointDrag(int x, int y)
+    {
+        if (document is null || selectedObjectId is null)
+            return false;
+        var item = document.Objects.FirstOrDefault(candidate =>
+            candidate.Id == selectedObjectId);
+        if (item is null)
+            return false;
+        for (var index = 0;
+             index < item.PatrolWaypoints.Count;
+             ++index)
+        {
+            var point = item.PatrolWaypoints[index];
+            if (point.X == x && point.Y == y)
+            {
+                draggingWaypointIndex = index;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void DrawSelectionRectangle(
+        DrawingContext drawing,
+        double cellWidth,
+        double cellHeight)
+    {
+        if (rectangleStart is not { } start)
+            return;
+        var end = rectangleCurrent ?? start;
+        var left = Math.Min(start.X, end.X) * cellWidth;
+        var top = Math.Min(start.Y, end.Y) * cellHeight;
+        var right = (Math.Max(start.X, end.X) + 1) * cellWidth;
+        var bottom = (Math.Max(start.Y, end.Y) + 1) * cellHeight;
+        drawing.DrawRectangle(
+            new SolidColorBrush(Color.FromArgb(42, 55, 128, 196)),
+            new Pen(
+                new SolidColorBrush(Color.FromRgb(38, 96, 170)),
+                1.5),
+            new Rect(left, top, right - left, bottom - top));
     }
 
     private void DrawTerrain(
@@ -358,6 +506,8 @@ public sealed class MapCanvas : FrameworkElement
                     (byte)(88 + (hash & 47)),
                     (byte)(101 + ((hash >> 8) & 47)),
                     (byte)(72 + ((hash >> 16) & 47)));
+                color.A = (byte)Math.Clamp(
+                    Math.Round(layer.Opacity * 255), 0, 255);
                 drawing.DrawRectangle(
                     new SolidColorBrush(color), null,
                     new Rect(
@@ -376,6 +526,8 @@ public sealed class MapCanvas : FrameworkElement
         var layer = document.Layer(kind);
         if (!layer.Visible)
             return;
+        color.A = (byte)Math.Clamp(
+            Math.Round(color.A * layer.Opacity), 0, 255);
         var brush = new SolidColorBrush(color);
         for (var y = visible.Top; y < visible.BottomExclusive; y++)
             for (var x = visible.Left; x < visible.RightExclusive; x++)
@@ -436,7 +588,7 @@ public sealed class MapCanvas : FrameworkElement
             var anchor = ObjectAnchor(item, cellWidth, cellHeight);
             if (!anchorVisibility.Contains(anchor))
                 continue;
-            var selected = item.Id == selectedObjectId;
+            var selected = selectedObjectIds.Contains(item.Id);
             var image = LoadAsset(item.AssetPath);
             Rect rect;
             if (image is not null)
@@ -875,7 +1027,7 @@ public sealed class MapCanvas : FrameworkElement
         {
             var position = AnimatedRoutePosition(
                 ExpandedRoute(item), cellWidth, cellHeight);
-            var isSelected = item.Id == selectedObjectId;
+            var isSelected = selectedObjectIds.Contains(item.Id);
             var radius = isSelected ? 5.5 : 3.6;
             var fill = isSelected
                 ? Color.FromArgb(255, 255, 205, 58)

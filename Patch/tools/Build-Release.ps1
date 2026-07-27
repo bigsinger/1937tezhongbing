@@ -1,5 +1,5 @@
 param(
-    [string]$WorkDirectory = 'E:\1937\patch-v137-build'
+    [string]$WorkDirectory = 'E:\1937\patch-v140-build'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,9 +19,9 @@ $basePackage = if ($basePackageItem) { $basePackageItem.FullName } else { '' }
 $packageName = if ($basePackageItem) {
     $basePackageItem.BaseName.Replace(
         'v1.2.0-20260726',
-        'v1.3.7-20260726')
+        'v1.4.0-20260727')
 } else {
-    '1937-compatibility-patch-v1.3.7-20260726'
+    '1937-compatibility-patch-v1.4.0-20260727'
 }
 $stage = Join-Path $workRoot $packageName
 $archive = Join-Path $patchRoot ('release\' + $packageName + '.zip')
@@ -30,11 +30,34 @@ $proxyRoot = Join-Path $patchRoot 'src\dinput-proxy'
 $selectorRoot = Join-Path $patchRoot 'src\level-selector'
 $modRoot = Join-Path $repositoryRoot 'Mod'
 
+function Copy-SourceTree {
+    param(
+        [Parameter(Mandatory)]
+        [string]$From,
+        [Parameter(Mandatory)]
+        [string]$To
+    )
+    $sourceRoot = [IO.Path]::GetFullPath($From).TrimEnd('\')
+    Get-ChildItem -LiteralPath $sourceRoot -Recurse -File |
+        Where-Object {
+            $_.FullName -notmatch '\\(bin|obj|build|\.vs)\\'
+        } |
+        ForEach-Object {
+            $relative = $_.FullName.Substring($sourceRoot.Length + 1)
+            $target = Join-Path $To $relative
+            [IO.Directory]::CreateDirectory(
+                [IO.Path]::GetDirectoryName($target)) | Out-Null
+            Copy-Item -LiteralPath $_.FullName -Destination $target -Force
+        }
+}
+
 if (-not (Test-Path -LiteralPath $basePackage -PathType Leaf)) {
     throw "Base package is missing: $basePackage"
 }
 
 & (Join-Path $PSScriptRoot 'Build-Mod.ps1') `
+    -RepositoryRoot $repositoryRoot | Out-Null
+& (Join-Path $PSScriptRoot 'Build-MissionSidecar.ps1') `
     -RepositoryRoot $repositoryRoot | Out-Null
 
 if (Test-Path -LiteralPath $workRoot) {
@@ -75,6 +98,42 @@ Copy-Item -LiteralPath (Join-Path $proxyRoot 'build\dinput.dll') `
     -Destination (Join-Path $payload 'dinput.dll') -Force
 Copy-Item -LiteralPath (Join-Path $modRoot 'ddraw.ini') `
     -Destination (Join-Path $payload 'ddraw.ini') -Force
+$sidecarTarget = Join-Path $payload 'Tools\MissionSidecar'
+New-Item -ItemType Directory -Path $sidecarTarget -Force | Out-Null
+Get-ChildItem -LiteralPath (Join-Path $modRoot 'Tools\MissionSidecar') |
+    ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName `
+            -Destination $sidecarTarget -Recurse -Force
+    }
+$missionTarget = Join-Path $payload 'Missions'
+New-Item -ItemType Directory -Path $missionTarget -Force | Out-Null
+Get-ChildItem -LiteralPath (Join-Path $modRoot 'Missions') -File |
+    ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName `
+            -Destination $missionTarget -Force
+    }
+$sdkSourceTarget = Join-Path $source 'SDK'
+$schemaTarget = Join-Path $sdkSourceTarget 'schemas'
+New-Item -ItemType Directory -Path $schemaTarget -Force | Out-Null
+Copy-Item -LiteralPath (
+    Join-Path $repositoryRoot 'SDK\schemas\mission-sidecar-v1.schema.json') `
+    -Destination $schemaTarget -Force
+Copy-Item -LiteralPath (
+    Join-Path $repositoryRoot 'SDK\schemas\mission-state-v1.schema.json') `
+    -Destination $schemaTarget -Force
+$sidecarSourceTarget = Join-Path $source 'Patch\tools\MissionSidecar'
+Copy-SourceTree `
+    -From (Join-Path $patchRoot 'tools\MissionSidecar') `
+    -To $sidecarSourceTarget
+Copy-SourceTree `
+    -From (Join-Path $repositoryRoot 'SDK\include') `
+    -To (Join-Path $sdkSourceTarget 'include')
+Copy-SourceTree `
+    -From (Join-Path $repositoryRoot 'SDK\generated') `
+    -To (Join-Path $sdkSourceTarget 'generated')
+Copy-SourceTree `
+    -From (Join-Path $repositoryRoot 'SDK\samples\mission-plugin') `
+    -To (Join-Path $sdkSourceTarget 'samples\mission-plugin')
 Copy-Item -LiteralPath (Join-Path $proxyRoot 'dinput_proxy.cpp') `
     -Destination (Join-Path $source 'dinput-proxy\dinput_proxy.cpp') -Force
 Copy-Item -LiteralPath (Join-Path $proxyRoot 'dinput_proxy.def') `
@@ -129,28 +188,31 @@ $installPath = Join-Path $stage 'Install-Patch.ps1'
 $installText = Get-Content -LiteralPath $installPath -Raw -Encoding UTF8
 $installText = $installText.Replace(
     '1937 compatibility patch v1.1.1 backup',
-    '1937 compatibility patch v1.3.7 backup')
+    '1937 compatibility patch v1.4.0 backup')
 $installText = $installText.Replace(
     '1937 compatibility patch v1.2.0 backup',
-    '1937 compatibility patch v1.3.7 backup')
+    '1937 compatibility patch v1.4.0 backup')
 $installText = $installText.Replace(
     '1937 compatibility patch v1.3.0 backup',
-    '1937 compatibility patch v1.3.7 backup')
+    '1937 compatibility patch v1.4.0 backup')
 $installText = $installText.Replace(
     '1937 compatibility patch v1.3.2 backup',
-    '1937 compatibility patch v1.3.7 backup')
+    '1937 compatibility patch v1.4.0 backup')
 $installText = $installText.Replace(
     '1937 compatibility patch v1.3.3 backup',
-    '1937 compatibility patch v1.3.7 backup')
+    '1937 compatibility patch v1.4.0 backup')
 $installText = $installText.Replace(
     '1937 compatibility patch v1.3.4 backup',
-    '1937 compatibility patch v1.3.7 backup')
+    '1937 compatibility patch v1.4.0 backup')
 $installText = $installText.Replace(
     '1937 compatibility patch v1.3.5 backup',
-    '1937 compatibility patch v1.3.7 backup')
+    '1937 compatibility patch v1.4.0 backup')
 $installText = $installText.Replace(
     '1937 compatibility patch v1.3.6 backup',
-    '1937 compatibility patch v1.3.7 backup')
+    '1937 compatibility patch v1.4.0 backup')
+$installText = $installText.Replace(
+    '1937 compatibility patch v1.3.7 backup',
+    '1937 compatibility patch v1.4.0 backup')
 $installText = $installText.Replace(
     'Use the windowed-mode launcher in the game directory. Press Alt+Enter for fullscreen.',
     'Run the modern enhanced launcher, then choose the validated 1024x768 stable window mode.')

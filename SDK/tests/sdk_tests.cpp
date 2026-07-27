@@ -202,6 +202,75 @@ int main(int argc, char** argv) {
                 m1937::sdk::find_mission_route(16) == nullptr,
             "mission route lookup accepted an invalid level", checks);
 
+        using namespace m1937::sdk::enemy_ai;
+        const auto novice = tuning_for(0, 0);
+        const auto veteran = tuning_for(3, 3);
+        require(
+            novice.search_point_count == 0 &&
+                veteran.search_point_count == 4 &&
+                veteran.maximum_reinforcements == 4 &&
+                veteran.reaction_delay_ms < novice.reaction_delay_ms,
+            "AI difficulty tuning is not monotonic", checks);
+        Candidate candidates[] = {
+            {30, 300, true},
+            {20, 100, true},
+            {10, 50, false},
+            {40, 200, true},
+            {50, 400, true}
+        };
+        std::uintptr_t selected[8]{};
+        const auto selected_count = select_reinforcements(
+            candidates, std::size(candidates),
+            selected, std::size(selected), 2);
+        require(
+            selected_count == 2 &&
+                selected[0] == 20 &&
+                selected[1] == 40,
+            "AI reinforcement selection is not bounded/nearest-first",
+            checks);
+        const LastKnownObservation observation{
+            1000, 2000, 8, 1234};
+        Point search[4]{};
+        const auto search_count = build_search_pattern(
+            observation, veteran, search, std::size(search));
+        require(
+            search_count == 4 &&
+                search[0] == Point{1096, 2000} &&
+                search[1] == Point{1000, 1904} &&
+                search[2] == Point{1000, 2096},
+            "AI search pattern is not anchored to last observation",
+            checks);
+        require(
+            decide_search_step(
+                false, 1000, 18000, false, false, 1, 4) ==
+                SearchDecision::keep_current_goal &&
+            decide_search_step(
+                false, 1000, 18000, true, false, 1, 4) ==
+                SearchDecision::advance_to_next_point &&
+            decide_search_step(
+                true, 1000, 18000, false, false, 1, 4) ==
+                SearchDecision::hand_back_to_original_ai &&
+            decide_search_step(
+                false, 18000, 18000, false, false, 1, 4) ==
+                SearchDecision::hand_back_to_original_ai,
+            "AI search exit/advance policy mismatch", checks);
+        require(
+            !samples_live_target_after_alert,
+            "AI policy permits live target sampling after alert", checks);
+        require(
+            m1937::sdk::plugin::abi_version_v1 == 0x00010000 &&
+                m1937::sdk::plugin::mission_schema_version_v1 == 1 &&
+                sizeof(m1937::sdk::plugin::WorldEventV1) == 40,
+            "plugin ABI v1 layout/version mismatch", checks);
+        require(
+            offsetof(
+                m1937::sdk::plugin::WorldEventV1,
+                monotonic_milliseconds) == 16 &&
+                offsetof(
+                    m1937::sdk::plugin::WorldEventV1,
+                    value) == 36,
+            "plugin world-event field offsets changed", checks);
+
         std::cout << "M1937SDK validation passed (" << checks
                   << " executable checks, native layout static_asserts passed).\n";
         return 0;

@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/bigsinger/1937tezhongbing/SDK/schemas/mission-state-v1.schema.json",
+  "title": "M1937 mission sidecar save state v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "mission_id",
+    "definition_sha256",
+    "save_sha256",
+    "last_event_sequence",
+    "status",
+    "objectives"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "mission_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "definition_sha256": {
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{64}$"
+    },
+    "save_sha256": {
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{64}$"
+    },
+    "last_event_sequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "started_at_milliseconds": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "status": {
+      "enum": [
+        "Running",
+        "Succeeded",
+        "Failed"
+      ]
+    },
+    "failure_reason": {
+      "type": "string"
+    },
+    "objectives": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/objective_state"
+      }
+    }
+  },
+  "$defs": {
+    "objective_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "count",
+        "completed"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "completed": {
+          "type": "boolean"
+        },
+        "completed_at_milliseconds": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

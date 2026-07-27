@@ -61,6 +61,8 @@ GamekingLogo.svt
 Mod/dinput_system.dll
 Mod/*.i64
 Mod/*.log
+Mod/*.SAV.m1937state.json*
+Mod/Plugins/State/
 
 # The editor ships a curated, converted PNG/JSON asset library so community
 # maps can be previewed and authored without machine-specific absolute paths.

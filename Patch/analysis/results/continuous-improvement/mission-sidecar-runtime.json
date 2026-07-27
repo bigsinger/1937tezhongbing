@@ -1,0 +1,11 @@
+﻿{
+    "schema":  1,
+    "selector_level":  13,
+    "duration_seconds":  25,
+    "host_exit_code":  0,
+    "plugin_loaded":  true,
+    "plugin_event_state_bytes":  8,
+    "original_save_write_operations":  0,
+    "system_cursor_calls":  0,
+    "global_focus_calls":  0
+}

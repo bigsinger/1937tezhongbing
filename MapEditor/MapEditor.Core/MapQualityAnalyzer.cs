@@ -119,8 +119,12 @@ public static class MapQualityAnalyzer
         var seamsY = document.QualityHorizontalSeams.ToHashSet();
         foreach (var item in document.Objects.Where(item =>
                      IsLargeStatic(item) &&
-                     (seamsX.Any(x => Math.Abs(item.X - x) <= 1) ||
-                      seamsY.Any(y => Math.Abs(item.Y - y) <= 1))))
+                     (seamsX.Any(x =>
+                         x > item.X &&
+                         x < item.X + FootprintWidth(item)) ||
+                      seamsY.Any(y =>
+                         y > item.Y &&
+                         y < item.Y + FootprintHeight(item)))))
         {
             issues.Add(new MapIssue(
                 MapIssueSeverity.Info,
@@ -152,17 +156,36 @@ public static class MapQualityAnalyzer
             document.Layer(EditorLayerKind.MovementObstacle).Cells;
         foreach (var item in document.Objects.Where(IsBlockingObject))
         {
-            var index = document.Index(item.X, item.Y);
-            if (movement[index] != 0)
+            var footprintWidth = FootprintWidth(item);
+            var footprintHeight = FootprintHeight(item);
+            var expectedCells = 0;
+            var blockedCells = 0;
+            for (var y = item.Y;
+                 y < item.Y + footprintHeight &&
+                 y < document.Height;
+                 ++y)
+            for (var x = item.X;
+                 x < item.X + footprintWidth &&
+                 x < document.Width;
+                 ++x)
+            {
+                ++expectedCells;
+                if (movement[document.Index(x, y)] != 0)
+                    ++blockedCells;
+            }
+            if (expectedCells > 0 && blockedCells == expectedCells)
                 continue;
             issues.Add(new MapIssue(
                 MapIssueSeverity.Warning,
                 "FOOTPRINT_MOVEMENT_MISMATCH",
-                $"阻挡物“{item.Name}”锚点没有移动障碍；请核对 footprint。",
+                $"阻挡物“{item.Name}”的 {footprintWidth}×" +
+                $"{footprintHeight} footprint 仅有 {blockedCells}/" +
+                $"{expectedCells} 格移动障碍。",
                 item.X,
                 item.Y,
                 item.Id,
-                "素材类别+移动层"));
+                item.Properties.GetValueOrDefault(
+                    "metadata_source", "素材元数据+移动层")));
             if (issues.Count(issue =>
                     issue.Code == "FOOTPRINT_MOVEMENT_MISMATCH") >= 40)
                 break;
@@ -240,7 +263,29 @@ public static class MapQualityAnalyzer
                     target.X,
                     target.Y,
                     target.Id,
-                    "移动层连通分析"));
+                "移动层连通分析"));
+            }
+        }
+        var graph = MissionGraphService.Build(document);
+        foreach (var error in graph.Errors)
+        {
+            issues.Add(new MapIssue(
+                MapIssueSeverity.Error,
+                "TASK_GRAPH_INVALID",
+                error,
+                ValueSource: "任务依赖图/阶段/失败/撤离检查"));
+        }
+        if (document.ImportedFrom is not null)
+        {
+            foreach (var task in document.Tasks.Where(task =>
+                         task.OriginalStateCode < 0))
+            {
+                issues.Add(new MapIssue(
+                    MapIssueSeverity.Warning,
+                    "TASK_STATE_MAPPING_MISSING",
+                    $"任务“{task.Title}”尚未映射到原版任务状态码。",
+                    ObjectId: task.Id,
+                    ValueSource: "原版状态机映射"));
             }
         }
     }
@@ -613,7 +658,10 @@ public static class MapQualityAnalyzer
         foreach (var item in document.Objects.Where(IsLargeStatic))
         {
             var overlap = characters.FirstOrDefault(character =>
-                character.X == item.X && character.Y == item.Y);
+                character.X >= item.X &&
+                character.X < item.X + FootprintWidth(item) &&
+                character.Y >= item.Y &&
+                character.Y < item.Y + FootprintHeight(item));
             if (overlap is null)
                 continue;
             issues.Add(new MapIssue(
@@ -624,7 +672,8 @@ public static class MapQualityAnalyzer
                 item.X,
                 item.Y,
                 item.Id,
-                "对象锚点估算"));
+                item.Properties.GetValueOrDefault(
+                    "metadata_source", "对象 footprint 估算")));
         }
     }
 
@@ -681,15 +730,34 @@ public static class MapQualityAnalyzer
         value == 0 || value >= 1000;
 
     private static bool IsBlockingObject(MapObject item) =>
+        PropertyBool(item, "blocks_movement") ||
         item.Kind is "building" or "wall" or "door" or "obstacle" ||
         item.Category.Contains("建筑", StringComparison.Ordinal) ||
         item.Category.Contains("墙", StringComparison.Ordinal) ||
         item.Category.Contains("障碍", StringComparison.Ordinal);
 
     private static bool IsLargeStatic(MapObject item) =>
+        PropertyInt(item, "occlusion_height", 0) > 0 ||
         item.Kind is "building" or "wall" or "door" ||
         item.Category.Contains("建筑", StringComparison.Ordinal) ||
         item.Category.Contains("墙", StringComparison.Ordinal);
+
+    private static int FootprintWidth(MapObject item) =>
+        Math.Clamp(PropertyInt(item, "footprint_width", 1), 1, 64);
+
+    private static int FootprintHeight(MapObject item) =>
+        Math.Clamp(PropertyInt(item, "footprint_height", 1), 1, 64);
+
+    private static int PropertyInt(
+        MapObject item, string name, int fallback) =>
+        item.Properties.TryGetValue(name, out var raw) &&
+        int.TryParse(raw, out var value)
+            ? value
+            : fallback;
+
+    private static bool PropertyBool(MapObject item, string name) =>
+        item.Properties.TryGetValue(name, out var raw) &&
+        bool.TryParse(raw, out var value) && value;
 
     private static bool IsPlayer(MapObject item) =>
         item.Faction.Equals(

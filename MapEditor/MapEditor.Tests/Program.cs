@@ -1,5 +1,6 @@
 using Mission1937.MapEditor.Core;
 using Mission1937.Remake.Resources;
+using System.Text.Json;
 
 var preferredTestRoot =
     Environment.GetEnvironmentVariable("M1937_TEST_ROOT");
@@ -215,6 +216,318 @@ if (!reachable.IsReachable(7, 10) ||
 }
 Console.WriteLine(
     "MapEditor viewport, heat-map and occluded-sector tests passed.");
+
+var editingMap = MapDocument.Create("编辑效率", 20, 16);
+editingMap.Objects.AddRange(
+[
+    new MapObject
+    {
+        Id = "a", Name = "甲", Kind = "character",
+        Category = "角色", Faction = "player", X = 2, Y = 2
+    },
+    new MapObject
+    {
+        Id = "b", Name = "乙", Kind = "character",
+        Category = "角色", Faction = "player", X = 8, Y = 5
+    },
+    new MapObject
+    {
+        Id = "c", Name = "丙", Kind = "character",
+        Category = "角色", Faction = "player", X = 14, Y = 8
+    }
+]);
+var selection = MapObjectEditing.SelectRectangle(
+    editingMap, 0, 0, 15, 9,
+    new MapObjectFilter(Faction: "player"));
+MapObjectEditing.Align(selection, MapAlignment.Top);
+MapObjectEditing.Distribute(selection, MapDistribution.Horizontal);
+MapObjectEditing.SetBatchProperties(
+    selection, category: "我方角色", direction: 3);
+var duplicates = MapObjectEditing.Duplicate(
+    editingMap, selection.Take(2).ToArray(), 1, 2);
+if (selection.Count != 3 ||
+    selection.Any(item => item.Y != 2) ||
+    selection.Select(item => item.X).Order().SequenceEqual(
+        new[] { 2, 8, 14 }) == false ||
+    duplicates.Count != 2 ||
+    editingMap.Objects.Select(item => item.Id).Distinct().Count() !=
+        editingMap.Objects.Count)
+{
+    throw new InvalidOperationException(
+        "Multi-select/align/distribute/duplicate/batch editing failed.");
+}
+MapLayerPainter.PaintRectangle(
+    editingMap, EditorLayerKind.MovementObstacle,
+    1, 1, 4, 4, 1);
+MapLayerPainter.PaintBrush(
+    editingMap, EditorLayerKind.MovementObstacle,
+    10, 10, 2, 1);
+var filled = MapLayerPainter.FloodFill(
+    editingMap, EditorLayerKind.Event, 0, 0, 7);
+if (filled != editingMap.Width * editingMap.Height)
+    throw new InvalidOperationException("Layer flood-fill failed.");
+editingMap.Layer(EditorLayerKind.Event).Locked = true;
+ExpectRejected(
+    "locked layer paint",
+    () => MapLayerPainter.PaintBrush(
+        editingMap, EditorLayerKind.Event, 1, 1, 1, 0));
+editingMap.Layer(EditorLayerKind.Event).Locked = false;
+var patrol = editingMap.Objects[0];
+patrol.Properties["patrol_capacity"] = "2";
+_ = PatrolRouteEditing.Insert(editingMap, patrol, 0, 3, 3);
+_ = PatrolRouteEditing.Insert(editingMap, patrol, 1, 4, 4);
+ExpectRejected(
+    "patrol capacity",
+    () => PatrolRouteEditing.Insert(editingMap, patrol, 2, 5, 5));
+_ = PatrolRouteEditing.Move(editingMap, patrol, 1, 6, 6);
+_ = PatrolRouteEditing.Delete(patrol, 0);
+var preset = LayerViewService.BuiltInPresets().Single(
+    item => item.Name == "通行校验");
+LayerViewService.Apply(editingMap, preset);
+LayerViewService.Solo(editingMap, EditorLayerKind.MovementObstacle);
+if (!editingMap.Layer(EditorLayerKind.MovementObstacle).Visible ||
+    editingMap.Layers.Count(layer => layer.Visible) != 1)
+    throw new InvalidOperationException("Layer preset/solo failed.");
+Console.WriteLine(
+    "MapEditor selection, paint, patrol, filter and layer controls passed.");
+
+var recoveryRoot = Path.Combine(root, "recovery");
+var sourceForRecovery = Path.Combine(root, "recovery-source.json");
+MapDocumentSerializer.Save(editingMap, sourceForRecovery);
+editingMap.Name = "自动保存恢复";
+var autosave = MapAutosaveService.Save(
+    editingMap, recoveryRoot, sourceForRecovery);
+var recovery = MapAutosaveService.Inspect(autosave);
+if (recovery is null ||
+    recovery.Document.Name != "自动保存恢复" ||
+    MapAutosaveService.FindCandidates(recoveryRoot).Count != 1)
+    throw new InvalidOperationException("Autosave recovery failed.");
+MapAutosaveService.Discard(autosave);
+if (File.Exists(autosave))
+    throw new InvalidOperationException("Autosave discard failed.");
+Console.WriteLine("MapEditor atomic autosave/recovery tests passed.");
+
+var missionMap = MapDocument.Create("任务图", 20, 20);
+missionMap.Metadata["id"] = "editor-roundtrip";
+missionMap.Metadata["selector_level"] = "15";
+missionMap.Metadata["engine_mission"] = "11";
+missionMap.Objects.Add(new MapObject
+{
+    Id = "player-1", Name = "队员", Kind = "character",
+    Faction = "player", X = 1, Y = 1
+});
+missionMap.Objects.Add(new MapObject
+{
+    Id = "enemy-1", Name = "哨兵", Kind = "character",
+    Faction = "enemy", X = 9, Y = 9, Direction = 3,
+    Properties = { ["database_entry_id"] = "77" },
+    PatrolEnabled = true,
+    PatrolWaypoints =
+    [
+        new MapWaypoint { X = 9, Y = 9 },
+        new MapWaypoint { X = 12, Y = 9 }
+    ]
+});
+missionMap.Tasks =
+[
+    new MissionTask
+    {
+        Id = "infiltrate", Title = "潜入",
+        Trigger = "arrival", TargetObjectId = "enemy-1",
+        OriginalStateCode = 2
+    },
+    new MissionTask
+    {
+        Id = "evacuate", Title = "撤离",
+        Trigger = "evacuation", DependsOn = ["infiltrate"],
+        EvacuationCondition = "all_players_in_zone",
+        OriginalStateCode = 7,
+        Optional = true,
+        FailureCondition = true,
+        FailureReason = "未能按时撤离",
+        SubjectDatabaseId = 77,
+        SubjectFaction = 2,
+        RegionX = 8,
+        RegionY = 8,
+        RegionRadius = 3,
+        DeadlineMilliseconds = 45_000
+    }
+];
+missionMap.Tasks[1].DependsOnText = "infiltrate, recon, infiltrate";
+if (!missionMap.Tasks[1].DependsOn.SequenceEqual(
+        new[] { "infiltrate", "recon" }))
+    throw new InvalidOperationException(
+        "Editable dependency list normalization failed.");
+missionMap.Tasks[1].DependsOn = ["infiltrate"];
+missionMap.PlayerTimeline.Add(new PlayerTimelineAction
+{
+    ActorId = "player-1",
+    StartMilliseconds = 0,
+    DurationMilliseconds = 5000,
+    TargetX = 8,
+    TargetY = 8
+});
+var graph = MissionGraphService.Build(missionMap);
+var coordination = AiCoordinationSimulator.Simulate(
+    missionMap, missionMap.Objects[1], 3, 3);
+var timeline = PlayerTimelineSimulator.Simulate(
+    missionMap, 6000, 500,
+    EnemyPreviewProfile.ForDifficulty(3, 3));
+if (graph.Errors.Count != 0 ||
+    !graph.TopologicalOrder.SequenceEqual(
+        new[] { "infiltrate", "evacuate" }) ||
+    coordination.SearchPattern.Count != 4 ||
+    timeline.Count != 13 ||
+    timeline.All(frame => frame.PotentialDetections.Count == 0))
+{
+    throw new InvalidOperationException(
+        "Mission graph/AI coordination/player timeline simulation failed.");
+}
+Console.WriteLine(
+    "MapEditor mission graph, AI coordination and player timeline passed.");
+
+var region = RegionLibraryService.Capture(
+    missionMap, "哨所", 0, 0, 10, 10);
+var regionPath = Path.Combine(root, "guard-post.m37region.json");
+RegionLibraryService.Save(region, regionPath);
+var targetMap = MapDocument.Create("区域目标", 30, 30);
+var paste = RegionLibraryService.Paste(
+    targetMap, RegionLibraryService.Load(regionPath), 10, 10);
+if (paste.NewObjectIds.Count != 2 ||
+    paste.IdRebindings.Count != 2 ||
+    targetMap.Objects.Any(item => item.X < 10 || item.Y < 10))
+    throw new InvalidOperationException(
+        "Cross-map region capture/paste/rebinding failed.");
+
+var mergeBase = MapDocument.Create("基础", 8, 8);
+mergeBase.Objects.Add(new MapObject
+{
+    Id = "merge", Name = "对象", X = 1, Y = 1
+});
+var mergeOurs = MapDocumentSerializer.Clone(mergeBase);
+mergeOurs.Objects[0].X = 2;
+var mergeTheirs = MapDocumentSerializer.Clone(mergeBase);
+mergeTheirs.Objects[0].Y = 3;
+var semanticDiff = SemanticMapCollaboration.Diff(
+    mergeBase, mergeOurs);
+var semanticMerge = SemanticMapCollaboration.Merge(
+    mergeBase, mergeOurs, mergeTheirs);
+if (semanticDiff.Count == 0 ||
+    semanticMerge.Conflicts.Count != 1)
+    throw new InvalidOperationException(
+        "Semantic diff/conflict detection failed.");
+
+var interchange = new MapInterchangeRegistry();
+var sidecarPath = Path.Combine(root, "mission.m1937mission.json");
+var sidecarPlugin = interchange.FindForExport(sidecarPath);
+sidecarPlugin.Export(
+    missionMap, sidecarPath,
+    new MapInterchangeContext("", null,
+        new Dictionary<string, string>()));
+var sidecarImported = interchange.FindForImport(sidecarPath).Import(
+    sidecarPath,
+    new MapInterchangeContext("", null,
+        new Dictionary<string, string>()));
+if (sidecarImported.Tasks.Count != missionMap.Tasks.Count ||
+    sidecarImported.Metadata["id"] != "editor-roundtrip" ||
+    sidecarImported.Metadata["selector_level"] != "15" ||
+    sidecarImported.Metadata["engine_mission"] != "11" ||
+    sidecarImported.Tasks[1].SubjectDatabaseId != 77 ||
+    sidecarImported.Tasks[1].RegionRadius != 3 ||
+    sidecarImported.Tasks[1].DeadlineMilliseconds != 45_000 ||
+    !sidecarImported.Tasks[1].Optional ||
+    !sidecarImported.Tasks[1].FailureCondition ||
+    interchange.Inventory.Any(item => !item.Compatible))
+    throw new InvalidOperationException(
+        "Pluggable sidecar import/export failed.");
+
+var publication = MapPublicationService.Publish(
+    missionMap,
+    Path.Combine(root, "publication"),
+    "武工队趁夜潜入哨所，完成侦察后从河岸撤离。",
+    MapQualityAnalyzer.Analyze(missionMap));
+if (!File.Exists(publication.ReadmePath) ||
+    !File.Exists(publication.ThumbnailPath) ||
+    !File.Exists(publication.StoryPath) ||
+    !File.Exists(publication.ValidationPath))
+    throw new InvalidOperationException(
+        "One-click map publication generation failed.");
+Console.WriteLine(
+    "MapEditor region, semantic collaboration, plugins and publishing passed.");
+
+var shippedSidecarDirectory = Path.Combine(
+    Environment.CurrentDirectory, "Mod", "Missions");
+if (Directory.Exists(shippedSidecarDirectory))
+{
+    foreach (var shippedSidecar in Directory.GetFiles(
+                 shippedSidecarDirectory,
+                 "*.m1937mission.json"))
+    {
+        var shippedDocument = interchange
+            .FindForImport(shippedSidecar)
+            .Import(
+                shippedSidecar,
+                new MapInterchangeContext(
+                    shippedSidecar, null,
+                    new Dictionary<string, string>()));
+        if (shippedDocument.Tasks.Count == 0 ||
+            shippedDocument.Tasks.All(task =>
+                !task.TargetDatabaseId.HasValue &&
+                !task.SubjectDatabaseId.HasValue &&
+                !task.RegionX.HasValue))
+            throw new InvalidOperationException(
+                $"Shipped sidecar import lost objective bindings: " +
+                shippedSidecar);
+        if (MissionGraphService.Build(shippedDocument).Errors.Any(error =>
+                error.Contains("引用不存在的对象", StringComparison.Ordinal)))
+            throw new InvalidOperationException(
+                $"Shipped sidecar database binding was treated as a " +
+                $"missing map object: {shippedSidecar}");
+        var roundTripPath = Path.Combine(
+            root,
+            Path.GetFileName(shippedSidecar));
+        interchange.FindForExport(roundTripPath).Export(
+            shippedDocument,
+            roundTripPath,
+            new MapInterchangeContext(
+                shippedSidecar, null,
+                new Dictionary<string, string>()));
+        using var roundTripJson = JsonDocument.Parse(
+            File.ReadAllText(roundTripPath));
+        if (roundTripJson.RootElement
+                .GetProperty("api_version").GetUInt32() != 0x00010000 ||
+            roundTripJson.RootElement
+                .GetProperty("objectives").GetArrayLength() !=
+            shippedDocument.Tasks.Count)
+            throw new InvalidOperationException(
+                $"Shipped sidecar schema round-trip failed: {shippedSidecar}");
+    }
+    Console.WriteLine(
+        "Three shipped .m1937mission.json files passed editor round-trip.");
+}
+
+var assetCatalogForTest = Path.Combine(
+    Environment.CurrentDirectory,
+    "MapEditor", "Assets", "Original", "catalog.json");
+if (File.Exists(assetCatalogForTest))
+{
+    var metadata = AssetMetadataService.GenerateFromAssetCatalog(
+        assetCatalogForTest);
+    var metadataPath = Path.Combine(root, "asset-metadata.json");
+    AssetMetadataService.Save(metadata, metadataPath);
+    var loadedMetadata = AssetMetadataService.Load(metadataPath);
+    if (AssetMetadataService.CoverageErrors(
+            assetCatalogForTest, loadedMetadata).Count != 0 ||
+        loadedMetadata.Assets.Count != 1037 ||
+        loadedMetadata.Assets.Any(item =>
+            item.FootprintWidth <= 0 ||
+            item.FootprintHeight <= 0 ||
+            string.IsNullOrWhiteSpace(item.PreferredLayer)))
+        throw new InvalidOperationException(
+            "Per-asset placement metadata coverage failed.");
+    Console.WriteLine(
+        "MapEditor 1,037-asset metadata coverage passed.");
+}
 
 var originalVwf =
     Environment.GetEnvironmentVariable("M1937_TEST_VWF");

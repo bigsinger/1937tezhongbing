@@ -89,10 +89,47 @@
                   Click="Undo_Click" InputGestureText="Ctrl+Z" />
         <MenuItem x:Name="RedoMenu" Header="重做"
                   Click="Redo_Click" InputGestureText="Ctrl+Y" />
+        <Separator />
+        <MenuItem Header="全选对象" Click="SelectAllObjects_Click"
+                  InputGestureText="Ctrl+A" />
+        <MenuItem Header="复制所选对象" Click="DuplicateSelected_Click"
+                  InputGestureText="Ctrl+D" />
+        <MenuItem Header="对齐">
+          <MenuItem Header="左对齐" Tag="Left" Click="AlignSelected_Click" />
+          <MenuItem Header="水平居中" Tag="HorizontalCenter" Click="AlignSelected_Click" />
+          <MenuItem Header="右对齐" Tag="Right" Click="AlignSelected_Click" />
+          <MenuItem Header="顶对齐" Tag="Top" Click="AlignSelected_Click" />
+          <MenuItem Header="垂直居中" Tag="VerticalCenter" Click="AlignSelected_Click" />
+          <MenuItem Header="底对齐" Tag="Bottom" Click="AlignSelected_Click" />
+        </MenuItem>
+        <MenuItem Header="分布">
+          <MenuItem Header="水平均匀分布" Tag="Horizontal"
+                    Click="DistributeSelected_Click" />
+          <MenuItem Header="垂直均匀分布" Tag="Vertical"
+                    Click="DistributeSelected_Click" />
+        </MenuItem>
+        <MenuItem Header="批量属性…" Click="BatchProperties_Click" />
       </MenuItem>
       <MenuItem Header="地图">
         <MenuItem Header="校验地图和任务" Click="Validate_Click" />
         <MenuItem Header="清空当前图层" Click="ClearLayer_Click" />
+        <Separator />
+        <MenuItem Header="保存所选区域到素材库…"
+                  Click="SaveRegion_Click" />
+        <MenuItem Header="从区域素材库粘贴…"
+                  Click="PasteRegion_Click" />
+        <Separator />
+        <MenuItem Header="导出语义差异…"
+                  Click="ExportSemanticDiff_Click" />
+        <MenuItem Header="三方语义合并…"
+                  Click="SemanticMerge_Click" />
+        <MenuItem Header="通过插件导入…"
+                  Click="PluginImport_Click" />
+        <MenuItem Header="通过插件导出…"
+                  Click="PluginExport_Click" />
+        <Separator />
+        <MenuItem Header="一键生成发布资料…"
+                  Click="PublishMap_Click" />
       </MenuItem>
       <MenuItem Header="帮助">
         <MenuItem Header="三步使用说明" Click="Help_Click" />
@@ -205,19 +242,43 @@
 
           <Expander DockPanel.Dock="Bottom" Header="图层显示"
                     IsExpanded="False" Margin="0,8,0,0">
-            <ListBox x:Name="LayerList" Background="White"
-                     Foreground="#24272C"
-                     SelectionChanged="LayerList_SelectionChanged">
-              <ListBox.ItemTemplate>
-                <DataTemplate>
-                  <CheckBox Content="{Binding Name}"
-                            IsChecked="{Binding Visible}"
-                            Foreground="#24272C" Margin="5"
-                            PreviewMouseDown="LayerVisibility_PreviewMouseDown"
-                            Click="LayerVisibility_Click" />
-                </DataTemplate>
-              </ListBox.ItemTemplate>
-            </ListBox>
+            <StackPanel>
+              <ComboBox x:Name="LayerPresetCombo"
+                        SelectionChanged="LayerPreset_SelectionChanged"
+                        ToolTip="图层组合预设" Margin="3" />
+              <ListBox x:Name="LayerList" Background="White"
+                       Foreground="#24272C"
+                       SelectionChanged="LayerList_SelectionChanged">
+                <ListBox.ItemTemplate>
+                  <DataTemplate>
+                    <StackPanel Margin="4">
+                      <DockPanel>
+                        <CheckBox Content="{Binding Name}"
+                                  IsChecked="{Binding Visible}"
+                                  Foreground="#24272C"
+                                  PreviewMouseDown="LayerVisibility_PreviewMouseDown"
+                                  Click="LayerVisibility_Click" />
+                        <CheckBox Content="锁" IsChecked="{Binding Locked}"
+                                  DockPanel.Dock="Right" Margin="7,0,0,0"
+                                  PreviewMouseDown="LayerVisibility_PreviewMouseDown"
+                                  Click="LayerLock_Click" />
+                        <Button Content="独显" DockPanel.Dock="Right"
+                                Padding="5,1" Margin="5,0,0,0"
+                                Tag="{Binding Kind}"
+                                Click="LayerSolo_Click" />
+                      </DockPanel>
+                      <Slider Minimum="0" Maximum="1"
+                              Value="{Binding Opacity}"
+                              TickFrequency="0.1"
+                              PreviewMouseDown="LayerOpacity_PreviewMouseDown"
+                              PreviewMouseUp="LayerOpacity_PreviewMouseUp"
+                              ValueChanged="LayerOpacity_ValueChanged"
+                              ToolTip="图层透明度" />
+                    </StackPanel>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+            </StackPanel>
           </Expander>
 
           <ListBox x:Name="AssetList" Background="#F3F1EA"
@@ -282,7 +343,8 @@
       <Border Grid.Column="2" Background="{StaticResource PanelBrush}"
               BorderBrush="{StaticResource BorderBrush}"
               BorderThickness="1,0,0,0">
-        <TabControl Background="{StaticResource PanelBrush}"
+        <TabControl x:Name="InspectorTabs"
+                    Background="{StaticResource PanelBrush}"
                     Foreground="#24272C">
           <TabItem Header="简单编辑">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -306,9 +368,22 @@
                                Checked="ToolMode_Checked" Margin="5" />
                   <RadioButton Content="画障碍" Tag="paint"
                                Checked="ToolMode_Checked" Margin="5" />
+                  <RadioButton Content="矩形绘制" Tag="rectangle"
+                               Checked="ToolMode_Checked" Margin="5" />
+                  <RadioButton Content="区域填充" Tag="fill"
+                               Checked="ToolMode_Checked" Margin="5" />
+                  <RadioButton Content="编辑巡逻点" Tag="patrol"
+                               Checked="ToolMode_Checked" Margin="5" />
                   <RadioButton Content="擦除" Tag="erase"
                                Checked="ToolMode_Checked" Margin="5" />
                 </UniformGrid>
+                <DockPanel Margin="0,0,0,10">
+                  <TextBlock Text="画笔半径" VerticalAlignment="Center"
+                             Margin="0,0,8,0" />
+                  <Slider x:Name="BrushRadiusSlider" Minimum="0" Maximum="8"
+                          Value="1" TickFrequency="1" IsSnapToTickEnabled="True"
+                          ToolTip="画笔半径（格）" />
+                </DockPanel>
 
                 <Border Background="#EEE9DD" BorderBrush="#D1CABC"
                         BorderThickness="1" Padding="10" Margin="0,0,0,12">
@@ -374,13 +449,33 @@
 
           <TabItem Header="对象">
             <DockPanel Margin="10">
+              <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                <TextBox x:Name="ObjectSearchText"
+                         ToolTip="搜索名称、ID、类别"
+                         TextChanged="ObjectFilter_Changed" />
+                <UniformGrid Columns="3" Margin="0,5,0,0">
+                  <TextBox x:Name="ObjectSceneFilter"
+                           ToolTip="scene 编号"
+                           TextChanged="ObjectFilter_Changed" />
+                  <TextBox x:Name="ObjectAssetFilter"
+                           ToolTip="素材 ID/名称"
+                           TextChanged="ObjectFilter_Changed" />
+                  <TextBox x:Name="ObjectFactionFilter"
+                           ToolTip="阵营"
+                           TextChanged="ObjectFilter_Changed" />
+                </UniformGrid>
+              </StackPanel>
               <StackPanel DockPanel.Dock="Bottom"
                           Orientation="Horizontal" Margin="0,8,0,0">
+                <Button Content="复制" Click="DuplicateSelected_Click" />
+                <Button Content="批量属性" Click="BatchProperties_Click" />
                 <Button Content="删除所选对象"
                         Click="DeleteObject_Click" />
               </StackPanel>
               <DataGrid x:Name="ObjectGrid" AutoGenerateColumns="False"
                         CanUserAddRows="False"
+                        SelectionMode="Extended"
+                        SelectionUnit="FullRow"
                         SelectionChanged="ObjectGrid_SelectionChanged"
                         BeginningEdit="Grid_BeginningEdit"
                         CellEditEnding="Grid_CellEditEnding">
@@ -400,6 +495,50 @@
 
           <TabItem Header="高级任务">
             <DockPanel Margin="10">
+              <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                <TextBlock Text="任务 Sidecar 身份"
+                           FontWeight="SemiBold" />
+                <Grid Margin="0,5,0,8">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="48" />
+                  </Grid.ColumnDefinitions>
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                  </Grid.RowDefinitions>
+                  <TextBlock Text="ID" VerticalAlignment="Center"
+                             Margin="0,0,5,0" />
+                  <TextBox x:Name="SidecarIdText" Grid.Column="1"
+                           GotKeyboardFocus="MissionMetadata_GotKeyboardFocus"
+                           LostKeyboardFocus="MissionMetadata_LostKeyboardFocus"
+                           ToolTip="导出任务 Sidecar 时写入 id" />
+                  <TextBlock Grid.Row="1" Text="选择关"
+                             VerticalAlignment="Center"
+                             Margin="0,4,5,0" />
+                  <TextBox x:Name="SelectorLevelText" Grid.Row="1"
+                           Grid.Column="1" Margin="0,4,4,0"
+                           GotKeyboardFocus="MissionMetadata_GotKeyboardFocus"
+                           LostKeyboardFocus="MissionMetadata_LostKeyboardFocus"
+                           ToolTip="1–15；扩展关通常为 13–15" />
+                  <TextBlock Grid.Row="1" Grid.Column="2"
+                             Text="骨架" VerticalAlignment="Center"
+                             Margin="2,4,4,0" />
+                  <TextBox x:Name="EngineMissionText" Grid.Row="1"
+                           Grid.Column="3" Margin="0,4,0,0"
+                           GotKeyboardFocus="MissionMetadata_GotKeyboardFocus"
+                           LostKeyboardFocus="MissionMetadata_LostKeyboardFocus"
+                           ToolTip="原版任务状态机 1–12" />
+                </Grid>
+                <Button Content="分析任务依赖图与原版状态映射"
+                        Click="AnalyzeMissionGraph_Click"
+                        Style="{StaticResource PrimaryButton}" />
+                <TextBlock x:Name="MissionGraphSummaryText"
+                           TextWrapping="Wrap" Foreground="#555A60"
+                           Margin="3,3,3,8" />
+              </StackPanel>
               <StackPanel DockPanel.Dock="Bottom"
                           Orientation="Horizontal" Margin="0,8,0,0">
                 <Button Content="新增任务" Click="AddTask_Click" />
@@ -415,6 +554,9 @@
                                       Binding="{Binding Id}" Width="100" />
                   <DataGridTextColumn Header="标题"
                                       Binding="{Binding Title}" Width="120" />
+                  <DataGridTextColumn Header="说明"
+                                      Binding="{Binding Description}"
+                                      Width="180" />
                   <DataGridTextColumn Header="触发器"
                                       Binding="{Binding Trigger}" Width="90" />
                   <DataGridTextColumn Header="目标"
@@ -423,9 +565,86 @@
                                       Binding="{Binding RequiredCount}" Width="48" />
                   <DataGridTextColumn Header="后续"
                                       Binding="{Binding NextTaskId}" Width="80" />
+                  <DataGridTextColumn Header="依赖（逗号分隔）"
+                                      Binding="{Binding DependsOnText}"
+                                      Width="130" />
+                  <DataGridCheckBoxColumn Header="可选"
+                                          Binding="{Binding Optional}"
+                                          Width="48" />
+                  <DataGridCheckBoxColumn Header="失败"
+                                          Binding="{Binding FailureCondition}"
+                                          Width="48" />
+                  <DataGridTextColumn Header="失败原因"
+                                      Binding="{Binding FailureReason}"
+                                      Width="130" />
+                  <DataGridTextColumn Header="成功条件"
+                                      Binding="{Binding SuccessCondition}"
+                                      Width="120" />
+                  <DataGridTextColumn Header="撤离条件"
+                                      Binding="{Binding EvacuationCondition}"
+                                      Width="120" />
+                  <DataGridTextColumn Header="原版状态"
+                                      Binding="{Binding OriginalStateCode}"
+                                      Width="72" />
+                  <DataGridTextColumn Header="目标 DB"
+                                      Binding="{Binding TargetDatabaseId}"
+                                      Width="78" />
+                  <DataGridTextColumn Header="主体 DB"
+                                      Binding="{Binding SubjectDatabaseId}"
+                                      Width="78" />
+                  <DataGridTextColumn Header="阵营"
+                                      Binding="{Binding SubjectFaction}"
+                                      Width="56" />
+                  <DataGridTextColumn Header="区域 X"
+                                      Binding="{Binding RegionX}"
+                                      Width="62" />
+                  <DataGridTextColumn Header="区域 Y"
+                                      Binding="{Binding RegionY}"
+                                      Width="62" />
+                  <DataGridTextColumn Header="半径"
+                                      Binding="{Binding RegionRadius}"
+                                      Width="58" />
+                  <DataGridTextColumn Header="期限 ms"
+                                      Binding="{Binding DeadlineMilliseconds}"
+                                      Width="84" />
                 </DataGrid.Columns>
               </DataGrid>
             </DockPanel>
+          </TabItem>
+
+          <TabItem Header="协同设计">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+              <StackPanel Margin="12">
+                <TextBlock Text="AI 协同与玩家时间轴"
+                           FontWeight="Bold" FontSize="15" />
+                <TextBlock TextWrapping="Wrap" Foreground="#555A60"
+                           Margin="0,4,0,10"
+                           Text="选择敌军后可预演有限增援和最后目击点搜索；玩家时间轴用于和巡逻路线做同步发现分析。所有结果均标记数值来源。" />
+                <Button Content="预演所选敌军协同"
+                        Click="PreviewAiCoordination_Click" />
+                <Button Content="预演 60 秒玩家/巡逻时间轴"
+                        Click="PreviewPlayerTimeline_Click" />
+                <TextBox x:Name="CollaborationPreviewText"
+                         IsReadOnly="True" AcceptsReturn="True"
+                         TextWrapping="Wrap" MinHeight="180"
+                         VerticalScrollBarVisibility="Auto" />
+
+                <Separator Margin="0,12" />
+                <TextBlock Text="巡逻点编辑" FontWeight="Bold" />
+                <TextBlock x:Name="PatrolCapacityText"
+                           Text="请选择带路线的活物"
+                           Foreground="#555A60" Margin="0,4" />
+                <ListBox x:Name="PatrolWaypointList"
+                         DisplayMemberPath="Label" MinHeight="100"
+                         SelectionChanged="PatrolWaypointList_SelectionChanged" />
+                <StackPanel Orientation="Horizontal">
+                  <Button Content="插入点（随后点地图）"
+                          Click="InsertPatrolPoint_Click" />
+                  <Button Content="删除所选点"
+                          Click="DeletePatrolPoint_Click" />
+                </StackPanel>
+              </StackPanel>
+            </ScrollViewer>
           </TabItem>
 
           <TabItem Header="问题">

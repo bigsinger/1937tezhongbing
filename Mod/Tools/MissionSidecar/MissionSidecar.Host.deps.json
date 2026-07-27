@@ -1,0 +1,39 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "MissionSidecar.Host/1.0.0": {
+        "dependencies": {
+          "MissionSidecar.Core": "1.0.0"
+        },
+        "runtime": {
+          "MissionSidecar.Host.dll": {}
+        }
+      },
+      "MissionSidecar.Core/1.0.0": {
+        "runtime": {
+          "MissionSidecar.Core.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "MissionSidecar.Host/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "MissionSidecar.Core/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

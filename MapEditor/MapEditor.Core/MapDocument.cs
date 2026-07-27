@@ -19,6 +19,9 @@ public sealed class EditorLayer
     public string Name { get; set; } = "";
     public EditorLayerKind Kind { get; set; }
     public bool Visible { get; set; } = true;
+    public bool Locked { get; set; }
+    public double Opacity { get; set; } = 1.0;
+    public bool Solo { get; set; }
     public int[] Cells { get; set; } = [];
 }
 
@@ -59,7 +62,51 @@ public sealed class MissionTask
     public string TargetObjectId { get; set; } = "";
     public int RequiredCount { get; set; } = 1;
     public string NextTaskId { get; set; } = "";
+    public List<string> DependsOn { get; set; } = [];
+    public bool Optional { get; set; }
+    public string SuccessCondition { get; set; } = "";
+    public string FailureReason { get; set; } = "";
+    public string EvacuationCondition { get; set; } = "";
+    public int OriginalStateCode { get; set; } = -1;
     public bool FailureCondition { get; set; }
+    public uint? TargetDatabaseId { get; set; }
+    public uint? SubjectDatabaseId { get; set; }
+    public int? SubjectFaction { get; set; }
+    public int? RegionX { get; set; }
+    public int? RegionY { get; set; }
+    public int? RegionRadius { get; set; }
+    public int? DeadlineMilliseconds { get; set; }
+
+    [JsonIgnore]
+    public string DependsOnText
+    {
+        get => string.Join(", ", DependsOn);
+        set => DependsOn = (value ?? "")
+            .Split(
+                ',',
+                StringSplitOptions.TrimEntries |
+                StringSplitOptions.RemoveEmptyEntries)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+    }
+}
+
+public sealed class PlayerTimelineAction
+{
+    public string Id { get; set; } = $"action-{Guid.NewGuid():N}";
+    public string ActorId { get; set; } = "";
+    public string Action { get; set; } = "move";
+    public int StartMilliseconds { get; set; }
+    public int DurationMilliseconds { get; set; } = 1000;
+    public int TargetX { get; set; }
+    public int TargetY { get; set; }
+}
+
+public sealed class LayerViewPreset
+{
+    public string Name { get; set; } = "自定义视图";
+    public Dictionary<EditorLayerKind, bool> Visibility { get; set; } = [];
+    public Dictionary<EditorLayerKind, double> Opacity { get; set; } = [];
 }
 
 public sealed class MapDocument
@@ -80,9 +127,12 @@ public sealed class MapDocument
     public List<int> QualityVerticalSeams { get; set; } = [];
     public List<int> QualityHorizontalSeams { get; set; } = [];
     public string BackgroundAsset { get; set; } = "";
+    public Dictionary<string, string> Metadata { get; set; } = [];
     public List<EditorLayer> Layers { get; set; } = [];
     public List<MapObject> Objects { get; set; } = [];
     public List<MissionTask> Tasks { get; set; } = [];
+    public List<PlayerTimelineAction> PlayerTimeline { get; set; } = [];
+    public List<LayerViewPreset> LayerPresets { get; set; } = [];
 
     [JsonIgnore]
     public int EffectiveCellWidth => CellWidth > 0 ? CellWidth : CellSize;
@@ -158,12 +208,7 @@ public static class MapDocumentSerializer
 
     public static MapDocument Load(string path)
     {
-        var document = JsonSerializer.Deserialize<MapDocument>(
-            File.ReadAllText(path), Options)
-            ?? throw new InvalidDataException("地图文件没有有效内容。");
-        Normalize(document);
-        MapValidator.ThrowIfInvalid(document);
-        return document;
+        return FromJson(File.ReadAllText(path));
     }
 
     public static void Save(MapDocument document, string path)
@@ -173,8 +218,25 @@ public static class MapDocumentSerializer
         var fullPath = Path.GetFullPath(path);
         Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
         var temporary = fullPath + ".tmp";
-        File.WriteAllText(temporary, JsonSerializer.Serialize(document, Options));
+        File.WriteAllText(temporary, ToJson(document));
         File.Move(temporary, fullPath, true);
+    }
+
+    public static string ToJson(MapDocument document)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        Normalize(document);
+        MapValidator.ThrowIfInvalid(document);
+        return JsonSerializer.Serialize(document, Options);
+    }
+
+    public static MapDocument FromJson(string json)
+    {
+        var document = JsonSerializer.Deserialize<MapDocument>(json, Options)
+            ?? throw new InvalidDataException("地图文件没有有效内容。");
+        Normalize(document);
+        MapValidator.ThrowIfInvalid(document);
+        return document;
     }
 
     public static MapDocument Clone(MapDocument document)
@@ -196,6 +258,11 @@ public static class MapDocumentSerializer
             document.CellHeight = document.CellSize > 0 ? document.CellSize : 20;
         document.CellSize = document.CellWidth;
         document.BackgroundAsset ??= "";
+        document.Metadata ??= [];
+        document.PlayerTimeline ??= [];
+        document.LayerPresets ??= [];
+        foreach (var layer in document.Layers)
+            layer.Opacity = Math.Clamp(layer.Opacity, 0.0, 1.0);
         foreach (var item in document.Objects)
         {
             item.AssetPath ??= "";
@@ -213,6 +280,13 @@ public static class MapDocumentSerializer
                 item.PatrolCurrentWaypointIndex = 0;
                 item.PatrolEnabled = false;
             }
+        }
+        foreach (var task in document.Tasks)
+        {
+            task.DependsOn ??= [];
+            task.SuccessCondition ??= "";
+            task.FailureReason ??= "";
+            task.EvacuationCondition ??= "";
         }
     }
 }
@@ -266,6 +340,28 @@ public static class MapValidator
         {
             if (task.NextTaskId.Length > 0 && !taskIds.Contains(task.NextTaskId))
                 errors.Add($"任务“{task.Title}”指向不存在的后续任务 {task.NextTaskId}。");
+            foreach (var dependency in task.DependsOn)
+            {
+                if (!taskIds.Contains(dependency))
+                    errors.Add(
+                        $"任务“{task.Title}”依赖不存在的任务 {dependency}。");
+                if (dependency == task.Id)
+                    errors.Add($"任务“{task.Title}”不能依赖自身。");
+            }
+        }
+        foreach (var layer in document.Layers)
+        {
+            if (layer.Opacity is < 0 or > 1)
+                errors.Add($"图层“{layer.Name}”透明度必须在 0 到 1 之间。");
+        }
+        foreach (var action in document.PlayerTimeline)
+        {
+            if (action.StartMilliseconds < 0 ||
+                action.DurationMilliseconds <= 0)
+                errors.Add($"玩家时间轴动作“{action.Id}”时间参数无效。");
+            if (action.TargetX < 0 || action.TargetX >= document.Width ||
+                action.TargetY < 0 || action.TargetY >= document.Height)
+                errors.Add($"玩家时间轴动作“{action.Id}”目标位于地图外。");
         }
         foreach (var seam in document.QualityVerticalSeams)
         {
@@ -394,6 +490,11 @@ public static class OriginalVwfImporter
         if (!json.RootElement.TryGetProperty("entities", out var entities))
             return;
         var byId = document.Objects.ToDictionary(item => item.Id);
+        AssetMetadataCatalog? placementMetadata = null;
+        var metadataPath = Path.Combine(
+            originalAssetRoot, "asset-metadata.json");
+        if (File.Exists(metadataPath))
+            placementMetadata = AssetMetadataService.Load(metadataPath);
         foreach (var entity in entities.EnumerateArray())
         {
             if (!entity.TryGetProperty("scene_index", out var sceneIndex))
@@ -413,6 +514,27 @@ public static class OriginalVwfImporter
             var preview = Text(entity, "sprite_preview");
             if (!string.IsNullOrWhiteSpace(preview))
                 item.AssetPath = "sprites/" + Path.GetFileName(preview);
+            if (placementMetadata is not null &&
+                TryAssetId(item.AssetPath, out var assetId) &&
+                placementMetadata.Find(assetId) is { } placement)
+            {
+                item.Properties["asset_id"] = assetId.ToString();
+                item.Properties["footprint_width"] =
+                    placement.FootprintWidth.ToString();
+                item.Properties["footprint_height"] =
+                    placement.FootprintHeight.ToString();
+                item.Properties["blocks_movement"] =
+                    placement.BlocksMovement.ToString();
+                item.Properties["blocks_line_of_sight"] =
+                    placement.BlocksLineOfSight.ToString();
+                item.Properties["is_door"] = placement.IsDoor.ToString();
+                item.Properties["preferred_layer"] =
+                    placement.PreferredLayer;
+                item.Properties["occlusion_height"] =
+                    placement.OcclusionHeight.ToString();
+                item.Properties["metadata_source"] =
+                    placement.ValueSource;
+            }
 
             if (entity.TryGetProperty("faction_id", out var faction))
             {
@@ -490,6 +612,13 @@ public static class OriginalVwfImporter
 
     private static bool ContainsAny(string value, params string[] needles) =>
         needles.Any(value.Contains);
+
+    private static bool TryAssetId(string path, out int assetId)
+    {
+        assetId = 0;
+        var fileName = Path.GetFileNameWithoutExtension(path);
+        return int.TryParse(fileName, out assetId);
+    }
 
     private sealed record AssetLevelResolution(
         string EntityLevelId,

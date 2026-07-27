@@ -23,7 +23,13 @@ $RepositoryRoot = $RepositoryRoot.TrimEnd(
     [IO.Path]::AltDirectorySeparatorChar)
 
 if ([string]::IsNullOrWhiteSpace($WorkDirectory)) {
-    $WorkDirectory = Join-Path ([IO.Path]::GetTempPath()) (
+    $temporaryRoot = if (Test-Path -LiteralPath 'E:\1937') {
+        'E:\1937'
+    }
+    else {
+        [IO.Path]::GetTempPath()
+    }
+    $WorkDirectory = Join-Path $temporaryRoot (
         "1937-vwf\$MissionId")
 }
 $WorkDirectory = [IO.Path]::GetFullPath($WorkDirectory)

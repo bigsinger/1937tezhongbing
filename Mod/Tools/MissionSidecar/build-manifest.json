@@ -1,0 +1,42 @@
+﻿{
+    "schema_version":  1,
+    "architecture":  "x64",
+    "plugin_api_version":  65536,
+    "files":  [
+                  {
+                      "name":  "MissionSidecar.Core.dll",
+                      "length":  94208,
+                      "sha256":  "B8CB8211366AC7C159C298D8C48BDDD2108B1EB95836D2781D80685BFE2084EC"
+                  },
+                  {
+                      "name":  "MissionSidecar.Core.pdb",
+                      "length":  56696,
+                      "sha256":  "87FE581DFBB5A880CA3213D009FD35A48D9AA8BABB29D8554AB4075B57DDBEDB"
+                  },
+                  {
+                      "name":  "MissionSidecar.Host.deps.json",
+                      "length":  866,
+                      "sha256":  "F48F2049BE68A3C12136E8E586B0345B38EAF90AAEEA98FD86DABEE576CB8297"
+                  },
+                  {
+                      "name":  "MissionSidecar.Host.dll",
+                      "length":  45056,
+                      "sha256":  "6CCEC295B41F50AA820A6E2EB087F8C3D0DDC33D9B01A0B6616160C0C399DA40"
+                  },
+                  {
+                      "name":  "MissionSidecar.Host.exe",
+                      "length":  164864,
+                      "sha256":  "82017726ACDF796BE870C3A10DC7A135976731DEBF87CB3443DCA5F0FE5D70E7"
+                  },
+                  {
+                      "name":  "MissionSidecar.Host.pdb",
+                      "length":  21292,
+                      "sha256":  "326DDCE16E82F50D1C63F8DE09E46D808C33709873C3525C8CCAD6090C059DAB"
+                  },
+                  {
+                      "name":  "MissionSidecar.Host.runtimeconfig.json",
+                      "length":  519,
+                      "sha256":  "96BC2946DFF8790400D652EC7F8DE7BB043E954980D59470C112788B68A1FBD3"
+                  }
+              ]
+}

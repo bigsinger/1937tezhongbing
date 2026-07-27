@@ -6,12 +6,16 @@ on:
       - "MapEditor/**"
       - "Remake/tools/ResourceFormats/**"
       - "Mod/1937m*.vwf"
+      - "Mod/Missions/**"
+      - "SDK/schemas/**"
       - ".github/workflows/map-editor-ci.yml"
   pull_request:
     paths:
       - "MapEditor/**"
       - "Remake/tools/ResourceFormats/**"
       - "Mod/1937m*.vwf"
+      - "Mod/Missions/**"
+      - "SDK/schemas/**"
       - ".github/workflows/map-editor-ci.yml"
 
 jobs:
@@ -27,6 +31,18 @@ jobs:
         run: git lfs pull --include="Mod/1937m*.vwf"
       - name: Build
         run: dotnet build MapEditor/MapEditor.slnx -c Release
+      - name: Asset metadata is reproducible
+        shell: pwsh
+        run: |
+          $candidate = Join-Path $env:RUNNER_TEMP 'asset-metadata.json'
+          ./MapEditor/tools/Generate-AssetMetadata.ps1 `
+            -AssetRoot ./MapEditor/Assets/Original `
+            -OutputPath $candidate
+          if ((Get-FileHash $candidate).Hash -ne `
+              (Get-FileHash `
+                ./MapEditor/Assets/Original/asset-metadata.json).Hash) {
+            throw 'Committed asset metadata is not reproducible.'
+          }
       - name: Core tests
         shell: pwsh
         run: |
@@ -38,3 +54,8 @@ jobs:
           dotnet run `
             --project MapEditor/MapEditor.Tests/MapEditor.Tests.csproj `
             -c Release --no-build
+      - name: Publish runnable editor
+        run: >
+          dotnet publish MapEditor/MapEditor.App/MapEditor.App.csproj
+          -c Release --no-build
+          -o "${{ runner.temp }}/MapEditor"

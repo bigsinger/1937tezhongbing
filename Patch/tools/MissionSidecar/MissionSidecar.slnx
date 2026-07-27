@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="MissionSidecar.Core/MissionSidecar.Core.csproj" />
+  <Project Path="MissionSidecar.Host/MissionSidecar.Host.csproj" />
+  <Project Path="MissionSidecar.Tests/MissionSidecar.Tests.csproj" />
+</Solution>

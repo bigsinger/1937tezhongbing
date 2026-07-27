@@ -1,0 +1,998 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text;
+using System.Threading;
+using EngineAddresses = Mission1937.SDK.Generated.M1937Addresses;
+using MissionRoutes = Mission1937.SDK.Generated.M1937MissionRoutes;
+
+internal static class ModRegressionProbe
+{
+    private const uint ProcessVmRead = 0x0010;
+    private const uint ProcessQueryInformation = 0x0400;
+    private const uint PclientOnly = 0x00000001;
+    private const uint SwpNoSize = 0x0001;
+    private const uint SwpNoZOrder = 0x0004;
+    private const uint SwpNoActivate = 0x0010;
+    private const uint ReplayMessage = 0x8000 + 0x137;
+    private const int ReplayKeyDown = 1;
+    private const int ReplayKeyUp = 2;
+    private const int ReplayMouseDelta = 3;
+    private const int ReplayMouseButtonDown = 4;
+    private const int ReplayMouseButtonUp = 5;
+    private const int ReplayMenuCommand = 6;
+    private const int ReplayAiAlert = 8;
+    private const int DikF1 = 0x3B;
+    private const int DikM = 0x32;
+    private const int SmXVirtualScreen = 76;
+    private const int SmYVirtualScreen = 77;
+    private const int SmCxVirtualScreen = 78;
+    private const int SmCyVirtualScreen = 79;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Rect
+    {
+        public int Left, Top, Right, Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Point
+    {
+        public int X, Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct IoCounters
+    {
+        public ulong ReadOperationCount;
+        public ulong WriteOperationCount;
+        public ulong OtherOperationCount;
+        public ulong ReadTransferCount;
+        public ulong WriteTransferCount;
+        public ulong OtherTransferCount;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr OpenProcess(
+        uint access, bool inherit, int processId);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool ReadProcessMemory(
+        IntPtr process, IntPtr address, byte[] data, int size,
+        out IntPtr read);
+
+    [DllImport("kernel32.dll")]
+    private static extern bool CloseHandle(IntPtr handle);
+
+    [DllImport("kernel32.dll")]
+    private static extern bool GetProcessIoCounters(
+        IntPtr process, out IoCounters counters);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool PostMessage(
+        IntPtr window, uint message, IntPtr wparam, IntPtr lparam);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetClientRect(IntPtr window, out Rect rect);
+
+    [DllImport("user32.dll")]
+    private static extern bool PrintWindow(
+        IntPtr window, IntPtr dc, uint flags);
+
+    [DllImport("user32.dll")]
+    private static extern bool ClientToScreen(
+        IntPtr window, ref Point point);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetWindowPos(
+        IntPtr window, IntPtr insertAfter, int x, int y,
+        int width, int height, uint flags);
+    [DllImport("user32.dll")]
+    private static extern bool GetClipCursor(out Rect rect);
+    [DllImport("user32.dll")]
+    private static extern int GetSystemMetrics(int index);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmFlush();
+
+    private sealed class Stage
+    {
+        public string Name;
+        public bool Sent;
+        public bool ProcessResponding;
+        public int Mission;
+        public long ElapsedMilliseconds;
+        public string Evidence;
+    }
+
+    private sealed class PerfSample
+    {
+        public double TimeMilliseconds;
+        public double CpuMilliseconds;
+        public ulong ReadBytes;
+        public bool Responding;
+        public double CompositorWaitMilliseconds;
+        public bool CursorClipRestricted;
+    }
+
+    private sealed class CaptureResult : IDisposable
+    {
+        public Bitmap Bitmap;
+        public string Sha256;
+        public bool NonBlank;
+
+        public void Dispose()
+        {
+            if (Bitmap != null)
+            {
+                Bitmap.Dispose();
+                Bitmap = null;
+            }
+        }
+    }
+
+    public static int Main(string[] args)
+    {
+        if (args.Length < 3)
+        {
+            Console.Error.WriteLine(
+                "Usage: ModRegressionProbe.exe GAME_DIR OUTPUT_DIR LEVEL [SECONDS]");
+            return 2;
+        }
+
+        string gameDirectory = Path.GetFullPath(args[0]);
+        string outputDirectory = Path.GetFullPath(args[1]);
+        int selectorLevel = int.Parse(args[2], CultureInfo.InvariantCulture);
+        double maximumSeconds = args.Length >= 4
+            ? double.Parse(args[3], CultureInfo.InvariantCulture)
+            : 60.0;
+        var route = MissionRoutes.Find(selectorLevel);
+        if (route == null)
+            throw new InvalidOperationException("Unknown selector level.");
+
+        Directory.CreateDirectory(outputDirectory);
+        string executable = Path.Combine(gameDirectory, "M1937.exe");
+        if (!File.Exists(executable))
+            throw new FileNotFoundException("M1937.exe is missing.", executable);
+
+        var startInfo = new ProcessStartInfo(executable);
+        startInfo.WorkingDirectory = gameDirectory;
+        startInfo.UseShellExecute = false;
+        startInfo.EnvironmentVariables["M1937_AUTOTEST"] = "1";
+        startInfo.EnvironmentVariables["M1937_WINDOW_REPLAY"] = "1";
+        startInfo.EnvironmentVariables["M1937_TELEMETRY"] = "1";
+        startInfo.EnvironmentVariables["M1937_START_LEVEL"] =
+            selectorLevel.ToString(CultureInfo.InvariantCulture);
+
+        var stages = new List<Stage>();
+        var perf = new List<PerfSample>();
+        var clock = Stopwatch.StartNew();
+        bool samplerStop = false;
+        int exitCode = 1;
+
+        using (Process game = Process.Start(startInfo))
+        {
+            if (game == null)
+                throw new InvalidOperationException("Game process did not start.");
+            IntPtr window = WaitForWindow(game, TimeSpan.FromSeconds(15));
+            if (window == IntPtr.Zero)
+                throw new InvalidOperationException("Game window did not appear.");
+            SetWindowPos(
+                window, IntPtr.Zero, 36, 36, 0, 0,
+                SwpNoSize | SwpNoZOrder | SwpNoActivate);
+
+            IntPtr process = OpenProcess(
+                ProcessVmRead | ProcessQueryInformation, false, game.Id);
+            if (process == IntPtr.Zero)
+                throw new InvalidOperationException("OpenProcess failed.");
+
+            try
+            {
+                game.Refresh();
+                long imageBase = game.MainModule.BaseAddress.ToInt64();
+                var sampler = new Thread(delegate()
+                {
+                    SamplePerformance(
+                        game, process, clock, perf,
+                        delegate() { return samplerStop; });
+                });
+                sampler.IsBackground = true;
+                sampler.Start();
+
+                bool missionStarted = WaitUntil(
+                    delegate()
+                    {
+                        return ReadInt(
+                            process,
+                            imageBase + EngineAddresses.CurrentMission) ==
+                            route.EngineMission &&
+                            ReadWorldActorCount(process, imageBase) > 0;
+                    },
+                    TimeSpan.FromSeconds(Math.Min(
+                        45.0, Math.Max(12.0, maximumSeconds * 0.72))));
+                int actorCount = ReadWorldActorCount(
+                    process, imageBase);
+                AddStage(
+                    stages, game, process, imageBase, clock,
+                    "mission_started", missionStarted,
+                    missionStarted
+                        ? "engine mission matched route; world_actors=" +
+                          actorCount.ToString(CultureInfo.InvariantCulture)
+                        : "world object table was not ready");
+
+                using (CaptureResult baseline = CaptureWindow(window))
+                {
+                    SaveCapture(
+                        baseline,
+                        Path.Combine(outputDirectory, "00-baseline.jpg"));
+                    ExerciseToggle(
+                        stages, game, process, imageBase, window, clock,
+                        outputDirectory, "help_f1", DikF1,
+                        EngineAddresses.InputRawHelp,
+                        EngineAddresses.InputActionHelp,
+                        baseline, "01-help.jpg");
+                }
+
+                using (CaptureResult mapBaseline = CaptureWindow(window))
+                {
+                    ExerciseToggle(
+                        stages, game, process, imageBase, window, clock,
+                        outputDirectory, "minimap_m", DikM,
+                        EngineAddresses.InputRawMap,
+                        EngineAddresses.InputActionMap,
+                        mapBaseline, "02-minimap.jpg");
+                }
+
+                bool mouseSent =
+                    SendReplay(window, ReplayMouseDelta, PackDelta(12, 0)) &&
+                    PulseMouseButton(window, 0);
+                Thread.Sleep(350);
+                AddStage(
+                    stages, game, process, imageBase, clock,
+                    "mouse_client_replay", mouseSent,
+                    "process-local DirectInput delta/button");
+
+                string telemetryPath = Path.Combine(
+                    gameDirectory, "M1937Telemetry.jsonl");
+                bool aiSent = SendReplay(window, ReplayAiAlert, 0);
+                bool aiObserved = WaitUntil(
+                    delegate()
+                    {
+                        return HasPositiveCounter(
+                            ReadSharedText(telemetryPath),
+                            "\"alerts\":");
+                    }, TimeSpan.FromSeconds(3));
+                string aiTelemetry = ReadSharedText(telemetryPath);
+                long maximumReinforcements = MaximumCounter(
+                    aiTelemetry, "\"reinforcements\":");
+                bool reactionObserved =
+                    maximumReinforcements <= 0 ||
+                    WaitUntil(
+                        delegate()
+                        {
+                            return HasPositiveCounter(
+                                ReadSharedText(telemetryPath),
+                                "\"reaction_samples\":");
+                        }, TimeSpan.FromSeconds(2));
+                bool escapeObserved =
+                    maximumReinforcements <= 0 ||
+                    WaitUntil(
+                        delegate()
+                        {
+                            string current = ReadSharedText(telemetryPath);
+                            return SumCounter(
+                                       current,
+                                       "\"escape_timeouts\":") +
+                                   SumCounter(
+                                       current,
+                                       "\"search_completed\":") >=
+                                   maximumReinforcements;
+                        }, TimeSpan.FromSeconds(21));
+                aiTelemetry = ReadSharedText(telemetryPath);
+                long reactionMaximum = MaximumCounter(
+                    aiTelemetry, "\"reaction_max_ms\":");
+                long searchesStarted = SumCounter(
+                    aiTelemetry, "\"searches_started\":");
+                long searchReplans = SumCounter(
+                    aiTelemetry, "\"search_replans\":");
+                long aiTickMaximum = MaximumCounter(
+                    aiTelemetry, "\"tick_max_us\":");
+                long escapeTimeouts = SumCounter(
+                    aiTelemetry, "\"escape_timeouts\":");
+                long searchCompleted = SumCounter(
+                    aiTelemetry, "\"search_completed\":");
+                long escapeSuccesses =
+                    escapeTimeouts + searchCompleted;
+                long escapeTrials =
+                    maximumReinforcements;
+                bool boundedReinforcements =
+                    maximumReinforcements >= 0 &&
+                    maximumReinforcements <= 4;
+                AddStage(
+                    stages, game, process, imageBase, clock,
+                    "ai_last_known_coordination",
+                    aiSent && aiObserved &&
+                    boundedReinforcements && reactionObserved &&
+                    escapeObserved,
+                    "alert_event=" + aiObserved +
+                    "; max_reinforcements=" +
+                    maximumReinforcements.ToString(
+                        CultureInfo.InvariantCulture) +
+                    "; reaction_max_ms=" +
+                    reactionMaximum.ToString(
+                        CultureInfo.InvariantCulture) +
+                    "; searches_started=" +
+                    searchesStarted.ToString(
+                        CultureInfo.InvariantCulture) +
+                    "; path_replans=" +
+                    searchReplans.ToString(
+                        CultureInfo.InvariantCulture) +
+                    "; escape_trials=" +
+                    escapeTrials.ToString(
+                        CultureInfo.InvariantCulture) +
+                    "; escape_successes=" +
+                    escapeSuccesses.ToString(
+                        CultureInfo.InvariantCulture) +
+                    "; ai_tick_max_us=" +
+                    aiTickMaximum.ToString(
+                        CultureInfo.InvariantCulture) +
+                    "; live_target_sampling=false");
+
+                DateTime saveRequest = DateTime.UtcNow;
+                bool saveSent = SendReplay(window, ReplayMenuCommand, 7);
+                bool saveCreated = WaitUntil(
+                    delegate()
+                    {
+                        return Directory.GetFiles(
+                            gameDirectory, "1937M*.SAV")
+                            .Any(delegate(string path)
+                            {
+                                return File.GetLastWriteTimeUtc(path) >=
+                                    saveRequest.AddSeconds(-1);
+                            });
+                    }, TimeSpan.FromSeconds(4));
+                AddStage(
+                    stages, game, process, imageBase, clock,
+                    "save_original_path", saveSent && saveCreated,
+                    saveCreated
+                        ? "original SAV writer changed an isolated slot"
+                        : "no isolated SAV update observed");
+
+                ulong beforeLoadRead = ReadIoBytes(process);
+                bool loadSent = SendReplay(window, ReplayMenuCommand, 17);
+                Thread.Sleep(2200);
+                ulong afterLoadRead = ReadIoBytes(process);
+                AddStage(
+                    stages, game, process, imageBase, clock,
+                    "load_original_path",
+                    loadSent && afterLoadRead > beforeLoadRead,
+                    "read_delta=" +
+                    (afterLoadRead - beforeLoadRead).ToString(
+                        CultureInfo.InvariantCulture));
+
+                bool failureSent =
+                    SendReplay(window, ReplayMenuCommand, 42);
+                Thread.Sleep(900);
+                AddStage(
+                    stages, game, process, imageBase, clock,
+                    "failure_original_transition", failureSent,
+                    "original UI transition code 42");
+
+                bool restartSent =
+                    SendReplay(window, ReplayMenuCommand, 17);
+                Thread.Sleep(1400);
+                AddStage(
+                    stages, game, process, imageBase, clock,
+                    "restart_after_failure", restartSent,
+                    "loaded isolated checkpoint through original path");
+
+                bool victorySent =
+                    SendReplay(window, ReplayMenuCommand, 43);
+                Thread.Sleep(1100);
+                AddStage(
+                    stages, game, process, imageBase, clock,
+                    "victory_original_transition", victorySent,
+                    "original UI transition code 43");
+
+                while (clock.Elapsed.TotalSeconds < maximumSeconds &&
+                       !game.HasExited)
+                    Thread.Sleep(50);
+
+                samplerStop = true;
+                sampler.Join(1500);
+                string diagnostics = ReadSharedText(
+                    Path.Combine(gameDirectory, "M1937Mod.log"));
+                string telemetry = ReadSharedText(
+                    Path.Combine(gameDirectory, "M1937Telemetry.jsonl"));
+                bool transitionsLogged =
+                    diagnostics.Contains(
+                        "\"detail\":\"save\"") &&
+                    diagnostics.Contains(
+                        "\"detail\":\"load\"") &&
+                    diagnostics.Contains(
+                        "\"detail\":\"failure\"") &&
+                    diagnostics.Contains(
+                        "\"detail\":\"victory\"");
+                bool replayConsumed =
+                    HasPositiveCounter(telemetry, "\"messages\":") &&
+                    HasPositiveCounter(telemetry, "\"reads\":");
+                bool allStages = stages.All(delegate(Stage stage)
+                {
+                    return stage.Sent && stage.ProcessResponding;
+                });
+                bool cursorClipSafe;
+                lock (perf)
+                    cursorClipSafe = perf.All(delegate(PerfSample sample)
+                    {
+                        return !sample.CursorClipRestricted;
+                    });
+                exitCode =
+                    missionStarted && allStages &&
+                    transitionsLogged && replayConsumed &&
+                    cursorClipSafe ? 0 : 1;
+                WriteArtifacts(
+                    outputDirectory, selectorLevel, route.EngineMission,
+                    stages, perf, transitionsLogged, replayConsumed,
+                    exitCode == 0);
+            }
+            finally
+            {
+                samplerStop = true;
+                CloseHandle(process);
+                StopLaunchedGame(game);
+            }
+        }
+        return exitCode;
+    }
+
+    private static void ExerciseToggle(
+        List<Stage> stages, Process game, IntPtr process,
+        long imageBase, IntPtr window, Stopwatch clock,
+        string outputDirectory, string name, int dik,
+        long rawRva,
+        long actionRva,
+        CaptureResult baseline, string captureName)
+    {
+        bool rawObserved;
+        bool actionObserved;
+        bool sent = PulseKeyAndObserve(
+            window, dik, process, imageBase + rawRva,
+            imageBase + actionRva,
+            out rawObserved, out actionObserved);
+        Thread.Sleep(260);
+        using (CaptureResult changed = CaptureWindow(window))
+        {
+            SaveCapture(changed, Path.Combine(outputDirectory, captureName));
+            double difference = CompareCaptures(baseline, changed);
+            AddStage(
+                stages, game, process, imageBase, clock, name,
+                sent && rawObserved,
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "raw_game_state={0}; original_action_pulse={1}; " +
+                    "window_hash_changed={2}; sampled_difference={3:F4}",
+                    rawObserved,
+                    actionObserved,
+                    baseline != null && changed != null &&
+                    baseline.Sha256 != changed.Sha256,
+                    difference));
+        }
+        PulseKey(window, dik);
+        Thread.Sleep(180);
+    }
+
+    private static bool PulseKey(IntPtr window, int dik)
+    {
+        bool down = SendReplay(window, ReplayKeyDown, dik);
+        Thread.Sleep(180);
+        bool up = SendReplay(window, ReplayKeyUp, dik);
+        return down && up;
+    }
+
+    private static bool PulseKeyAndObserve(
+        IntPtr window, int dik, IntPtr process,
+        long rawAddress, long actionAddress,
+        out bool rawObserved, out bool actionObserved)
+    {
+        rawObserved = false;
+        actionObserved = false;
+        bool down = SendReplay(window, ReplayKeyDown, dik);
+        Stopwatch clock = Stopwatch.StartNew();
+        while (clock.ElapsedMilliseconds < 260)
+        {
+            if ((ReadByte(process, rawAddress) & 0x80) != 0)
+                rawObserved = true;
+            if (ReadInt(process, actionAddress) == 1)
+                actionObserved = true;
+            Thread.Sleep(4);
+        }
+        bool up = SendReplay(window, ReplayKeyUp, dik);
+        return down && up;
+    }
+
+    private static bool PulseMouseButton(IntPtr window, int button)
+    {
+        bool down = SendReplay(window, ReplayMouseButtonDown, button);
+        Thread.Sleep(120);
+        bool up = SendReplay(window, ReplayMouseButtonUp, button);
+        return down && up;
+    }
+
+    private static int PackDelta(short x, short y)
+    {
+        return ((ushort)x) | (((int)(ushort)y) << 16);
+    }
+
+    private static bool SendReplay(IntPtr window, int command, int argument)
+    {
+        return PostMessage(
+            window, ReplayMessage,
+            new IntPtr(command), new IntPtr(argument));
+    }
+
+    private static void AddStage(
+        List<Stage> stages, Process game, IntPtr process,
+        long imageBase, Stopwatch clock, string name,
+        bool sent, string evidence)
+    {
+        game.Refresh();
+        stages.Add(new Stage
+        {
+            Name = name,
+            Sent = sent,
+            ProcessResponding = !game.HasExited && game.Responding,
+            Mission = ReadInt(
+                process, imageBase + EngineAddresses.CurrentMission),
+            ElapsedMilliseconds = clock.ElapsedMilliseconds,
+            Evidence = evidence
+        });
+    }
+
+    private static void SamplePerformance(
+        Process game, IntPtr process, Stopwatch clock,
+        List<PerfSample> samples, Func<bool> shouldStop)
+    {
+        while (!shouldStop() && !game.HasExited)
+        {
+            var wait = Stopwatch.StartNew();
+            int dwmResult = DwmFlush();
+            wait.Stop();
+            IoCounters io;
+            GetProcessIoCounters(process, out io);
+            game.Refresh();
+            lock (samples)
+            {
+                samples.Add(new PerfSample
+                {
+                    TimeMilliseconds = clock.Elapsed.TotalMilliseconds,
+                    CpuMilliseconds =
+                        game.TotalProcessorTime.TotalMilliseconds,
+                    ReadBytes = io.ReadTransferCount,
+                    Responding = game.Responding,
+                    CompositorWaitMilliseconds =
+                        dwmResult == 0 ? wait.Elapsed.TotalMilliseconds : 0,
+                    CursorClipRestricted = IsCursorClipRestricted()
+                });
+            }
+            Thread.Sleep(10);
+        }
+    }
+
+    private static ulong ReadIoBytes(IntPtr process)
+    {
+        IoCounters io;
+        return GetProcessIoCounters(process, out io)
+            ? io.ReadTransferCount : 0;
+    }
+
+    private static bool IsCursorClipRestricted()
+    {
+        Rect clip;
+        if (!GetClipCursor(out clip))
+            return true;
+        int left = GetSystemMetrics(SmXVirtualScreen);
+        int top = GetSystemMetrics(SmYVirtualScreen);
+        int right = left + GetSystemMetrics(SmCxVirtualScreen);
+        int bottom = top + GetSystemMetrics(SmCyVirtualScreen);
+        return clip.Left > left || clip.Top > top ||
+               clip.Right < right || clip.Bottom < bottom;
+    }
+
+    private static bool WaitUntil(Func<bool> condition, TimeSpan timeout)
+    {
+        Stopwatch clock = Stopwatch.StartNew();
+        while (clock.Elapsed < timeout)
+        {
+            if (condition()) return true;
+            Thread.Sleep(50);
+        }
+        return false;
+    }
+
+    private static IntPtr WaitForWindow(Process game, TimeSpan timeout)
+    {
+        Stopwatch clock = Stopwatch.StartNew();
+        while (clock.Elapsed < timeout && !game.HasExited)
+        {
+            game.Refresh();
+            if (game.MainWindowHandle != IntPtr.Zero)
+                return game.MainWindowHandle;
+            Thread.Sleep(50);
+        }
+        return IntPtr.Zero;
+    }
+
+    private static int ReadInt(IntPtr process, long address)
+    {
+        byte[] buffer = new byte[4];
+        IntPtr read;
+        return ReadProcessMemory(
+            process, new IntPtr(address), buffer, buffer.Length,
+            out read) && read.ToInt64() == buffer.Length
+            ? BitConverter.ToInt32(buffer, 0)
+            : int.MinValue;
+    }
+
+    private static int ReadByte(IntPtr process, long address)
+    {
+        byte[] buffer = new byte[1];
+        IntPtr read;
+        return ReadProcessMemory(
+            process, new IntPtr(address), buffer, 1, out read) &&
+            read.ToInt64() == 1 ? buffer[0] : -1;
+    }
+
+    private static int ReadWorldActorCount(
+        IntPtr process, long imageBase)
+    {
+        int worldAddress = ReadInt(
+            process, imageBase + EngineAddresses.WorldRoot);
+        if (worldAddress <= 0) return 0;
+        int count = ReadInt(
+            process, ((long)(uint)worldAddress) + 0x3C);
+        return count > 0 && count <= 4096 ? count : 0;
+    }
+
+    private static CaptureResult CaptureWindow(IntPtr window)
+    {
+        Rect rect;
+        if (!GetClientRect(window, out rect))
+            return new CaptureResult
+            {
+                Bitmap = null, Sha256 = "", NonBlank = false
+            };
+        int width = Math.Max(1, Math.Min(1024, rect.Right - rect.Left));
+        int height = Math.Max(1, Math.Min(768, rect.Bottom - rect.Top));
+        var bitmap = new Bitmap(width, height, PixelFormat.Format24bppRgb);
+        bool success;
+        using (Graphics graphics = Graphics.FromImage(bitmap))
+        {
+            IntPtr dc = graphics.GetHdc();
+            try { success = PrintWindow(window, dc, PclientOnly); }
+            finally { graphics.ReleaseHdc(dc); }
+        }
+        // Legacy Direct3D surfaces often return a valid but unchanged
+        // PrintWindow image. Capture exactly the client rectangle from the
+        // compositor as a window-only fallback; this does not activate the
+        // window or touch any input device.
+        var origin = new Point { X = 0, Y = 0 };
+        if (ClientToScreen(window, ref origin))
+        {
+            try
+            {
+                using (Graphics graphics = Graphics.FromImage(bitmap))
+                    graphics.CopyFromScreen(
+                        origin.X, origin.Y, 0, 0,
+                        new Size(width, height),
+                        CopyPixelOperation.SourceCopy);
+                success = true;
+            }
+            catch { }
+        }
+        byte[] pixels = BitmapBytes(bitmap);
+        string hash;
+        using (SHA256 sha = SHA256.Create())
+            hash = BitConverter.ToString(sha.ComputeHash(pixels))
+                .Replace("-", "");
+        bool nonBlank = success && pixels.Any(delegate(byte value)
+        {
+            return value != 0;
+        });
+        return new CaptureResult
+        {
+            Bitmap = bitmap,
+            Sha256 = hash,
+            NonBlank = nonBlank
+        };
+    }
+
+    private static byte[] BitmapBytes(Bitmap bitmap)
+    {
+        var area = new Rectangle(0, 0, bitmap.Width, bitmap.Height);
+        BitmapData data = bitmap.LockBits(
+            area, ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
+        try
+        {
+            byte[] bytes = new byte[Math.Abs(data.Stride) * bitmap.Height];
+            Marshal.Copy(data.Scan0, bytes, 0, bytes.Length);
+            return bytes;
+        }
+        finally { bitmap.UnlockBits(data); }
+    }
+
+    private static double CompareCaptures(
+        CaptureResult left, CaptureResult right)
+    {
+        if (left == null || right == null ||
+            left.Bitmap == null || right.Bitmap == null ||
+            left.Bitmap.Size != right.Bitmap.Size)
+            return 0;
+        byte[] a = BitmapBytes(left.Bitmap);
+        byte[] b = BitmapBytes(right.Bitmap);
+        long total = 0;
+        long count = 0;
+        for (int index = 0; index < a.Length; index += 48)
+        {
+            total += Math.Abs(a[index] - b[index]);
+            ++count;
+        }
+        return count == 0 ? 0 : total / (count * 255.0);
+    }
+
+    private static void SaveCapture(
+        CaptureResult capture, string path)
+    {
+        if (capture == null || capture.Bitmap == null)
+            return;
+        ImageCodecInfo codec = ImageCodecInfo.GetImageEncoders()
+            .First(delegate(ImageCodecInfo item)
+            {
+                return item.FormatID == ImageFormat.Jpeg.Guid;
+            });
+        using (var parameters = new EncoderParameters(1))
+        {
+            parameters.Param[0] = new EncoderParameter(
+                System.Drawing.Imaging.Encoder.Quality, 55L);
+            capture.Bitmap.Save(path, codec, parameters);
+        }
+    }
+
+    private static string ReadSharedText(string path)
+    {
+        if (!File.Exists(path)) return "";
+        for (int attempt = 0; attempt < 5; ++attempt)
+        {
+            try
+            {
+                using (var stream = new FileStream(
+                    path, FileMode.Open, FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete))
+                using (var reader = new StreamReader(
+                    stream, Encoding.UTF8, true))
+                    return reader.ReadToEnd();
+            }
+            catch (IOException) { Thread.Sleep(100); }
+        }
+        return "";
+    }
+
+    private static bool HasPositiveCounter(string text, string marker)
+    {
+        int start = 0;
+        while (text != null &&
+               (start = text.IndexOf(
+                   marker, start, StringComparison.Ordinal)) >= 0)
+        {
+            start += marker.Length;
+            long value = 0;
+            int digits = 0;
+            while (start < text.Length &&
+                   text[start] >= '0' && text[start] <= '9')
+            {
+                value = value * 10 + (text[start] - '0');
+                ++start;
+                ++digits;
+            }
+            if (digits > 0 && value > 0) return true;
+        }
+        return false;
+    }
+
+    private static long MaximumCounter(string text, string marker)
+    {
+        long maximum = -1;
+        int start = 0;
+        while (text != null &&
+               (start = text.IndexOf(
+                   marker, start, StringComparison.Ordinal)) >= 0)
+        {
+            start += marker.Length;
+            long value = 0;
+            int digits = 0;
+            while (start < text.Length &&
+                   text[start] >= '0' && text[start] <= '9')
+            {
+                value = value * 10 + (text[start] - '0');
+                ++start;
+                ++digits;
+            }
+            if (digits > 0)
+                maximum = Math.Max(maximum, value);
+        }
+        return maximum;
+    }
+
+    private static long SumCounter(string text, string marker)
+    {
+        long total = 0;
+        int start = 0;
+        while (text != null &&
+               (start = text.IndexOf(
+                   marker, start, StringComparison.Ordinal)) >= 0)
+        {
+            start += marker.Length;
+            long value = 0;
+            int digits = 0;
+            while (start < text.Length &&
+                   text[start] >= '0' && text[start] <= '9')
+            {
+                value = value * 10 + (text[start] - '0');
+                ++start;
+                ++digits;
+            }
+            if (digits > 0)
+                total += value;
+        }
+        return total;
+    }
+
+    private static double Percentile(
+        IEnumerable<double> values, double percentile)
+    {
+        double[] ordered = values.OrderBy(delegate(double value)
+        {
+            return value;
+        }).ToArray();
+        if (ordered.Length == 0) return 0;
+        int index = (int)Math.Ceiling(percentile * ordered.Length) - 1;
+        return ordered[Math.Max(0, Math.Min(ordered.Length - 1, index))];
+    }
+
+    private static void WriteArtifacts(
+        string outputDirectory, int selectorLevel, int engineMission,
+        List<Stage> stages, List<PerfSample> perf,
+        bool transitionsLogged, bool replayConsumed, bool passed)
+    {
+        PerfSample[] samples;
+        lock (perf) samples = perf.ToArray();
+        double elapsed = samples.Length >= 2
+            ? samples[samples.Length - 1].TimeMilliseconds -
+              samples[0].TimeMilliseconds : 0;
+        double cpu = samples.Length >= 2
+            ? samples[samples.Length - 1].CpuMilliseconds -
+              samples[0].CpuMilliseconds : 0;
+        ulong reads = samples.Length >= 2
+            ? samples[samples.Length - 1].ReadBytes -
+              samples[0].ReadBytes : 0;
+        double[] compositor = samples
+            .Select(delegate(PerfSample sample)
+            {
+                return sample.CompositorWaitMilliseconds;
+            }).Where(delegate(double value) { return value > 0; })
+            .ToArray();
+        int cursorClipRestricted = samples.Count(
+            delegate(PerfSample sample)
+            {
+                return sample.CursorClipRestricted;
+            });
+
+        var json = new StringBuilder();
+        json.Append("{\n");
+        json.AppendFormat(
+            CultureInfo.InvariantCulture,
+            "  \"schema\": 1,\n  \"selector_level\": {0},\n" +
+            "  \"engine_mission\": {1},\n  \"passed\": {2},\n",
+            selectorLevel, engineMission, passed ? "true" : "false");
+        json.AppendFormat(
+            CultureInfo.InvariantCulture,
+            "  \"transitions_logged\": {0},\n" +
+            "  \"replay_consumed\": {1},\n",
+            transitionsLogged ? "true" : "false",
+            replayConsumed ? "true" : "false");
+        json.Append("  \"stages\": [\n");
+        for (int index = 0; index < stages.Count; ++index)
+        {
+            Stage stage = stages[index];
+            json.Append("    {");
+            json.AppendFormat(
+                CultureInfo.InvariantCulture,
+                "\"name\":\"{0}\",\"sent\":{1}," +
+                "\"responding\":{2},\"mission\":{3}," +
+                "\"elapsed_ms\":{4},\"evidence\":\"{5}\"",
+                Escape(stage.Name), stage.Sent ? "true" : "false",
+                stage.ProcessResponding ? "true" : "false",
+                stage.Mission, stage.ElapsedMilliseconds,
+                Escape(stage.Evidence));
+            json.Append(index + 1 == stages.Count ? "}\n" : "},\n");
+        }
+        json.Append("  ],\n");
+        json.AppendFormat(
+            CultureInfo.InvariantCulture,
+            "  \"performance\": {{\"samples\":{0}," +
+            "\"cpu_one_core_percent\":{1:F2}," +
+            "\"disk_read_bytes\":{2}," +
+            "\"unresponsive_samples\":{3}," +
+            "\"cursor_clip_restricted_samples\":{5}," +
+            "\"compositor_wait_p95_ms\":{4:F3},",
+            samples.Length,
+            elapsed <= 0 ? 0 : cpu / elapsed * 100.0,
+            reads,
+            samples.Count(delegate(PerfSample sample)
+            {
+                return !sample.Responding;
+            }),
+            Percentile(compositor, 0.95),
+            cursorClipRestricted);
+        json.Append("\"compositor_wait_p99_ms\":");
+        json.Append(Percentile(compositor, 0.99).ToString(
+            "F3", CultureInfo.InvariantCulture));
+        json.Append("}\n");
+        json.Append("}\n");
+        File.WriteAllText(
+            Path.Combine(outputDirectory, "result.json"),
+            json.ToString(), new UTF8Encoding(false));
+
+        var markdown = new StringBuilder();
+        markdown.AppendLine(
+            "# Level " + selectorLevel + " Isolated Regression");
+        markdown.AppendLine();
+        markdown.AppendLine("- Result: " + (passed ? "pass" : "fail"));
+        markdown.AppendLine(
+            "- Input: game-window messages only; no global mouse/focus API");
+        markdown.AppendLine("- Engine mission: " + engineMission);
+        markdown.AppendLine("- Process reads: " + reads + " bytes");
+        markdown.AppendLine(
+            "- Cursor clip restricted samples: " +
+            cursorClipRestricted);
+        markdown.AppendLine(string.Format(
+            CultureInfo.InvariantCulture,
+            "- Compositor wait P95/P99: {0:F3}/{1:F3} ms",
+            Percentile(compositor, 0.95),
+            Percentile(compositor, 0.99)));
+        markdown.AppendLine();
+        markdown.AppendLine("| Stage | Sent | Responding | Evidence |");
+        markdown.AppendLine("|---|---:|---:|---|");
+        foreach (Stage stage in stages)
+            markdown.AppendLine("| " + stage.Name + " | " +
+                (stage.Sent ? "yes" : "no") + " | " +
+                (stage.ProcessResponding ? "yes" : "no") + " | " +
+                stage.Evidence.Replace("|", "\\|") + " |");
+        File.WriteAllText(
+            Path.Combine(outputDirectory, "result.md"),
+            markdown.ToString(), new UTF8Encoding(false));
+    }
+
+    private static string Escape(string value)
+    {
+        return (value ?? "").Replace("\\", "\\\\")
+            .Replace("\"", "\\\"")
+            .Replace("\r", "\\r").Replace("\n", "\\n");
+    }
+
+    private static void StopLaunchedGame(Process game)
+    {
+        if (game.HasExited) return;
+        try { game.CloseMainWindow(); }
+        catch { }
+        if (game.WaitForExit(1200)) return;
+        try { game.Kill(); game.WaitForExit(1200); }
+        catch { }
+    }
+}

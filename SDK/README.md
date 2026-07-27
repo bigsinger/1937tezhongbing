@@ -20,6 +20,9 @@ PE 指纹和原始指令字节。
   VWF 文件要求与固定字符串重定向；
 - CI 会重新生成并比对产物，同时扫描代理、探针和编辑器，禁止复制已知
   裸 RVA。
+- 提供不可变最后目击观察、有界增援/搜索/截击策略及难度调校类型；
+- 提供版本化世界事件、任务 schema 和 x64 原生插件 ABI；
+- 附带可编译示例插件和独立任务 sidecar 主机。
 
 ## 使用
 
@@ -82,3 +85,6 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 
 首版 SDK 已由 `Patch/src/dinput-proxy` 实际引用，因此它不是只供阅读的
 地址文档，而是 MOD 增强层的公共底座。
+
+任务定义、事件、原子状态和原生插件开发详见
+[`docs/任务Sidecar与原生插件开发指南.md`](docs/任务Sidecar与原生插件开发指南.md)。

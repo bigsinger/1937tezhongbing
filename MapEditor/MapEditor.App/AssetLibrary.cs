@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using Mission1937.MapEditor.Core;
 
 namespace Mission1937.MapEditor.App;
 
@@ -14,6 +15,14 @@ public sealed class AssetEntry
     public string SourceName { get; set; } = "";
     public string ThumbnailPath { get; set; } = "";
     public bool IsNone { get; set; }
+    public int FootprintWidth { get; set; } = 1;
+    public int FootprintHeight { get; set; } = 1;
+    public bool BlocksMovement { get; set; }
+    public bool BlocksLineOfSight { get; set; }
+    public bool IsDoor { get; set; }
+    public string PreferredLayer { get; set; } = "objects";
+    public int OcclusionHeight { get; set; }
+    public string MetadataSource { get; set; } = "";
     public string IconGlyph => IsNone ? "↖" : "";
 }
 
@@ -77,6 +86,10 @@ public static class AssetLibrary
         };
         var catalog = JsonSerializer.Deserialize<AssetCatalog>(
             File.ReadAllText(catalogPath), options) ?? new AssetCatalog();
+        AssetMetadataCatalog? metadata = null;
+        var metadataPath = Path.Combine(root, "asset-metadata.json");
+        if (File.Exists(metadataPath))
+            metadata = AssetMetadataService.Load(metadataPath);
         foreach (var asset in catalog.Assets)
         {
             var thumbnail = string.IsNullOrWhiteSpace(
@@ -85,6 +98,17 @@ public static class AssetLibrary
                 : asset.ThumbnailRelativePath;
             asset.ThumbnailPath = Path.GetFullPath(
                 Path.Combine(root, thumbnail.Replace('/', '\\')));
+            var placement = metadata?.Find(asset.Id);
+            if (placement is null)
+                continue;
+            asset.FootprintWidth = placement.FootprintWidth;
+            asset.FootprintHeight = placement.FootprintHeight;
+            asset.BlocksMovement = placement.BlocksMovement;
+            asset.BlocksLineOfSight = placement.BlocksLineOfSight;
+            asset.IsDoor = placement.IsDoor;
+            asset.PreferredLayer = placement.PreferredLayer;
+            asset.OcclusionHeight = placement.OcclusionHeight;
+            asset.MetadataSource = placement.ValueSource;
         }
         return catalog.Assets;
     }

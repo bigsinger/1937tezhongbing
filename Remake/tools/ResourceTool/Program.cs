@@ -48,10 +48,24 @@ internal static class Program
 
     private static int InspectVwf(string[] args)
     {
-        RequireArgumentCount(args, 2, 3, "inspect-vwf <path.vwf> [1937db.dbl]");
+        RequireArgumentCount(
+            args,
+            2,
+            4,
+            "inspect-vwf <path.vwf> [1937db.dbl] [--entities]");
         var vwfPath = System.IO.Path.GetFullPath(args[1]);
-        DblDatabase? database = args.Length == 3
-            ? DblDatabase.Open(System.IO.Path.GetFullPath(args[2]))
+        var entityDetails = args.Any(argument =>
+            argument.Equals(
+                "--entities",
+                StringComparison.OrdinalIgnoreCase));
+        var databaseArgument = args
+            .Skip(2)
+            .FirstOrDefault(argument =>
+                !argument.Equals(
+                    "--entities",
+                    StringComparison.OrdinalIgnoreCase));
+        DblDatabase? database = databaseArgument is not null
+            ? DblDatabase.Open(System.IO.Path.GetFullPath(databaseArgument))
             : null;
         var world = VwfWorldHeader.Open(vwfPath);
         var terrain = VwfTerrainGrid.Open(vwfPath, database);
@@ -77,6 +91,21 @@ internal static class Program
         Console.WriteLine(
             "Factions: " +
             string.Join(", ", factionCounts.Select(pair => $"{pair.Key}={pair.Value}")));
+        if (entityDetails)
+        {
+            Console.WriteLine(
+                "Entities: scene,database_id,world_x,world_y,direction,faction,death");
+            foreach (var entity in sceneList.Entities)
+            {
+                var faction = entity.ExtendedFields.Count > 8
+                    ? entity.ExtendedFields[8]
+                    : 0;
+                Console.WriteLine(
+                    $"  {entity.SceneIndex},{entity.DatabaseEntryId}," +
+                    $"{entity.WorldX},{entity.WorldY}," +
+                    $"{entity.DirectionIndex},{faction},{entity.DeathState}");
+            }
+        }
         return 0;
     }
 
@@ -358,7 +387,8 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine("  inspect <game-directory>");
-        Console.WriteLine("  inspect-vwf <path.vwf> [1937db.dbl]");
+        Console.WriteLine(
+            "  inspect-vwf <path.vwf> [1937db.dbl] [--entities]");
         Console.WriteLine("  list-gfl <1937Resources.GFL> [InterMedia.GFL]");
         Console.WriteLine("  extract-gfl <1937Resources.GFL> <output-directory> [InterMedia.GFL]");
         Console.WriteLine("  import <game-directory> <output-directory>");

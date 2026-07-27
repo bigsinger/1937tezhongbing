@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://m1937.example/schemas/asset-metadata.schema.json",
+  "title": "M1937 MapEditor asset placement metadata",
+  "type": "object",
+  "required": ["schema_version", "assets"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "asset_id",
+          "source_name",
+          "category",
+          "kind",
+          "footprint_width",
+          "footprint_height",
+          "blocks_movement",
+          "blocks_line_of_sight",
+          "is_door",
+          "preferred_layer",
+          "occlusion_height",
+          "value_source"
+        ],
+        "properties": {
+          "asset_id": { "type": "integer", "minimum": 1 },
+          "source_name": { "type": "string" },
+          "category": { "type": "string" },
+          "kind": { "type": "string" },
+          "footprint_width": { "type": "integer", "minimum": 1 },
+          "footprint_height": { "type": "integer", "minimum": 1 },
+          "blocks_movement": { "type": "boolean" },
+          "blocks_line_of_sight": { "type": "boolean" },
+          "is_door": { "type": "boolean" },
+          "preferred_layer": { "type": "string" },
+          "occlusion_height": { "type": "integer", "minimum": 0 },
+          "value_source": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

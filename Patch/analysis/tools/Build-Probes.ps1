@@ -28,7 +28,12 @@ $references = @(
     'System.Core.dll',
     'System.Drawing.dll'
 )
-foreach ($name in @('OriginalLevelProbe', 'GameFrameProbe')) {
+foreach ($name in @(
+    'OriginalLevelProbe',
+    'GameFrameProbe',
+    'ModRegressionProbe',
+    'ModPerformanceProbe'
+)) {
     $source = Join-Path $PSScriptRoot "$name.cs"
     $output = Join-Path $OutputDirectory "$name.exe"
     if (Test-Path -LiteralPath $output -PathType Leaf) {

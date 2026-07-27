@@ -3,10 +3,12 @@ using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using System.Windows.Data;
 using Microsoft.Win32;
 using Mission1937.MapEditor.Core;
 
@@ -27,6 +29,17 @@ public partial class MainWindow : Window
     private MapDocument? pendingGridEdit;
     private MapDocument? pendingNameEdit;
     private MapDocument? pendingLayerVisibilityEdit;
+    private MapDocument? pendingLayerOpacityEdit;
+    private MapDocument? pendingMissionMetadataEdit;
+    private MapDocument? lastSavedSnapshot;
+    private readonly MapInterchangeRegistry interchange = new();
+    private readonly DispatcherTimer autosaveTimer;
+    private readonly string recoveryRoot = Path.Combine(
+        Environment.GetFolderPath(
+            Environment.SpecialFolder.LocalApplicationData),
+        "M1937MapEditor", "Recovery");
+    private string? currentAutosavePath;
+    private bool suppressLayerUi;
 
     public MainWindow()
     {
@@ -52,6 +65,7 @@ public partial class MainWindow : Window
             ApplicationCommands.Undo, Undo_Click));
         CommandBindings.Add(new CommandBinding(
             ApplicationCommands.Redo, Redo_Click));
+        PreviewKeyDown += MainWindow_PreviewKeyDown;
 
         assetRoot = AssetLibrary.FindRoot();
         allAssets =
@@ -67,9 +81,25 @@ public partial class MainWindow : Window
             .. AssetLibrary.Load(assetRoot)
         ];
         ConfigureAssetLibrary();
+        foreach (var preset in LayerViewService.BuiltInPresets())
+            LayerPresetCombo.Items.Add(preset);
+        LayerPresetCombo.DisplayMemberPath = nameof(LayerViewPreset.Name);
+        interchange.Discover(Path.Combine(
+            AppContext.BaseDirectory, "Plugins"));
         EditorCanvas.AssetRoot = assetRoot;
+        EditorCanvas.RectangleSelected +=
+            EditorCanvas_RectangleSelected;
+        EditorCanvas.PatrolWaypointMoved +=
+            EditorCanvas_PatrolWaypointMoved;
         LoadDocument(document, null, null);
         Loaded += AutomatedPreview_Loaded;
+        Loaded += Recovery_Loaded;
+        autosaveTimer = new DispatcherTimer(
+            TimeSpan.FromSeconds(30),
+            DispatcherPriority.Background,
+            (_, _) => Autosave_Tick(),
+            Dispatcher);
+        autosaveTimer.Start();
     }
 
     private void ConfigureAssetLibrary()
@@ -99,14 +129,21 @@ public partial class MainWindow : Window
         document = value;
         currentPath = path;
         currentVwfSourcePath = vwfSourcePath;
+        suppressLayerUi = true;
         LayerList.ItemsSource = document.Layers;
         LayerList.SelectedItem = document.Layers.FirstOrDefault(
             layer => layer.Kind == EditorLayerKind.MovementObstacle)
             ?? document.Layers.FirstOrDefault();
+        suppressLayerUi = false;
         ObjectGrid.ItemsSource =
             new ObservableCollection<MapObject>(document.Objects);
         TaskGrid.ItemsSource =
             new ObservableCollection<MissionTask>(document.Tasks);
+        SidecarIdText.Text = MissionMetadata(
+            "id",
+            SidecarSafeId(document.Name));
+        SelectorLevelText.Text = MissionMetadata("selector_level", "13");
+        EngineMissionText.Text = MissionMetadata("engine_mission", "12");
         MapNameText.Text = document.Name;
         MapSizeText.Text =
             $"{document.Width} × {document.Height} 格；" +
@@ -133,7 +170,10 @@ public partial class MainWindow : Window
         NativeVwfSaveMenu.IsEnabled = nativeAvailable;
         NativeVwfSaveButton.IsEnabled = nativeAvailable;
         if (resetHistory)
+        {
             history.Clear();
+            lastSavedSnapshot = MapDocumentSerializer.Clone(document);
+        }
         dirty = restoredDirty;
         UpdateHistoryUi();
         UpdateTitle();
@@ -142,6 +182,7 @@ public partial class MainWindow : Window
                 ? "已新建空白地图"
                 : $"已打开原版地图 {document.ImportedFrom}，请使用“另存为”保存副本"
             : $"已打开：{path}";
+        RefreshPatrolEditor();
 
         Dispatcher.BeginInvoke(
             DispatcherPriority.ContextIdle,
@@ -343,6 +384,15 @@ public partial class MainWindow : Window
             {
                 ConnectivityHeatmapCheck.IsChecked = true;
             }
+            if (int.TryParse(
+                    Environment.GetEnvironmentVariable(
+                        "M1937_MAPEDITOR_TAB_INDEX"),
+                    out var tabIndex) &&
+                tabIndex >= 0 &&
+                tabIndex < InspectorTabs.Items.Count)
+            {
+                InspectorTabs.SelectedIndex = tabIndex;
+            }
             await Dispatcher.InvokeAsync(
                 UpdateLayout, DispatcherPriority.ContextIdle);
             if (automatedSelection is not null)
@@ -430,7 +480,9 @@ public partial class MainWindow : Window
         }
         SyncCollections();
         MapDocumentSerializer.Save(document, currentPath);
+        lastSavedSnapshot = MapDocumentSerializer.Clone(document);
         dirty = false;
+        DiscardCurrentAutosave();
         UpdateTitle();
         StatusText.Text = $"已保存：{currentPath}";
     }
@@ -701,7 +753,16 @@ public partial class MainWindow : Window
                 Properties =
                 {
                     ["asset_id"] = asset.Id.ToString(),
-                    ["source_name"] = asset.SourceName
+                    ["source_name"] = asset.SourceName,
+                    ["footprint_width"] = asset.FootprintWidth.ToString(),
+                    ["footprint_height"] = asset.FootprintHeight.ToString(),
+                    ["blocks_movement"] = asset.BlocksMovement.ToString(),
+                    ["blocks_line_of_sight"] =
+                        asset.BlocksLineOfSight.ToString(),
+                    ["is_door"] = asset.IsDoor.ToString(),
+                    ["preferred_layer"] = asset.PreferredLayer,
+                    ["occlusion_height"] = asset.OcclusionHeight.ToString(),
+                    ["metadata_source"] = asset.MetadataSource
                 }
             };
             document.Objects.Add(item);
@@ -721,33 +782,156 @@ public partial class MainWindow : Window
                 SelectObject(item);
             return;
         }
+        else if (activeTool == "patrol" && !erase)
+        {
+            if (ObjectGrid.SelectedItem is not MapObject item)
+            {
+                StatusText.Text = "请先选择一个活物，再编辑巡逻点。";
+                return;
+            }
+            try
+            {
+                _ = PatrolRouteEditing.Insert(
+                    document,
+                    item,
+                    item.PatrolWaypoints.Count,
+                    e.X,
+                    e.Y);
+                CommitEdit(before, $"为 {item.Name} 插入巡逻点");
+                RefreshPatrolEditor(item);
+                StatusText.Text =
+                    $"已插入巡逻点 ({e.X}, {e.Y})。";
+            }
+            catch (Exception exception)
+            {
+                StatusText.Text = exception.Message;
+            }
+        }
+        else if (activeTool == "fill")
+        {
+            var changed = MapLayerPainter.FloodFill(
+                document,
+                activeLayer,
+                e.X,
+                e.Y,
+                erase ? 0 : 1);
+            if (changed > 0)
+                CommitEdit(before, $"填充图层 {activeLayer}");
+        }
         else if (activeTool == "paint" || erase)
         {
-            document.Layer(activeLayer).Cells[
-                document.Index(e.X, e.Y)] = erase ? 0 : 1;
-        }
-        if (activeTool == "paint" || erase)
-        {
-            CommitEdit(
-                before,
-                erase ? "擦除格点" : "绘制格点",
-                $"paint-{activeLayer}-{erase}");
+            var radius = BrushRadiusSlider is null
+                ? 0
+                : (int)Math.Round(BrushRadiusSlider.Value);
+            var changed = MapLayerPainter.PaintBrush(
+                document,
+                activeLayer,
+                e.X,
+                e.Y,
+                radius,
+                erase ? 0 : 1);
+            if (changed > 0)
+            {
+                CommitEdit(
+                    before,
+                    erase ? "擦除格点" : "绘制格点",
+                    $"paint-{activeLayer}-{erase}");
+            }
         }
         EditorCanvas.Refresh();
     }
 
     private void EditorCanvas_ObjectSelected(
-        object? sender, MapObjectEventArgs e) =>
-        SelectObject(e.MapObject);
-
-    private void SelectObject(MapObject item)
+        object? sender, MapObjectEventArgs e)
     {
-        ObjectGrid.SelectedItem = ObjectGrid.Items.Cast<MapObject>()
+        var additive = Keyboard.Modifiers.HasFlag(ModifierKeys.Control) ||
+                       Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+        SelectObject(e.MapObject, additive);
+    }
+
+    private void SelectObject(MapObject item, bool additive = false)
+    {
+        var row = ObjectGrid.Items.Cast<MapObject>()
             .FirstOrDefault(value => value.Id == item.Id);
-        if (ObjectGrid.SelectedItem is not null)
-            ObjectGrid.ScrollIntoView(ObjectGrid.SelectedItem);
-        EditorCanvas.SelectedObjectId = item.Id;
+        if (row is null)
+            return;
+        if (!additive)
+            ObjectGrid.SelectedItems.Clear();
+        if (!ObjectGrid.SelectedItems.Contains(row))
+            ObjectGrid.SelectedItems.Add(row);
+        ObjectGrid.ScrollIntoView(row);
+        EditorCanvas.SelectedObjectIds =
+            ObjectGrid.SelectedItems.Cast<MapObject>()
+                .Select(value => value.Id)
+                .ToArray();
         UpdateRouteStatus(item);
+    }
+
+    private void EditorCanvas_RectangleSelected(
+        object? sender,
+        MapRectangleEventArgs e)
+    {
+        var before = Snapshot();
+        if (activeTool == "rectangle")
+        {
+            var changed = MapLayerPainter.PaintRectangle(
+                document,
+                activeLayer,
+                e.X1,
+                e.Y1,
+                e.X2,
+                e.Y2,
+                1);
+            if (changed > 0)
+            {
+                CommitEdit(before, $"矩形绘制图层 {activeLayer}");
+                EditorCanvas.Refresh();
+            }
+            return;
+        }
+        var selected = MapObjectEditing.SelectRectangle(
+            document,
+            e.X1,
+            e.Y1,
+            e.X2,
+            e.Y2,
+            CurrentObjectFilter());
+        ObjectGrid.SelectedItems.Clear();
+        foreach (var item in selected)
+        {
+            var row = ObjectGrid.Items.Cast<MapObject>()
+                .FirstOrDefault(value => value.Id == item.Id);
+            if (row is not null)
+                ObjectGrid.SelectedItems.Add(row);
+        }
+        EditorCanvas.SelectedObjectIds =
+            selected.Select(item => item.Id).ToArray();
+        StatusText.Text = $"框选了 {selected.Count} 个对象。";
+    }
+
+    private void EditorCanvas_PatrolWaypointMoved(
+        object? sender,
+        PatrolWaypointMoveEventArgs e)
+    {
+        var before = Snapshot();
+        try
+        {
+            _ = PatrolRouteEditing.Move(
+                document,
+                e.MapObject,
+                e.WaypointIndex,
+                e.X,
+                e.Y);
+            CommitEdit(
+                before,
+                $"移动 {e.MapObject.Name} 巡逻点");
+            RefreshPatrolEditor(e.MapObject);
+            EditorCanvas.Refresh();
+        }
+        catch (Exception exception)
+        {
+            StatusText.Text = exception.Message;
+        }
     }
 
     private void CenterViewportAt(int x, int y)
@@ -764,13 +948,15 @@ public partial class MainWindow : Window
 
     private void DeleteObject_Click(object sender, RoutedEventArgs e)
     {
-        if (ObjectGrid.SelectedItem is not MapObject selected)
+        var selected = SelectedObjects();
+        if (selected.Count == 0)
             return;
         var before = Snapshot();
-        document.Objects.RemoveAll(item => item.Id == selected.Id);
+        var ids = selected.Select(item => item.Id).ToHashSet();
+        document.Objects.RemoveAll(item => ids.Contains(item.Id));
         RefreshObjects();
-        EditorCanvas.SelectedObjectId = null;
-        CommitEdit(before, $"删除对象 {selected.Name}");
+        EditorCanvas.SelectedObjectIds = [];
+        CommitEdit(before, $"删除 {selected.Count} 个对象");
         EditorCanvas.Refresh();
     }
 
@@ -816,13 +1002,79 @@ public partial class MainWindow : Window
         EditorCanvas.Refresh();
     }
 
+    private void LayerLock_Click(object sender, RoutedEventArgs e)
+    {
+        if (pendingLayerVisibilityEdit is not null)
+        {
+            CommitEdit(pendingLayerVisibilityEdit, "切换图层锁定");
+            pendingLayerVisibilityEdit = null;
+        }
+        EditorCanvas.Refresh();
+    }
+
+    private void LayerOpacity_PreviewMouseDown(
+        object sender,
+        MouseButtonEventArgs e) =>
+        pendingLayerOpacityEdit = Snapshot();
+
+    private void LayerOpacity_PreviewMouseUp(
+        object sender,
+        MouseButtonEventArgs e)
+    {
+        if (pendingLayerOpacityEdit is null)
+            return;
+        CommitEdit(
+            pendingLayerOpacityEdit,
+            "调整图层透明度",
+            "layer-opacity");
+        pendingLayerOpacityEdit = null;
+    }
+
+    private void LayerOpacity_ValueChanged(
+        object sender,
+        RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (!suppressLayerUi && EditorCanvas is not null)
+            EditorCanvas.Refresh();
+    }
+
+    private void LayerSolo_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button ||
+            button.Tag is not EditorLayerKind kind)
+            return;
+        var before = Snapshot();
+        LayerViewService.Solo(document, kind);
+        CommitEdit(before, $"独显图层 {kind}");
+        LayerList.Items.Refresh();
+        EditorCanvas.Refresh();
+    }
+
+    private void LayerPreset_SelectionChanged(
+        object sender,
+        SelectionChangedEventArgs e)
+    {
+        if (suppressLayerUi ||
+            LayerPresetCombo.SelectedItem is not LayerViewPreset preset)
+            return;
+        var before = Snapshot();
+        LayerViewService.Apply(document, preset);
+        CommitEdit(before, $"应用图层预设 {preset.Name}");
+        LayerList.Items.Refresh();
+        EditorCanvas.Refresh();
+    }
+
     private void ToolMode_Checked(object sender, RoutedEventArgs e)
     {
         if (sender is RadioButton button && button.Tag is string mode)
         {
             activeTool = mode;
-            EditorCanvas.ObjectSelectionEnabled = mode == "select";
-            if (mode == "paint")
+            EditorCanvas.ObjectSelectionEnabled =
+                mode is "select" or "rectangle";
+            EditorCanvas.RectangleDragEnabled =
+                mode is "select" or "rectangle";
+            EditorCanvas.PatrolEditingEnabled = mode == "patrol";
+            if (mode is "paint" or "rectangle" or "fill")
             {
                 document.Layer(activeLayer).Visible = true;
                 EditorCanvas.Refresh();
@@ -830,8 +1082,11 @@ public partial class MainWindow : Window
             StatusText.Text = mode switch
             {
                 "asset" => "放置模式：选择左侧素材后单击地图",
-                "select" => "选择模式：单击对象",
+                "select" => "选择模式：单击或拖框选择对象",
                 "paint" => "障碍绘制模式：左键绘制、右键擦除",
+                "rectangle" => "矩形绘制：在地图空白处拖出矩形",
+                "fill" => "区域填充：单击一个连通区域",
+                "patrol" => "巡逻编辑：拖动已有点，或单击插入新点",
                 _ => "擦除模式：在地图上拖动"
             };
         }
@@ -1044,12 +1299,644 @@ public partial class MainWindow : Window
             }));
     }
 
+    private string MissionMetadata(string key, string fallback) =>
+        document.Metadata.TryGetValue(key, out var value) &&
+        !string.IsNullOrWhiteSpace(value)
+            ? value
+            : fallback;
+
+    private static string SidecarSafeId(string value)
+    {
+        var safe = new string(value.Select(character =>
+                char.IsAsciiLetterOrDigit(character) ||
+                character is '_' or '.' or '-'
+                    ? character
+                    : '-')
+            .ToArray()).Trim('-');
+        if (safe.Length == 0)
+            safe = "community-mission";
+        return safe.Length <= 80 ? safe : safe[..80];
+    }
+
+    private void MissionMetadata_GotKeyboardFocus(
+        object sender,
+        KeyboardFocusChangedEventArgs e) =>
+        pendingMissionMetadataEdit = Snapshot();
+
+    private void MissionMetadata_LostKeyboardFocus(
+        object sender,
+        KeyboardFocusChangedEventArgs e)
+    {
+        if (pendingMissionMetadataEdit is null)
+            return;
+        SyncMissionMetadata();
+        CommitEdit(
+            pendingMissionMetadataEdit,
+            "修改任务 Sidecar 身份",
+            "mission-sidecar-metadata");
+        pendingMissionMetadataEdit = null;
+    }
+
+    private void SyncMissionMetadata()
+    {
+        var id = SidecarIdText.Text.Trim();
+        var selector = SelectorLevelText.Text.Trim();
+        var engine = EngineMissionText.Text.Trim();
+        if (id.Length > 0)
+            document.Metadata["id"] = id;
+        else
+            document.Metadata.Remove("id");
+        if (selector.Length > 0)
+            document.Metadata["selector_level"] = selector;
+        else
+            document.Metadata.Remove("selector_level");
+        if (engine.Length > 0)
+            document.Metadata["engine_mission"] = engine;
+        else
+            document.Metadata.Remove("engine_mission");
+    }
+
     private void ObjectGrid_SelectionChanged(
         object sender, SelectionChangedEventArgs e)
     {
         var selected = ObjectGrid.SelectedItem as MapObject;
-        EditorCanvas.SelectedObjectId = selected?.Id;
+        EditorCanvas.SelectedObjectIds =
+            ObjectGrid.SelectedItems.Cast<MapObject>()
+                .Select(item => item.Id)
+                .ToArray();
         UpdateRouteStatus(selected);
+        RefreshPatrolEditor(selected);
+    }
+
+    private IReadOnlyList<MapObject> SelectedObjects() =>
+        ObjectGrid.SelectedItems.Cast<MapObject>().ToArray();
+
+    private void SelectAllObjects_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        ObjectGrid.SelectAll();
+        EditorCanvas.SelectedObjectIds =
+            ObjectGrid.SelectedItems.Cast<MapObject>()
+                .Select(item => item.Id)
+                .ToArray();
+        StatusText.Text =
+            $"已选择 {ObjectGrid.SelectedItems.Count} 个可见对象。";
+    }
+
+    private void DuplicateSelected_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        var selection = SelectedObjects();
+        if (selection.Count == 0)
+            return;
+        var before = Snapshot();
+        var duplicates = MapObjectEditing.Duplicate(
+            document, selection, 1, 1);
+        RefreshObjects();
+        SelectRows(duplicates);
+        CommitEdit(before, $"复制 {selection.Count} 个对象");
+        EditorCanvas.Refresh();
+    }
+
+    private void AlignSelected_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (sender is not MenuItem item ||
+            item.Tag is not string tag ||
+            !Enum.TryParse<MapAlignment>(tag, out var alignment))
+            return;
+        var selection = SelectedObjects();
+        if (selection.Count < 2)
+            return;
+        var before = Snapshot();
+        MapObjectEditing.Align(selection, alignment);
+        CommitEdit(before, $"对齐 {selection.Count} 个对象");
+        ObjectGrid.Items.Refresh();
+        EditorCanvas.Refresh();
+    }
+
+    private void DistributeSelected_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (sender is not MenuItem item ||
+            item.Tag is not string tag ||
+            !Enum.TryParse<MapDistribution>(tag, out var distribution))
+            return;
+        var selection = SelectedObjects();
+        if (selection.Count < 3)
+            return;
+        var before = Snapshot();
+        MapObjectEditing.Distribute(selection, distribution);
+        CommitEdit(before, $"分布 {selection.Count} 个对象");
+        ObjectGrid.Items.Refresh();
+        EditorCanvas.Refresh();
+    }
+
+    private void BatchProperties_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        var selection = SelectedObjects();
+        if (selection.Count == 0)
+            return;
+        var dialog = new BatchPropertiesDialog(selection[0])
+        {
+            Owner = this
+        };
+        if (dialog.ShowDialog() != true)
+            return;
+        var before = Snapshot();
+        MapObjectEditing.SetBatchProperties(
+            selection,
+            dialog.Faction,
+            dialog.Category,
+            dialog.Direction,
+            dialog.Properties);
+        CommitEdit(before, $"批量修改 {selection.Count} 个对象");
+        ObjectGrid.Items.Refresh();
+        EditorCanvas.Refresh();
+    }
+
+    private void ObjectFilter_Changed(object sender, TextChangedEventArgs e)
+    {
+        if (ObjectGrid is null || ObjectGrid.ItemsSource is null)
+            return;
+        var filter = CurrentObjectFilter();
+        var view = CollectionViewSource.GetDefaultView(
+            ObjectGrid.ItemsSource);
+        view.Filter = value =>
+            value is MapObject item &&
+            MapObjectEditing.Filter([item], filter).Count == 1;
+        view.Refresh();
+        EditorCanvas.SelectedObjectIds =
+            ObjectGrid.SelectedItems.Cast<MapObject>()
+                .Select(item => item.Id)
+                .ToArray();
+    }
+
+    private MapObjectFilter CurrentObjectFilter() =>
+        new(
+            ObjectSearchText?.Text ?? "",
+            ObjectSceneFilter?.Text ?? "",
+            ObjectAssetFilter?.Text ?? "",
+            ObjectFactionFilter?.Text ?? "",
+            "");
+
+    private void SelectRows(IEnumerable<MapObject> selection)
+    {
+        var ids = selection.Select(item => item.Id).ToHashSet();
+        ObjectGrid.SelectedItems.Clear();
+        foreach (var row in ObjectGrid.Items.Cast<MapObject>()
+                     .Where(item => ids.Contains(item.Id)))
+            ObjectGrid.SelectedItems.Add(row);
+        EditorCanvas.SelectedObjectIds = ids;
+    }
+
+    private void InsertPatrolPoint_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (ObjectGrid.SelectedItem is not MapObject)
+        {
+            StatusText.Text = "请先选择一个活物。";
+            return;
+        }
+        activeTool = "patrol";
+        EditorCanvas.ObjectSelectionEnabled = false;
+        EditorCanvas.RectangleDragEnabled = false;
+        EditorCanvas.PatrolEditingEnabled = true;
+        StatusText.Text = "请在地图上单击要插入的巡逻点。";
+    }
+
+    private void DeletePatrolPoint_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (ObjectGrid.SelectedItem is not MapObject item ||
+            PatrolWaypointList.SelectedIndex < 0)
+            return;
+        var before = Snapshot();
+        _ = PatrolRouteEditing.Delete(
+            item, PatrolWaypointList.SelectedIndex);
+        CommitEdit(before, $"删除 {item.Name} 巡逻点");
+        RefreshPatrolEditor(item);
+        EditorCanvas.Refresh();
+    }
+
+    private void PatrolWaypointList_SelectionChanged(
+        object sender,
+        SelectionChangedEventArgs e)
+    {
+        if (ObjectGrid.SelectedItem is not MapObject item ||
+            PatrolWaypointList.SelectedIndex < 0 ||
+            PatrolWaypointList.SelectedIndex >=
+                item.PatrolWaypoints.Count)
+            return;
+        var point = item.PatrolWaypoints[
+            PatrolWaypointList.SelectedIndex];
+        CenterViewportAt(point.X, point.Y);
+    }
+
+    private void RefreshPatrolEditor(MapObject? selected = null)
+    {
+        if (PatrolWaypointList is null || PatrolCapacityText is null)
+            return;
+        selected ??= ObjectGrid?.SelectedItem as MapObject;
+        if (selected is null)
+        {
+            PatrolWaypointList.ItemsSource = null;
+            PatrolCapacityText.Text = "请选择带路线的活物";
+            return;
+        }
+        var capacity = PatrolRouteEditing.Capacity(selected);
+        PatrolWaypointList.ItemsSource = selected.PatrolWaypoints
+            .Select((point, index) => new PatrolPointRow(
+                index,
+                point,
+                $"{index + 1:D2}：({point.X}, {point.Y})"))
+            .ToArray();
+        PatrolCapacityText.Text =
+            $"{selected.Name}：{selected.PatrolWaypoints.Count}/" +
+            $"{capacity} 个点，剩余 " +
+            $"{Math.Max(0, capacity - selected.PatrolWaypoints.Count)}";
+    }
+
+    private void AnalyzeMissionGraph_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        SyncCollections();
+        var graph = MissionGraphService.Build(document);
+        var mapping = MissionGraphService.OriginalStateMapping(document);
+        MissionGraphSummaryText.Text =
+            $"节点 {graph.Nodes.Count}，依赖 {graph.Edges.Count}；" +
+            $"顺序：{string.Join(" → ", graph.TopologicalOrder)}\n" +
+            $"原版状态：{string.Join(
+                "；", mapping.Select(item =>
+                    $"{item.Key}={item.Value}"))}\n" +
+            (graph.Errors.Count == 0
+                ? "检查通过：阶段、失败与撤离关系闭合。"
+                : string.Join("\n", graph.Errors));
+    }
+
+    private void PreviewAiCoordination_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (ObjectGrid.SelectedItem is not MapObject enemy)
+        {
+            CollaborationPreviewText.Text = "请先选择一个敌军对象。";
+            return;
+        }
+        var preview = AiCoordinationSimulator.Simulate(
+            document,
+            enemy,
+            AiLevelCombo.SelectedIndex,
+            DifficultyCombo.SelectedIndex);
+        CollaborationPreviewText.Text =
+            $"数值来源：{preview.ValueSource}\n" +
+            $"反应时间：{preview.ReactionDelayMilliseconds} ms\n" +
+            $"有限增援：{string.Join(
+                ", ", preview.ReinforcementActorIds)}\n" +
+            $"搜索点：{string.Join(
+                " → ", preview.SearchPattern.Select(point =>
+                    $"({point.X},{point.Y})"))}\n" +
+            "搜索锚点为事件发生时的最后目击快照，" +
+            "不会读取视线外实时玩家坐标。";
+    }
+
+    private void PreviewPlayerTimeline_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        var frames = PlayerTimelineSimulator.Simulate(
+            document,
+            60_000,
+            1_000,
+            EnemyPreviewProfile.ForDifficulty(
+                DifficultyCombo.SelectedIndex,
+                AiLevelCombo.SelectedIndex));
+        var detected = frames.Where(frame =>
+            frame.PotentialDetections.Count > 0).ToArray();
+        CollaborationPreviewText.Text =
+            $"共模拟 {frames.Count} 帧（每秒一帧）。\n" +
+            $"潜在发现帧：{detected.Length}\n" +
+            string.Join(
+                "\n",
+                detected.Take(30).Select(frame =>
+                    $"{frame.TimeMilliseconds / 1000,2}s：" +
+                    string.Join(", ", frame.PotentialDetections))) +
+            "\n数值来源：玩家行动时间轴=编辑器估算；" +
+            "巡逻点=原版恢复；巡逻速度=编辑器估算。";
+    }
+
+    private void SaveRegion_Click(object sender, RoutedEventArgs e)
+    {
+        var selection = SelectedObjects();
+        var left = selection.Count > 0 ? selection.Min(item => item.X) : 0;
+        var top = selection.Count > 0 ? selection.Min(item => item.Y) : 0;
+        var right = selection.Count > 0
+            ? selection.Max(item => item.X)
+            : document.Width - 1;
+        var bottom = selection.Count > 0
+            ? selection.Max(item => item.Y)
+            : document.Height - 1;
+        var dialog = new SaveFileDialog
+        {
+            Filter = "1937 区域素材 (*.m37region.json)|*.m37region.json",
+            FileName = $"{SafeName(document.Name)}-区域.m37region.json"
+        };
+        if (dialog.ShowDialog(this) != true)
+            return;
+        var region = RegionLibraryService.Capture(
+            document,
+            Path.GetFileNameWithoutExtension(dialog.FileName),
+            left, top, right, bottom);
+        RegionLibraryService.Save(region, dialog.FileName);
+        StatusText.Text =
+            $"区域素材已保存：{region.Width}×{region.Height}，" +
+            $"{region.Objects.Count} 个对象。";
+    }
+
+    private void PasteRegion_Click(object sender, RoutedEventArgs e)
+    {
+        var open = new OpenFileDialog
+        {
+            Filter = "1937 区域素材 (*.m37region.json)|*.m37region.json"
+        };
+        if (open.ShowDialog(this) != true)
+            return;
+        var location = new RegionPasteDialog()
+        {
+            Owner = this
+        };
+        if (location.ShowDialog() != true)
+            return;
+        var before = Snapshot();
+        var result = RegionLibraryService.Paste(
+            document,
+            RegionLibraryService.Load(open.FileName),
+            location.TargetX,
+            location.TargetY);
+        RefreshObjects();
+        SelectRows(document.Objects.Where(item =>
+            result.NewObjectIds.Contains(item.Id)));
+        CommitEdit(before, "粘贴跨地图区域素材");
+        EditorCanvas.Refresh();
+        StatusText.Text =
+            $"已粘贴 {result.NewObjectIds.Count} 个对象并重绑 scene/占用。";
+    }
+
+    private void ExportSemanticDiff_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        var dialog = new SaveFileDialog
+        {
+            Filter = "语义地图差异 (*.m37diff.json)|*.m37diff.json",
+            FileName = $"{SafeName(document.Name)}.m37diff.json"
+        };
+        if (dialog.ShowDialog(this) != true)
+            return;
+        var changes = SemanticMapCollaboration.Diff(
+            lastSavedSnapshot ?? MapDocumentSerializer.Clone(document),
+            document);
+        SemanticMapCollaboration.ExportDiff(changes, dialog.FileName);
+        StatusText.Text = $"已导出 {changes.Count} 项语义变化。";
+    }
+
+    private void SemanticMerge_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        var baseDialog = new OpenFileDialog
+        {
+            Title = "选择共同基础地图",
+            Filter = "地图工程 (*.m37map.json)|*.m37map.json"
+        };
+        if (baseDialog.ShowDialog(this) != true)
+            return;
+        var theirsDialog = new OpenFileDialog
+        {
+            Title = "选择要合并的另一版本",
+            Filter = "地图工程 (*.m37map.json)|*.m37map.json"
+        };
+        if (theirsDialog.ShowDialog(this) != true)
+            return;
+        var before = Snapshot();
+        var result = SemanticMapCollaboration.Merge(
+            MapDocumentSerializer.Load(baseDialog.FileName),
+            document,
+            MapDocumentSerializer.Load(theirsDialog.FileName));
+        if (result.Conflicts.Count > 0 &&
+            MessageBox.Show(
+                this,
+                $"检测到 {result.Conflicts.Count} 个冲突。" +
+                "继续将保留当前版本的冲突项，是否继续？",
+                "语义合并冲突",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            return;
+        LoadDocument(
+            result.Document,
+            currentPath,
+            currentVwfSourcePath,
+            resetHistory: false,
+            restoredDirty: true);
+        CommitEdit(before, "三方语义地图合并");
+        StatusText.Text =
+            $"合并完成；冲突 {result.Conflicts.Count} 项。";
+    }
+
+    private void PluginImport_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (!ConfirmDiscard())
+            return;
+        var dialog = new OpenFileDialog
+        {
+            Filter =
+                "任务 Sidecar (*.m1937mission.json)|*.m1937mission.json;*.m1937mission|" +
+                "地图工程 (*.json;*.m37map)|*.json;*.m37map"
+        };
+        if (dialog.ShowDialog(this) != true)
+            return;
+        try
+        {
+            var plugin = interchange.FindForImport(dialog.FileName);
+            var imported = plugin.Import(
+                dialog.FileName,
+                new MapInterchangeContext(
+                    dialog.FileName,
+                    assetRoot,
+                    new Dictionary<string, string>()));
+            LoadDocument(imported, null, null);
+            StatusText.Text = $"已通过插件“{plugin.DisplayName}”导入。";
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(
+                this,
+                exception.Message,
+                "插件导入失败",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+    }
+
+    private void PluginExport_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        SyncCollections();
+        var dialog = new SaveFileDialog
+        {
+            Filter =
+                "任务 Sidecar (*.m1937mission.json)|*.m1937mission.json;*.m1937mission|" +
+                "地图工程 (*.m37map)|*.m37map"
+        };
+        if (dialog.ShowDialog(this) != true)
+            return;
+        try
+        {
+            var plugin = interchange.FindForExport(dialog.FileName);
+            plugin.Export(
+                document,
+                dialog.FileName,
+                new MapInterchangeContext(
+                    currentPath ?? "",
+                    assetRoot,
+                    new Dictionary<string, string>()));
+            StatusText.Text = $"已通过插件“{plugin.DisplayName}”导出。";
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(
+                this,
+                exception.Message,
+                "插件导出失败",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+    }
+
+    private void PublishMap_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFolderDialog
+        {
+            Title = "选择发布资料输出目录",
+            Multiselect = false
+        };
+        if (dialog.ShowDialog(this) != true)
+            return;
+        var story = string.Join(
+            "\n\n",
+            document.Tasks.Select(task =>
+                $"## {task.Title}\n\n{task.Description}"));
+        var result = MapPublicationService.Publish(
+            document,
+            dialog.FolderName,
+            story.Length > 0 ? story : "请在此补充关卡故事。",
+            MapQualityAnalyzer.Analyze(document));
+        StatusText.Text = $"发布资料已生成：{result.OutputDirectory}";
+    }
+
+    private void MainWindow_PreviewKeyDown(
+        object sender,
+        KeyEventArgs e)
+    {
+        if (Keyboard.FocusedElement is TextBoxBase)
+            return;
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control) &&
+            e.Key == Key.A)
+        {
+            SelectAllObjects_Click(this, new RoutedEventArgs());
+            e.Handled = true;
+        }
+        else if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control) &&
+                 e.Key == Key.D)
+        {
+            DuplicateSelected_Click(this, new RoutedEventArgs());
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Delete)
+        {
+            DeleteObject_Click(this, new RoutedEventArgs());
+            e.Handled = true;
+        }
+    }
+
+    private void Autosave_Tick()
+    {
+        if (!dirty)
+            return;
+        try
+        {
+            SyncCollections();
+            currentAutosavePath = MapAutosaveService.Save(
+                document,
+                recoveryRoot,
+                currentPath);
+            StatusText.Text =
+                $"已自动保存恢复快照：{DateTime.Now:T}";
+        }
+        catch (Exception exception)
+        {
+            StatusText.Text = $"自动保存失败：{exception.Message}";
+        }
+    }
+
+    private void Recovery_Loaded(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (!string.IsNullOrWhiteSpace(
+                Environment.GetEnvironmentVariable(
+                    "M1937_MAPEDITOR_SCREENSHOT")))
+            return;
+        var candidate = MapAutosaveService.FindCandidates(
+            recoveryRoot).FirstOrDefault();
+        if (candidate is null)
+            return;
+        var answer = MessageBox.Show(
+            this,
+            $"发现 {candidate.SavedUtc.LocalDateTime:g} 的自动保存快照。" +
+            "是否恢复？\n" +
+            (candidate.SourceChanged
+                ? "注意：磁盘上的源文件已变化。"
+                : "源文件未发生变化。"),
+            "恢复未保存地图",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+        if (answer == MessageBoxResult.Yes)
+        {
+            LoadDocument(
+                candidate.Document,
+                File.Exists(candidate.SourcePath)
+                    ? candidate.SourcePath
+                    : null,
+                null,
+                restoredDirty: true);
+            currentAutosavePath = candidate.AutosavePath;
+            StatusText.Text = "已恢复自动保存快照，请另存或保存确认。";
+        }
+        else
+        {
+            MapAutosaveService.Discard(candidate.AutosavePath);
+        }
+    }
+
+    private void DiscardCurrentAutosave()
+    {
+        if (string.IsNullOrWhiteSpace(currentAutosavePath))
+            return;
+        MapAutosaveService.Discard(currentAutosavePath);
+        currentAutosavePath = null;
     }
 
     private void UpdateRouteStatus(MapObject? selected = null)
@@ -1103,34 +1990,46 @@ public partial class MainWindow : Window
     {
         if (!ConfirmDiscard())
             e.Cancel = true;
+        if (!e.Cancel)
+            autosaveTimer.Stop();
         base.OnClosing(e);
     }
 
-    private bool ConfirmDiscard() =>
-        !dirty || MessageBox.Show(
+    private bool ConfirmDiscard()
+    {
+        if (!dirty)
+            return true;
+        var discard = MessageBox.Show(
             this, "当前地图尚未保存，继续并放弃修改？",
             "未保存的修改", MessageBoxButton.YesNo,
             MessageBoxImage.Warning) == MessageBoxResult.Yes;
+        if (discard)
+            DiscardCurrentAutosave();
+        return discard;
+    }
 
     private void SyncCollections()
     {
-        document.Objects =
-            ObjectGrid.Items.Cast<MapObject>().ToList();
+        // Object rows edit the same MapObject instances held by the document.
+        // Do not rebuild from the filtered CollectionView: doing so would
+        // silently delete objects hidden by the search panel.
         document.Tasks =
             TaskGrid.Items.Cast<MissionTask>().ToList();
+        SyncMissionMetadata();
     }
 
     private void RefreshObjects(MapObject? selected = null)
     {
         ObjectGrid.ItemsSource =
             new ObservableCollection<MapObject>(document.Objects);
+        ObjectFilter_Changed(this, new TextChangedEventArgs(
+            TextBox.TextChangedEvent, UndoAction.None));
         if (selected is not null)
         {
-            ObjectGrid.SelectedItem =
-                ObjectGrid.Items.Cast<MapObject>()
-                    .First(item => item.Id == selected.Id);
-            EditorCanvas.SelectedObjectId = selected.Id;
+            SelectRows([selected]);
         }
+        else
+            EditorCanvas.SelectedObjectIds = [];
     }
 
     private void RefreshTasks() =>
@@ -1142,6 +2041,157 @@ public partial class MainWindow : Window
             Path.GetInvalidFileNameChars().Contains(character)
                 ? '_'
                 : character));
+}
+
+internal sealed record PatrolPointRow(
+    int Index,
+    MapWaypoint Point,
+    string Label);
+
+internal sealed class BatchPropertiesDialog : Window
+{
+    private readonly TextBox faction = new();
+    private readonly TextBox category = new();
+    private readonly TextBox direction = new();
+    private readonly TextBox properties = new()
+    {
+        AcceptsReturn = true,
+        Height = 90,
+        VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+    };
+
+    public string? Faction =>
+        string.IsNullOrWhiteSpace(faction.Text)
+            ? null : faction.Text.Trim();
+    public string? Category =>
+        string.IsNullOrWhiteSpace(category.Text)
+            ? null : category.Text.Trim();
+    public int? Direction =>
+        int.TryParse(direction.Text, out var value) ? value : null;
+    public IReadOnlyDictionary<string, string> Properties =>
+        properties.Text.Split(
+                ['\r', '\n'],
+                StringSplitOptions.RemoveEmptyEntries |
+                StringSplitOptions.TrimEntries)
+            .Select(line => line.Split('=', 2))
+            .Where(parts => parts.Length == 2 &&
+                            parts[0].Length > 0)
+            .ToDictionary(
+                parts => parts[0].Trim(),
+                parts => parts[1].Trim(),
+                StringComparer.OrdinalIgnoreCase);
+
+    public BatchPropertiesDialog(MapObject sample)
+    {
+        Title = "批量修改对象属性";
+        Width = 430;
+        Height = 390;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        ResizeMode = ResizeMode.NoResize;
+        faction.Text = sample.Faction;
+        category.Text = sample.Category;
+        direction.Text = sample.Direction.ToString();
+        var panel = new StackPanel { Margin = new Thickness(16) };
+        panel.Children.Add(Labelled("阵营（留空=不修改）", faction));
+        panel.Children.Add(Labelled("类别（留空=不修改）", category));
+        panel.Children.Add(Labelled("方向（留空=不修改）", direction));
+        panel.Children.Add(Labelled(
+            "附加属性（每行 key=value）", properties));
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+        var accept = new Button
+        {
+            Content = "应用",
+            Width = 88,
+            Margin = new Thickness(4),
+            IsDefault = true
+        };
+        accept.Click += (_, _) => DialogResult = true;
+        var cancel = new Button
+        {
+            Content = "取消",
+            Width = 88,
+            Margin = new Thickness(4),
+            IsCancel = true
+        };
+        buttons.Children.Add(accept);
+        buttons.Children.Add(cancel);
+        panel.Children.Add(buttons);
+        Content = panel;
+    }
+
+    private static FrameworkElement Labelled(
+        string label,
+        Control control)
+    {
+        var panel = new StackPanel
+        {
+            Margin = new Thickness(0, 0, 0, 8)
+        };
+        panel.Children.Add(new TextBlock
+        {
+            Text = label,
+            Margin = new Thickness(0, 0, 0, 3)
+        });
+        panel.Children.Add(control);
+        return panel;
+    }
+}
+
+internal sealed class RegionPasteDialog : Window
+{
+    private readonly TextBox x = new() { Text = "0" };
+    private readonly TextBox y = new() { Text = "0" };
+
+    public int TargetX => int.Parse(x.Text);
+    public int TargetY => int.Parse(y.Text);
+
+    public RegionPasteDialog()
+    {
+        Title = "区域素材粘贴位置";
+        Width = 340;
+        Height = 230;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        ResizeMode = ResizeMode.NoResize;
+        var panel = new StackPanel { Margin = new Thickness(18) };
+        panel.Children.Add(new TextBlock
+        {
+            Text = "输入区域左上角格点。对象、scene 引用和占用会自动重绑。",
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 10)
+        });
+        panel.Children.Add(new TextBlock { Text = "X" });
+        panel.Children.Add(x);
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Y",
+            Margin = new Thickness(0, 6, 0, 0)
+        });
+        panel.Children.Add(y);
+        var accept = new Button
+        {
+            Content = "粘贴",
+            Width = 90,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 12, 0, 0),
+            IsDefault = true
+        };
+        accept.Click += (_, _) =>
+        {
+            if (!int.TryParse(x.Text, out _) ||
+                !int.TryParse(y.Text, out _))
+            {
+                MessageBox.Show(this, "X/Y 必须是整数。");
+                return;
+            }
+            DialogResult = true;
+        };
+        panel.Children.Add(accept);
+        Content = panel;
+    }
 }
 
 internal sealed class NativeVwfDiffDialog : Window

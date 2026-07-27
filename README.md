@@ -33,9 +33,15 @@ cd .\1937tezhongbing\Mod
 - 默认使用已重复验证的 1024×768 稳定窗口；专用 DirectInput 映射让
   原版游戏光标跟随 Windows 光标，但不会锁定、回中或移动系统光标；
 - 菜单、第一关点击及窗口边缘卷屏均已通过真实鼠标消息回归测试；
+- 发布门禁拒绝光标移动/裁剪/捕获 API；菜单和场景额外完成 1,914 个
+  只读裁剪采样，限制样本为 0；
 - 60 FPS、VSync、高精度计时和原版边缘卷屏；
 - 游戏窗口禁用 IME，支持现代 DPI；
 - 通过难度/AI 等级扩展敌军听觉和警报协同；
+- 有界“最后目击点”AI：反应延迟、1—4 人增援、前向截击、2—4 点搜索、
+  重获目标与超时返回原版巡逻，不持续读取视线外玩家坐标；
+- 可关闭的按键别名、结构化诊断和分通道性能遥测；
+- 可选任务 sidecar 和 x64 原生插件 ABI；默认关闭，失败完整回退原版；
 - 全部 12 个原版关卡和扩展关“余烬行动”“锄奸行动”“破晓密令”可直接选择，
   不改写原 EXE、不伪造存档；
 - 兼容全屏保留底栏、F1 帮助、M 小地图和全部原版热键，可选择保持
@@ -52,7 +58,11 @@ cd .\1937tezhongbing\Mod
 后续制作统一遵循
 [`doc/关卡制作与验证方法论.md`](doc/关卡制作与验证方法论.md)；MOD 与
 编辑器的分级改进清单见
-[`doc/MOD与MapEditor持续改进评估.md`](doc/MOD与MapEditor持续改进评估.md)。
+[`doc/MOD与MapEditor持续改进评估.md`](doc/MOD与MapEditor持续改进评估.md)，
+全部建议的最终实现与证据见
+[`doc/MOD与MapEditor持续改进实施报告.md`](doc/MOD与MapEditor持续改进实施报告.md)。
+
+![现代启动中心](Screenshots/ModernLauncher-final.png)
 
 ## 地图编辑器
 
@@ -70,7 +80,15 @@ cd .\1937tezhongbing\Mod
 - 素材库第一项为默认“鼠标箭头（仅查看）”，浏览时不会误放置对象；
 - 地表、视线障碍、移动障碍、事件、人工通行修正五层编辑；
 - 敌军、玩家、门、物品和任务点放置；
+- 高级任务页直接编辑 Sidecar 身份、关卡路由、依赖、可选/失败目标、
+  数据库对象绑定、区域和期限，不需要手写任务 JSON；
 - 任务触发器、目标引用、数量、失败条件和任务链；
+- 安全原生 VWF 另存、二进制/语义差异、原子替换和备份；
+- Undo/Redo、多选/框选/对齐/分布、地形画笔/矩形/填充、巡逻点编辑、
+  对象筛选、图层锁定/透明度/独显/预设和自动保存恢复；
+- 任务依赖图、AI 协同和玩家时间轴，跨地图区域库、语义三方合并及
+  正式 `.m1937mission.json` 插件往返；
+- 1,037 项素材放置元数据与一键 README/缩略图/故事/验证摘要发布；
 - 原版 `VWL1/SLIST1` VWF 只读导入；
 - 可进行 Git 差异比较的 `*.m37map.json` 和任务包导出。
 
@@ -81,6 +99,10 @@ cd .\1937tezhongbing\Mod
 ```
 
 ![地图编辑器预览第一关](Screenshots/MapEditor-v2-第一关预览.png)
+
+![持续改进版本：局部重绘、AI 与路线分析](Screenshots/MapEditor-v3-continuous-improvement.jpg)
+
+![高级任务 Sidecar 可视化编辑](Screenshots/MapEditor-v4-sidecar-authoring.jpg)
 
 ![扩展关巡逻路线与运动预览](Screenshots/MapEditor-m012-patrol-preview.jpg)
 
@@ -116,6 +138,8 @@ RVA、VWF 场景布局及运行时全局变量。补丁只能在 PE 元数据和
 
 地址表同时保存在 [`SDK/address-catalog.json`](SDK/address-catalog.json)，
 便于后续插件、分析工具和文档共用同一份确定性依据。
+任务 sidecar schema、事件 ABI、原子状态和原生插件开发见
+[`SDK/docs/任务Sidecar与原生插件开发指南.md`](SDK/docs/任务Sidecar与原生插件开发指南.md)。
 
 ## 轻量补丁
 
@@ -142,4 +166,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Patch\tools\Build-Mod.ps1
 - 1024×768 原版 UI 画布经现代桌面缩放后通过响应探针，底栏、F1、M 等界面资源不再因宽屏内部画布丢失；
 - 第一关 VWF 导入验证为 155×140 网格、5 个图层、1,630 个对象；
 - MapEditor Release 构建为 0 警告、0 错误，JSON 往返测试通过；
+- 15 关十阶段隔离回归全部通过；未响应、光标裁剪限制以及系统
+  鼠标/输入/焦点调用均为 0；
+- AI 搜索 44 次、路径重规划 176 次、脱离成功 44/44，最大 tick
+  为 620 μs，且警报后不采样视线外玩家的实时位置；
+- 菜单、小/中/大地图各 10 分钟共 38,739 个样本，P99 为
+  9.414—12.837ms，未响应和超过 50ms 卡顿均为 0；
+- m000—m014 原生 VWF 无修改逐字节往返和损坏输入拒绝通过；
 - 原版源目录只作只读取证，后续开发均在 `Mod/`。

@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/bigsinger/1937tezhongbing/SDK/schemas/mission-sidecar-v1.schema.json",
+  "title": "M1937 mission sidecar v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "api_version",
+    "id",
+    "title",
+    "selector_level",
+    "engine_mission",
+    "objectives"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "api_version": {
+      "const": 65536
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]{1,80}$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "selector_level": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 15
+    },
+    "engine_mission": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 12
+    },
+    "executable_sha256": {
+      "type": "string",
+      "pattern": "^$|^[0-9A-Fa-f]{64}$"
+    },
+    "executable_file_size": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "executable_pe_timestamp": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "objectives": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/objective"
+      }
+    }
+  },
+  "$defs": {
+    "region": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "x",
+        "y",
+        "radius"
+      ],
+      "properties": {
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        },
+        "radius": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "objective": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "event"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,80}$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "event": {
+          "enum": [
+            "MissionStarted",
+            "Reached",
+            "Killed",
+            "PickedUp",
+            "Exploded",
+            "Interacted",
+            "Evacuated",
+            "MissionSucceeded",
+            "MissionFailed",
+            "SaveStarted",
+            "SaveCompleted",
+            "LoadStarted",
+            "LoadCompleted"
+          ]
+        },
+        "depends_on": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "required_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "optional": {
+          "type": "boolean"
+        },
+        "failure": {
+          "type": "boolean"
+        },
+        "failure_reason": {
+          "type": "string"
+        },
+        "target_database_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "subject_database_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "subject_faction": {
+          "type": "integer"
+        },
+        "region": {
+          "$ref": "#/$defs/region"
+        },
+        "deadline_milliseconds": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

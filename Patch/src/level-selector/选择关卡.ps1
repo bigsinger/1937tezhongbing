@@ -2,7 +2,10 @@
     [ValidateRange(0, 15)]
     [int]$Level = 0,
     [switch]$StartImmediately,
-    [switch]$SafeWindow
+    [switch]$SafeWindow,
+    [AllowEmptyString()]
+    [string]$ValidateAliases,
+    [string]$RenderPreviewPath = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -28,6 +31,18 @@ public static class M1937Ini {
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
     public static extern bool WritePrivateProfileString(
         string section, string key, string value, string fileName);
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
+    public static extern IntPtr GetWindowLongPtr(
+        IntPtr window, int index);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
+    public static extern IntPtr SetWindowLongPtr(
+        IntPtr window, int index, IntPtr value);
+
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindow(
+        IntPtr window, int command);
 }
 '@
 
@@ -154,17 +169,20 @@ function Start-M1937Process {
         [int]$ViewportHeight
     )
 
-    $route = @($catalog.missions | Where-Object {
-        [int]$_.number -eq $MissionNumber
-    })
-    if ($route.Count -ne 1) {
-        throw "关卡路由表中没有唯一的第 $MissionNumber 关。"
-    }
-    if ([bool]$route[0].requires_file) {
-        $requiredVwf = Join-Path $gameDirectory ([string]$route[0].vwf_name)
-        if (-not (Test-Path -LiteralPath $requiredVwf -PathType Leaf)) {
-            throw "第 $MissionNumber 关需要当前目录中的 $(
-                [string]$route[0].vwf_name)。"
+    $route = @()
+    if ($MissionNumber -gt 0) {
+        $route = @($catalog.missions | Where-Object {
+            [int]$_.number -eq $MissionNumber
+        })
+        if ($route.Count -ne 1) {
+            throw "关卡路由表中没有唯一的第 $MissionNumber 关。"
+        }
+        if ([bool]$route[0].requires_file) {
+            $requiredVwf = Join-Path $gameDirectory ([string]$route[0].vwf_name)
+            if (-not (Test-Path -LiteralPath $requiredVwf -PathType Leaf)) {
+                throw "第 $MissionNumber 关需要当前目录中的 $(
+                    [string]$route[0].vwf_name)。"
+            }
         }
     }
     $startInfo = New-Object Diagnostics.ProcessStartInfo
@@ -180,7 +198,40 @@ function Start-M1937Process {
         [string]$ViewportWidth
     $startInfo.EnvironmentVariables['M1937_VIEWPORT_HEIGHT'] =
         [string]$ViewportHeight
-    [Diagnostics.Process]::Start($startInfo) | Out-Null
+    $gameProcess = [Diagnostics.Process]::Start($startInfo)
+    if ($null -eq $gameProcess) {
+        throw 'M1937.exe 未能创建进程。'
+    }
+
+    $sidecarEnabled =
+        (Get-IniInt $runGameIni 'mod' 'MissionSidecar' 0) -ne 0
+    if ($MissionNumber -gt 0 -and $sidecarEnabled) {
+        $missionId = [string]$route[0].id
+        $definition = Join-Path $gameDirectory (
+            "Missions\$missionId.m1937mission.json")
+        $host = Join-Path $gameDirectory (
+            'Tools\MissionSidecar\MissionSidecar.Host.exe')
+        if ((Test-Path -LiteralPath $definition -PathType Leaf) -and
+            (Test-Path -LiteralPath $host -PathType Leaf)) {
+            $hostInfo = New-Object Diagnostics.ProcessStartInfo
+            $hostInfo.FileName = $host
+            $hostInfo.WorkingDirectory = $gameDirectory
+            $hostInfo.UseShellExecute = $false
+            $hostInfo.CreateNoWindow = $true
+            $hostInfo.Arguments = (
+                '--pid {0} --sidecar "{1}"{2}' -f @(
+                    $gameProcess.Id,
+                    $definition,
+                    $(if ((Get-IniInt $runGameIni 'mod' 'EnablePlugins' 0) -ne 0) {
+                        ' --plugins'
+                    } else {
+                        ''
+                    })
+                ))
+            [Diagnostics.Process]::Start($hostInfo) | Out-Null
+        }
+    }
+    return $gameProcess
 }
 
 if (-not (Test-Path -LiteralPath $gameExecutable -PathType Leaf)) {
@@ -250,6 +301,245 @@ function Set-FlatButtonStyle {
         $Button.BackColor = $panelAlt
         $Button.ForeColor = $textPrimary
     }
+}
+
+function Test-KeyName {
+    param([string]$Name)
+    $key = $Name.Trim().ToUpperInvariant()
+    $numeric = 0
+    if ([int]::TryParse($key, [ref]$numeric)) {
+        return $numeric -ge 1 -and $numeric -le 255
+    }
+    $names = @(
+        'ESC', 'ESCAPE', 'TAB', 'ENTER', 'SPACE', 'BACKSPACE',
+        'F1', 'F2', 'F3', 'F4', 'F5', 'F6',
+        'F7', 'F8', 'F9', 'F10', 'F11', 'F12',
+        'UP', 'DOWN', 'LEFT', 'RIGHT', 'HOME', 'END',
+        'PGUP', 'PGDN', 'INSERT', 'DELETE',
+        'CTRL', 'SHIFT', 'ALT',
+        'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
+        'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T',
+        'U', 'V', 'W', 'X', 'Y', 'Z',
+        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9')
+    return $key -in $names
+}
+
+function Get-ValidatedKeyAliases {
+    param([string]$Text)
+    $result = [Collections.Generic.List[string]]::new()
+    $sources = [Collections.Generic.HashSet[string]]::new(
+        [StringComparer]::OrdinalIgnoreCase)
+    $targets = [Collections.Generic.HashSet[string]]::new(
+        [StringComparer]::OrdinalIgnoreCase)
+    foreach ($rawLine in ($Text -split '\r?\n')) {
+        $line = $rawLine.Trim()
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+        $parts = @($line -split ',')
+        if ($parts.Count -ne 2) {
+            throw "按键映射 [$line] 必须使用 来源键,目标键 格式。"
+        }
+        $source = $parts[0].Trim().ToUpperInvariant()
+        $target = $parts[1].Trim().ToUpperInvariant()
+        if (-not (Test-KeyName $source) -or
+            -not (Test-KeyName $target)) {
+            throw "按键映射 [$line] 含有不支持的键名。"
+        }
+        if ($source -eq $target) {
+            throw "按键映射 [$line] 来源和目标不能相同。"
+        }
+        if (-not $sources.Add($source)) {
+            throw "来源键 $source 被重复映射。"
+        }
+        if (-not $targets.Add($target)) {
+            throw "目标键 $target 存在冲突。"
+        }
+        $result.Add("$source,$target")
+        if ($result.Count -gt 16) {
+            throw '按键映射最多允许 16 条。'
+        }
+    }
+    return @($result)
+}
+
+function Show-AdvancedSettingsDialog {
+    $dialog = New-Object Windows.Forms.Form
+    $dialog.Text = '高级增强设置'
+    $dialog.StartPosition = 'CenterParent'
+    $dialog.ClientSize = New-Object Drawing.Size(600, 560)
+    $dialog.MinimumSize = New-Object Drawing.Size(600, 560)
+    $dialog.BackColor = $background
+    $dialog.ForeColor = $textPrimary
+    $dialog.Font = New-Object Drawing.Font('Microsoft YaHei UI', 9)
+    $dialog.FormBorderStyle =
+        [Windows.Forms.FormBorderStyle]::FixedDialog
+    $dialog.MaximizeBox = $false
+    $dialog.MinimizeBox = $false
+
+    $heading = New-Object Windows.Forms.Label
+    $heading.Text = '诊断、任务与按键'
+    $heading.Location = New-Object Drawing.Point(24, 20)
+    $heading.AutoSize = $true
+    $heading.Font = New-Object Drawing.Font(
+        'Microsoft YaHei UI', 14, [Drawing.FontStyle]::Bold)
+    $dialog.Controls.Add($heading)
+
+    $diagnosticsCheck = New-Object Windows.Forms.CheckBox
+    $diagnosticsCheck.Text = '记录兼容性诊断（不含截图和个人信息）'
+    $diagnosticsCheck.Location = New-Object Drawing.Point(28, 70)
+    $diagnosticsCheck.AutoSize = $true
+    $diagnosticsCheck.Checked =
+        (Get-IniInt $runGameIni 'mod' 'Diagnostics' 1) -ne 0
+    $dialog.Controls.Add($diagnosticsCheck)
+
+    $telemetryCheck = New-Object Windows.Forms.CheckBox
+    $telemetryCheck.Text = '记录本地性能遥测（帧、输入、消息泵、AI）'
+    $telemetryCheck.Location = New-Object Drawing.Point(28, 103)
+    $telemetryCheck.AutoSize = $true
+    $telemetryCheck.Checked =
+        (Get-IniInt $runGameIni 'mod' 'Telemetry' 0) -ne 0
+    $dialog.Controls.Add($telemetryCheck)
+
+    $sidecarCheck = New-Object Windows.Forms.CheckBox
+    $sidecarCheck.Text = '为扩展关启用任务 sidecar 目标面板（实验）'
+    $sidecarCheck.Location = New-Object Drawing.Point(28, 136)
+    $sidecarCheck.AutoSize = $true
+    $sidecarCheck.Checked =
+        (Get-IniInt $runGameIni 'mod' 'MissionSidecar' 0) -ne 0
+    $dialog.Controls.Add($sidecarCheck)
+
+    $pluginsCheck = New-Object Windows.Forms.CheckBox
+    $pluginsCheck.Text = '加载通过 ABI 版本协商的本地任务插件'
+    $pluginsCheck.Location = New-Object Drawing.Point(52, 169)
+    $pluginsCheck.AutoSize = $true
+    $pluginsCheck.Checked =
+        (Get-IniInt $runGameIni 'mod' 'EnablePlugins' 0) -ne 0
+    $pluginsCheck.Enabled = $sidecarCheck.Checked
+    $sidecarCheck.Add_CheckedChanged({
+        $pluginsCheck.Enabled = $sidecarCheck.Checked
+        if (-not $sidecarCheck.Checked) {
+            $pluginsCheck.Checked = $false
+        }
+    })
+    $dialog.Controls.Add($pluginsCheck)
+
+    $keyMapCheck = New-Object Windows.Forms.CheckBox
+    $keyMapCheck.Text = '启用按键别名映射（原按键仍保留，不吞 F1/M）'
+    $keyMapCheck.Location = New-Object Drawing.Point(28, 216)
+    $keyMapCheck.AutoSize = $true
+    $keyMapCheck.Checked =
+        (Get-IniInt $runGameIni 'mod' 'KeyRemapping' 0) -ne 0
+    $dialog.Controls.Add($keyMapCheck)
+
+    $aliasLabel = New-Object Windows.Forms.Label
+    $aliasLabel.Text = (
+        '每行一条“来源键,目标键”，例如 F2,M；最多 16 条，' +
+        '保存时检查重复和冲突。')
+    $aliasLabel.Location = New-Object Drawing.Point(28, 248)
+    $aliasLabel.Size = New-Object Drawing.Size(540, 38)
+    $aliasLabel.ForeColor = $textMuted
+    $dialog.Controls.Add($aliasLabel)
+
+    $aliasText = New-Object Windows.Forms.TextBox
+    $aliasText.Location = New-Object Drawing.Point(28, 290)
+    $aliasText.Size = New-Object Drawing.Size(540, 150)
+    $aliasText.Multiline = $true
+    $aliasText.ScrollBars = [Windows.Forms.ScrollBars]::Vertical
+    $aliasText.BackColor = $panelAlt
+    $aliasText.ForeColor = $textPrimary
+    $existingAliases = [Collections.Generic.List[string]]::new()
+    foreach ($index in 1..16) {
+        $value = Get-IniValue $runGameIni 'keymap' "Alias$index" ''
+        if (-not [string]::IsNullOrWhiteSpace($value)) {
+            $existingAliases.Add($value)
+        }
+    }
+    $aliasText.Text = [string]::Join(
+        [Environment]::NewLine, $existingAliases)
+    $dialog.Controls.Add($aliasText)
+
+    $logButton = New-Object Windows.Forms.Button
+    $logButton.Text = '查看本地诊断'
+    $logButton.Location = New-Object Drawing.Point(28, 478)
+    $logButton.Size = New-Object Drawing.Size(128, 38)
+    Set-FlatButtonStyle $logButton $false
+    $logButton.Add_Click({
+        $log = Join-Path $gameDirectory 'M1937Mod.log'
+        if (Test-Path -LiteralPath $log -PathType Leaf) {
+            Start-Process notepad.exe -ArgumentList "`"$log`""
+        }
+        else {
+            [Windows.Forms.MessageBox]::Show(
+                '尚未生成诊断日志。启用诊断并运行一次游戏后再查看。',
+                '本地诊断') | Out-Null
+        }
+    })
+    $dialog.Controls.Add($logButton)
+
+    $cancel = New-Object Windows.Forms.Button
+    $cancel.Text = '取消'
+    $cancel.Location = New-Object Drawing.Point(360, 478)
+    $cancel.Size = New-Object Drawing.Size(96, 38)
+    Set-FlatButtonStyle $cancel $false
+    $cancel.DialogResult = [Windows.Forms.DialogResult]::Cancel
+    $dialog.Controls.Add($cancel)
+
+    $accept = New-Object Windows.Forms.Button
+    $accept.Text = '保存'
+    $accept.Location = New-Object Drawing.Point(472, 478)
+    $accept.Size = New-Object Drawing.Size(96, 38)
+    Set-FlatButtonStyle $accept $true
+    $accept.Add_Click({
+        try {
+            $aliases = @()
+            if ($keyMapCheck.Checked) {
+                $aliases = @(Get-ValidatedKeyAliases $aliasText.Text)
+            }
+            Set-IniValue $runGameIni 'mod' 'Diagnostics' $(
+                if ($diagnosticsCheck.Checked) { '1' } else { '0' })
+            Set-IniValue $runGameIni 'mod' 'Telemetry' $(
+                if ($telemetryCheck.Checked) { '1' } else { '0' })
+            Set-IniValue $runGameIni 'mod' 'TelemetryIntervalMs' '1000'
+            Set-IniValue $runGameIni 'mod' 'MissionSidecar' $(
+                if ($sidecarCheck.Checked) { '1' } else { '0' })
+            Set-IniValue $runGameIni 'mod' 'EnablePlugins' $(
+                if ($pluginsCheck.Checked) { '1' } else { '0' })
+            Set-IniValue $runGameIni 'mod' 'KeyRemapping' $(
+                if ($keyMapCheck.Checked) { '1' } else { '0' })
+            foreach ($index in 1..16) {
+                $value = if ($index -le $aliases.Count) {
+                    [string]$aliases[$index - 1]
+                } else {
+                    ''
+                }
+                Set-IniValue $runGameIni 'keymap' "Alias$index" $value
+            }
+            $dialog.DialogResult = [Windows.Forms.DialogResult]::OK
+            $dialog.Close()
+        }
+        catch {
+            [Windows.Forms.MessageBox]::Show(
+                $_.Exception.Message,
+                '按键映射检查失败',
+                [Windows.Forms.MessageBoxButtons]::OK,
+                [Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+        }
+    })
+    $dialog.Controls.Add($accept)
+    $dialog.AcceptButton = $accept
+    $dialog.CancelButton = $cancel
+    return $dialog.ShowDialog($form)
+}
+
+if ($PSBoundParameters.ContainsKey('ValidateAliases')) {
+    $validated = @(Get-ValidatedKeyAliases $ValidateAliases)
+    [pscustomobject]@{
+        Valid = $true
+        AliasCount = $validated.Count
+        Aliases = $validated
+        PreservesOriginalKeys = $true
+        SystemCursorCalls = 0
+    }
+    exit 0
 }
 
 $form = New-Object Windows.Forms.Form
@@ -453,22 +743,29 @@ $settingsPanel.Controls.Add($profileInfo)
 
 $saveButton = New-Object Windows.Forms.Button
 $saveButton.Text = '保存设置'
-$saveButton.Location = New-Object Drawing.Point(22, 425)
-$saveButton.Size = New-Object Drawing.Size(112, 40)
+$saveButton.Location = New-Object Drawing.Point(22, 409)
+$saveButton.Size = New-Object Drawing.Size(96, 40)
 Set-FlatButtonStyle $saveButton $false
 $settingsPanel.Controls.Add($saveButton)
 
+$advancedButton = New-Object Windows.Forms.Button
+$advancedButton.Text = '高级增强设置'
+$advancedButton.Location = New-Object Drawing.Point(130, 409)
+$advancedButton.Size = New-Object Drawing.Size(124, 40)
+Set-FlatButtonStyle $advancedButton $false
+$settingsPanel.Controls.Add($advancedButton)
+
 $configButton = New-Object Windows.Forms.Button
 $configButton.Text = '高级渲染配置'
-$configButton.Location = New-Object Drawing.Point(146, 425)
-$configButton.Size = New-Object Drawing.Size(132, 40)
+$configButton.Location = New-Object Drawing.Point(266, 409)
+$configButton.Size = New-Object Drawing.Size(130, 40)
 Set-FlatButtonStyle $configButton $false
 $settingsPanel.Controls.Add($configButton)
 
 $folderButton = New-Object Windows.Forms.Button
 $folderButton.Text = '打开游戏目录'
-$folderButton.Location = New-Object Drawing.Point(290, 425)
-$folderButton.Size = New-Object Drawing.Size(106, 40)
+$folderButton.Location = New-Object Drawing.Point(22, 457)
+$folderButton.Size = New-Object Drawing.Size(374, 32)
 Set-FlatButtonStyle $folderButton $false
 $settingsPanel.Controls.Add($folderButton)
 
@@ -599,6 +896,15 @@ $configButton.Add_Click({
     }
 })
 
+$advancedButton.Add_Click({
+    if ((Show-AdvancedSettingsDialog) -eq
+        [Windows.Forms.DialogResult]::OK) {
+        $status.Text = (
+            '高级设置已保存：诊断、遥测、任务 sidecar、插件和按键映射' +
+            '将在下次启动时生效。')
+    }
+})
+
 $folderButton.Add_Click({
     Start-Process explorer.exe -ArgumentList $gameDirectory
 })
@@ -632,5 +938,56 @@ $launchMenu.Add_Click({
             [Windows.Forms.MessageBoxIcon]::Error) | Out-Null
     }
 })
+
+if (-not [string]::IsNullOrWhiteSpace($RenderPreviewPath)) {
+    $preview = [IO.Path]::GetFullPath($RenderPreviewPath)
+    if (-not $preview.StartsWith(
+            [IO.Path]::GetFullPath('E:\1937\'),
+            [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Launcher preview output must stay under E:\1937.'
+    }
+    [IO.Directory]::CreateDirectory(
+        [IO.Path]::GetDirectoryName($preview)) | Out-Null
+    $form.StartPosition = [Windows.Forms.FormStartPosition]::Manual
+    $form.Location = New-Object Drawing.Point(-32000, -32000)
+    $form.ShowInTaskbar = $false
+    $handle = $form.Handle
+    $style = [M1937Ini]::GetWindowLongPtr($handle, -20).ToInt64()
+    [void][M1937Ini]::SetWindowLongPtr(
+        $handle, -20,
+        [IntPtr]($style -bor 0x08000080))
+    [void][M1937Ini]::ShowWindow($handle, 4)
+    [Windows.Forms.Application]::DoEvents()
+    $form.PerformLayout()
+    $form.Refresh()
+    [Windows.Forms.Application]::DoEvents()
+    $previewWidth = $form.Width
+    $previewHeight = $form.Height
+    $bitmap = New-Object Drawing.Bitmap(
+        $previewWidth, $previewHeight)
+    try {
+        $form.DrawToBitmap(
+            $bitmap,
+            (New-Object Drawing.Rectangle(
+                0, 0,
+                $previewWidth,
+                $previewHeight)))
+        $bitmap.Save(
+            $preview,
+            [Drawing.Imaging.ImageFormat]::Png)
+    }
+    finally {
+        [void][M1937Ini]::ShowWindow($handle, 0)
+        $bitmap.Dispose()
+        $form.Dispose()
+    }
+    [pscustomobject]@{
+        Preview = $preview
+        Width = $previewWidth
+        Height = $previewHeight
+        SystemCursorCalls = 0
+    }
+    exit 0
+}
 
 [void]$form.ShowDialog()

@@ -72,6 +72,7 @@ function New-CSharpAddresses {
     $lines.Add(('        public const long FileSize = {0}L;' -f ([string]$Catalog.supported_executable.file_size)))
     $lines.Add(('        public const long PreferredImageBase = {0}L;' -f $Catalog.supported_executable.preferred_image_base))
     $lines.Add(('        public const long SizeOfImage = {0}L;' -f $Catalog.supported_executable.size_of_image))
+    $lines.Add(('        public const long PeTimestamp = {0}L;' -f $Catalog.supported_executable.pe_timestamp))
     $lines.Add(('        public const long EntryPointRva = {0}L;' -f $Catalog.supported_executable.entry_point_rva))
     $lines.Add('    }')
     $lines.Add('')

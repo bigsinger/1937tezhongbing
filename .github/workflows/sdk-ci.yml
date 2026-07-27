@@ -8,7 +8,14 @@ on:
       - "Patch/src/level-selector/关卡名称.json"
       - "Patch/analysis/tools/OriginalLevelProbe.cs"
       - "Patch/analysis/tools/GameFrameProbe.cs"
+      - "Patch/analysis/tools/ModPerformanceProbe.cs"
+      - "Patch/analysis/tools/ModRegressionProbe.cs"
       - "Patch/analysis/tools/Build-Probes.ps1"
+      - "Patch/analysis/tools/Test-ModPerformance.ps1"
+      - "Patch/analysis/tools/Test-ModRegression.ps1"
+      - "Patch/analysis/tools/Test-ReleasePackage.ps1"
+      - "Patch/tools/Build-Release.ps1"
+      - "Patch/analysis/tools/Test-ProxySourceSafety.ps1"
       - ".github/workflows/sdk-ci.yml"
   pull_request:
     paths:
@@ -17,7 +24,14 @@ on:
       - "Patch/src/level-selector/关卡名称.json"
       - "Patch/analysis/tools/OriginalLevelProbe.cs"
       - "Patch/analysis/tools/GameFrameProbe.cs"
+      - "Patch/analysis/tools/ModPerformanceProbe.cs"
+      - "Patch/analysis/tools/ModRegressionProbe.cs"
       - "Patch/analysis/tools/Build-Probes.ps1"
+      - "Patch/analysis/tools/Test-ModPerformance.ps1"
+      - "Patch/analysis/tools/Test-ModRegression.ps1"
+      - "Patch/analysis/tools/Test-ReleasePackage.ps1"
+      - "Patch/tools/Build-Release.ps1"
+      - "Patch/analysis/tools/Test-ProxySourceSafety.ps1"
       - ".github/workflows/sdk-ci.yml"
 
 jobs:
@@ -31,9 +45,34 @@ jobs:
       - name: Compile SDK tests
         shell: cmd
         run: SDK\build.cmd --compile-only
+      - name: Compile x64 mission plugin ABI sample
+        shell: pwsh
+        run: |
+          ./SDK/samples/mission-plugin/Build-SamplePlugin.ps1 `
+            -OutputDirectory (Join-Path $env:RUNNER_TEMP 'plugin')
       - name: Compile DirectInput plugin against SDK
         shell: cmd
         run: Patch\src\dinput-proxy\build.cmd
+      - name: Verify input and telemetry source safety
+        shell: pwsh
+        run: ./Patch/analysis/tools/Test-ProxySourceSafety.ps1
+      - name: Parse regression and release PowerShell
+        shell: pwsh
+        run: |
+          $files = @(
+            './Patch/analysis/tools/Test-ModPerformance.ps1',
+            './Patch/analysis/tools/Test-ModRegression.ps1',
+            './Patch/analysis/tools/Test-ReleasePackage.ps1',
+            './Patch/tools/Build-Release.ps1')
+          foreach ($file in $files) {
+            $tokens = $null
+            $errors = $null
+            [Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $file), [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -ne 0) {
+              throw "$file parse failed: $($errors[0].Message)"
+            }
+          }
       - name: Compile runtime probes against generated C# addresses
         shell: pwsh
         run: |

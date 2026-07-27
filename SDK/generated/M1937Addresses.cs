@@ -7,6 +7,7 @@ namespace Mission1937.SDK.Generated
         public const long FileSize = 1114162L;
         public const long PreferredImageBase = 0x00400000L;
         public const long SizeOfImage = 0x00124000L;
+        public const long PeTimestamp = 0x3AE9BFE6L;
         public const long EntryPointRva = 0x0006D567L;
     }
 
@@ -25,8 +26,19 @@ namespace Mission1937.SDK.Generated
         public const long AlertRadiusOperand2 = 0x00056E94L;
         public const long AlertRadiusOperand3 = 0x00057049L;
         public const long AlertRadiusOperand4 = 0x00057187L;
+        public const long ActorDistance = 0x0005A040L;
+        public const long AlertEffectiveRadius = 0x0005A7C0L;
+        public const long EnemyAiUpdate = 0x0005C710L;
+        public const long AlertPropagation = 0x0005DDA0L;
+        public const long LoadGameFile = 0x0004BB00L;
+        public const long SaveGameFile = 0x0004BEA0L;
         public const long ScreenWidth = 0x000E6E0CL;
         public const long ScreenHeight = 0x000E6E10L;
+        public const long InputStateBase = 0x000E6E54L;
+        public const long InputActionMap = 0x000E6E78L;
+        public const long InputActionHelp = 0x000E6E80L;
+        public const long InputRawMap = 0x000E6EDAL;
+        public const long InputRawHelp = 0x000E6EE3L;
         public const long MouseLeftPressed = 0x000E6E64L;
         public const long MouseLeftDown = 0x000E6E74L;
         public const long CursorX = 0x000E6EA0L;
@@ -34,6 +46,8 @@ namespace Mission1937.SDK.Generated
         public const long CursorY = 0x000E6FACL;
         public const long MouseLeftReleased = 0x000E6FB0L;
         public const long CurrentMission = 0x000E7060L;
+        public const long SelectedSaveSlot = 0x000E705CL;
+        public const long WorldRoot = 0x000E700CL;
         public const long RendererHeight = 0x000D6A88L;
         public const long RendererWidth = 0x000D6A8CL;
         public const long CameraX = 0x000E7024L;

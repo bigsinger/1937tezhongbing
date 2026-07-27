@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "api_version": 65536,
+  "id": "m013-sidecar",
+  "title": "锄奸行动 · 扩展任务",
+  "selector_level": 14,
+  "engine_mission": 7,
+  "executable_sha256": "F4DD1131DF6C993C01EA011F9439BC725E6DC6491B5FBBA47724D7D5B64DA3F3",
+  "executable_file_size": 1114162,
+  "executable_pe_timestamp": 988397542,
+  "objectives": [
+    {
+      "id": "confirm-contact",
+      "title": "确认秘密接头",
+      "description": "靠近接头点，确认孙大麻子向日军特务交付名单。",
+      "event": "Interacted",
+      "target_database_id": 1018,
+      "subject_database_id": 924
+    },
+    {
+      "id": "eliminate-traitor",
+      "title": "处置孙大麻子",
+      "description": "确认事实后处置叛徒。",
+      "event": "Killed",
+      "depends_on": [
+        "confirm-contact"
+      ],
+      "target_database_id": 927
+    },
+    {
+      "id": "eliminate-agent",
+      "title": "处置日军特务加藤",
+      "description": "截断名单送往特务机关的渠道。",
+      "event": "Killed",
+      "depends_on": [
+        "confirm-contact"
+      ],
+      "target_database_id": 933
+    },
+    {
+      "id": "evacuate",
+      "title": "从东侧交通口撤离",
+      "description": "完成锄奸后前往东侧秘密交通口。",
+      "event": "Evacuated",
+      "depends_on": [
+        "eliminate-traitor",
+        "eliminate-agent"
+      ],
+      "subject_database_id": 924,
+      "region": {
+        "x": 3056,
+        "y": 1808,
+        "radius": 80
+      }
+    },
+    {
+      "id": "player-fallen",
+      "title": "强子阵亡",
+      "description": "强子必须生还。",
+      "event": "Killed",
+      "failure": true,
+      "failure_reason": "强子阵亡，锄奸行动失败。",
+      "target_database_id": 924
+    }
+  ]
+}
