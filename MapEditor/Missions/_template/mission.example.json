@@ -1,0 +1,17 @@
+{
+  "id": "mNNN",
+  "title": "第 N 关：关卡名称",
+  "story": "交代年代、地点、敌我态势、行动目标和撤离条件。",
+  "source_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "player_scene_indices": [],
+  "enemy_scene_indices": [],
+  "minimum_spawn_enemy_distance_world": 800,
+  "minimum_spawn_patrol_distance_world": 800,
+  "minimum_reachable_walkable_ratio": 0.95,
+  "player_spawn": {
+    "x": 0,
+    "y": 0
+  },
+  "required_scene_reachability": [],
+  "entity_edits": []
+}

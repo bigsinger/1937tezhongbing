@@ -12,6 +12,7 @@
   ],
   "minimum_spawn_enemy_distance_world": 800,
   "minimum_spawn_patrol_distance_world": 600,
+  "minimum_reachable_walkable_ratio": 0.95,
   "player_spawn": {
     "x": 1,
     "y": 114

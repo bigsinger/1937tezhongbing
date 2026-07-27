@@ -1,0 +1,10 @@
+{
+  "id": "mNNN-composite",
+  "title": "新关卡合成底图",
+  "story": "说明采用哪些美术积木、空间主题与路线设计原则。",
+  "source_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "block_width": 1,
+  "block_height": 1,
+  "require_all_blocks_moved": true,
+  "destination_to_source_blocks": []
+}

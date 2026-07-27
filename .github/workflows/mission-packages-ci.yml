@@ -1,0 +1,62 @@
+name: Mission Packages CI
+
+on:
+  push:
+    paths:
+      - "MapEditor/Missions/**"
+      - "MapEditor/tools/Build-MissionPackage.ps1"
+      - "MapEditor/tools/VwfBlueprintComposer/**"
+      - "MapEditor/tools/VwfMissionBuilder/**"
+      - "Remake/tools/ResourceFormats/**"
+      - "Mod/1937m006.vwf"
+      - "Mod/1937m011.vwf"
+      - "Mod/1937m012.vwf"
+      - "Mod/1937m013.vwf"
+      - "Mod/1937m014.vwf"
+      - ".github/workflows/mission-packages-ci.yml"
+  pull_request:
+    paths:
+      - "MapEditor/Missions/**"
+      - "MapEditor/tools/Build-MissionPackage.ps1"
+      - "MapEditor/tools/VwfBlueprintComposer/**"
+      - "MapEditor/tools/VwfMissionBuilder/**"
+      - "Remake/tools/ResourceFormats/**"
+      - "Mod/1937m006.vwf"
+      - "Mod/1937m011.vwf"
+      - "Mod/1937m012.vwf"
+      - "Mod/1937m013.vwf"
+      - "Mod/1937m014.vwf"
+      - ".github/workflows/mission-packages-ci.yml"
+
+jobs:
+  deterministic-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Fetch only source VWF fixtures
+        shell: pwsh
+        run: |
+          git lfs pull --include="Mod/1937m006.vwf,Mod/1937m011.vwf"
+      - name: Rebuild all extension mission packages
+        shell: pwsh
+        run: |
+          foreach ($id in @('m012', 'm013', 'm014')) {
+            & ./MapEditor/tools/Build-MissionPackage.ps1 `
+              -MissionId $id `
+              -WorkDirectory (Join-Path $env:RUNNER_TEMP $id) `
+              -SkipPreview
+          }
+      - name: Verify committed evidence is current
+        shell: pwsh
+        run: |
+          git diff --exit-code -- `
+            MapEditor/Missions/m012/validation.md `
+            MapEditor/Missions/m013/validation.md `
+            MapEditor/Missions/m014/composition.md `
+            MapEditor/Missions/m014/validation.md `
+            Mod/1937m012.vwf `
+            Mod/1937m013.vwf `
+            Mod/1937m014.vwf

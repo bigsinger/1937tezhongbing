@@ -1,8 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$RepositoryRoot = '',
-    [string]$WorkDirectory = '',
-    [switch]$SkipPreview
+    [string]$WorkDirectory = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -12,7 +11,6 @@ if ([string]::IsNullOrWhiteSpace($RepositoryRoot)) {
 }
 
 & (Join-Path $RepositoryRoot 'MapEditor\tools\Build-MissionPackage.ps1') `
-    -MissionId m014 `
+    -MissionId m012 `
     -RepositoryRoot $RepositoryRoot `
-    -WorkDirectory $WorkDirectory `
-    -SkipPreview:$SkipPreview
+    -WorkDirectory $WorkDirectory

@@ -39,6 +39,19 @@
 场景坐标与巡逻点，再交给任务生成器部署剧情对象。编辑器可让合成地形和
 原版场景精灵使用不同的素材别名，因此预览与游戏中的最终布局一致。
 
+三个扩展关现在都由 `Missions/mNNN/mission-package.json` 描述，使用同一
+入口构建并校验确定性哈希：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File .\tools\Build-MissionPackage.ps1 `
+  -MissionId m014
+```
+
+新关模板位于 `Missions/_template`，完整流程和“能加载/能完成/可发布”的
+验收边界见
+[`doc/关卡制作与验证方法论.md`](../doc/关卡制作与验证方法论.md)。
+
 素材统一放在相对目录 `Assets/Original`，通过 `catalog.json` 分类索引。
 如重新运行资源解析工具，可使用：
 

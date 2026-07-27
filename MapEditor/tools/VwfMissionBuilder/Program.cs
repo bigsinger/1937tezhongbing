@@ -786,7 +786,7 @@ internal sealed class MissionBuilder
             $"{navigationCoverage.TraversableCells:N0} " +
             $"（{navigationCoverage.Ratio:P2}）");
         builder.AppendLine(
-            $"- 蓝图要求的最低覆盖率：" +
+            $"- 关卡要求的最低覆盖率：" +
             $"{definition.MinimumReachableWalkableRatio:P2}");
         builder.AppendLine();
         builder.AppendLine("## 可达性验证");

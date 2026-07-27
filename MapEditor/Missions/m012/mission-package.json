@@ -1,0 +1,15 @@
+{
+  "$schema": "../mission-package.schema.json",
+  "schema_version": 1,
+  "id": "m012",
+  "title": "第十三关：余烬行动",
+  "mode": "redeploy",
+  "selector_level": 13,
+  "engine_mission": 12,
+  "runtime_vwf": "1937M012.VWF",
+  "source_vwf": "Mod/1937m011.vwf",
+  "output_vwf": "Mod/1937m012.vwf",
+  "mission_definition": "MapEditor/Missions/m012/mission.json",
+  "mission_report": "MapEditor/Missions/m012/validation.md",
+  "expected_output_sha256": "A8D1A288E48D69E20FAC200F7A86B14C1BF94EEC5BF6B56B5998231EEEF4077F"
+}

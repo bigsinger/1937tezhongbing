@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/bigsinger/1937tezhongbing/MapEditor/Missions/mission-package.schema.json",
+  "title": "1937 VWF mission package",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "title",
+    "mode",
+    "selector_level",
+    "engine_mission",
+    "runtime_vwf",
+    "source_vwf",
+    "output_vwf",
+    "mission_definition",
+    "mission_report",
+    "expected_output_sha256"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^m[0-9]{3}$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "mode": {
+      "enum": ["redeploy", "composite"]
+    },
+    "selector_level": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "engine_mission": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 12
+    },
+    "runtime_vwf": {
+      "type": "string",
+      "pattern": "^1937M[0-9]{3}\\.VWF$"
+    },
+    "source_vwf": {
+      "$ref": "#/$defs/repositoryPath"
+    },
+    "output_vwf": {
+      "$ref": "#/$defs/repositoryPath"
+    },
+    "mission_definition": {
+      "$ref": "#/$defs/repositoryPath"
+    },
+    "mission_report": {
+      "$ref": "#/$defs/repositoryPath"
+    },
+    "expected_output_sha256": {
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{64}$"
+    },
+    "blueprint_definition": {
+      "$ref": "#/$defs/repositoryPath"
+    },
+    "composition_report": {
+      "$ref": "#/$defs/repositoryPath"
+    },
+    "composed_work_file": {
+      "type": "string",
+      "pattern": "^[^/\\\\]+\\.vwf$"
+    },
+    "preview_source_terrain": {
+      "$ref": "#/$defs/repositoryPath"
+    },
+    "preview_output_directory": {
+      "$ref": "#/$defs/repositoryPath"
+    }
+  },
+  "$defs": {
+    "repositoryPath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![A-Za-z]:|[/\\\\]|.*\\.\\.[/\\\\]).+$"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "composite"
+          }
+        },
+        "required": ["mode"]
+      },
+      "then": {
+        "required": [
+          "blueprint_definition",
+          "composition_report",
+          "composed_work_file",
+          "preview_source_terrain",
+          "preview_output_directory"
+        ]
+      }
+    }
+  ]
+}

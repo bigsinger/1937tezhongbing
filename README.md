@@ -49,6 +49,10 @@ cd .\1937tezhongbing\Mod
 [`doc/第十五关-破晓密令.md`](doc/第十五关-破晓密令.md)，地图选型与
 可完成性说明见
 [`doc/扩展关卡地图选型与可完成性审计.md`](doc/扩展关卡地图选型与可完成性审计.md)。
+后续制作统一遵循
+[`doc/关卡制作与验证方法论.md`](doc/关卡制作与验证方法论.md)；MOD 与
+编辑器的分级改进清单见
+[`doc/MOD与MapEditor持续改进评估.md`](doc/MOD与MapEditor持续改进评估.md)。
 
 ## 地图编辑器
 
@@ -89,6 +93,14 @@ cd .\1937tezhongbing\Mod
 ```powershell
 dotnet build .\MapEditor\MapEditor.slnx -c Release
 dotnet run --project .\MapEditor\MapEditor.Tests\MapEditor.Tests.csproj -c Release
+```
+
+扩展关可通过统一关卡包入口确定性重建：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File .\MapEditor\tools\Build-MissionPackage.ps1 `
+  -MissionId m014
 ```
 
 ## M1937SDK
