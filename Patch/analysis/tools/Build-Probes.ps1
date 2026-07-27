@@ -21,6 +21,28 @@ if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
 $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 [IO.Directory]::CreateDirectory($OutputDirectory) | Out-Null
 
+# PowerShell 7's Add-Type no longer supports emitting ConsoleApplication
+# assemblies. Use the inbox Windows PowerShell compiler host when this script
+# is entered from pwsh so the same command works locally and in GitHub Actions.
+if ($PSVersionTable.PSEdition -eq 'Core') {
+    $windowsPowerShell = Join-Path $env:WINDIR (
+        'System32\WindowsPowerShell\v1.0\powershell.exe')
+    if (-not (Test-Path -LiteralPath $windowsPowerShell -PathType Leaf)) {
+        throw 'Windows PowerShell is required to emit the runtime probe executables.'
+    }
+    & $windowsPowerShell `
+        -NoLogo `
+        -NoProfile `
+        -NonInteractive `
+        -ExecutionPolicy Bypass `
+        -File $PSCommandPath `
+        -OutputDirectory $OutputDirectory
+    if ($LASTEXITCODE -ne 0) {
+        throw "Windows PowerShell probe build failed with exit code $LASTEXITCODE."
+    }
+    exit 0
+}
+
 & (Join-Path $repositoryRoot 'SDK\tools\Generate-SdkArtifacts.ps1') -Check
 
 $references = @(

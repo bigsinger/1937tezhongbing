@@ -26,9 +26,11 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
-      - name: Fetch VWF round-trip fixtures
+      - name: Fetch VWF and converted-map fixtures
         shell: pwsh
-        run: git lfs pull --include="Mod/1937m*.vwf"
+        run: >
+          git lfs pull
+          --include="Mod/1937m*.vwf,MapEditor/Assets/Original/maps/*/level.json"
       - name: Build
         run: dotnet build MapEditor/MapEditor.slnx -c Release
       - name: Asset metadata is reproducible
