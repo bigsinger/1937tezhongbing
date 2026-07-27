@@ -1,0 +1,119 @@
+{
+  "schema": 1,
+  "tested_utc_date": "2026-07-27",
+  "input_safety": {
+    "system_cursor_calls": 0,
+    "cursor_clip_calls": 0,
+    "global_focus_calls": 0,
+    "mode": "isolated no-activate process-local state"
+  },
+  "final_artifacts": {
+    "dinput_sha256": "32253F446F8821CCE686881D5A8FED9F328CEC46874231B71F675F9974A4BD7A",
+    "release_zip_sha256": "053DEC4C5D881E8153C7DAC07D8CCE3080F174CD12389313E74CE468BCF2AFFC",
+    "resource_gfl_sha256": "A7F1A560B81F04161A1B047AD3978F805A8981A527692C75AF554311643441AF",
+    "resource_index_sha256": "55CB3DF2852914E44E4D91FC3EFBE3640CB5137909D5CC817436CFA0D5FD4829"
+  },
+  "comparison": [
+    {
+      "sample": "m006 source map",
+      "cpu_one_logical_core_percent": 7.9
+    },
+    {
+      "sample": "m014 composed terrain before mission redeployment",
+      "cpu_one_logical_core_percent": 8.9
+    },
+    {
+      "sample": "m014 old cross-map patrol mission",
+      "sha256": "BA14A6B5C76700586898BAAC3D6983119F3A48774A82CFF4363D81F4B4A8EF17",
+      "cpu_one_logical_core_percent": 42.5
+    },
+    {
+      "sample": "m014 fixed local patrol mission",
+      "sha256": "412468E20B40BCBD4A71089F11A7BF5A29EDFC8F34E8EFE1C94EE0D6CBA4B23D",
+      "duration_seconds": 56,
+      "cpu_one_logical_core_percent": 22.5,
+      "unresponsive_samples": 0,
+      "read_during_gameplay_bytes": 280,
+      "steady_disk_read_bytes": 0,
+      "observed_engine_mission": 7,
+      "world_actor_count_max": 75,
+      "camera_span_x": 3044,
+      "camera_span_y": 2589
+    }
+  ],
+  "text_briefing_runtime": [
+    {
+      "selector_level": 1,
+      "engine_mission": 1,
+      "world_actor_count_max": 127,
+      "unresponsive_samples": 0
+    },
+    {
+      "selector_level": 13,
+      "engine_mission": 12,
+      "world_actor_count_max": 101,
+      "unresponsive_samples": 0
+    },
+    {
+      "selector_level": 14,
+      "engine_mission": 7,
+      "world_actor_count_max": 75,
+      "unresponsive_samples": 0
+    },
+    {
+      "selector_level": 15,
+      "engine_mission": 7,
+      "world_actor_count_max": 75,
+      "unresponsive_samples": 0,
+      "camera_span_x": 3044,
+      "camera_span_y": 2589
+    }
+  ],
+  "briefing_render_validation": {
+    "catalog_levels": 15,
+    "display": "native window inside M1937.exe after New Game",
+    "runtime_levels": [1, 13, 14, 15],
+    "window_client_width": 760,
+    "window_client_height": 560,
+    "no_activate_automation": true,
+    "runtime_json_edit_without_recompile": true,
+    "invalid_json_compiled_fallback": true
+  },
+  "gfl_briefing_compaction": {
+    "cleared_indexes": [1048, 1049, 1050, 1051, 1052, 1053, 1054, 1055, 1056, 1057, 1058, 1059],
+    "entry_count_before": 1394,
+    "entry_count_after": 1394,
+    "removed_payload_bytes": 5461822,
+    "resource_bytes_before": 110640932,
+    "resource_bytes_after": 105179110,
+    "engine_smoke_levels": [1, 12],
+    "passed": true
+  },
+  "latest_compositor_environment_sample": {
+    "duration_seconds": 60,
+    "profile": "large",
+    "selector_level": 15,
+    "cpu_one_logical_core_percent": 8.545,
+    "compositor_p95_ms": 31.460,
+    "compositor_p99_ms": 32.042,
+    "hitches_over_25ms": 104,
+    "hitches_over_50ms": 0,
+    "unresponsive_samples": 0,
+    "cursor_clip_restricted_samples": 0,
+    "input_latency_max_us": 687,
+    "message_pump_max_us": 1332,
+    "note": "Current DWM cadence on the three-adapter desktop was about 32 ms; game CPU/input/pump and responsiveness remained within their gates."
+  },
+  "extension_regression": {
+    "levels": [13, 14, 15],
+    "stages_passed": 30,
+    "stages_total": 30,
+    "cpu_percent": [8.12, 5.95, 16.05],
+    "compositor_p99_ms": [31.968, 31.945, 31.967],
+    "unresponsive_samples": 0,
+    "cursor_clip_restricted_samples": 0,
+    "ai_escape_successes": 9,
+    "ai_escape_trials": 9,
+    "passed": true
+  }
+}

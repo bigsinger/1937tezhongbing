@@ -28,7 +28,7 @@ $source = Join-Path $sampleRoot 'mission_plugin.cpp'
 $output = Join-Path $OutputDirectory 'SampleMissionPlugin.dll'
 $object = Join-Path $OutputDirectory 'mission_plugin.obj'
 $command = (
-    'call "{0}" >nul && cl.exe /nologo /LD /EHsc /std:c++17 ' +
+    'call "{0}" >nul && cl.exe /nologo /LD /EHsc /std:c++17 /utf-8 ' +
     '/O2 /MT /W4 /WX /I"{1}" "{2}" /Fo:"{3}" /link ' +
     '/OUT:"{4}" /MACHINE:X64 /Brepro') -f @(
         $vcvars,

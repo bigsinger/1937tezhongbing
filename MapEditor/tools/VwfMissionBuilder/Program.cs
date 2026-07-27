@@ -47,6 +47,7 @@ internal sealed class MissionDefinition
     public int MinimumSpawnEnemyDistanceWorld { get; set; }
     public int MinimumSpawnPatrolDistanceWorld { get; set; }
     public double MinimumReachableWalkableRatio { get; set; }
+    public int MaximumPatrolSegmentPathLength { get; set; }
     public GridCell PlayerSpawn { get; set; } = new();
     public List<EntityEdit> EntityEdits { get; set; } = [];
     public List<ReachabilityTarget> RequiredReachability { get; set; } = [];
@@ -163,9 +164,10 @@ internal sealed class MissionBuilder
             throw new InvalidDataException(
                 "At least one player_scene_indices entry is required.");
         if (definition.MinimumSpawnEnemyDistanceWorld < 0 ||
-            definition.MinimumSpawnPatrolDistanceWorld < 0)
+            definition.MinimumSpawnPatrolDistanceWorld < 0 ||
+            definition.MaximumPatrolSegmentPathLength < 0)
             throw new InvalidDataException(
-                "Spawn safety distances cannot be negative.");
+                "Spawn safety distances and the patrol path limit cannot be negative.");
         if (definition.MinimumReachableWalkableRatio is < 0 or > 1)
             throw new InvalidDataException(
                 "minimum_reachable_walkable_ratio must be between 0 and 1.");
@@ -483,6 +485,19 @@ internal sealed class MissionBuilder
                 }
                 else
                 {
+                    if (definition.MaximumPatrolSegmentPathLength > 0 &&
+                        length >
+                        definition.MaximumPatrolSegmentPathLength)
+                    {
+                        failures.Add(
+                            $"Entity {edit.SceneIndex} patrol segment " +
+                            $"{index} requires {length} A* steps; the mission " +
+                            $"limit is " +
+                            $"{definition.MaximumPatrolSegmentPathLength}. " +
+                            "Long live patrol replans can stall the original " +
+                            "single-threaded engine.");
+                        continue;
+                    }
                     results.Add(new PathValidation(
                         $"场景 {edit.SceneIndex} 巡逻段 {index}",
                         points[index - 1].X, points[index - 1].Y,
@@ -788,6 +803,12 @@ internal sealed class MissionBuilder
         builder.AppendLine(
             $"- 关卡要求的最低覆盖率：" +
             $"{definition.MinimumReachableWalkableRatio:P2}");
+        if (definition.MaximumPatrolSegmentPathLength > 0)
+        {
+            builder.AppendLine(
+                $"- 单段巡逻 A* 硬上限：" +
+                $"{definition.MaximumPatrolSegmentPathLength} 步");
+        }
         builder.AppendLine();
         builder.AppendLine("## 可达性验证");
         builder.AppendLine();

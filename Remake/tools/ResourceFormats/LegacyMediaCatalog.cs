@@ -135,6 +135,10 @@ public static partial class LegacyMediaCatalogBuilder
 
     private static LegacyBriefingImage? TryBriefing(GflEntry entry)
     {
+        if (entry.Length == 0)
+        {
+            return null;
+        }
         var match = BriefingName().Match(entry.OriginalName);
         if (!match.Success || !int.TryParse(match.Groups[1].Value, out var index) || index is < 0 or > 11)
         {

@@ -110,6 +110,12 @@ function New-MissionHeader {
     $lines.Add('    bool requires_file;')
     $lines.Add('    std::uintptr_t redirect_rva;')
     $lines.Add('    const char* redirect_expected;')
+    $lines.Add('    const wchar_t* title;')
+    $lines.Add('    const wchar_t* briefing;')
+    $lines.Add('    const wchar_t* objective_1;')
+    $lines.Add('    const wchar_t* objective_2;')
+    $lines.Add('    const wchar_t* objective_3;')
+    $lines.Add('    bool replace_legacy_briefing;')
     $lines.Add('};')
     $lines.Add('')
     $lines.Add('inline constexpr MissionRoute mission_routes[] = {')
@@ -127,14 +133,25 @@ function New-MissionHeader {
                 throw "Mission route $($route.selector_level) changes the fixed VWF string length."
             }
         }
-        $lines.Add(('    {{{0}, {1}, "{2}", "{3}", {4}, {5}, "{6}"}},' -f
+        $objectives = @($route.objectives)
+        $lines.Add(('    {{{0}, {1}, "{2}", "{3}", {4}, {5}, "{6}", L"{7}", L"{8}", L"{9}", L"{10}", L"{11}", {12}}},' -f
             $route.selector_level,
             $route.engine_mission,
             (Escape-CppString ([string]$route.id)),
             (Escape-CppString ([string]$route.vwf_name)),
             $(if ([bool]$route.requires_file) { 'true' } else { 'false' }),
             $redirectRva,
-            (Escape-CppString $redirectExpected)))
+            (Escape-CppString $redirectExpected),
+            (Escape-CppString ([string]$route.title)),
+            (Escape-CppString ([string]$route.briefing)),
+            (Escape-CppString ([string]$objectives[0])),
+            (Escape-CppString ([string]$objectives[1])),
+            (Escape-CppString ([string]$objectives[2])),
+            $(if ([bool]$route.replace_legacy_briefing) {
+                'true'
+            } else {
+                'false'
+            })))
     }
     $lines.Add('};')
     $lines.Add('')
@@ -167,7 +184,7 @@ function New-CSharpMissionRoutes {
     $lines.Add('{')
     $lines.Add('    public sealed class M1937MissionRoute')
     $lines.Add('    {')
-    $lines.Add('        public M1937MissionRoute(int selectorLevel, int engineMission, string id, string vwfName, bool requiresFile, long redirectRva, string redirectExpected)')
+    $lines.Add('        public M1937MissionRoute(int selectorLevel, int engineMission, string id, string vwfName, bool requiresFile, long redirectRva, string redirectExpected, string title, string briefing, string[] objectives, bool replaceLegacyBriefing)')
     $lines.Add('        {')
     $lines.Add('            SelectorLevel = selectorLevel;')
     $lines.Add('            EngineMission = engineMission;')
@@ -176,6 +193,10 @@ function New-CSharpMissionRoutes {
     $lines.Add('            RequiresFile = requiresFile;')
     $lines.Add('            RedirectRva = redirectRva;')
     $lines.Add('            RedirectExpected = redirectExpected;')
+    $lines.Add('            Title = title;')
+    $lines.Add('            Briefing = briefing;')
+    $lines.Add('            Objectives = objectives;')
+    $lines.Add('            ReplaceLegacyBriefing = replaceLegacyBriefing;')
     $lines.Add('        }')
     $lines.Add('        public int SelectorLevel { get; private set; }')
     $lines.Add('        public int EngineMission { get; private set; }')
@@ -184,6 +205,10 @@ function New-CSharpMissionRoutes {
     $lines.Add('        public bool RequiresFile { get; private set; }')
     $lines.Add('        public long RedirectRva { get; private set; }')
     $lines.Add('        public string RedirectExpected { get; private set; }')
+    $lines.Add('        public string Title { get; private set; }')
+    $lines.Add('        public string Briefing { get; private set; }')
+    $lines.Add('        public string[] Objectives { get; private set; }')
+    $lines.Add('        public bool ReplaceLegacyBriefing { get; private set; }')
     $lines.Add('    }')
     $lines.Add('')
     $lines.Add('    public static class M1937MissionRoutes')
@@ -198,14 +223,25 @@ function New-CSharpMissionRoutes {
             $redirectRva = $addresses[$redirectName]
             $redirectExpected = [string]$route.redirect_expected
         }
-        $lines.Add(('            new M1937MissionRoute({0}, {1}, "{2}", "{3}", {4}, {5}L, "{6}"),' -f
+        $objectives = @($route.objectives)
+        $lines.Add(('            new M1937MissionRoute({0}, {1}, "{2}", "{3}", {4}, {5}L, "{6}", "{7}", "{8}", new[] {{ "{9}", "{10}", "{11}" }}, {12}),' -f
             $route.selector_level,
             $route.engine_mission,
             (Escape-CppString ([string]$route.id)),
             (Escape-CppString ([string]$route.vwf_name)),
             $(if ([bool]$route.requires_file) { 'true' } else { 'false' }),
             $redirectRva,
-            (Escape-CppString $redirectExpected)))
+            (Escape-CppString $redirectExpected),
+            (Escape-CppString ([string]$route.title)),
+            (Escape-CppString ([string]$route.briefing)),
+            (Escape-CppString ([string]$objectives[0])),
+            (Escape-CppString ([string]$objectives[1])),
+            (Escape-CppString ([string]$objectives[2])),
+            $(if ([bool]$route.replace_legacy_briefing) {
+                'true'
+            } else {
+                'false'
+            })))
     }
     $lines.Add('        };')
     $lines.Add('')
@@ -245,6 +281,18 @@ function New-SelectorCatalog {
                 requires_file = [bool]$_.requires_file
                 is_extension = [int]$_.selector_level -gt 12
             }
+            if ($_.PSObject.Properties.Name -contains 'briefing') {
+                $entry.briefing = [string]$_.briefing
+            }
+            if ($_.PSObject.Properties.Name -contains 'objectives') {
+                $entry.objectives = @(
+                    $_.objectives | ForEach-Object { [string]$_ })
+            }
+            if ($_.PSObject.Properties.Name -contains
+                'replace_legacy_briefing') {
+                $entry.replace_legacy_briefing =
+                    [bool]$_.replace_legacy_briefing
+            }
             [pscustomobject]$entry
         })
     }
@@ -269,6 +317,20 @@ if (($levels | Sort-Object -Unique).Count -ne $levels.Count -or
     ($levels | Measure-Object -Minimum).Minimum -ne 1 -or
     ($levels | Measure-Object -Maximum).Maximum -ne $levels.Count) {
     throw 'Mission selector levels must be unique and contiguous from 1.'
+}
+foreach ($route in $routeCatalog.routes) {
+    if ([string]::IsNullOrWhiteSpace([string]$route.title) -or
+        [string]::IsNullOrWhiteSpace([string]$route.briefing) -or
+        @($route.objectives).Count -ne 3 -or
+        @($route.objectives | Where-Object {
+            [string]::IsNullOrWhiteSpace([string]$_)
+        }).Count -ne 0 -or
+        -not [bool]$route.replace_legacy_briefing) {
+        throw (
+            "Mission route $($route.selector_level) must define a title, " +
+            'briefing, exactly three objectives, and enable the in-game ' +
+            'text briefing replacement.')
+    }
 }
 
 $selectorDirectory = Join-Path $repositoryRoot 'Patch\src\level-selector'

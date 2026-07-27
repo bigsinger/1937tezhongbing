@@ -1,6 +1,6 @@
 param(
     [string]$ArchivePath = '',
-    [string]$OutputRoot = 'E:\1937\patch-v140-package-test'
+    [string]$OutputRoot = 'E:\1937\patch-v141-package-test'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -9,10 +9,10 @@ $repositoryRoot = [IO.Path]::GetFullPath(
 if ([string]::IsNullOrWhiteSpace($ArchivePath)) {
     $archiveItem = Get-ChildItem -LiteralPath (
         Join-Path $repositoryRoot 'Patch\release') `
-        -Filter '*v1.4.0-20260727.zip' -File |
+        -Filter '*v1.4.1-20260727.zip' -File |
         Select-Object -First 1
     if (-not $archiveItem) {
-        throw 'v1.4.0 release archive was not found.'
+        throw 'v1.4.1 release archive was not found.'
     }
     $ArchivePath = $archiveItem.FullName
 }
@@ -157,6 +157,16 @@ $levelCatalog = Get-ChildItem -LiteralPath $target -Filter '*.json' -File |
 if (-not $launcherScript -or -not $levelCatalog) {
     throw 'Installed launcher or 15-level catalog is missing.'
 }
+$installedCatalog = Get-Content -LiteralPath $levelCatalog.FullName `
+    -Raw -Encoding UTF8 | ConvertFrom-Json
+$textBriefings = @($installedCatalog.missions | Where-Object {
+    -not [string]::IsNullOrWhiteSpace([string]$_.briefing) -and
+    @($_.objectives).Count -eq 3 -and
+    [bool]$_.replace_legacy_briefing
+})
+if ($textBriefings.Count -ne 15) {
+    throw 'Installed catalog does not contain 15 complete text briefings.'
+}
 $localizedInstalledPaths = @(
     $launcherScript.FullName,
     $levelCatalog.FullName)
@@ -251,6 +261,7 @@ foreach ($path in $localizedInstalledPaths) {
     mission_sidecar_manifest_verified = $true
     packaged_sidecar_source_compiles = $true
     packaged_plugin_source_compiles = $true
+    text_briefings_verified = 15
     original_game_data_files = 0
 } | ConvertTo-Json -Depth 4 |
     Set-Content -LiteralPath (

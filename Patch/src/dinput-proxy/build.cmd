@@ -16,11 +16,11 @@ if errorlevel 1 (
   if errorlevel 1 exit /b 1
 )
 if not exist "%~dp0build" mkdir "%~dp0build"
-cl /nologo /LD /O2 /MT /EHsc /std:c++17 /W4 /DWIN32 /D_WINDOWS ^
+cl /nologo /LD /O2 /MT /EHsc /std:c++17 /utf-8 /W4 /DWIN32 /D_WINDOWS ^
   /I"%~dp0..\..\..\SDK\include" ^
   /Fo"%~dp0build\\" /Fd"%~dp0build\\" ^
   "%~dp0dinput_proxy.cpp" "%~dp0dinput_proxy.def" ^
   /link /MACHINE:X86 /Brepro /OUT:"%~dp0build\dinput.dll" ^
   /IMPLIB:"%~dp0build\dinput_proxy.lib" ^
-  /PDB:"%~dp0build\dinput.pdb" user32.lib winmm.lib dxguid.lib
+  /PDB:"%~dp0build\dinput.pdb" user32.lib gdi32.lib winmm.lib dxguid.lib
 exit /b %errorlevel%

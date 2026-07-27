@@ -78,6 +78,26 @@ plain[i] = (cipher[i] - key[i]) & 0xff
 
 WAV 共约 128.6 秒，以 22050 Hz/16-bit 单声道为主，少量为 8-bit 或 11025 Hz。
 
+### MOD 的无图片简报变体
+
+`ResourceTool strip-briefings` 用于生成文字简报版所需的 GFL 对。它不会
+删除记录或改变编号，而是把 `Intro_000.psd`—`Intro_011.psd`（索引
+1048—1059）的 payload 长度改为 0，再为后续记录重算
+`payload_data_offset`，同步生成新的 `InterMedia.GFL`。输出会被
+`GflArchive.Open(resource, index)` 逐条重读，名称、属性、非目标长度、
+偏移和 1,394 个条目数任一不一致都会失败。
+
+```powershell
+dotnet run --project .\tools\ResourceTool -c Release -- `
+  strip-briefings .\原版\1937Resources.GFL .\原版\InterMedia.GFL `
+  .\输出\1937Resources.GFL .\输出\InterMedia.GFL
+```
+
+该命令要求输出文件尚不存在，也拒绝源/目标路径重合。合成 fixture 覆盖
+索引保持、载荷清空、非目标资源逐字节长度保持、伴随索引重读和压缩后长度。
+`Mod` 的最终归档减少 5,461,822 字节；第 1、12 关已在原引擎中分别验证
+首尾简报索引不会再被读取。
+
 ## LZO1X、RGB565 与旧引擎兼容行为
 
 IBLOCK、TLG 内嵌图像和 SPR 帧使用 LZO1X 压缩。解码器执行严格长度和回引用检查，同时复现原引擎会接受的“目标图像已经完整、压缩流末尾仍有少量 slack”行为；它不会把任意损坏流当成有效数据。

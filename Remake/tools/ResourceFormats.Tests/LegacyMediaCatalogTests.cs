@@ -55,7 +55,7 @@ internal static class LegacyMediaCatalogTests
     }
 
     private static GflEntry Entry(int index, string name, string type) =>
-        new(index, name, 0, 0, 0, 0, type, type == "WAV" ? ".wav" : ".iblock");
+        new(index, name, 0, 0, 0, 1, type, type == "WAV" ? ".wav" : ".iblock");
 
     private static void Equal<T>(T expected, T actual, string description, ref int checks)
     {

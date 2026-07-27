@@ -12,8 +12,13 @@
 
 设置会持久化到 rungame.ini 的 [mod] 段；以后直接运行 M1937.exe
 也会继续生效。选择“进入原版菜单（所选任务）”后，补丁只预置关卡编号；
-请在原版菜单点击“开始游戏”。任务介绍、鼠标和键盘均走原版流程，
+请在原版菜单点击“新游戏”。地图载入前会出现游戏进程内的文字任务简报；
+点击“开始任务”继续，点击“返回原版菜单”取消。鼠标和键盘仍走原版流程，
 不会伪造存档，也不会修改 M1937.exe。
+
+全部 15 关的标题、正文和三项目标位于同目录“关卡名称.json”。直接编辑
+对应任务的 title、briefing、objectives 并保存，下次开始任务立即生效，
+不需要重新编译或制作图片；文件异常时自动使用 DLL 内置文案。
 
 显示模式
 --------
@@ -36,6 +41,8 @@ F1 黑屏及 M 小地图失效，现已停用。全屏输出仍会自动采用�
   不会锁定、回中或主动移动系统光标；
 - 已撤销自制边缘卷屏挂钩，恢复原版卷屏函数；
 - 关卡选择只预置编号并进入原版菜单，不再提前触发任务介绍；
+- 原版新游戏之后显示可编辑文字简报，并用原版确认标志跳过旧简报图片；
+- 十二张旧简报图载荷已从 GFL 清除约 5.21 MiB，全部固定资源索引保留；
 - cnc-ddraw 的鼠标缩放和约束已关闭，避免与本游戏专用坐标映射重复处理；
 - 屏蔽游戏窗口输入法，避免按键触发中文输入；
 - 1 ms 计时器、固定 60 FPS、60 次/秒逻辑更新和垂直同步降低偶发卡顿；
@@ -51,7 +58,7 @@ Enabled、Difficulty、AILevel、HearingRadius、AlertRadius、
 DisableIME、
 HighResolutionTimer、ExpandedViewport、ViewportWidth、
 ViewportHeight、PreserveLegacyUI、MessagePumpIntervalMs、
-MessagePumpBudget、SystemCursorMapping、RememberLevel、StartLevel、AutoStart、Renderer
+MessagePumpBudget、SystemCursorMapping、TextBriefings、RememberLevel、StartLevel、AutoStart、Renderer
 、DisplayMode 和 Diagnostics。ExpandedViewport、SmoothEdgeScroll、EdgeZone 和
 ScrollResponse 只保留用于兼容旧配置，当前版本不会启用。
 

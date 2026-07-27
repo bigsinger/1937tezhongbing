@@ -36,6 +36,7 @@ namespace Mission1937.SDK.Generated
         public const long ScreenHeight = 0x000E6E10L;
         public const long InputStateBase = 0x000E6E54L;
         public const long InputActionMap = 0x000E6E78L;
+        public const long InputScrollBlock = 0x000E6E7CL;
         public const long InputActionHelp = 0x000E6E80L;
         public const long InputRawMap = 0x000E6EDAL;
         public const long InputRawHelp = 0x000E6EE3L;
@@ -48,6 +49,7 @@ namespace Mission1937.SDK.Generated
         public const long CurrentMission = 0x000E7060L;
         public const long SelectedSaveSlot = 0x000E705CL;
         public const long WorldRoot = 0x000E700CL;
+        public const long ViewportController = 0x000D6AD8L;
         public const long RendererHeight = 0x000D6A88L;
         public const long RendererWidth = 0x000D6A8CL;
         public const long CameraX = 0x000E7024L;

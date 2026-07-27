@@ -270,9 +270,12 @@ internal static class ModPerformanceProbe
         int unresponsive = samples.Count(item => !item.Responding);
         int cursorClipRestricted = samples.Count(
             item => item.CursorClipRestricted);
+        double cpuOneCorePercent =
+            elapsed <= 0 ? 0 : cpu / elapsed * 100;
         bool passed =
             samples.Count >= seconds * 8 &&
             unresponsive == 0 &&
+            cpuOneCorePercent < 25.0 &&
             p99 < 25.0 &&
             replayLatencyMax < 50000 &&
             pumpMax < 50000 &&
@@ -281,6 +284,8 @@ internal static class ModPerformanceProbe
         string bottleneck =
             firstLoads > 0 && peakRead >= 1024 * 1024
                 ? "first_resource_load"
+                : cpuOneCorePercent >= 25.0
+                    ? "simulation_cpu"
                 : pumpMax >= 20000
                     ? "message_pump"
                     : replayLatencyMax >= 16000
@@ -320,7 +325,7 @@ internal static class ModPerformanceProbe
             "  \"cursor_clip_restricted_samples\": {26},\n" +
             "  \"passed\": {24}\n}}\n",
             profile, level, seconds, samples.Count,
-            elapsed <= 0 ? 0 : cpu / elapsed * 100,
+            cpuOneCorePercent,
             reads, peakRead, p95, p99,
             compositor.Count(value => value >= 25),
             compositor.Count(value => value >= 50),

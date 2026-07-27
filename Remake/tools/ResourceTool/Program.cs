@@ -40,6 +40,7 @@ internal static class Program
             "inspect-vwf" => InspectVwf(args),
             "list-gfl" => ListGfl(args),
             "extract-gfl" => ExtractGfl(args),
+            "strip-briefings" => StripBriefings(args),
             "import" => Import(args),
             "media-catalog" => MediaCatalog(args),
             _ => UnknownCommand(args[0])
@@ -51,18 +52,25 @@ internal static class Program
         RequireArgumentCount(
             args,
             2,
-            4,
-            "inspect-vwf <path.vwf> [1937db.dbl] [--entities]");
+            5,
+            "inspect-vwf <path.vwf> [1937db.dbl] [--entities] [--patrols]");
         var vwfPath = System.IO.Path.GetFullPath(args[1]);
         var entityDetails = args.Any(argument =>
             argument.Equals(
                 "--entities",
+                StringComparison.OrdinalIgnoreCase));
+        var patrolDetails = args.Any(argument =>
+            argument.Equals(
+                "--patrols",
                 StringComparison.OrdinalIgnoreCase));
         var databaseArgument = args
             .Skip(2)
             .FirstOrDefault(argument =>
                 !argument.Equals(
                     "--entities",
+                    StringComparison.OrdinalIgnoreCase) &&
+                !argument.Equals(
+                    "--patrols",
                     StringComparison.OrdinalIgnoreCase));
         DblDatabase? database = databaseArgument is not null
             ? DblDatabase.Open(System.IO.Path.GetFullPath(databaseArgument))
@@ -91,6 +99,18 @@ internal static class Program
         Console.WriteLine(
             "Factions: " +
             string.Join(", ", factionCounts.Select(pair => $"{pair.Key}={pair.Value}")));
+        var patrolEntities = sceneList.Entities
+            .Where(entity => entity.Patrol is not null)
+            .ToArray();
+        var totalPatrolPoints = patrolEntities.Sum(
+            entity => entity.Patrol!.Waypoints.Count);
+        var maximumPatrolPoints = patrolEntities.Length == 0
+            ? 0
+            : patrolEntities.Max(
+                entity => entity.Patrol!.Waypoints.Count);
+        Console.WriteLine(
+            $"Patrols: actors {patrolEntities.Length}, " +
+            $"points {totalPatrolPoints}, max {maximumPatrolPoints}");
         if (entityDetails)
         {
             Console.WriteLine(
@@ -104,6 +124,25 @@ internal static class Program
                     $"  {entity.SceneIndex},{entity.DatabaseEntryId}," +
                     $"{entity.WorldX},{entity.WorldY}," +
                     $"{entity.DirectionIndex},{faction},{entity.DeathState}");
+            }
+        }
+        if (patrolDetails)
+        {
+            Console.WriteLine(
+                "Patrols: scene,current,persistent,cached_x,cached_y,waypoints");
+            foreach (var entity in patrolEntities)
+            {
+                var patrol = entity.Patrol!;
+                Console.WriteLine(
+                    $"  {entity.SceneIndex}," +
+                    $"{patrol.CurrentWaypointIndex}," +
+                    $"{patrol.PersistentFlag}," +
+                    $"{patrol.CachedWaypointWorldX}," +
+                    $"{patrol.CachedWaypointWorldY}," +
+                    string.Join(
+                        ";",
+                        patrol.Waypoints.Select(
+                            point => $"{point.X}:{point.Y}")));
             }
         }
         return 0;
@@ -153,17 +192,35 @@ internal static class Program
 
     private static int ListGfl(string[] args)
     {
-        RequireArgumentCount(args, 2, 3, "list-gfl <1937Resources.GFL> [InterMedia.GFL]");
-        var archive = GflArchive.Open(args[1], args.Length == 3 ? args[2] : null);
+        RequireArgumentCount(
+            args,
+            2,
+            4,
+            "list-gfl <1937Resources.GFL> [InterMedia.GFL] [--all]");
+        var listAll = args.Any(argument =>
+            argument.Equals(
+                "--all",
+                StringComparison.OrdinalIgnoreCase));
+        var indexArgument = args
+            .Skip(2)
+            .FirstOrDefault(argument =>
+                !argument.Equals(
+                    "--all",
+                    StringComparison.OrdinalIgnoreCase));
+        var archive = GflArchive.Open(args[1], indexArgument);
         foreach (var group in archive.Entries.GroupBy(entry => entry.Type).OrderByDescending(group => group.Count()))
         {
             Console.WriteLine($"{group.Key,-8} {group.Count(),4} entries, {group.Sum(entry => (long)entry.Length),12} bytes");
         }
 
         Console.WriteLine($"Total: {archive.Entries.Count} entries");
-        foreach (var entry in archive.Entries.Take(10))
+        foreach (var entry in listAll
+                     ? archive.Entries
+                     : archive.Entries.Take(10))
         {
-            Console.WriteLine($"  {entry.Index:D4} {entry.Type,-8} {entry.OriginalName}");
+            Console.WriteLine(
+                $"  {entry.Index:D4} {entry.Type,-8} " +
+                $"{entry.Length,9} {entry.OriginalName}");
         }
         return 0;
     }
@@ -186,6 +243,30 @@ internal static class Program
             entries = extracted
         });
         Console.WriteLine($"Extracted {extracted.Count} entries to {outputDirectory}");
+        return 0;
+    }
+
+    private static int StripBriefings(string[] args)
+    {
+        RequireArgumentCount(
+            args,
+            5,
+            5,
+            "strip-briefings <1937Resources.GFL> <InterMedia.GFL> " +
+            "<output-resources.GFL> <output-index.GFL>");
+        var report = GflArchiveRewriter.RemoveLegacyBriefingPayloads(
+            args[1],
+            args[2],
+            args[3],
+            args[4]);
+        Console.WriteLine(
+            $"Preserved {report.EntryCount} resource indexes.");
+        Console.WriteLine(
+            "Cleared briefing payload indexes: " +
+            string.Join(", ", report.ClearedEntryIndexes));
+        Console.WriteLine(
+            $"Removed {report.RemovedPayloadBytes} bytes; " +
+            $"resource archive is now {report.OutputResourceBytes} bytes.");
         return 0;
     }
 
@@ -389,8 +470,12 @@ internal static class Program
         Console.WriteLine("  inspect <game-directory>");
         Console.WriteLine(
             "  inspect-vwf <path.vwf> [1937db.dbl] [--entities]");
-        Console.WriteLine("  list-gfl <1937Resources.GFL> [InterMedia.GFL]");
+        Console.WriteLine(
+            "  list-gfl <1937Resources.GFL> [InterMedia.GFL] [--all]");
         Console.WriteLine("  extract-gfl <1937Resources.GFL> <output-directory> [InterMedia.GFL]");
+        Console.WriteLine(
+            "  strip-briefings <1937Resources.GFL> <InterMedia.GFL> " +
+            "<output-resources.GFL> <output-index.GFL>");
         Console.WriteLine("  import <game-directory> <output-directory>");
         Console.WriteLine("  media-catalog <game-directory> <converted-directory>");
         Console.WriteLine();

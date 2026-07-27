@@ -55,6 +55,26 @@ internal static class GameFrameProbe
     [DllImport("user32.dll")]
     private static extern bool GetClientRect(IntPtr window, out RECT rect);
 
+    private delegate bool EnumWindowsProc(IntPtr window, IntPtr parameter);
+
+    [DllImport("user32.dll")]
+    private static extern bool EnumWindows(
+        EnumWindowsProc callback, IntPtr parameter);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(
+        IntPtr window, out uint processId);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetWindowText(
+        IntPtr window, StringBuilder text, int maximum);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindow(IntPtr window);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr window);
+
     [DllImport("user32.dll")]
     private static extern bool ClientToScreen(IntPtr window, ref POINT point);
 
@@ -86,13 +106,39 @@ internal static class GameFrameProbe
         public int CameraX;
         public int CameraY;
         public int Mission;
+        public int CursorX;
+        public int CursorY;
+        public int ScrollActionBlock;
+        public int ScrollDisabled;
+        public int ScrollVelocity;
+        public int ScrollVelocityLimit;
+        public int ScrollDirection;
+        public int WorldActorCount;
     }
 
     public static int Main(string[] args)
     {
+        Console.OutputEncoding = Encoding.UTF8;
+        try
+        {
+            return Run(args);
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(
+                exception.GetType().FullName + ": " + exception.Message);
+            return 1;
+        }
+    }
+
+    private static int Run(string[] args)
+    {
         if (args.Length < 3)
         {
-            Console.Error.WriteLine("Usage: GameFrameProbe.exe GAME_DIR OUTPUT_DIR TEST_NAME [SECONDS]");
+            Console.Error.WriteLine(
+                "Usage: GameFrameProbe.exe GAME_DIR OUTPUT_DIR TEST_NAME [SECONDS] " +
+                "[nocapture] [nonintrusive] [forcecameracorners] " +
+                "[replacementbriefing] [level=1..15]");
             return 2;
         }
 
@@ -106,6 +152,29 @@ internal static class GameFrameProbe
                 argument, "nocapture", StringComparison.OrdinalIgnoreCase));
         bool nonIntrusive = args.Any(argument => string.Equals(
             argument, "nonintrusive", StringComparison.OrdinalIgnoreCase));
+        bool forceCameraCorners = args.Any(argument => string.Equals(
+            argument, "forcecameracorners", StringComparison.OrdinalIgnoreCase));
+        bool replacementBriefing = args.Any(argument => string.Equals(
+            argument, "replacementbriefing", StringComparison.OrdinalIgnoreCase));
+        int requestedSelectorLevel = 0;
+        string levelArgument = args.FirstOrDefault(argument =>
+            argument.StartsWith(
+                "level=", StringComparison.OrdinalIgnoreCase));
+        if (levelArgument != null &&
+            (!int.TryParse(
+                levelArgument.Substring("level=".Length),
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out requestedSelectorLevel) ||
+             requestedSelectorLevel < 1 ||
+             requestedSelectorLevel > 15))
+            throw new ArgumentOutOfRangeException(
+                "level", "Selector level must be between 1 and 15.");
+        int cameraMaximumX = -1;
+        int cameraMaximumY = -1;
+        if (forceCameraCorners)
+            ReadSelectedMapCameraBounds(
+                gameDirectory, out cameraMaximumX, out cameraMaximumY);
         string executable = Path.Combine(gameDirectory, "M1937.exe");
         Directory.CreateDirectory(outputDirectory);
 
@@ -114,8 +183,21 @@ internal static class GameFrameProbe
             WorkingDirectory = gameDirectory,
             UseShellExecute = false
         };
-        if (nonIntrusive)
+        if (nonIntrusive && !replacementBriefing)
             startInfo.EnvironmentVariables["M1937_AUTOTEST"] = "1";
+        if (replacementBriefing)
+        {
+            int selectorLevel = requestedSelectorLevel > 0
+                ? requestedSelectorLevel
+                : ReadConfiguredSelectorLevel(gameDirectory);
+            startInfo.EnvironmentVariables["M1937_START_LEVEL"] =
+                selectorLevel.ToString(CultureInfo.InvariantCulture);
+            startInfo.EnvironmentVariables["M1937_AUTO_START"] = "1";
+            startInfo.EnvironmentVariables[
+                "M1937_REPLACE_LEGACY_BRIEFING"] = "1";
+            startInfo.EnvironmentVariables[
+                "M1937_BRIEFING_AUTOCLOSE_MS"] = "5000";
+        }
 
         using (Process game = Process.Start(startInfo))
         {
@@ -135,6 +217,34 @@ internal static class GameFrameProbe
                 nonIntrusive ? 0x0001u | 0x0004u | 0x0010u : 0x0001u | 0x0040u);
             if (!nonIntrusive) SetForegroundWindow(window);
 
+            string briefingTitle = string.Empty;
+            if (replacementBriefing)
+            {
+                IntPtr briefingWindow = WaitForTextBriefingWindow(
+                    game.Id, TimeSpan.FromSeconds(12), out briefingTitle);
+                if (briefingWindow == IntPtr.Zero)
+                    throw new InvalidOperationException(
+                        "The in-game text briefing window did not appear.");
+                CaptureNativeWindow(
+                    briefingWindow,
+                    Path.Combine(
+                        outputDirectory,
+                        testName + "-briefing.png"));
+                File.WriteAllText(
+                    Path.Combine(
+                        outputDirectory,
+                        testName + "-briefing.txt"),
+                    briefingTitle,
+                    Encoding.UTF8);
+                Stopwatch closing = Stopwatch.StartNew();
+                while (IsWindow(briefingWindow) &&
+                    closing.Elapsed < TimeSpan.FromSeconds(8))
+                    Thread.Sleep(50);
+                if (IsWindow(briefingWindow))
+                    throw new InvalidOperationException(
+                        "The in-game text briefing did not auto-close.");
+            }
+
             IntPtr processHandle = OpenProcess(
                 PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE,
                 false, game.Id);
@@ -147,7 +257,8 @@ internal static class GameFrameProbe
                 var clock = Stopwatch.StartNew();
                 var driveThread = new Thread(() => DriveGame(
                     processHandle, imageBase, window, clock, durationSeconds,
-                    nonIntrusive));
+                    nonIntrusive, forceCameraCorners,
+                    cameraMaximumX, cameraMaximumY));
                 driveThread.IsBackground = true;
                 driveThread.Start();
 
@@ -175,6 +286,10 @@ internal static class GameFrameProbe
                     finalFrame.Dispose();
                 }
                 string summary = BuildSummary(testName, samples, durationSeconds);
+                if (replacementBriefing)
+                    summary +=
+                        "text_briefing_window=captured\r\n" +
+                        "text_briefing_title=" + briefingTitle + "\r\n";
                 File.WriteAllText(Path.Combine(outputDirectory, testName + ".txt"), summary, Encoding.UTF8);
                 Console.WriteLine(summary);
             }
@@ -199,8 +314,68 @@ internal static class GameFrameProbe
         return IntPtr.Zero;
     }
 
+    private static IntPtr WaitForTextBriefingWindow(
+        int processId, TimeSpan timeout, out string title)
+    {
+        Stopwatch wait = Stopwatch.StartNew();
+        IntPtr match = IntPtr.Zero;
+        string foundTitle = string.Empty;
+        while (wait.Elapsed < timeout && match == IntPtr.Zero)
+        {
+            EnumWindows(delegate(IntPtr candidate, IntPtr unused)
+            {
+                uint ownerProcess;
+                GetWindowThreadProcessId(candidate, out ownerProcess);
+                if (ownerProcess != (uint)processId ||
+                    !IsWindowVisible(candidate))
+                    return true;
+                var buffer = new StringBuilder(256);
+                GetWindowText(candidate, buffer, buffer.Capacity);
+                string candidateTitle = buffer.ToString();
+                if (!candidateTitle.Contains("游戏内文字任务简报"))
+                    return true;
+                match = candidate;
+                foundTitle = candidateTitle;
+                return false;
+            }, IntPtr.Zero);
+            if (match == IntPtr.Zero) Thread.Sleep(50);
+        }
+        title = foundTitle;
+        return match;
+    }
+
+    private static void CaptureNativeWindow(IntPtr window, string path)
+    {
+        RECT rect;
+        if (!GetClientRect(window, out rect))
+            throw new InvalidOperationException(
+                "GetClientRect failed for the text briefing.");
+        int width = Math.Max(1, rect.Right - rect.Left);
+        int height = Math.Max(1, rect.Bottom - rect.Top);
+        using (var bitmap = new Bitmap(
+            width, height, PixelFormat.Format32bppArgb))
+        using (Graphics graphics = Graphics.FromImage(bitmap))
+        {
+            IntPtr dc = graphics.GetHdc();
+            bool captured;
+            try
+            {
+                captured = PrintWindow(window, dc, PW_CLIENTONLY);
+            }
+            finally
+            {
+                graphics.ReleaseHdc(dc);
+            }
+            if (!captured)
+                throw new InvalidOperationException(
+                    "PrintWindow failed for the text briefing.");
+            bitmap.Save(path, ImageFormat.Png);
+        }
+    }
+
     private static void DriveGame(IntPtr process, long imageBase, IntPtr window,
-        Stopwatch clock, double durationSeconds, bool nonIntrusive)
+        Stopwatch clock, double durationSeconds, bool nonIntrusive,
+        bool forceCameraCorners, int cameraMaximumX, int cameraMaximumY)
     {
         // Enter the first mission without relying on the physical mouse. The
         // write targets are volatile input-state globals, never executable code.
@@ -230,15 +405,42 @@ internal static class GameFrameProbe
             }
             else if (t >= 22.00)
             {
-                // Alternate edges so the camera never remains pinned at a map
-                // boundary. This supplies deterministic continuous motion.
-                int edgeX = ((int)((t - 22.0) / 1.5) & 1) == 0
-                    ? screenWidth - 2 : 2;
+                // Hold each cardinal edge long enough for the original
+                // acceleration ramp to move across a large map. Input is
+                // written only to this process's legacy cursor globals.
+                int phase = (int)((t - 22.0) / 8.0) & 3;
+                int edgeX = phase == 0
+                    ? screenWidth - 1
+                    : phase == 2 ? 1 : screenWidth / 2;
+                int edgeY = phase == 1
+                    ? screenHeight - 1
+                    : phase == 3 ? 1 : screenHeight / 2;
                 WriteInt(
                     process, imageBase + EngineAddresses.CursorX, edgeX);
                 WriteInt(
                     process, imageBase + EngineAddresses.CursorY,
-                    screenHeight / 2);
+                    edgeY);
+
+                // A no-activate test deliberately leaves the user's foreground
+                // window alone, and the legacy engine therefore suppresses
+                // normal edge scrolling. For map-extent validation only, move
+                // the launched process's camera state through all four legal
+                // corners. This never moves, clips or reads the physical cursor.
+                if (forceCameraCorners)
+                {
+                    int cameraX = phase == 0 || phase == 3
+                        ? 0 : cameraMaximumX;
+                    int cameraY = phase == 0 || phase == 1
+                        ? 0 : cameraMaximumY;
+                    WriteInt(
+                        process,
+                        imageBase + EngineAddresses.CameraX,
+                        cameraX);
+                    WriteInt(
+                        process,
+                        imageBase + EngineAddresses.CameraY,
+                        cameraY);
+                }
             }
 
             for (int i = 0; i < clickTimes.Length; ++i)
@@ -289,19 +491,32 @@ internal static class GameFrameProbe
             }
             if (t >= 22.00)
             {
-                int direction = ((int)((t - 22.0) / 1.5) & 1);
-                int edgeX = direction == 0 ? screenWidth - 2 : 2;
+                int direction = (int)((t - 22.0) / 8.0) & 3;
+                int edgeX = direction == 0
+                    ? screenWidth - 1
+                    : direction == 2 ? 1 : screenWidth / 2;
+                int edgeY = direction == 1
+                    ? screenHeight - 1
+                    : direction == 3 ? 1 : screenHeight / 2;
                 if (!nonIntrusive)
                 {
-                    POINT edge = new POINT { X = edgeX, Y = screenHeight / 2 };
+                    POINT edge = new POINT { X = edgeX, Y = edgeY };
                     ClientToScreen(window, ref edge);
                     SetCursorPos(edge.X, edge.Y);
                     if (direction != previousDirection)
                     {
                         keybd_event(0x25, 0, 0x0002, UIntPtr.Zero);
                         keybd_event(0x27, 0, 0x0002, UIntPtr.Zero);
-                        keybd_event(direction == 0 ? (byte)0x27 : (byte)0x25,
-                            0, 0, UIntPtr.Zero);
+                        keybd_event(0x26, 0, 0x0002, UIntPtr.Zero);
+                        keybd_event(0x28, 0, 0x0002, UIntPtr.Zero);
+                        byte key = direction == 0
+                            ? (byte)0x27
+                            : direction == 1
+                                ? (byte)0x28
+                                : direction == 2
+                                    ? (byte)0x25
+                                    : (byte)0x26;
+                        keybd_event(key, 0, 0, UIntPtr.Zero);
                         previousDirection = direction;
                     }
                 }
@@ -312,6 +527,8 @@ internal static class GameFrameProbe
         {
             keybd_event(0x25, 0, 0x0002, UIntPtr.Zero);
             keybd_event(0x27, 0, 0x0002, UIntPtr.Zero);
+            keybd_event(0x26, 0, 0x0002, UIntPtr.Zero);
+            keybd_event(0x28, 0, 0x0002, UIntPtr.Zero);
         }
     }
 
@@ -320,6 +537,83 @@ internal static class GameFrameProbe
         byte[] bytes = BitConverter.GetBytes(value);
         IntPtr ignored;
         WriteProcessMemory(process, new IntPtr(address), bytes, bytes.Length, out ignored);
+    }
+
+    private static void ReadSelectedMapCameraBounds(
+        string gameDirectory, out int maximumX, out int maximumY)
+    {
+        int selectorLevel = ReadConfiguredSelectorLevel(gameDirectory);
+        string vwfPath = Path.Combine(
+            gameDirectory,
+            string.Format(
+                CultureInfo.InvariantCulture,
+                "1937m{0:D3}.vwf",
+                selectorLevel - 1));
+        byte[] header = new byte[144];
+        using (var stream = new FileStream(
+            vwfPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            int offset = 0;
+            while (offset < header.Length)
+            {
+                int read = stream.Read(header, offset, header.Length - offset);
+                if (read == 0) throw new EndOfStreamException(vwfPath);
+                offset += read;
+            }
+        }
+        const string magic = "VWL1 Intuition Engine Virtual World File";
+        if (!Encoding.ASCII.GetString(header).StartsWith(
+                magic, StringComparison.Ordinal))
+            throw new InvalidDataException(
+                "Selected file is not a VWF world: " + vwfPath);
+
+        uint viewportWidth = BitConverter.ToUInt32(header, 95);
+        uint viewportHeight = BitConverter.ToUInt32(header, 99);
+        uint gridWidth = BitConverter.ToUInt32(header, 135);
+        uint gridHeight = BitConverter.ToUInt32(header, 139);
+        long boundX = checked((long)gridWidth * 32 - viewportWidth);
+        long boundY = checked((long)gridHeight * 16 - viewportHeight);
+        if (boundX < 0 || boundX > int.MaxValue ||
+            boundY < 0 || boundY > int.MaxValue)
+            throw new InvalidDataException(
+                "Selected VWF contains invalid camera bounds.");
+        maximumX = (int)boundX;
+        maximumY = (int)boundY;
+    }
+
+    private static int ReadConfiguredSelectorLevel(string gameDirectory)
+    {
+        string iniPath = Path.Combine(gameDirectory, "rungame.ini");
+        int selectorLevel = 0;
+        bool inModSection = false;
+        foreach (string rawLine in File.ReadAllLines(iniPath))
+        {
+            string line = rawLine.Trim();
+            if (line.StartsWith("[") && line.EndsWith("]"))
+            {
+                inModSection = string.Equals(
+                    line, "[mod]", StringComparison.OrdinalIgnoreCase);
+                continue;
+            }
+            if (!inModSection) continue;
+            int equals = line.IndexOf('=');
+            if (equals <= 0 ||
+                !string.Equals(
+                    line.Substring(0, equals).Trim(),
+                    "StartLevel",
+                    StringComparison.OrdinalIgnoreCase))
+                continue;
+            int.TryParse(
+                line.Substring(equals + 1).Trim(),
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out selectorLevel);
+            break;
+        }
+        if (selectorLevel < 1)
+            throw new InvalidDataException(
+                "The probe requires [mod] StartLevel in rungame.ini.");
+        return selectorLevel;
     }
 
     private static void CaptureFrames(Process game, IntPtr processHandle, IntPtr window,
@@ -398,8 +692,32 @@ internal static class GameFrameProbe
                     processHandle, imageBase + EngineAddresses.CameraY),
                 Mission = ReadInt(
                     processHandle,
-                    imageBase + EngineAddresses.CurrentMission)
+                    imageBase + EngineAddresses.CurrentMission),
+                CursorX = ReadInt(
+                    processHandle, imageBase + EngineAddresses.CursorX),
+                CursorY = ReadInt(
+                    processHandle, imageBase + EngineAddresses.CursorY),
+                ScrollActionBlock = ReadInt(
+                    processHandle,
+                    imageBase + EngineAddresses.InputScrollBlock),
+                WorldActorCount = ReadWorldActorCount(
+                    processHandle, imageBase)
             });
+            int viewportController = ReadInt(
+                processHandle,
+                imageBase + EngineAddresses.ViewportController);
+            if (viewportController > 0)
+            {
+                Sample current = samples[samples.Count - 1];
+                current.ScrollVelocity = ReadInt(
+                    processHandle, viewportController + 0x5C);
+                current.ScrollVelocityLimit = ReadInt(
+                    processHandle, viewportController + 0x60);
+                current.ScrollDirection = ReadInt(
+                    processHandle, viewportController + 0x64);
+                current.ScrollDisabled = ReadInt(
+                    processHandle, viewportController + 0x70);
+            }
             Thread.Sleep(20);
         }
     }
@@ -447,19 +765,37 @@ internal static class GameFrameProbe
             : int.MinValue;
     }
 
+    private static int ReadWorldActorCount(IntPtr process, long imageBase)
+    {
+        int world = ReadInt(
+            process, imageBase + EngineAddresses.WorldRoot);
+        if (world <= 0) return 0;
+        int count = ReadInt(process, (long)(uint)world + 0x3C);
+        return count > 0 && count <= 4096 ? count : 0;
+    }
+
     private static void WriteCsv(string path, List<Sample> samples)
     {
         using (var writer = new StreamWriter(path, false, new UTF8Encoding(false)))
         {
             writer.WriteLine(
-                "time_ms,changed_pixels,responding,read_bytes,cpu_ms,camera_x,camera_y,mission");
+                "time_ms,changed_pixels,responding,read_bytes,cpu_ms," +
+                "camera_x,camera_y,mission,cursor_x,cursor_y," +
+                "scroll_action_block,scroll_disabled,scroll_velocity," +
+                "scroll_velocity_limit,scroll_direction,world_actor_count");
             foreach (Sample sample in samples)
             {
                 writer.WriteLine(string.Format(CultureInfo.InvariantCulture,
-                    "{0:F3},{1},{2},{3},{4:F3},{5},{6},{7}", sample.Milliseconds,
+                    "{0:F3},{1},{2},{3},{4:F3},{5},{6},{7}," +
+                    "{8},{9},{10},{11},{12},{13},{14},{15}",
+                    sample.Milliseconds,
                     sample.ChangedPixels, sample.Responding ? 1 : 0,
                     sample.ReadBytes, sample.CpuMilliseconds,
-                    sample.CameraX, sample.CameraY, sample.Mission));
+                    sample.CameraX, sample.CameraY, sample.Mission,
+                    sample.CursorX, sample.CursorY,
+                    sample.ScrollActionBlock, sample.ScrollDisabled,
+                    sample.ScrollVelocity, sample.ScrollVelocityLimit,
+                    sample.ScrollDirection, sample.WorldActorCount));
             }
         }
     }
@@ -490,6 +826,8 @@ internal static class GameFrameProbe
             ? 0 : validCamera.Max(s => s.CameraY) - validCamera.Min(s => s.CameraY);
         int observedMission = validCamera.Count == 0
             ? 0 : validCamera.Max(s => s.Mission);
+        int maximumWorldActors = samples.Count == 0
+            ? 0 : samples.Max(s => s.WorldActorCount);
 
         Func<double, double> percentile = p =>
         {
@@ -514,14 +852,15 @@ internal static class GameFrameProbe
             "unresponsive_samples={12}\r\n" +
             "camera_range_x={13}\r\n" +
             "camera_range_y={14}\r\n" +
-            "observed_mission={15}\r\n",
+            "observed_mission={15}\r\n" +
+            "world_actor_count_max={16}\r\n",
             name, durationSeconds, samples.Count, changedTimes.Count,
             percentile(0.50), percentile(0.95), percentile(0.99),
             intervals.Count == 0 ? 0 : intervals[intervals.Count - 1],
             intervals.Count(x => x > 80), intervals.Count(x => x > 120),
             elapsedMs <= 0 ? 0 : cpuMs / elapsedMs * 100.0,
             readBytes, unresponsive, cameraRangeX, cameraRangeY,
-            observedMission);
+            observedMission, maximumWorldActors);
     }
 
     private static void StopLaunchedGame(Process game)

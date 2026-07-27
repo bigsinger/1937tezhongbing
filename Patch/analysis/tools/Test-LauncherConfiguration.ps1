@@ -62,6 +62,7 @@ foreach ($forbidden in @(
     'SetCapture',
     'ReleaseCapture',
     'SetForegroundWindow',
+    'SetActiveWindow',
     'SwitchToThisWindow')) {
     if ($text -match [Regex]::Escape($forbidden)) {
         throw "Launcher contains forbidden global input call: $forbidden"
@@ -92,12 +93,41 @@ if ($conflictExitCode -eq 0) {
 # PowerShell wrapper propagates LASTEXITCODE after the script returns, so clear
 # it once the negative test has been proven successful.
 $global:LASTEXITCODE = 0
+
+$catalog = Get-Content -LiteralPath (
+    Join-Path $OutputRoot $catalogCandidates[0].Name
+) -Raw -Encoding UTF8 | ConvertFrom-Json
+$routeCatalog = Get-Content -LiteralPath (
+    Join-Path $repositoryRoot 'SDK\mission-routes.json'
+) -Raw -Encoding UTF8 | ConvertFrom-Json
+$expectedBriefingTitles = @{}
+foreach ($route in $routeCatalog.routes) {
+    $expectedBriefingTitles[[int]$route.selector_level] =
+        [string]$route.title
+}
+$briefingTextLengths = [Collections.Generic.List[int]]::new()
+foreach ($briefingLevel in 1..15) {
+    $mission = @($catalog.missions | Where-Object {
+        [int]$_.number -eq $briefingLevel
+    })
+    if ($mission.Count -ne 1 -or
+        ([string]$mission[0].title -cne
+            $expectedBriefingTitles[$briefingLevel]) -or
+        [string]::IsNullOrWhiteSpace([string]$mission[0].briefing) -or
+        @($mission[0].objectives).Count -ne 3 -or
+        -not [bool]$mission[0].replace_legacy_briefing) {
+        throw "Level $briefingLevel text briefing catalog is incomplete."
+    }
+    $briefingTextLengths.Add(([string]$mission[0].briefing).Length)
+}
+
 foreach ($required in @(
     "'KeyRemapping'",
     "'MissionSidecar'",
     "'EnablePlugins'",
     "'Diagnostics'",
-    "'Telemetry'")) {
+    "'Telemetry'",
+    "'TextBriefings'")) {
     if (-not $text.Contains($required)) {
         throw "Launcher is missing configuration key $required."
     }
@@ -123,4 +153,8 @@ foreach ($cursorSafeSetting in @(
     SystemCursorCalls = 0
     CursorCaptureCalls = 0
     StableWindowProfile = 'cursor-safe'
+    TextBriefings = 15
+    BriefingDisplay = 'in-game-native'
+    MinimumBriefingCharacters = (
+        $briefingTextLengths | Measure-Object -Minimum).Minimum
 }

@@ -17,6 +17,7 @@ internal static class Program
         try
         {
             ReadsSyntheticGfl(temporaryDirectory);
+            RewritesSyntheticGflBriefings(temporaryDirectory);
             RejectsTruncatedGfl(temporaryDirectory);
             DetectsLegacyHeaders();
             ReadsSyntheticSoundLibrary(temporaryDirectory);
@@ -88,6 +89,72 @@ internal static class Program
         }
 
         Throws<InvalidDataException>(() => GflArchive.Open(path), "truncated GFL rejection");
+    }
+
+    private static void RewritesSyntheticGflBriefings(
+        string directory)
+    {
+        var resourcePath = System.IO.Path.Combine(
+            directory,
+            "briefing-source.gfl");
+        var resources = Enumerable.Range(0, 12)
+            .Select(index => (
+                $"Intro_{index:D3}.psd",
+                Encoding.ASCII.GetBytes(
+                    $"IBLOCK briefing fixture {index:D2}")))
+            .Append((
+                "保留资源.spr",
+                Encoding.ASCII.GetBytes("SPR1 retained fixture")))
+            .ToArray();
+        CreateSyntheticGfl(resourcePath, resources);
+        var source = GflArchive.Open(resourcePath);
+        var indexPath = System.IO.Path.Combine(
+            directory,
+            "briefing-source-index.gfl");
+        CreateSyntheticIndex(indexPath, source);
+        var outputResource = System.IO.Path.Combine(
+            directory,
+            "briefing-stripped.gfl");
+        var outputIndex = System.IO.Path.Combine(
+            directory,
+            "briefing-stripped-index.gfl");
+
+        var report =
+            GflArchiveRewriter.RemoveLegacyBriefingPayloads(
+                resourcePath,
+                indexPath,
+                outputResource,
+                outputIndex);
+        Equal(13, report.EntryCount, "rewritten GFL entry count");
+        Equal(
+            12,
+            report.ClearedEntryIndexes.Count,
+            "rewritten GFL cleared briefing count");
+        Equal(
+            source.Entries.Take(12).Sum(
+                entry => (long)entry.Length),
+            report.RemovedPayloadBytes,
+            "rewritten GFL removed byte count");
+
+        var output = GflArchive.Open(
+            outputResource,
+            outputIndex);
+        True(
+            output.Entries.Take(12).All(entry => entry.Length == 0),
+            "rewritten GFL briefing payloads are empty");
+        Equal(
+            source.Entries[12].Length,
+            output.Entries[12].Length,
+            "rewritten GFL retained payload length");
+        Equal(
+            source.Entries[12].OriginalName,
+            output.Entries[12].OriginalName,
+            "rewritten GFL retained numeric index");
+        Equal(
+            new FileInfo(resourcePath).Length -
+                report.RemovedPayloadBytes,
+            new FileInfo(outputResource).Length,
+            "rewritten GFL compacted length");
     }
 
     private static void DetectsLegacyHeaders()

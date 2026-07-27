@@ -1,4 +1,4 @@
-# v1.4.0 Release Package Validation
+# v1.4.1 Release Package Validation
 
 - Entries: 70
 - Installer: passed
@@ -9,6 +9,7 @@
 - Mission sidecar manifest and every runtime file hash: passed
 - Packaged sidecar source build: 0 warnings, 0 errors
 - Packaged x64 sample plugin build/API negotiation: passed
+- Complete editable in-game text briefings: 15/15
 - Original game data files included: 0
 - ZIP SHA-256:
-  `5B94FC2EA5CE87CD6A493A2413068AF4737C609C8A61286131CFC58E2B3830D3`
+  `053DEC4C5D881E8153C7DAC07D8CCE3080F174CD12389313E74CE468BCF2AFFC`

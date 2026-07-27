@@ -14,12 +14,12 @@
                   {
                       "name":  "1937MapEditor.dll",
                       "length":  158720,
-                      "sha256":  "0C51B8789A476E8ADE8793CE5F249438E9D836CA1BCE462F4D542E123EE0CB05"
+                      "sha256":  "4CD550159966DA3D4F2E729A7DD55294436FAC925AB2A7BD1330EA5CDC00F25E"
                   },
                   {
                       "name":  "1937MapEditor.exe",
                       "length":  162304,
-                      "sha256":  "B21B8F45E6FBC3F4AAED723216CAD05B4D6A9369B12170AFBEC46003DFEE64A1"
+                      "sha256":  "5243F97514670FCFF332CDF4FFFF762D0549626B64E545414C65F601ADB06F50"
                   },
                   {
                       "name":  "1937MapEditor.runtimeconfig.json",
@@ -29,12 +29,12 @@
                   {
                       "name":  "MapEditor.Core.dll",
                       "length":  248832,
-                      "sha256":  "9AFFFE5BF797149DB39B71481B1210201A1B763BBCC0B941D70F00864E38B475"
+                      "sha256":  "601FEA19B9B61F27173F1F65035779C2AFC6BA78D4B1549BE706F5AF6E2FEA58"
                   },
                   {
                       "name":  "ResourceFormats.dll",
-                      "length":  180736,
-                      "sha256":  "B70D5C76B74DF277C241CC1911CD34468C3480945916AFDD40A65A386A94B71A"
+                      "length":  189440,
+                      "sha256":  "FE4AEA00329C9FEDBA3DDD61640D866BF123551E32A5746CDDBD7E1B015716F5"
                   }
               ]
 }

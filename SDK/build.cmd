@@ -18,7 +18,7 @@ if errorlevel 1 (
   if errorlevel 1 exit /b 1
 )
 if not exist "%~dp0build" mkdir "%~dp0build"
-cl /nologo /EHsc /std:c++17 /O2 /MT /W4 /WX ^
+cl /nologo /EHsc /std:c++17 /utf-8 /O2 /MT /W4 /WX ^
   /I"%~dp0include" ^
   "%~dp0tests\sdk_tests.cpp" ^
   /Fe:"%~dp0build\M1937SDK.Tests.exe" ^

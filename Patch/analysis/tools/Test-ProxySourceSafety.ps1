@@ -22,9 +22,32 @@ foreach ($forbidden in @(
     'SetCapture',
     'ReleaseCapture',
     'SetForegroundWindow',
+    'SetActiveWindow',
     'SwitchToThisWindow')) {
     if ($source -match [Regex]::Escape($forbidden)) {
         throw "Proxy contains forbidden global input/focus call: $forbidden"
+    }
+}
+
+foreach ($forbiddenBriefingPrimitive in @(
+    'MessageBoxW',
+    'SetWindowsHookExW')) {
+    if ($source -match [Regex]::Escape(
+            $forbiddenBriefingPrimitive)) {
+        throw (
+            'Text briefing uses a focus/performance-sensitive primitive: ' +
+            $forbiddenBriefingPrimitive)
+    }
+}
+foreach ($requiredBriefingElement in @(
+    'ShowTextMissionBriefing',
+    'LoadBriefingCatalogOverride',
+    'SW_SHOWNOACTIVATE',
+    'legacy_briefing')) {
+    if (-not $source.Contains($requiredBriefingElement)) {
+        throw (
+            'Proxy is missing in-game text briefing element: ' +
+            $requiredBriefingElement)
     }
 }
 
@@ -65,4 +88,6 @@ foreach ($required in @(
     TelemetryDiskIoOnInputThread = 0
     TelemetryQueue = 'bounded'
     TelemetryWriterPriority = 'below-normal'
+    InGameTextBriefing = 'native-noactivate-test-path'
+    RuntimeEditableCatalog = $true
 }

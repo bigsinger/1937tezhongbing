@@ -11,6 +11,9 @@
 #include <cstring>
 #include <cwchar>
 #include <new>
+#include <string>
+#include <string_view>
+#include <vector>
 
 #include <M1937SDK/M1937SDK.hpp>
 
@@ -20,6 +23,7 @@ using DirectInputCreateAProc = HRESULT(WINAPI *)(
     HINSTANCE, DWORD, LPDIRECTINPUTA *, LPUNKNOWN);
 
 HMODULE g_real_dinput = nullptr;
+HINSTANCE g_proxy_instance = nullptr;
 DirectInputCreateAProc g_real_create = nullptr;
 unsigned char *g_executable_base = nullptr;
 HWND g_game_window = nullptr;
@@ -45,6 +49,9 @@ WNDPROC g_original_replay_window_proc = nullptr;
 HWND g_replay_subclass_window = nullptr;
 
 constexpr UINT kWindowReplayMessage = WM_APP + 0x137;
+constexpr UINT_PTR kTextBriefingTimer = 0x1937;
+constexpr wchar_t kTextBriefingWindowClass[] =
+    L"M1937TextMissionBriefingWindow";
 
 enum WindowReplayCommand : WPARAM {
     replay_key_down = 1,
@@ -94,6 +101,7 @@ struct ModConfig {
     int ai_tick_interval_ms = 100;
     bool mission_sidecar = false;
     bool plugins = false;
+    bool text_briefings = true;
 };
 
 ModConfig g_mod_config;
@@ -757,6 +765,7 @@ void LoadModConfig() {
         ClampSetting(read(L"AITickIntervalMs", 100), 50, 1000);
     g_mod_config.mission_sidecar = read(L"MissionSidecar", 0) != 0;
     g_mod_config.plugins = read(L"EnablePlugins", 0) != 0;
+    g_mod_config.text_briefings = read(L"TextBriefings", 1) != 0;
     LoadKeyAliases();
     RecordDiagnostic(
         "configuration", g_mod_config.enabled ? "enabled" : "disabled",
@@ -861,6 +870,32 @@ bool IsAutomatedProbeEnabled() {
         strcmp(value, "1") == 0;
 }
 
+bool IsLegacyBriefingReplacementEnabled() {
+    char value[8]{};
+    const DWORD length = GetEnvironmentVariableA(
+        "M1937_REPLACE_LEGACY_BRIEFING",
+        value,
+        static_cast<DWORD>(sizeof(value)));
+    if (length > 0 && length < sizeof(value)) {
+        return strcmp(value, "1") == 0;
+    }
+    return g_mod_config.text_briefings;
+}
+
+const m1937::sdk::MissionRoute *RequestedBriefingRoute() {
+    if (!IsLegacyBriefingReplacementEnabled()) {
+        return nullptr;
+    }
+    int selector_level = RequestedStartLevel();
+    if (selector_level == 0) {
+        // The unmodified full-menu New Game path always starts mission one.
+        selector_level = 1;
+    }
+    const auto *route =
+        m1937::sdk::find_mission_route(selector_level);
+    return route && route->replace_legacy_briefing ? route : nullptr;
+}
+
 bool IsWindowReplayEnabled() {
     char value[8]{};
     const DWORD length = GetEnvironmentVariableA(
@@ -882,6 +917,895 @@ bool IsAutomaticMissionStartEnabled() {
 
 bool IsAutomatedLaunchEnabled() {
     return IsAutomatedProbeEnabled() || IsAutomaticMissionStartEnabled();
+}
+
+DWORD TextBriefingAutoCloseMilliseconds() {
+    char value[16]{};
+    const DWORD length = GetEnvironmentVariableA(
+        "M1937_BRIEFING_AUTOCLOSE_MS",
+        value,
+        static_cast<DWORD>(sizeof(value)));
+    if (length > 0 && length < sizeof(value)) {
+        char *end = nullptr;
+        const long milliseconds = strtol(value, &end, 10);
+        if (end != value && *end == '\0' &&
+            milliseconds >= 50 && milliseconds <= 60000) {
+            return static_cast<DWORD>(milliseconds);
+        }
+    }
+    return IsAutomatedProbeEnabled() ? 150U : 0U;
+}
+
+struct TextBriefingContent {
+    std::wstring title;
+    std::wstring briefing;
+    std::wstring objective_1;
+    std::wstring objective_2;
+    std::wstring objective_3;
+};
+
+class JsonReader {
+public:
+    explicit JsonReader(std::wstring_view text)
+        : text_(text) {}
+
+    bool Consume(wchar_t expected) {
+        SkipWhitespace();
+        if (position_ >= text_.size() ||
+            text_[position_] != expected) {
+            return false;
+        }
+        ++position_;
+        return true;
+    }
+
+    bool ParseString(std::wstring &value) {
+        SkipWhitespace();
+        if (position_ >= text_.size() ||
+            text_[position_] != L'"') {
+            return false;
+        }
+        ++position_;
+        value.clear();
+        while (position_ < text_.size()) {
+            const wchar_t character = text_[position_++];
+            if (character == L'"') {
+                return true;
+            }
+            if (character < 0x20) {
+                return false;
+            }
+            if (character != L'\\') {
+                value.push_back(character);
+                continue;
+            }
+            if (position_ >= text_.size()) {
+                return false;
+            }
+            const wchar_t escaped = text_[position_++];
+            switch (escaped) {
+            case L'"':
+            case L'\\':
+            case L'/':
+                value.push_back(escaped);
+                break;
+            case L'b':
+                value.push_back(L'\b');
+                break;
+            case L'f':
+                value.push_back(L'\f');
+                break;
+            case L'n':
+                value.push_back(L'\n');
+                break;
+            case L'r':
+                value.push_back(L'\r');
+                break;
+            case L't':
+                value.push_back(L'\t');
+                break;
+            case L'u': {
+                wchar_t code_unit = 0;
+                if (!ParseHexCodeUnit(code_unit)) {
+                    return false;
+                }
+                value.push_back(code_unit);
+                break;
+            }
+            default:
+                return false;
+            }
+        }
+        return false;
+    }
+
+    bool ParseInteger(int &value) {
+        SkipWhitespace();
+        if (position_ >= text_.size()) {
+            return false;
+        }
+        bool negative = false;
+        if (text_[position_] == L'-') {
+            negative = true;
+            ++position_;
+        }
+        if (position_ >= text_.size() ||
+            text_[position_] < L'0' ||
+            text_[position_] > L'9') {
+            return false;
+        }
+        int parsed = 0;
+        while (position_ < text_.size() &&
+               text_[position_] >= L'0' &&
+               text_[position_] <= L'9') {
+            if (parsed > 1000000) {
+                return false;
+            }
+            parsed = parsed * 10 +
+                static_cast<int>(text_[position_] - L'0');
+            ++position_;
+        }
+        value = negative ? -parsed : parsed;
+        return true;
+    }
+
+    bool ParseBoolean(bool &value) {
+        SkipWhitespace();
+        if (MatchLiteral(L"true")) {
+            value = true;
+            return true;
+        }
+        if (MatchLiteral(L"false")) {
+            value = false;
+            return true;
+        }
+        return false;
+    }
+
+    bool SkipValue(int depth = 0) {
+        if (depth > 32) {
+            return false;
+        }
+        SkipWhitespace();
+        if (position_ >= text_.size()) {
+            return false;
+        }
+        if (text_[position_] == L'"') {
+            std::wstring ignored;
+            return ParseString(ignored);
+        }
+        if (text_[position_] == L'{') {
+            ++position_;
+            SkipWhitespace();
+            if (ConsumeIf(L'}')) {
+                return true;
+            }
+            while (true) {
+                std::wstring key;
+                if (!ParseString(key) ||
+                    !Consume(L':') ||
+                    !SkipValue(depth + 1)) {
+                    return false;
+                }
+                SkipWhitespace();
+                if (ConsumeIf(L'}')) {
+                    return true;
+                }
+                if (!ConsumeIf(L',')) {
+                    return false;
+                }
+            }
+        }
+        if (text_[position_] == L'[') {
+            ++position_;
+            SkipWhitespace();
+            if (ConsumeIf(L']')) {
+                return true;
+            }
+            while (true) {
+                if (!SkipValue(depth + 1)) {
+                    return false;
+                }
+                SkipWhitespace();
+                if (ConsumeIf(L']')) {
+                    return true;
+                }
+                if (!ConsumeIf(L',')) {
+                    return false;
+                }
+            }
+        }
+        if (MatchLiteral(L"true") ||
+            MatchLiteral(L"false") ||
+            MatchLiteral(L"null")) {
+            return true;
+        }
+        return SkipNumber();
+    }
+
+private:
+    void SkipWhitespace() {
+        while (position_ < text_.size()) {
+            const wchar_t character = text_[position_];
+            if (character != L' ' &&
+                character != L'\t' &&
+                character != L'\r' &&
+                character != L'\n') {
+                break;
+            }
+            ++position_;
+        }
+    }
+
+    bool ConsumeIf(wchar_t expected) {
+        SkipWhitespace();
+        if (position_ < text_.size() &&
+            text_[position_] == expected) {
+            ++position_;
+            return true;
+        }
+        return false;
+    }
+
+    bool MatchLiteral(std::wstring_view value) {
+        if (text_.substr(position_, value.size()) != value) {
+            return false;
+        }
+        position_ += value.size();
+        return true;
+    }
+
+    bool ParseHexCodeUnit(wchar_t &value) {
+        if (position_ + 4 > text_.size()) {
+            return false;
+        }
+        unsigned int parsed = 0;
+        for (int index = 0; index < 4; ++index) {
+            const wchar_t character = text_[position_++];
+            parsed <<= 4;
+            if (character >= L'0' && character <= L'9') {
+                parsed += character - L'0';
+            } else if (
+                character >= L'a' && character <= L'f') {
+                parsed += character - L'a' + 10;
+            } else if (
+                character >= L'A' && character <= L'F') {
+                parsed += character - L'A' + 10;
+            } else {
+                return false;
+            }
+        }
+        value = static_cast<wchar_t>(parsed);
+        return true;
+    }
+
+    bool SkipNumber() {
+        const size_t start = position_;
+        if (position_ < text_.size() &&
+            text_[position_] == L'-') {
+            ++position_;
+        }
+        if (position_ >= text_.size()) {
+            position_ = start;
+            return false;
+        }
+        if (text_[position_] == L'0') {
+            ++position_;
+        } else if (
+            text_[position_] >= L'1' &&
+            text_[position_] <= L'9') {
+            while (position_ < text_.size() &&
+                   text_[position_] >= L'0' &&
+                   text_[position_] <= L'9') {
+                ++position_;
+            }
+        } else {
+            position_ = start;
+            return false;
+        }
+        if (position_ < text_.size() &&
+            text_[position_] == L'.') {
+            ++position_;
+            const size_t fraction = position_;
+            while (position_ < text_.size() &&
+                   text_[position_] >= L'0' &&
+                   text_[position_] <= L'9') {
+                ++position_;
+            }
+            if (fraction == position_) {
+                position_ = start;
+                return false;
+            }
+        }
+        if (position_ < text_.size() &&
+            (text_[position_] == L'e' ||
+             text_[position_] == L'E')) {
+            ++position_;
+            if (position_ < text_.size() &&
+                (text_[position_] == L'+' ||
+                 text_[position_] == L'-')) {
+                ++position_;
+            }
+            const size_t exponent = position_;
+            while (position_ < text_.size() &&
+                   text_[position_] >= L'0' &&
+                   text_[position_] <= L'9') {
+                ++position_;
+            }
+            if (exponent == position_) {
+                position_ = start;
+                return false;
+            }
+        }
+        return true;
+    }
+
+    std::wstring_view text_;
+    size_t position_ = 0;
+};
+
+bool ParseObjectiveArray(
+    JsonReader &reader,
+    std::vector<std::wstring> &objectives) {
+    if (!reader.Consume(L'[')) {
+        return false;
+    }
+    objectives.clear();
+    for (int index = 0; index < 3; ++index) {
+        std::wstring objective;
+        if (!reader.ParseString(objective) ||
+            objective.empty()) {
+            return false;
+        }
+        objectives.push_back(std::move(objective));
+        if (index < 2 && !reader.Consume(L',')) {
+            return false;
+        }
+    }
+    return reader.Consume(L']');
+}
+
+bool ParseBriefingMission(
+    JsonReader &reader,
+    const m1937::sdk::MissionRoute &route,
+    TextBriefingContent &content,
+    bool &matched) {
+    if (!reader.Consume(L'{')) {
+        return false;
+    }
+    int number = 0;
+    std::wstring id;
+    std::wstring title;
+    std::wstring briefing;
+    std::vector<std::wstring> objectives;
+    bool first = true;
+    while (true) {
+        if (!first && reader.Consume(L'}')) {
+            break;
+        }
+        first = false;
+        std::wstring key;
+        if (!reader.ParseString(key) ||
+            !reader.Consume(L':')) {
+            return false;
+        }
+        if (key == L"number") {
+            if (!reader.ParseInteger(number)) {
+                return false;
+            }
+        } else if (key == L"id") {
+            if (!reader.ParseString(id)) {
+                return false;
+            }
+        } else if (key == L"title") {
+            if (!reader.ParseString(title)) {
+                return false;
+            }
+        } else if (key == L"briefing") {
+            if (!reader.ParseString(briefing)) {
+                return false;
+            }
+        } else if (key == L"objectives") {
+            if (!ParseObjectiveArray(reader, objectives)) {
+                return false;
+            }
+        } else if (!reader.SkipValue()) {
+            return false;
+        }
+        if (reader.Consume(L'}')) {
+            break;
+        }
+        if (!reader.Consume(L',')) {
+            return false;
+        }
+    }
+
+    const std::wstring route_id(
+        route.id,
+        route.id + strlen(route.id));
+    if ((number == route.selector_level || id == route_id) &&
+        !title.empty() &&
+        !briefing.empty() &&
+        objectives.size() == 3) {
+        content.title = std::move(title);
+        content.briefing = std::move(briefing);
+        content.objective_1 = std::move(objectives[0]);
+        content.objective_2 = std::move(objectives[1]);
+        content.objective_3 = std::move(objectives[2]);
+        matched = true;
+    }
+    return true;
+}
+
+bool ParseBriefingCatalog(
+    std::wstring_view json,
+    const m1937::sdk::MissionRoute &route,
+    TextBriefingContent &content) {
+    JsonReader reader(json);
+    if (!reader.Consume(L'{')) {
+        return false;
+    }
+    bool first = true;
+    while (true) {
+        if (!first && reader.Consume(L'}')) {
+            return false;
+        }
+        first = false;
+        std::wstring key;
+        if (!reader.ParseString(key) ||
+            !reader.Consume(L':')) {
+            return false;
+        }
+        if (key == L"missions") {
+            if (!reader.Consume(L'[')) {
+                return false;
+            }
+            for (int index = 0; index < 15; ++index) {
+                bool matched = false;
+                if (!ParseBriefingMission(
+                        reader,
+                        route,
+                        content,
+                        matched)) {
+                    return false;
+                }
+                if (matched) {
+                    return true;
+                }
+                if (index < 14 && !reader.Consume(L',')) {
+                    return false;
+                }
+            }
+            return false;
+        }
+        if (!reader.SkipValue()) {
+            return false;
+        }
+        if (reader.Consume(L'}')) {
+            return false;
+        }
+        if (!reader.Consume(L',')) {
+            return false;
+        }
+    }
+}
+
+bool ReadUtf8TextFile(
+    const wchar_t *path,
+    std::wstring &text) {
+    HANDLE file = CreateFileW(
+        path,
+        GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        nullptr,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        nullptr);
+    if (file == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    LARGE_INTEGER size{};
+    if (!GetFileSizeEx(file, &size) ||
+        size.QuadPart <= 0 ||
+        size.QuadPart > 1024 * 1024) {
+        CloseHandle(file);
+        return false;
+    }
+    std::string bytes(
+        static_cast<size_t>(size.QuadPart),
+        '\0');
+    DWORD read = 0;
+    const BOOL read_ok = ReadFile(
+        file,
+        bytes.data(),
+        static_cast<DWORD>(bytes.size()),
+        &read,
+        nullptr);
+    CloseHandle(file);
+    if (!read_ok || read != bytes.size()) {
+        return false;
+    }
+    const int wide_length = MultiByteToWideChar(
+        CP_UTF8,
+        MB_ERR_INVALID_CHARS,
+        bytes.data(),
+        static_cast<int>(bytes.size()),
+        nullptr,
+        0);
+    if (wide_length <= 0) {
+        return false;
+    }
+    text.assign(
+        static_cast<size_t>(wide_length),
+        L'\0');
+    if (MultiByteToWideChar(
+            CP_UTF8,
+            MB_ERR_INVALID_CHARS,
+            bytes.data(),
+            static_cast<int>(bytes.size()),
+            text.data(),
+            wide_length) != wide_length) {
+        return false;
+    }
+    if (!text.empty() && text.front() == 0xFEFF) {
+        text.erase(text.begin());
+    }
+    return true;
+}
+
+bool LoadBriefingCatalogOverride(
+    const m1937::sdk::MissionRoute &route,
+    TextBriefingContent &content) {
+    wchar_t path[MAX_PATH]{};
+    const DWORD length = GetModuleFileNameW(
+        g_proxy_instance,
+        path,
+        MAX_PATH);
+    if (length == 0 || length >= MAX_PATH) {
+        return false;
+    }
+    wchar_t *file_name = wcsrchr(path, L'\\');
+    if (!file_name) {
+        return false;
+    }
+    *++file_name = L'\0';
+    if (wcscat_s(
+            path,
+            L"关卡名称.json") != 0) {
+        return false;
+    }
+    std::wstring json;
+    return ReadUtf8TextFile(path, json) &&
+        ParseBriefingCatalog(json, route, content);
+}
+
+struct TextBriefingDialog {
+    bool accepted = false;
+    HFONT title_font = nullptr;
+    HFONT body_font = nullptr;
+    HFONT button_font = nullptr;
+};
+
+void CloseTextBriefing(HWND window, bool accepted) {
+    auto *dialog = reinterpret_cast<TextBriefingDialog *>(
+        GetWindowLongPtrW(window, GWLP_USERDATA));
+    if (dialog) {
+        dialog->accepted = accepted;
+    }
+    DestroyWindow(window);
+}
+
+LRESULT CALLBACK TextBriefingWindowProc(
+    HWND window,
+    UINT message,
+    WPARAM value,
+    LPARAM parameter) {
+    if (message == WM_NCCREATE) {
+        const auto *create =
+            reinterpret_cast<const CREATESTRUCTW *>(parameter);
+        SetWindowLongPtrW(
+            window,
+            GWLP_USERDATA,
+            reinterpret_cast<LONG_PTR>(create->lpCreateParams));
+    }
+    switch (message) {
+    case WM_COMMAND:
+        if (LOWORD(value) == IDOK) {
+            CloseTextBriefing(window, true);
+            return 0;
+        }
+        if (LOWORD(value) == IDCANCEL) {
+            CloseTextBriefing(window, false);
+            return 0;
+        }
+        break;
+    case WM_TIMER:
+        if (value == kTextBriefingTimer) {
+            KillTimer(window, kTextBriefingTimer);
+            CloseTextBriefing(window, true);
+            return 0;
+        }
+        break;
+    case WM_CLOSE:
+        CloseTextBriefing(window, false);
+        return 0;
+    }
+    return DefWindowProcW(window, message, value, parameter);
+}
+
+bool EnsureTextBriefingWindowClass() {
+    WNDCLASSEXW existing{};
+    existing.cbSize = sizeof(existing);
+    if (GetClassInfoExW(
+            g_proxy_instance,
+            kTextBriefingWindowClass,
+            &existing)) {
+        return true;
+    }
+    WNDCLASSEXW window_class{};
+    window_class.cbSize = sizeof(window_class);
+    window_class.style = CS_DBLCLKS;
+    window_class.lpfnWndProc = TextBriefingWindowProc;
+    window_class.hInstance = g_proxy_instance;
+    window_class.hCursor =
+        LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
+    window_class.hbrBackground =
+        reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
+    window_class.lpszClassName = kTextBriefingWindowClass;
+    return RegisterClassExW(&window_class) != 0;
+}
+
+HFONT CreateBriefingFont(
+    int point_size,
+    int weight,
+    int dpi) {
+    return CreateFontW(
+        -MulDiv(point_size, dpi, 72),
+        0,
+        0,
+        0,
+        weight,
+        FALSE,
+        FALSE,
+        FALSE,
+        DEFAULT_CHARSET,
+        OUT_DEFAULT_PRECIS,
+        CLIP_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY,
+        DEFAULT_PITCH | FF_DONTCARE,
+        L"Microsoft YaHei UI");
+}
+
+void ApplyControlFont(HWND control, HFONT font) {
+    if (control && font) {
+        SendMessageW(
+            control,
+            WM_SETFONT,
+            reinterpret_cast<WPARAM>(font),
+            TRUE);
+    }
+}
+
+bool ShowTextMissionBriefing(
+    const m1937::sdk::MissionRoute &route) {
+    TextBriefingContent briefing_content{
+        route.title,
+        route.briefing,
+        route.objective_1,
+        route.objective_2,
+        route.objective_3};
+    const bool catalog_override =
+        LoadBriefingCatalogOverride(
+            route,
+            briefing_content);
+    RecordDiagnostic(
+        "briefing_text",
+        catalog_override ? "catalog" : "compiled_fallback",
+        route.id);
+    std::wstring window_title =
+        L"游戏内文字任务简报｜第 " +
+        std::to_wstring(route.selector_level) +
+        L" 关　" + briefing_content.title;
+    std::wstring content = briefing_content.briefing;
+    content += L"\r\n\r\n任务目标\r\n";
+    content += L"1. ";
+    content += briefing_content.objective_1;
+    content += L"\r\n2. ";
+    content += briefing_content.objective_2;
+    content += L"\r\n3. ";
+    content += briefing_content.objective_3;
+    content +=
+        L"\r\n\r\n可直接编辑游戏目录中的“关卡名称.json”，"
+        L"下次开始任务即可生效。";
+
+    if (!EnsureTextBriefingWindowClass()) {
+        RecordDiagnostic(
+            "text_briefing", "failed", "window_class");
+        return false;
+    }
+
+    HWND owner = g_game_window ? g_game_window : GetActiveWindow();
+    HDC device = GetDC(owner);
+    const int dpi = device ? GetDeviceCaps(device, LOGPIXELSX) : 96;
+    if (device) {
+        ReleaseDC(owner, device);
+    }
+    const int scale_dpi = dpi > 0 ? dpi : 96;
+    RECT dialog_rect{
+        0,
+        0,
+        MulDiv(760, scale_dpi, 96),
+        MulDiv(560, scale_dpi, 96)};
+    const DWORD window_style =
+        WS_POPUP | WS_CAPTION | WS_SYSMENU;
+    const DWORD extended_style =
+        WS_EX_DLGMODALFRAME | WS_EX_CONTROLPARENT;
+    AdjustWindowRectEx(
+        &dialog_rect,
+        window_style,
+        FALSE,
+        extended_style);
+    const int width = dialog_rect.right - dialog_rect.left;
+    const int height = dialog_rect.bottom - dialog_rect.top;
+    MONITORINFO monitor{};
+    monitor.cbSize = sizeof(monitor);
+    GetMonitorInfoW(
+        MonitorFromWindow(owner, MONITOR_DEFAULTTONEAREST),
+        &monitor);
+    const int x =
+        monitor.rcWork.left +
+        ((monitor.rcWork.right - monitor.rcWork.left) - width) / 2;
+    const int y =
+        monitor.rcWork.top +
+        ((monitor.rcWork.bottom - monitor.rcWork.top) - height) / 2;
+
+    TextBriefingDialog dialog;
+    dialog.title_font = CreateBriefingFont(18, FW_BOLD, scale_dpi);
+    dialog.body_font = CreateBriefingFont(11, FW_NORMAL, scale_dpi);
+    dialog.button_font = CreateBriefingFont(10, FW_NORMAL, scale_dpi);
+    HWND window = CreateWindowExW(
+        extended_style,
+        kTextBriefingWindowClass,
+        window_title.c_str(),
+        window_style,
+        x,
+        y,
+        width,
+        height,
+        owner,
+        nullptr,
+        g_proxy_instance,
+        &dialog);
+    if (!window) {
+        DeleteObject(dialog.title_font);
+        DeleteObject(dialog.body_font);
+        DeleteObject(dialog.button_font);
+        RecordDiagnostic(
+            "text_briefing", "failed", "window_create");
+        return false;
+    }
+
+    RECT client{};
+    GetClientRect(window, &client);
+    const int margin = MulDiv(22, scale_dpi, 96);
+    const int title_height = MulDiv(50, scale_dpi, 96);
+    const int button_height = MulDiv(38, scale_dpi, 96);
+    const int button_width = MulDiv(142, scale_dpi, 96);
+    const int gap = MulDiv(12, scale_dpi, 96);
+    const int footer_y =
+        client.bottom - margin - button_height;
+    HWND title = CreateWindowExW(
+        0,
+        L"STATIC",
+        (L"第 " + std::to_wstring(route.selector_level) +
+            L" 关　" + briefing_content.title).c_str(),
+        WS_CHILD | WS_VISIBLE | SS_LEFT,
+        margin,
+        margin,
+        client.right - margin * 2,
+        title_height,
+        window,
+        nullptr,
+        g_proxy_instance,
+        nullptr);
+    HWND body = CreateWindowExW(
+        WS_EX_CLIENTEDGE,
+        L"EDIT",
+        content.c_str(),
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL |
+            ES_LEFT | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY,
+        margin,
+        margin + title_height,
+        client.right - margin * 2,
+        footer_y - (margin + title_height) - gap,
+        window,
+        reinterpret_cast<HMENU>(100),
+        g_proxy_instance,
+        nullptr);
+    HWND cancel = CreateWindowExW(
+        0,
+        L"BUTTON",
+        L"返回原版菜单",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        client.right - margin - button_width * 2 - gap,
+        footer_y,
+        button_width,
+        button_height,
+        window,
+        reinterpret_cast<HMENU>(IDCANCEL),
+        g_proxy_instance,
+        nullptr);
+    HWND accept = CreateWindowExW(
+        0,
+        L"BUTTON",
+        L"开始任务",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
+        client.right - margin - button_width,
+        footer_y,
+        button_width,
+        button_height,
+        window,
+        reinterpret_cast<HMENU>(IDOK),
+        g_proxy_instance,
+        nullptr);
+    ApplyControlFont(title, dialog.title_font);
+    ApplyControlFont(body, dialog.body_font);
+    ApplyControlFont(cancel, dialog.button_font);
+    ApplyControlFont(accept, dialog.button_font);
+
+    const DWORD auto_close_ms =
+        TextBriefingAutoCloseMilliseconds();
+    const bool no_activate = auto_close_ms > 0;
+    if (!no_activate && owner) {
+        EnableWindow(owner, FALSE);
+    }
+    if (auto_close_ms > 0) {
+        SetTimer(
+            window,
+            kTextBriefingTimer,
+            auto_close_ms,
+            nullptr);
+    }
+    ShowWindow(
+        window,
+        no_activate ? SW_SHOWNOACTIVATE : SW_SHOW);
+    UpdateWindow(window);
+
+    bool received_quit = false;
+    WPARAM quit_code = 0;
+    MSG message{};
+    while (IsWindow(window)) {
+        const BOOL result = GetMessageW(
+            &message, nullptr, 0, 0);
+        if (result <= 0) {
+            if (result == 0) {
+                received_quit = true;
+                quit_code = message.wParam;
+            }
+            if (IsWindow(window)) {
+                DestroyWindow(window);
+            }
+            break;
+        }
+        if (!IsDialogMessageW(window, &message)) {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+    }
+    if (!no_activate && owner) {
+        EnableWindow(owner, TRUE);
+    }
+    if (received_quit) {
+        PostQuitMessage(static_cast<int>(quit_code));
+    }
+    DeleteObject(dialog.title_font);
+    DeleteObject(dialog.body_font);
+    DeleteObject(dialog.button_font);
+    RecordDiagnostic(
+        "text_briefing",
+        dialog.accepted ? "accepted" : "cancelled",
+        route.id);
+    return dialog.accepted;
 }
 
 bool UseEnhancedEnemyAI() {
@@ -1038,6 +1962,36 @@ bool InstallSafeBlitGuard(unsigned char *base) {
 
 using OriginalMenuPollProc = int(__thiscall *)(void *, int, int);
 
+int FinalizeMenuCommand(int command) {
+    if (command != 1 || !g_executable_base) {
+        return command;
+    }
+    const auto *route = RequestedBriefingRoute();
+    if (route) {
+        if (!ShowTextMissionBriefing(*route)) {
+            *reinterpret_cast<unsigned char *>(
+                g_executable_base +
+                m1937::sdk::rva::briefing_advance) = 0;
+            FlushDiagnostics();
+            return 0;
+        }
+        // The player has accepted the in-process text briefing. The original
+        // caller now enters its synchronous image loop; acknowledge that loop
+        // with its own state byte so no picture or synthetic click is needed.
+        *reinterpret_cast<unsigned char *>(
+            g_executable_base +
+            m1937::sdk::rva::briefing_advance) = 1;
+        RecordDiagnostic(
+            "legacy_briefing", "replaced", route->id);
+        FlushDiagnostics();
+    } else if (IsAutomatedProbeEnabled()) {
+        *reinterpret_cast<unsigned char *>(
+            g_executable_base +
+            m1937::sdk::rva::briefing_advance) = 1;
+    }
+    return command;
+}
+
 int __fastcall AutoStartMenuPoll(
     void *menu, void *, int animation_state, int flags) {
     if (IsAutomatedLaunchEnabled() && g_executable_base &&
@@ -1047,15 +2001,7 @@ int __fastcall AutoStartMenuPoll(
         // Button identifier 1 is the original Start Game entry. Returning it
         // here follows the exact normal menu path instead of fabricating a
         // mission state or relying on physical mouse coordinates.
-        if (IsAutomatedProbeEnabled()) {
-            // sub_4031C0 enters its synchronous briefing loop before the
-            // regular input poll can run again. Prime the original briefing
-            // acknowledgement for non-interactive validation only.
-            *reinterpret_cast<unsigned char *>(
-                g_executable_base +
-                m1937::sdk::rva::briefing_advance) = 1;
-        }
-        return 1;
+        return FinalizeMenuCommand(1);
     }
     if (IsWindowReplayEnabled()) {
         const LONG command =
@@ -1091,14 +2037,15 @@ int __fastcall AutoStartMenuPoll(
             RecordDiagnostic(
                 "window_replay_transition", "dispatched", stage);
             FlushDiagnostics();
-            return static_cast<int>(command);
+            return FinalizeMenuCommand(static_cast<int>(command));
         }
     }
     if (!g_menu_poll_trampoline) {
         return 0;
     }
-    return reinterpret_cast<OriginalMenuPollProc>(g_menu_poll_trampoline)(
-        menu, animation_state, flags);
+    return FinalizeMenuCommand(
+        reinterpret_cast<OriginalMenuPollProc>(g_menu_poll_trampoline)(
+            menu, animation_state, flags));
 }
 
 bool InstallAutoStartMenuHook(unsigned char *base) {
@@ -1822,9 +2769,9 @@ void ApplyLegacyExecutablePatches() {
                 safe_blit ? "patch_group" : "safe_blit_signature");
         }
     }
-    if (IsAutomatedLaunchEnabled()) {
+    if (IsAutomatedLaunchEnabled() || RequestedBriefingRoute()) {
         RecordDiagnostic(
-            "automated_start_hook",
+            "menu_command_hook",
             InstallAutoStartMenuHook(base) ? "enabled" : "rejected",
             "menu_poll_signature");
     }
@@ -2099,10 +3046,12 @@ void PumpWindowMessages() {
     g_pumping_messages = true;
     const LONGLONG pump_started = PerformanceCounterNow();
 
-    // Automated validation must get beyond the mission briefing without
-    // activating the window or moving the user's physical mouse. This flag is
-    // the same acknowledgement the original briefing click path sets.
-    if (IsAutomatedProbeEnabled() && g_executable_base) {
+    // Automated validation can continue through later mission modal states
+    // without activating the window or moving the user's physical mouse.
+    // The initial image briefing is handled exactly once by the menu-command
+    // hook after the in-process text dialog has been accepted.
+    const bool automated_probe = IsAutomatedProbeEnabled();
+    if (automated_probe && g_executable_base) {
         const int mission =
             *reinterpret_cast<int *>(
                 g_executable_base +
@@ -2686,6 +3635,7 @@ extern "C" HRESULT WINAPI ProxyDirectInputCreateA(
 
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
+        g_proxy_instance = instance;
         DisableThreadLibraryCalls(instance);
         LoadModConfig();
         ApplyLegacyExecutablePatches();

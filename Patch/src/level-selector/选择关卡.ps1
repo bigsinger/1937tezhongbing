@@ -106,6 +106,7 @@ function Set-DdrawProfile {
     # Never confine or recenter the user's system cursor.
     Set-IniValue $ddrawIni 'ddraw' 'devmode' 'true'
     Set-IniValue $runGameIni 'mod' 'SystemCursorMapping' '1'
+    Set-IniValue $runGameIni 'mod' 'TextBriefings' '1'
     Set-IniValue $ddrawIni 'ddraw' 'resizable' 'true'
     Set-IniValue $ddrawIni 'ddraw' 'savesettings' '1'
     Set-IniValue $ddrawIni 'ddraw' 'border' 'true'
@@ -198,6 +199,16 @@ function Start-M1937Process {
         [string]$ViewportWidth
     $startInfo.EnvironmentVariables['M1937_VIEWPORT_HEIGHT'] =
         [string]$ViewportHeight
+    $replaceLegacyBriefing =
+        @($catalog.missions).Count -gt 0 -and
+        @($catalog.missions | Where-Object {
+            -not (
+                $_.PSObject.Properties.Name -contains
+                    'replace_legacy_briefing') -or
+            -not [bool]$_.replace_legacy_briefing
+        }).Count -eq 0
+    $startInfo.EnvironmentVariables['M1937_REPLACE_LEGACY_BRIEFING'] =
+        $(if ($replaceLegacyBriefing) { '1' } else { '0' })
     $gameProcess = [Diagnostics.Process]::Start($startInfo)
     if ($null -eq $gameProcess) {
         throw 'M1937.exe 未能创建进程。'
@@ -271,7 +282,8 @@ if ($StartImmediately) {
     if ($startWidth -le 0) { $startWidth = $screen.Width }
     if ($startHeight -le 0) { $startHeight = $screen.Height }
     # Compatibility note: the old switch is retained for existing shortcuts,
-    # but the mission now starts through the original menu and input loop.
+    # but the mission now starts through the original menu and input loop. The
+    # game process displays its text briefing after New Game is activated.
     Start-M1937Process $Level $false $startExpanded $startWidth $startHeight
     exit 0
 }
@@ -301,6 +313,39 @@ function Set-FlatButtonStyle {
         $Button.BackColor = $panelAlt
         $Button.ForeColor = $textPrimary
     }
+}
+
+function Get-ValidatedPreviewPath {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Description
+    )
+
+    $fullPath = [IO.Path]::GetFullPath($Path)
+    $allowedRoots = @(
+        [IO.Path]::GetFullPath('E:\1937\'),
+        [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
+    )
+    $isAllowed = $false
+    foreach ($root in $allowedRoots) {
+        $rootPrefix = $root.TrimEnd(
+            [IO.Path]::DirectorySeparatorChar,
+            [IO.Path]::AltDirectorySeparatorChar) +
+            [IO.Path]::DirectorySeparatorChar
+        if (($fullPath.TrimEnd(
+                    [IO.Path]::DirectorySeparatorChar,
+                    [IO.Path]::AltDirectorySeparatorChar) +
+                [IO.Path]::DirectorySeparatorChar).StartsWith(
+                $rootPrefix,
+                [StringComparison]::OrdinalIgnoreCase)) {
+            $isAllowed = $true
+            break
+        }
+    }
+    if (-not $isAllowed) {
+        throw "$Description must stay under E:\1937 or the system temporary directory."
+    }
+    return $fullPath
 }
 
 function Test-KeyName {
@@ -866,6 +911,7 @@ function Save-Settings {
     Set-IniValue $runGameIni 'mod' 'MessagePumpIntervalMs' '8'
     Set-IniValue $runGameIni 'mod' 'MessagePumpBudget' '4'
     Set-IniValue $runGameIni 'mod' 'SystemCursorMapping' '1'
+    Set-IniValue $runGameIni 'mod' 'TextBriefings' '1'
     Set-IniValue $runGameIni 'mod' 'RememberLevel' $(if ($rememberLevel.Checked) { '1' } else { '0' })
     Set-IniValue $runGameIni 'mod' 'StartLevel' $(if ($rememberLevel.Checked) { [string]$selectedLevel } else { '0' })
     Set-IniValue $runGameIni 'mod' 'AutoStart' '0'
@@ -940,12 +986,8 @@ $launchMenu.Add_Click({
 })
 
 if (-not [string]::IsNullOrWhiteSpace($RenderPreviewPath)) {
-    $preview = [IO.Path]::GetFullPath($RenderPreviewPath)
-    if (-not $preview.StartsWith(
-            [IO.Path]::GetFullPath('E:\1937\'),
-            [StringComparison]::OrdinalIgnoreCase)) {
-        throw 'Launcher preview output must stay under E:\1937.'
-    }
+    $preview = Get-ValidatedPreviewPath `
+        $RenderPreviewPath 'Launcher preview output'
     [IO.Directory]::CreateDirectory(
         [IO.Path]::GetDirectoryName($preview)) | Out-Null
     $form.StartPosition = [Windows.Forms.FormStartPosition]::Manual

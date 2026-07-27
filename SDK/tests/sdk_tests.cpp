@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <cwchar>
 #include <fstream>
 #include <iostream>
 #include <string>
@@ -190,6 +191,18 @@ int main(int argc, char** argv) {
                 m1937::sdk::find_mission_route(
                     route.selector_level) == &route,
                 "mission route lookup mismatch", checks);
+            require(
+                route.title && std::wcslen(route.title) > 0 &&
+                    route.briefing && std::wcslen(route.briefing) > 0 &&
+                    route.objective_1 &&
+                    std::wcslen(route.objective_1) > 0 &&
+                    route.objective_2 &&
+                    std::wcslen(route.objective_2) > 0 &&
+                    route.objective_3 &&
+                    std::wcslen(route.objective_3) > 0 &&
+                    route.replace_legacy_briefing,
+                "mission route has an incomplete in-game text briefing",
+                checks);
             if (route.redirect_rva != 0) {
                 require(
                     std::strlen(route.redirect_expected) ==
