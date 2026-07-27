@@ -11,12 +11,13 @@
 `Invoke-LocalScreenshotOcr.ps1` 与探针程序位于同一目录，会使用 Windows
 本地简体中文 OCR 生成同名 `.ocr.txt`，不上传图片。
 
-编译时把两个文件放在同一输出目录：
+探针地址由 `SDK/address-catalog.json` 生成，不再在 C# 中维护第二套
+裸 RVA。统一编译：
 
 ```powershell
-Add-Type -TypeDefinition (Get-Content .\OriginalLevelProbe.cs -Raw) `
-  -ReferencedAssemblies System,System.Core,System.Drawing `
-  -OutputAssembly .\OriginalLevelProbe.exe -OutputType ConsoleApplication
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File .\Build-Probes.ps1 `
+  -OutputDirectory E:\1937\probe-build
 ```
 
 也可以单独对已有压缩窗口图执行 OCR：

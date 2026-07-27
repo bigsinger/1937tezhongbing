@@ -7,6 +7,8 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
+using EngineAddresses = Mission1937.SDK.Generated.M1937Addresses;
+using EngineMissionRoutes = Mission1937.SDK.Generated.M1937MissionRoutes;
 
 internal static class OriginalLevelProbe
 {
@@ -14,24 +16,6 @@ internal static class OriginalLevelProbe
     private const uint ProcessVmRead = 0x0010;
     private const uint ProcessVmWrite = 0x0020;
     private const uint ProcessQueryInformation = 0x0400;
-    private const int CursorX = 0x000E6EA0;
-    private const int CursorY = 0x000E6FAC;
-    private const int LeftPressed = 0x000E6E64;
-    private const int LeftDown = 0x000E6E74;
-    private const int LeftReleased = 0x000E6FB0;
-    private const int CurrentMission = 0x000E7060;
-    private const int NewGameImmediate = 0x00003B66;
-    private const int FinalMissionVwfName = 0x000CF4A8;
-    private const int PunishmentMissionVwfName = 0x000CF4F8;
-    private const int SmoothScrollEntry = 0x0004C9B0;
-    private const int HearingImmediate = 0x0005DD27;
-    private const int AlertImmediate = 0x00056E62;
-    private const int BriefingAdvance = 0x000E6EA9;
-    private const int ScreenWidth = 0x000E6E0C;
-    private const int ScreenHeight = 0x000E6E10;
-    private const int RendererWidth = 0x000D6A8C;
-    private const int RendererHeight = 0x000D6A88;
-
     [StructLayout(LayoutKind.Sequential)]
     private struct Rect
     {
@@ -119,14 +103,12 @@ internal static class OriginalLevelProbe
             argument, "autostart", StringComparison.OrdinalIgnoreCase));
         bool testMouseInput = args.Any(argument => string.Equals(
             argument, "mouseinput", StringComparison.OrdinalIgnoreCase));
-        if (level < 1 || level > 15)
+        var route = EngineMissionRoutes.Find(level);
+        if (route == null)
         {
             throw new ArgumentOutOfRangeException("level");
         }
-        int expectedEngineLevel =
-            level == 13 ? 12 :
-            level == 14 || level == 15 ? 7 :
-            level;
+        int expectedEngineLevel = route.EngineMission;
 
         Directory.CreateDirectory(outputDirectory);
         string executable = Path.Combine(gameDirectory, "M1937.exe");
@@ -176,50 +158,40 @@ internal static class OriginalLevelProbe
                     throw new InvalidOperationException("Game window did not appear");
                 }
 
-                int immediate = ReadInt(process, imageBase + NewGameImmediate);
+                int immediate = ReadInt(
+                    process, imageBase + EngineAddresses.NewGameLevelImmediate);
                 report.AppendLine("new_game_immediate=" + immediate);
                 if (immediate != expectedEngineLevel)
                 {
                     throw new InvalidOperationException(
                         "The runtime level patch did not apply.");
                 }
-                int missionVwfNameAddress = level is 14 or 15
-                    ? PunishmentMissionVwfName
-                    : FinalMissionVwfName;
-                string missionVwf = ReadAscii(
-                    process, imageBase + missionVwfNameAddress, 12);
-                report.AppendLine("mission_vwf=" + missionVwf);
-                if (level == 13 &&
-                    !string.Equals(
-                        missionVwf,
-                        "1937M012.VWF",
-                        StringComparison.Ordinal))
+                if (route.RedirectRva != 0)
                 {
-                    throw new InvalidOperationException(
-                        "The extension-mission VWF redirect did not apply.");
-                }
-                if (level == 14 &&
-                    !string.Equals(
-                        missionVwf,
-                        "1937M013.VWF",
-                        StringComparison.Ordinal))
-                {
-                    throw new InvalidOperationException(
-                        "The anti-traitor mission VWF redirect did not apply.");
-                }
-                if (level == 15 &&
-                    !string.Equals(
-                        missionVwf,
-                        "1937M014.VWF",
-                        StringComparison.Ordinal))
-                {
-                    throw new InvalidOperationException(
-                        "The recomposed mission VWF redirect did not apply.");
+                    string missionVwf = ReadAscii(
+                        process,
+                        imageBase + route.RedirectRva,
+                        route.VwfName.Length);
+                    report.AppendLine("mission_vwf=" + missionVwf);
+                    if (!string.Equals(
+                            missionVwf,
+                            route.VwfName,
+                            StringComparison.Ordinal))
+                    {
+                        throw new InvalidOperationException(
+                            "The data-driven VWF redirect did not apply.");
+                    }
                 }
                 int scrollOpcode =
-                    ReadInt(process, imageBase + SmoothScrollEntry) & 0xFF;
-                int hearing = ReadInt(process, imageBase + HearingImmediate);
-                int alert = ReadInt(process, imageBase + AlertImmediate);
+                    ReadInt(
+                        process,
+                        imageBase + EngineAddresses.SmoothScroll) & 0xFF;
+                int hearing = ReadInt(
+                    process,
+                    imageBase + EngineAddresses.CloseHearingRadiusImmediate);
+                int alert = ReadInt(
+                    process,
+                    imageBase + EngineAddresses.AlertRadiusOperand1);
                 report.AppendLine(
                     "legacy_scroll_entry_opcode=0x" +
                     scrollOpcode.ToString("X2"));
@@ -227,12 +199,18 @@ internal static class OriginalLevelProbe
                 report.AppendLine("enhanced_alert_radius=" + alert);
                 report.AppendLine(
                     "logical_viewport=" +
-                    ReadInt(process, imageBase + ScreenWidth) + "x" +
-                    ReadInt(process, imageBase + ScreenHeight));
+                    ReadInt(
+                        process, imageBase + EngineAddresses.ScreenWidth) +
+                    "x" +
+                    ReadInt(
+                        process, imageBase + EngineAddresses.ScreenHeight));
                 report.AppendLine(
                     "renderer_viewport=" +
-                    ReadInt(process, imageBase + RendererWidth) + "x" +
-                    ReadInt(process, imageBase + RendererHeight));
+                    ReadInt(
+                        process, imageBase + EngineAddresses.RendererWidth) +
+                    "x" +
+                    ReadInt(
+                        process, imageBase + EngineAddresses.RendererHeight));
                 int expectedHearing;
                 int expectedAlert;
                 ExpectedAiRadii(
@@ -270,7 +248,7 @@ internal static class OriginalLevelProbe
                 double clearReleaseAt = -1.0;
                 double nextBriefingAdvance = 3.0;
                 int observedMission = ReadInt(
-                    process, imageBase + CurrentMission);
+                    process, imageBase + EngineAddresses.CurrentMission);
                 Bitmap latest = null;
                 Bitmap baselineUi = null;
                 Bitmap helpUi = null;
@@ -309,18 +287,30 @@ internal static class OriginalLevelProbe
                     {
                         // Expanded viewports keep the original UI artwork
                         // coordinates; this is the centre of "开始游戏".
-                        WriteInt(process, imageBase + CursorX, 72);
-                        WriteInt(process, imageBase + CursorY, 236);
-                        WriteInt(process, imageBase + LeftPressed, 1);
-                        WriteInt(process, imageBase + LeftDown, 1);
+                        WriteInt(
+                            process, imageBase + EngineAddresses.CursorX, 72);
+                        WriteInt(
+                            process, imageBase + EngineAddresses.CursorY, 236);
+                        WriteInt(
+                            process,
+                            imageBase + EngineAddresses.MouseLeftPressed, 1);
+                        WriteInt(
+                            process,
+                            imageBase + EngineAddresses.MouseLeftDown, 1);
                         releaseAt = now + 0.10;
                         nextClick += 2.0;
                     }
                     if (releaseAt >= 0.0 && now >= releaseAt)
                     {
-                        WriteInt(process, imageBase + LeftPressed, 0);
-                        WriteInt(process, imageBase + LeftDown, 0);
-                        WriteInt(process, imageBase + LeftReleased, 1);
+                        WriteInt(
+                            process,
+                            imageBase + EngineAddresses.MouseLeftPressed, 0);
+                        WriteInt(
+                            process,
+                            imageBase + EngineAddresses.MouseLeftDown, 0);
+                        WriteInt(
+                            process,
+                            imageBase + EngineAddresses.MouseLeftReleased, 1);
                         clearReleaseAt = now + 0.10;
                         releaseAt = -1.0;
                         if (testHotkeys && nextClick > 55.0)
@@ -328,11 +318,15 @@ internal static class OriginalLevelProbe
                     }
                     if (clearReleaseAt >= 0.0 && now >= clearReleaseAt)
                     {
-                        WriteInt(process, imageBase + LeftReleased, 0);
+                        WriteInt(
+                            process,
+                            imageBase + EngineAddresses.MouseLeftReleased, 0);
                         clearReleaseAt = -1.0;
                     }
 
-                    int current = ReadInt(process, imageBase + CurrentMission);
+                    int current = ReadInt(
+                        process,
+                        imageBase + EngineAddresses.CurrentMission);
                     if (current >= 1 && current <= 12)
                     {
                         observedMission = current;
@@ -340,7 +334,9 @@ internal static class OriginalLevelProbe
                             (!testHotkeys || now <= 55.0))
                         {
                             WriteByte(
-                                process, imageBase + BriefingAdvance, 1);
+                                process,
+                                imageBase + EngineAddresses.BriefingAdvance,
+                                1);
                             nextBriefingAdvance += 2.0;
                         }
                     }
@@ -424,17 +420,25 @@ internal static class OriginalLevelProbe
                         SetCursorPos(mouseLeft, mouseY);
                         Thread.Sleep(300);
                         mouseLogicalStartX =
-                            ReadInt(process, imageBase + CursorX);
+                            ReadInt(
+                                process,
+                                imageBase + EngineAddresses.CursorX);
                         SetCursorPos(mouseRight, mouseY);
                         Thread.Sleep(400);
                         mouseLogicalEndX =
-                            ReadInt(process, imageBase + CursorX);
+                            ReadInt(
+                                process,
+                                imageBase + EngineAddresses.CursorX);
                         mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
                         Thread.Sleep(120);
                         mouseLeftDown =
-                            ReadInt(process, imageBase + LeftDown);
+                            ReadInt(
+                                process,
+                                imageBase + EngineAddresses.MouseLeftDown);
                         mouseLeftPressed =
-                            ReadInt(process, imageBase + LeftPressed);
+                            ReadInt(
+                                process,
+                                imageBase + EngineAddresses.MouseLeftPressed);
                         mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
                         report.AppendLine(
                             "mouse_logical_x=" + mouseLogicalStartX + "->" +
@@ -468,12 +472,22 @@ internal static class OriginalLevelProbe
                 {
                     report.AppendLine(
                         "final_logical_viewport=" +
-                        ReadInt(process, imageBase + ScreenWidth) + "x" +
-                        ReadInt(process, imageBase + ScreenHeight));
+                        ReadInt(
+                            process,
+                            imageBase + EngineAddresses.ScreenWidth) +
+                        "x" +
+                        ReadInt(
+                            process,
+                            imageBase + EngineAddresses.ScreenHeight));
                     report.AppendLine(
                         "final_renderer_viewport=" +
-                        ReadInt(process, imageBase + RendererWidth) + "x" +
-                        ReadInt(process, imageBase + RendererHeight));
+                        ReadInt(
+                            process,
+                            imageBase + EngineAddresses.RendererWidth) +
+                        "x" +
+                        ReadInt(
+                            process,
+                            imageBase + EngineAddresses.RendererHeight));
                 }
                 report.AppendLine("process_exited=" + game.HasExited);
                 report.AppendLine(

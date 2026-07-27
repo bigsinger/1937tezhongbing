@@ -1,5 +1,7 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\Test-SdkSingleSource.ps1"
+if errorlevel 1 exit /b %errorlevel%
 where cl.exe >nul 2>nul
 if errorlevel 1 (
   set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"

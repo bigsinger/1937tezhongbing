@@ -14,8 +14,12 @@ PE 指纹和原始指令字节。
 - 集中维护启动、选关、听觉、警报传播、菜单轮询和安全绘制等已验证地址；
 - 提供“期望字节匹配后才写入”的补丁、32 位立即数和相对跳转 API；
 - 固定 VWF 版本 5 场景前缀、扩展字段和巡逻动态数组布局；
-- `address-catalog.json` 提供供 C#、Rust、分析脚本或代码生成器使用的
-  机器可读地址清单。
+- `address-catalog.json` 是地址的唯一机器源；生成器同时产出 C++ 头文件
+  和 C# 探针常量；
+- `mission-routes.json` 统一描述 1—15 关的选择器编号、原引擎任务、
+  VWF 文件要求与固定字符串重定向；
+- CI 会重新生成并比对产物，同时扫描代理、探针和编辑器，禁止复制已知
+  裸 RVA。
 
 ## 使用
 
@@ -41,6 +45,24 @@ m1937::sdk::patch::immediate_i32(
 ```bat
 SDK\build.cmd
 ```
+
+手工更新机器清单后先重新生成：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File SDK\tools\Generate-SdkArtifacts.ps1
+```
+
+生成物包括：
+
+- `include/M1937SDK/Addresses.hpp`
+- `include/M1937SDK/MissionRoutes.hpp`
+- `generated/M1937Addresses.cs`
+- `generated/M1937MissionRoutes.cs`
+- `Patch/src/level-selector/关卡名称.json`
+
+不要直接编辑这些文件；`Test-SdkSingleSource.ps1` 会验证它们与两个 JSON
+机器源一致。
 
 验证程序会以离线方式读取 `Mod\M1937.exe`，检查 PE 身份、关键函数签名、
 原始关卡文件名和已建模结构的 `static_assert`。SDK 不会在不兼容版本上

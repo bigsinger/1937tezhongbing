@@ -5,6 +5,7 @@
 #include <dinput.h>
 #include <mmsystem.h>
 #include <cstddef>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <new>
@@ -28,6 +29,16 @@ void *g_safe_blit_trampoline = nullptr;
 void *g_menu_poll_trampoline = nullptr;
 volatile LONG g_auto_start_consumed = 0;
 DWORD g_probe_last_advance_at = 0;
+wchar_t g_mod_log[MAX_PATH]{};
+
+struct DiagnosticEntry {
+    char event[48]{};
+    char status[24]{};
+    char detail[96]{};
+};
+
+DiagnosticEntry g_diagnostics[64]{};
+volatile LONG g_diagnostic_count = 0;
 
 struct ModConfig {
     bool enabled = true;
@@ -46,6 +57,7 @@ struct ModConfig {
     bool system_cursor_mapping = true;
     bool auto_start = false;
     int start_level = 0;
+    bool diagnostics = true;
 };
 
 ModConfig g_mod_config;
@@ -65,6 +77,98 @@ int ClampSetting(int value, int minimum, int maximum) {
     return value;
 }
 
+void RecordDiagnostic(
+    const char *event, const char *status, const char *detail = "") {
+    const LONG index = InterlockedIncrement(&g_diagnostic_count) - 1;
+    if (index < 0 ||
+        index >= static_cast<LONG>(
+            sizeof(g_diagnostics) / sizeof(g_diagnostics[0]))) {
+        return;
+    }
+    lstrcpynA(g_diagnostics[index].event, event,
+        static_cast<int>(sizeof(g_diagnostics[index].event)));
+    lstrcpynA(g_diagnostics[index].status, status,
+        static_cast<int>(sizeof(g_diagnostics[index].status)));
+    lstrcpynA(g_diagnostics[index].detail, detail,
+        static_cast<int>(sizeof(g_diagnostics[index].detail)));
+}
+
+const char *CompatibilityName(
+    m1937::sdk::BuildCompatibility compatibility) {
+    using Compatibility = m1937::sdk::BuildCompatibility;
+    switch (compatibility) {
+    case Compatibility::supported:
+        return "supported";
+    case Compatibility::null_module:
+        return "null_module";
+    case Compatibility::invalid_dos_header:
+        return "invalid_dos_header";
+    case Compatibility::invalid_nt_header:
+        return "invalid_nt_header";
+    case Compatibility::wrong_architecture:
+        return "wrong_architecture";
+    case Compatibility::wrong_image_base:
+        return "wrong_image_base";
+    case Compatibility::wrong_image_size:
+        return "wrong_image_size";
+    case Compatibility::wrong_timestamp:
+        return "wrong_timestamp";
+    case Compatibility::signature_mismatch:
+        return "signature_mismatch";
+    }
+    return "unknown";
+}
+
+void FlushDiagnostics() {
+    if (!g_mod_config.diagnostics || !g_mod_log[0]) {
+        return;
+    }
+    const LONG count = InterlockedExchange(&g_diagnostic_count, 0);
+    if (count <= 0) {
+        return;
+    }
+    HANDLE file = CreateFileW(
+        g_mod_log, FILE_APPEND_DATA,
+        FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+        OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) {
+        return;
+    }
+    SYSTEMTIME time{};
+    GetLocalTime(&time);
+    const LONG limit = count < static_cast<LONG>(
+        sizeof(g_diagnostics) / sizeof(g_diagnostics[0]))
+        ? count
+        : static_cast<LONG>(
+            sizeof(g_diagnostics) / sizeof(g_diagnostics[0]));
+    for (LONG index = 0; index < limit; ++index) {
+        char line[384]{};
+        const int length = snprintf(
+            line, sizeof(line),
+            "{\"time\":\"%04u-%02u-%02uT%02u:%02u:%02u.%03u\","
+            "\"pid\":%lu,\"event\":\"%s\",\"status\":\"%s\","
+            "\"detail\":\"%s\"}\r\n",
+            time.wYear, time.wMonth, time.wDay,
+            time.wHour, time.wMinute, time.wSecond, time.wMilliseconds,
+            GetCurrentProcessId(),
+            g_diagnostics[index].event,
+            g_diagnostics[index].status,
+            g_diagnostics[index].detail);
+        if (length <= 0) {
+            continue;
+        }
+        DWORD written = 0;
+        WriteFile(
+            file, line,
+            static_cast<DWORD>(
+                length < static_cast<int>(sizeof(line))
+                    ? length
+                    : sizeof(line) - 1),
+            &written, nullptr);
+    }
+    CloseHandle(file);
+}
+
 void LoadModConfig() {
     wchar_t executable[MAX_PATH]{};
     const DWORD length =
@@ -77,6 +181,8 @@ void LoadModConfig() {
         return;
     }
     *(separator + 1) = L'\0';
+    lstrcpynW(g_mod_log, executable, MAX_PATH);
+    lstrcatW(g_mod_log, L"M1937Mod.log");
     lstrcpynW(g_rungame_ini, executable, MAX_PATH);
     lstrcatW(g_rungame_ini, L"rungame.ini");
 
@@ -106,7 +212,13 @@ void LoadModConfig() {
     g_mod_config.system_cursor_mapping =
         read(L"SystemCursorMapping", 1) != 0;
     g_mod_config.auto_start = read(L"AutoStart", 0) != 0;
-    g_mod_config.start_level = ClampSetting(read(L"StartLevel", 0), 0, 15);
+    g_mod_config.start_level = ClampSetting(
+        read(L"StartLevel", 0), 0,
+        static_cast<int>(m1937::sdk::mission_route_count));
+    g_mod_config.diagnostics = read(L"Diagnostics", 1) != 0;
+    RecordDiagnostic(
+        "configuration", g_mod_config.enabled ? "enabled" : "disabled",
+        g_mod_config.diagnostics ? "diagnostics_on" : "diagnostics_off");
 }
 
 void EnableModernDpiAwareness() {
@@ -193,7 +305,8 @@ int RequestedStartLevel() {
 
     char *end = nullptr;
     const long level = strtol(value, &end, 10);
-    if (end == value || *end != '\0' || level < 1 || level > 15) {
+    if (end == value || *end != '\0' ||
+        !m1937::sdk::find_mission_route(static_cast<int>(level))) {
         return 0;
     }
     return static_cast<int>(level);
@@ -475,11 +588,53 @@ bool PatchImmediate32(
         replacement);
 }
 
-void ApplyExpandedViewportPatches(unsigned char *base) {
+struct ImmediatePatch {
+    size_t offset;
+    int expected;
+    int replacement;
+};
+
+bool PatchImmediateTransaction(
+    unsigned char *base,
+    const ImmediatePatch *patches,
+    size_t count) {
+    if (!base || !patches || count == 0) {
+        return false;
+    }
+    for (size_t index = 0; index < count; ++index) {
+        if (memcmp(
+                base + patches[index].offset,
+                &patches[index].expected,
+                sizeof(patches[index].expected)) != 0) {
+            return false;
+        }
+    }
+    for (size_t index = 0; index < count; ++index) {
+        if (PatchImmediate32(
+                base,
+                patches[index].offset,
+                patches[index].expected,
+                patches[index].replacement)) {
+            continue;
+        }
+        while (index > 0) {
+            --index;
+            PatchImmediate32(
+                base,
+                patches[index].offset,
+                patches[index].replacement,
+                patches[index].expected);
+        }
+        return false;
+    }
+    return true;
+}
+
+bool ApplyExpandedViewportPatches(unsigned char *base) {
     int width = 0;
     int height = 0;
     if (!ReadExpandedViewport(&width, &height)) {
-        return;
+        return false;
     }
 
     // Startup selects one of 640x480, 800x600 and 1024x768 from M1937.cfg.
@@ -498,27 +653,36 @@ void ApplyExpandedViewportPatches(unsigned char *base) {
         {m1937::sdk::rva::startup_width_640, 640, true},
         {m1937::sdk::rva::startup_height_480, 480, false},
     };
+    bool success = true;
     for (const auto &operand : startup_operands) {
-        PatchImmediate32(
+        const bool patched = PatchImmediate32(
             base, operand.offset, operand.expected,
             operand.is_width ? width : height);
+        success = patched && success;
     }
 
     // The original settings menu can recreate graphics surfaces at runtime.
     // Keep that entry point operational: every legacy resolution choice maps
     // back to the expanded viewport while this launch profile is active.
     static const ResolutionOperand settings_operands[] = {
-        {0x00003E05, 640, true},  {0x00003E0F, 480, false},
-        {0x00003E2F, 480, false}, {0x00003E34, 640, true},
-        {0x00003EE2, 800, true},  {0x00003EEC, 600, false},
-        {0x00003F0C, 600, false}, {0x00003F11, 800, true},
-        {0x00003FBF, 1024, true}, {0x00003FC9, 768, false},
-        {0x00003FE9, 768, false}, {0x00003FEE, 1024, true},
+        {m1937::sdk::rva::settings_width_640_a, 640, true},
+        {m1937::sdk::rva::settings_height_480_a, 480, false},
+        {m1937::sdk::rva::settings_height_480_b, 480, false},
+        {m1937::sdk::rva::settings_width_640_b, 640, true},
+        {m1937::sdk::rva::settings_width_800_a, 800, true},
+        {m1937::sdk::rva::settings_height_600_a, 600, false},
+        {m1937::sdk::rva::settings_height_600_b, 600, false},
+        {m1937::sdk::rva::settings_width_800_b, 800, true},
+        {m1937::sdk::rva::settings_width_1024_a, 1024, true},
+        {m1937::sdk::rva::settings_height_768_a, 768, false},
+        {m1937::sdk::rva::settings_height_768_b, 768, false},
+        {m1937::sdk::rva::settings_width_1024_b, 1024, true},
     };
     for (const auto &operand : settings_operands) {
-        PatchImmediate32(
+        const bool patched = PatchImmediate32(
             base, operand.offset, operand.expected,
             operand.is_width ? width : height);
+        success = patched && success;
     }
 
     // UI artwork is available only in 640, 800 and 1024 variants. The
@@ -530,25 +694,33 @@ void ApplyExpandedViewportPatches(unsigned char *base) {
         0x0F, 0x85, 0xC0, 0x00, 0x00, 0x00};
     static const unsigned char six_nops[] = {
         0x90, 0x90, 0x90, 0x90, 0x90, 0x90};
-    PatchExecutableBytes(
+    success = PatchExecutableBytes(
         base + m1937::sdk::rva::intro_1024_layout_guard,
         intro_1024_guard, six_nops,
-        sizeof(six_nops));
+        sizeof(six_nops)) && success;
 
     // The matching menu-layout branch supplies the 1024 artwork offset
     // (192,144). Without it an expanded viewport is usable but the old menu
     // panel is no longer centred relative to its 1024 reference layout.
     static const unsigned char layout_1024_guard[] = {0x75, 0x2C};
     static const unsigned char two_nops[] = {0x90, 0x90};
-    PatchExecutableBytes(
+    success = PatchExecutableBytes(
         base + m1937::sdk::rva::menu_1024_layout_guard,
         layout_1024_guard, two_nops,
-        sizeof(two_nops));
+        sizeof(two_nops)) && success;
+    return success;
 }
 
 void ApplyLegacyExecutablePatches() {
     const auto module = m1937::sdk::ModuleView::current_process();
-    if (!module.is_supported()) {
+    const auto compatibility = module.compatibility();
+    RecordDiagnostic(
+        "executable_identity",
+        compatibility == m1937::sdk::BuildCompatibility::supported
+            ? "accepted"
+            : "rejected",
+        CompatibilityName(compatibility));
+    if (compatibility != m1937::sdk::BuildCompatibility::supported) {
         return;
     }
     auto *base = reinterpret_cast<unsigned char *>(module.base());
@@ -557,22 +729,32 @@ void ApplyLegacyExecutablePatches() {
         int expanded_width = 0;
         int expanded_height = 0;
         if (ReadExpandedViewport(&expanded_width, &expanded_height)) {
-            InstallSafeBlitGuard(base);
-            ApplyExpandedViewportPatches(base);
+            const bool safe_blit = InstallSafeBlitGuard(base);
+            const bool viewport =
+                safe_blit && ApplyExpandedViewportPatches(base);
+            RecordDiagnostic(
+                "expanded_viewport", viewport ? "enabled" : "rejected",
+                safe_blit ? "patch_group" : "safe_blit_signature");
         }
     }
     if (IsAutomatedLaunchEnabled()) {
-        InstallAutoStartMenuHook(base);
+        RecordDiagnostic(
+            "automated_start_hook",
+            InstallAutoStartMenuHook(base) ? "enabled" : "rejected",
+            "menu_poll_signature");
     }
 
     // The green release reports a false resource-library error even though
     // both GFL archives have already opened successfully.
     static const unsigned char warning_expected[] = {0x74, 0x0C};
     static const unsigned char warning_patch[] = {0xEB, 0x0C};
-    PatchExecutableBytes(
+    RecordDiagnostic(
+        "false_resource_warning",
+        PatchExecutableBytes(
         base + m1937::sdk::rva::false_resource_warning_branch,
         warning_expected, warning_patch,
-        sizeof(warning_patch));
+        sizeof(warning_patch)) ? "enabled" : "rejected",
+        "signature_guard");
 
     // Skip only the two startup movie enqueue calls. Mission movies and all
     // gameplay resources remain untouched.
@@ -582,90 +764,98 @@ void ApplyLegacyExecutablePatches() {
         0x64, 0x53, 0x8B, 0xCE, 0xE8, 0x6F, 0x9B, 0xFF, 0xFF};
     unsigned char movies_nops[sizeof(movies_expected)];
     memset(movies_nops, 0x90, sizeof(movies_nops));
-    PatchExecutableBytes(
+    RecordDiagnostic(
+        "startup_movies",
+        PatchExecutableBytes(
         base + m1937::sdk::rva::startup_movie_enqueue,
         movies_expected, movies_nops,
-        sizeof(movies_nops));
+        sizeof(movies_nops)) ? "disabled" : "original",
+        "signature_guard");
 
     // The original "New Game" thunk always writes mission number 1 to
-    // M1937.exe+0xE7060. The optional level selector starts the process with
-    // M1937_START_LEVEL=1..15, so replace only that immediate operand. A
-    // normal launch has no environment variable and keeps the original
-    // first-mission behaviour. The executable hard-codes exactly twelve
-    // mission slots. Extension mission 13 therefore uses the mission-12
-    // objective engine while redirecting its equal-length VWF filename to
-    // 1937M012.VWF. Extension mission 14 uses mission 7's follow-contact,
-    // two-target and extraction objective engine while redirecting
-    // 1937M006.VWF to 1937M013.VWF. Extension mission 15 uses the same
-    // objective engine and redirects it to the genuinely recomposed
-    // 1937M014.VWF world. This does not touch the executable on disk or
-    // manufacture save files.
+    // The selector-to-engine mapping and optional fixed-length filename
+    // redirect come from SDK/mission-routes.json. A normal launch keeps the
+    // original first-mission behavior. Validation is completed before any
+    // route byte is changed, and a failed second write rolls the first back.
     const int requested_level = RequestedStartLevel();
-    if (requested_level != 0) {
-        const int engine_level =
-            requested_level == 13 ? 12 :
-            requested_level == 14 || requested_level == 15 ? 7 :
-            requested_level;
-        if (requested_level == 13) {
-            static const unsigned char custom_vwf_expected[] =
-                "1937M011.VWF";
-            static const unsigned char custom_vwf_patch[] =
-                "1937M012.VWF";
-            PatchExecutableBytes(
-                base + m1937::sdk::rva::mission_12_vwf_name,
-                custom_vwf_expected,
-                custom_vwf_patch,
-                sizeof(custom_vwf_patch));
+    const auto *route = m1937::sdk::find_mission_route(requested_level);
+    if (route) {
+        const size_t vwf_size = strlen(route->vwf_name) + 1;
+        auto *level_address =
+            base + m1937::sdk::rva::new_game_level_immediate;
+        auto *redirect_address = route->redirect_rva == 0
+            ? nullptr
+            : base + route->redirect_rva;
+        const int original_level = 1;
+        const bool level_matches =
+            memcmp(level_address, &original_level, sizeof(original_level)) == 0;
+        const bool redirect_matches =
+            !redirect_address ||
+            (strlen(route->redirect_expected) + 1 == vwf_size &&
+             memcmp(
+                 redirect_address, route->redirect_expected, vwf_size) == 0);
+        const bool file_exists =
+            !route->requires_file ||
+            GetFileAttributesA(route->vwf_name) != INVALID_FILE_ATTRIBUTES;
+
+        if (level_matches && redirect_matches && file_exists) {
+            const bool redirected =
+                !redirect_address ||
+                PatchExecutableBytes(
+                    redirect_address,
+                    reinterpret_cast<const unsigned char *>(
+                        route->redirect_expected),
+                    reinterpret_cast<const unsigned char *>(route->vwf_name),
+                    vwf_size);
+            const bool level_patched =
+                redirected &&
+                PatchImmediate32(
+                    base,
+                    m1937::sdk::rva::new_game_level_immediate,
+                    original_level,
+                    route->engine_mission);
+            if (!level_patched && redirect_address && redirected) {
+                PatchExecutableBytes(
+                    redirect_address,
+                    reinterpret_cast<const unsigned char *>(route->vwf_name),
+                    reinterpret_cast<const unsigned char *>(
+                        route->redirect_expected),
+                    vwf_size);
+            }
+            RecordDiagnostic(
+                "mission_route",
+                level_patched ? "enabled" : "rolled_back",
+                route->id);
+        } else {
+            RecordDiagnostic(
+                "mission_route", "original",
+                !file_exists ? "missing_vwf" : "signature_guard");
         }
-        if (requested_level == 14 || requested_level == 15) {
-            static const unsigned char custom_vwf_expected[] =
-                "1937M006.VWF";
-            static const unsigned char mission_14_vwf_patch[] =
-                "1937M013.VWF";
-            static const unsigned char mission_15_vwf_patch[] =
-                "1937M014.VWF";
-            const auto *custom_vwf_patch =
-                requested_level == 14
-                ? mission_14_vwf_patch
-                : mission_15_vwf_patch;
-            PatchExecutableBytes(
-                base + m1937::sdk::rva::mission_7_vwf_name,
-                custom_vwf_expected,
-                custom_vwf_patch,
-                sizeof(mission_14_vwf_patch));
-        }
-        static const unsigned char level_expected[] = {
-            0x01, 0x00, 0x00, 0x00};
-        unsigned char level_patch[sizeof(level_expected)]{};
-        memcpy(level_patch, &engine_level, sizeof(level_patch));
-        PatchExecutableBytes(
-            base + m1937::sdk::rva::new_game_level_immediate,
-            level_expected, level_patch,
-            sizeof(level_patch));
     }
 
     if (g_mod_config.enabled) {
         // The original unobstructed close-hearing check is 128 world units.
         // Keep its original no-line-of-sight semantics and configure only the
         // comparison operand.
-        PatchImmediate32(
-            base,
-            m1937::sdk::rva::close_hearing_radius_immediate,
-            128,
-            ConfiguredHearingRadius());
-
         // Four combat paths broadcast the target's last-known position to
         // nearby allies. The original alert propagation routine still decides
         // eligibility and pathing.
-        static const size_t alert_operand_offsets[] = {
-            m1937::sdk::rva::alert_radius_operand_1,
-            m1937::sdk::rva::alert_radius_operand_2,
-            m1937::sdk::rva::alert_radius_operand_3,
-            m1937::sdk::rva::alert_radius_operand_4};
-        for (const size_t offset : alert_operand_offsets) {
-            PatchImmediate32(
-                base, offset, 640, ConfiguredAlertRadius());
-        }
+        const int hearing = ConfiguredHearingRadius();
+        const int alert = ConfiguredAlertRadius();
+        const ImmediatePatch ai_patch_group[] = {
+            {m1937::sdk::rva::close_hearing_radius_immediate, 128, hearing},
+            {m1937::sdk::rva::alert_radius_operand_1, 640, alert},
+            {m1937::sdk::rva::alert_radius_operand_2, 640, alert},
+            {m1937::sdk::rva::alert_radius_operand_3, 640, alert},
+            {m1937::sdk::rva::alert_radius_operand_4, 640, alert},
+        };
+        const bool ai_patches = PatchImmediateTransaction(
+            base, ai_patch_group,
+            sizeof(ai_patch_group) / sizeof(ai_patch_group[0]));
+        RecordDiagnostic(
+            "enemy_perception",
+            ai_patches ? "enabled" : "original",
+            "hearing_and_alert_operands");
     }
 }
 
@@ -1094,12 +1284,18 @@ extern "C" HRESULT WINAPI ProxyDirectInputCreateA(
         BeginHighResolutionTimer();
     }
     if (!LoadRealDInput()) {
+        RecordDiagnostic(
+            "system_dinput", "failed", "system_library_resolution");
+        FlushDiagnostics();
         return DIERR_NOTINITIALIZED;
     }
 
     LPDIRECTINPUTA real = nullptr;
     const HRESULT result = g_real_create(instance, version, &real, outer);
     if (FAILED(result)) {
+        RecordDiagnostic(
+            "direct_input_create", "failed", "original_api");
+        FlushDiagnostics();
         return result;
     }
 
@@ -1109,6 +1305,9 @@ extern "C" HRESULT WINAPI ProxyDirectInputCreateA(
         return E_OUTOFMEMORY;
     }
     *direct_input = proxy;
+    RecordDiagnostic(
+        "direct_input_create", "ready", "proxy_active");
+    FlushDiagnostics();
     return result;
 }
 

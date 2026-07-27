@@ -154,17 +154,18 @@ function Start-M1937Process {
         [int]$ViewportHeight
     )
 
-    if ($MissionNumber -eq 13 -and -not (Test-Path -LiteralPath (
-            Join-Path $gameDirectory '1937m012.vwf') -PathType Leaf)) {
-        throw '第 13 关需要当前目录中的 1937m012.vwf。'
+    $route = @($catalog.missions | Where-Object {
+        [int]$_.number -eq $MissionNumber
+    })
+    if ($route.Count -ne 1) {
+        throw "关卡路由表中没有唯一的第 $MissionNumber 关。"
     }
-    if ($MissionNumber -eq 14 -and -not (Test-Path -LiteralPath (
-            Join-Path $gameDirectory '1937m013.vwf') -PathType Leaf)) {
-        throw '第 14 关需要当前目录中的 1937m013.vwf。'
-    }
-    if ($MissionNumber -eq 15 -and -not (Test-Path -LiteralPath (
-            Join-Path $gameDirectory '1937m014.vwf') -PathType Leaf)) {
-        throw '第 15 关需要当前目录中的 1937m014.vwf。'
+    if ([bool]$route[0].requires_file) {
+        $requiredVwf = Join-Path $gameDirectory ([string]$route[0].vwf_name)
+        if (-not (Test-Path -LiteralPath $requiredVwf -PathType Leaf)) {
+            throw "第 $MissionNumber 关需要当前目录中的 $(
+                [string]$route[0].vwf_name)。"
+        }
     }
     $startInfo = New-Object Diagnostics.ProcessStartInfo
     $startInfo.FileName = $gameExecutable
@@ -323,9 +324,8 @@ $missionList.BorderStyle = [Windows.Forms.BorderStyle]::None
 [void]$missionList.Columns.Add('任务名称', 205)
 [void]$missionList.Columns.Add('资源', 120)
 foreach ($mission in $catalog.missions) {
-    if ([int]$mission.number -gt 12) {
-        $extensionMap = Join-Path $gameDirectory (
-            '1937{0}.vwf' -f [string]$mission.id)
+    if ([bool]$mission.is_extension) {
+        $extensionMap = Join-Path $gameDirectory ([string]$mission.vwf_name)
         if (-not (Test-Path -LiteralPath $extensionMap -PathType Leaf)) {
             continue
         }
@@ -333,7 +333,7 @@ foreach ($mission in $catalog.missions) {
     $item = New-Object Windows.Forms.ListViewItem(
         ('第 {0:D2} 关' -f [int]$mission.number))
     [void]$item.SubItems.Add([string]$mission.title)
-    [void]$item.SubItems.Add(('{0}.vwf' -f $mission.id))
+    [void]$item.SubItems.Add([string]$mission.vwf_name)
     $item.Tag = [int]$mission.number
     [void]$missionList.Items.Add($item)
 }

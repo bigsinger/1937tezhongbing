@@ -52,11 +52,13 @@ DisableIME、
 HighResolutionTimer、ExpandedViewport、ViewportWidth、
 ViewportHeight、PreserveLegacyUI、MessagePumpIntervalMs、
 MessagePumpBudget、SystemCursorMapping、RememberLevel、StartLevel、AutoStart、Renderer
-和 DisplayMode。ExpandedViewport、SmoothEdgeScroll、EdgeZone 和
+、DisplayMode 和 Diagnostics。ExpandedViewport、SmoothEdgeScroll、EdgeZone 和
 ScrollResponse 只保留用于兼容旧配置，当前版本不会启用。
 
 Difficulty/AILevel 取值均为 0—3。HearingRadius/AlertRadius 为 0 时，
 由难度和智能等级自动计算；非 0 时使用显式世界单位数值。
+Diagnostics 默认为 1，会在游戏目录生成不含隐私数据的 M1937Mod.log，
+记录 EXE 身份、补丁签名、启用项和安全回滚结果；设为 0 可关闭。
 
 “兼容补丁设置.cmd”可打开 cnc-ddraw 的高级配置界面。遇到渲染问题时，
 优先使用 Direct3D 9；OpenGL 是兼容备用；Direct3D 9 on 12 为实验选项。

@@ -9,6 +9,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
+using EngineAddresses = Mission1937.SDK.Generated.M1937Addresses;
 
 internal static class GameFrameProbe
 {
@@ -17,18 +18,6 @@ internal static class GameFrameProbe
     private const uint PROCESS_VM_WRITE = 0x0020;
     private const uint PROCESS_QUERY_INFORMATION = 0x0400;
     private const int PW_CLIENTONLY = 0x00000001;
-
-    // Valid only for the verified clean M1937.exe used by this project.
-    private const int CursorX = 0x000E6EA0;
-    private const int CursorY = 0x000E6FAC;
-    private const int LeftPressed = 0x000E6E64;
-    private const int LeftDown = 0x000E6E74;
-    private const int LeftReleased = 0x000E6FB0;
-    private const int MenuSelection = 0x000E7060;
-    private const int CameraX = 0x000E7024;
-    private const int CameraY = 0x000E7028;
-    private const int ScreenWidth = 0x000E6E0C;
-    private const int ScreenHeight = 0x000E6E10;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct RECT { public int Left, Top, Right, Bottom; }
@@ -224,16 +213,20 @@ internal static class GameFrameProbe
         while (clock.Elapsed.TotalSeconds < durationSeconds)
         {
             double t = clock.Elapsed.TotalSeconds;
-            int screenWidth = ReadInt(process, imageBase + ScreenWidth);
-            int screenHeight = ReadInt(process, imageBase + ScreenHeight);
+            int screenWidth = ReadInt(
+                process, imageBase + EngineAddresses.ScreenWidth);
+            int screenHeight = ReadInt(
+                process, imageBase + EngineAddresses.ScreenHeight);
             if (screenWidth < 320 || screenWidth > 4096) screenWidth = 800;
             if (screenHeight < 240 || screenHeight > 2160) screenHeight = 600;
             int menuX = (int)Math.Round(screenWidth * 0.265);
             int menuY = (int)Math.Round(screenHeight * 0.473);
             if (t < 2.60)
             {
-                WriteInt(process, imageBase + CursorX, menuX);
-                WriteInt(process, imageBase + CursorY, menuY);
+                WriteInt(
+                    process, imageBase + EngineAddresses.CursorX, menuX);
+                WriteInt(
+                    process, imageBase + EngineAddresses.CursorY, menuY);
             }
             else if (t >= 22.00)
             {
@@ -241,8 +234,11 @@ internal static class GameFrameProbe
                 // boundary. This supplies deterministic continuous motion.
                 int edgeX = ((int)((t - 22.0) / 1.5) & 1) == 0
                     ? screenWidth - 2 : 2;
-                WriteInt(process, imageBase + CursorX, edgeX);
-                WriteInt(process, imageBase + CursorY, screenHeight / 2);
+                WriteInt(
+                    process, imageBase + EngineAddresses.CursorX, edgeX);
+                WriteInt(
+                    process, imageBase + EngineAddresses.CursorY,
+                    screenHeight / 2);
             }
 
             for (int i = 0; i < clickTimes.Length; ++i)
@@ -258,8 +254,12 @@ internal static class GameFrameProbe
                         mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
                         if (i > 0) keybd_event(0x0D, 0, 0, UIntPtr.Zero);
                     }
-                    WriteInt(process, imageBase + LeftPressed, 1);
-                    WriteInt(process, imageBase + LeftDown, 1);
+                    WriteInt(
+                        process,
+                        imageBase + EngineAddresses.MouseLeftPressed, 1);
+                    WriteInt(
+                        process,
+                        imageBase + EngineAddresses.MouseLeftDown, 1);
                     clickStarted[i] = true;
                 }
                 if (!clickReleased[i] && t >= clickTimes[i] + 0.10)
@@ -269,14 +269,22 @@ internal static class GameFrameProbe
                         mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
                         if (i > 0) keybd_event(0x0D, 0, 0x0002, UIntPtr.Zero);
                     }
-                    WriteInt(process, imageBase + LeftPressed, 0);
-                    WriteInt(process, imageBase + LeftDown, 0);
-                    WriteInt(process, imageBase + LeftReleased, 1);
+                    WriteInt(
+                        process,
+                        imageBase + EngineAddresses.MouseLeftPressed, 0);
+                    WriteInt(
+                        process,
+                        imageBase + EngineAddresses.MouseLeftDown, 0);
+                    WriteInt(
+                        process,
+                        imageBase + EngineAddresses.MouseLeftReleased, 1);
                     clickReleased[i] = true;
                 }
                 if (clickReleased[i] && t >= clickTimes[i] + 0.20)
                 {
-                    WriteInt(process, imageBase + LeftReleased, 0);
+                    WriteInt(
+                        process,
+                        imageBase + EngineAddresses.MouseLeftReleased, 0);
                 }
             }
             if (t >= 22.00)
@@ -384,9 +392,13 @@ internal static class GameFrameProbe
                 Responding = game.Responding,
                 ReadBytes = io.ReadTransferCount,
                 CpuMilliseconds = game.TotalProcessorTime.TotalMilliseconds,
-                CameraX = ReadInt(processHandle, imageBase + CameraX),
-                CameraY = ReadInt(processHandle, imageBase + CameraY),
-                Mission = ReadInt(processHandle, imageBase + MenuSelection)
+                CameraX = ReadInt(
+                    processHandle, imageBase + EngineAddresses.CameraX),
+                CameraY = ReadInt(
+                    processHandle, imageBase + EngineAddresses.CameraY),
+                Mission = ReadInt(
+                    processHandle,
+                    imageBase + EngineAddresses.CurrentMission)
             });
             Thread.Sleep(20);
         }

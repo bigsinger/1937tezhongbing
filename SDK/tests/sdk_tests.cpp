@@ -169,6 +169,38 @@ int main(int argc, char** argv) {
                     m1937::sdk::rva::mission_7_vwf_name, 13),
                 "1937M006.VWF", 13) == 0,
             "mission 7 filename mismatch", checks);
+        require(
+            m1937::sdk::mission_route_count == 15,
+            "mission route count mismatch", checks);
+        for (std::size_t index = 0;
+             index < m1937::sdk::mission_route_count;
+             ++index) {
+            const auto& route = m1937::sdk::mission_routes[index];
+            require(
+                route.selector_level == static_cast<int>(index + 1),
+                "mission selector levels are not contiguous", checks);
+            require(
+                route.engine_mission >= 1 &&
+                    route.engine_mission <= 12,
+                "mission route targets an invalid engine state", checks);
+            require(
+                std::strlen(route.vwf_name) == 12,
+                "mission VWF name does not fit original fixed slot", checks);
+            require(
+                m1937::sdk::find_mission_route(
+                    route.selector_level) == &route,
+                "mission route lookup mismatch", checks);
+            if (route.redirect_rva != 0) {
+                require(
+                    std::strlen(route.redirect_expected) ==
+                        std::strlen(route.vwf_name),
+                    "mission redirect changes fixed string length", checks);
+            }
+        }
+        require(
+            m1937::sdk::find_mission_route(0) == nullptr &&
+                m1937::sdk::find_mission_route(16) == nullptr,
+            "mission route lookup accepted an invalid level", checks);
 
         std::cout << "M1937SDK validation passed (" << checks
                   << " executable checks, native layout static_asserts passed).\n";
