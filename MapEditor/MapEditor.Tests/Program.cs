@@ -137,6 +137,85 @@ if (!qualityIssues.Any(issue =>
 }
 Console.WriteLine("MapEditor quality issue tests passed.");
 
+var visibleWindow = MapSpatialAnalysis.VisibleGridWindow(
+    viewportLeft: 2_400,
+    viewportTop: 1_200,
+    viewportWidth: 1_920,
+    viewportHeight: 1_080,
+    cellWidth: 3.2,
+    cellHeight: 1.6,
+    mapWidth: 2_048,
+    mapHeight: 2_048,
+    marginCells: 2);
+if (visibleWindow.IsEmpty ||
+    visibleWindow.CellCount >= 2_048 * 2_048 / 2 ||
+    visibleWindow.Left < 0 ||
+    visibleWindow.RightExclusive > 2_048)
+{
+    throw new InvalidOperationException(
+        "Large-map visible-window culling test failed.");
+}
+
+var spatialMap = MapDocument.Create("空间分析", 20, 20);
+spatialMap.CellWidth = 32;
+spatialMap.CellHeight = 16;
+var observer = new MapObject
+{
+    Id = "observer",
+    Name = "观察者",
+    Kind = "character",
+    Faction = "enemy",
+    X = 5,
+    Y = 10,
+    Direction = 3
+};
+var target = new MapObject
+{
+    Id = "target",
+    Name = "目标",
+    Kind = "character",
+    Faction = "player",
+    X = 10,
+    Y = 10
+};
+spatialMap.Objects.Add(observer);
+spatialMap.Objects.Add(target);
+for (var y = 8; y <= 12; y++)
+{
+    spatialMap.Layer(EditorLayerKind.LineOfSightObstacle)
+        .Cells[spatialMap.Index(8, y)] = 1;
+}
+for (var y = 0; y < spatialMap.Height; y++)
+{
+    spatialMap.Layer(EditorLayerKind.MovementObstacle)
+        .Cells[spatialMap.Index(8, y)] = 1;
+}
+var boundary = MapSpatialAnalysis.BuildOccludedVisionBoundary(
+    spatialMap,
+    observer,
+    EnemyPreviewProfile.EditorDefault);
+if (MapSpatialAnalysis.DirectionDegrees(3) != 0 ||
+    MapSpatialAnalysis.HasLineOfSight(
+        spatialMap,
+        observer,
+        target,
+        EnemyPreviewProfile.EditorDefault) ||
+    boundary.Count < 10)
+{
+    throw new InvalidOperationException(
+        "Direction/occluded-sector spatial analysis test failed.");
+}
+var reachable = MapSpatialAnalysis.BuildReachability(
+    spatialMap, observer.X, observer.Y);
+if (!reachable.IsReachable(7, 10) ||
+    reachable.IsReachable(10, 10))
+{
+    throw new InvalidOperationException(
+        "Reachability heat-map test failed.");
+}
+Console.WriteLine(
+    "MapEditor viewport, heat-map and occluded-sector tests passed.");
+
 var originalVwf =
     Environment.GetEnvironmentVariable("M1937_TEST_VWF");
 var originalAssets =
@@ -315,8 +394,97 @@ static void RunNativeVwfTests(
         _ = NativeVwfWriter.Analyze(candidate, corrupt);
     });
 
+    TestMissionPackageDraftService(
+        baselineSource,
+        testRoot);
+
     Console.WriteLine(
         "Native VWF negative and atomic-backup tests passed.");
+}
+
+static void TestMissionPackageDraftService(
+    string sourceFixture,
+    string testRoot)
+{
+    var repository = Path.Combine(
+        testRoot, "mission-package-draft-repository");
+    Directory.CreateDirectory(Path.Combine(repository, ".git"));
+    Directory.CreateDirectory(
+        Path.Combine(repository, "MapEditor", "Missions"));
+    Directory.CreateDirectory(Path.Combine(repository, "Mod"));
+    var source = Path.Combine(
+        repository, "Mod", "1937m000.vwf");
+    File.Copy(sourceFixture, source, overwrite: true);
+    var imported = OriginalVwfImporter.Import(source);
+    var firstScene = int.Parse(
+        imported.Objects[0].Id.AsSpan(6));
+    var options = new MissionPackageDraftOptions
+    {
+        RepositoryRoot = repository,
+        SourceVwfPath = source,
+        Title = "向导测试关",
+        Story = "用于验证关卡包草案、候选哈希和人工接受边界。",
+        Mode = MissionPackageMode.Redeploy,
+        EngineMission = 1,
+        PlayerSceneIndices = [firstScene]
+    };
+    var draft = MissionPackageDraftService.CreateDraft(options);
+    if (draft.MissionId != "m001" ||
+        draft.SelectorLevel != 2 ||
+        !File.Exists(draft.ManifestPath) ||
+        !File.Exists(draft.RouteDraftPath))
+    {
+        throw new InvalidOperationException(
+            "Mission-package draft allocation/scaffold test failed.");
+    }
+    Directory.CreateDirectory(draft.CandidateWorkDirectory);
+    File.Copy(
+        source,
+        MissionPackageDraftService.CandidateOutputPath(draft),
+        overwrite: true);
+    var hash = MissionPackageDraftService.CandidateSha256(draft);
+    MissionPackageDraftService.AcceptCandidateHash(draft, hash);
+    if (!File.Exists(Path.Combine(
+            draft.MissionDirectory,
+            "baseline-acceptance.json")) ||
+        !File.ReadAllText(draft.ManifestPath)
+            .Contains(hash, StringComparison.Ordinal))
+    {
+        throw new InvalidOperationException(
+            "Mission-package explicit baseline acceptance test failed.");
+    }
+    ExpectRejected("second baseline acceptance", () =>
+        MissionPackageDraftService.AcceptCandidateHash(draft, hash));
+
+    var terrain = Path.Combine(
+        repository,
+        "MapEditor",
+        "Assets",
+        "Original",
+        "maps",
+        "m000",
+        "terrain.png");
+    Directory.CreateDirectory(Path.GetDirectoryName(terrain)!);
+    File.WriteAllBytes(terrain, [0]);
+    var composite = MissionPackageDraftService.CreateDraft(
+        options with
+        {
+            Title = "合成向导测试关",
+            Mode = MissionPackageMode.Composite,
+            CompositeBlockWidth = 1,
+            CompositeBlockHeight = imported.Height,
+            BackgroundAsset = "maps/m000/terrain.png"
+        });
+    if (composite.MissionId != "m002" ||
+        composite.BlueprintPath is null ||
+        !File.Exists(composite.BlueprintPath) ||
+        composite.ComposedWorkFile is null)
+    {
+        throw new InvalidOperationException(
+            "Composite mission-package scaffold test failed.");
+    }
+    Console.WriteLine(
+        "Mission-package GUI scaffold and manual hash tests passed.");
 }
 
 static void TestEntityOccupancyMove(

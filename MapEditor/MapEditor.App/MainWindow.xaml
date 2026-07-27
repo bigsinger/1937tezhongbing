@@ -79,6 +79,8 @@
                   Header="安全另存为原生 VWF…"
                   Click="NativeVwfSaveAs_Click" />
         <MenuItem Header="导出任务包…" Click="Export_Click" />
+        <MenuItem Header="新建可运行关卡包向导…"
+                  Click="MissionPackageWizard_Click" />
         <Separator />
         <MenuItem Header="退出" Click="Exit_Click" />
       </MenuItem>
@@ -125,6 +127,23 @@
                     Margin="8,0"
                     Checked="PatrolPreview_Changed"
                     Unchecked="PatrolPreview_Changed" />
+          <CheckBox x:Name="ConnectivityHeatmapCheck"
+                    Content="连通热图"
+                    Foreground="White"
+                    VerticalAlignment="Center"
+                    Margin="8,0"
+                    ToolTip="从所选玩家（或首个玩家）计算可达区域与最短路径；编辑器分析值"
+                    Checked="AnalysisPreview_Changed"
+                    Unchecked="AnalysisPreview_Changed" />
+          <CheckBox x:Name="AiRangesCheck"
+                    Content="AI 范围"
+                    IsChecked="True"
+                    Foreground="White"
+                    VerticalAlignment="Center"
+                    Margin="8,0"
+                    ToolTip="选中敌军后显示带遮挡视线、听觉、攻击和警报范围"
+                    Checked="AnalysisPreview_Changed"
+                    Unchecked="AnalysisPreview_Changed" />
           <TextBlock Text="缩放" Foreground="White"
                      VerticalAlignment="Center" Margin="10,0,4,0" />
           <Slider x:Name="ZoomSlider" Width="150" Minimum="0.1" Maximum="3"
@@ -153,6 +172,12 @@
       <Separator />
       <StatusBarItem>
         <TextBlock x:Name="RouteStatusText" Text="活动路线：—" />
+      </StatusBarItem>
+      <Separator />
+      <StatusBarItem>
+        <TextBlock x:Name="RenderStatusText"
+                   Text="局部绘制：—"
+                   ToolTip="绿色扇形=视线估算；红=攻击；蓝=听觉；橙=警报" />
       </StatusBarItem>
     </StatusBar>
 
@@ -244,7 +269,9 @@
         <ScrollViewer x:Name="MapScroll"
                       HorizontalScrollBarVisibility="Auto"
                       VerticalScrollBarVisibility="Auto"
-                      PreviewMouseWheel="MapScroll_PreviewMouseWheel">
+                      PreviewMouseWheel="MapScroll_PreviewMouseWheel"
+                      ScrollChanged="MapScroll_ScrollChanged"
+                      SizeChanged="MapScroll_SizeChanged">
           <local:MapCanvas x:Name="EditorCanvas"
               CellHovered="EditorCanvas_CellHovered"
               CellInvoked="EditorCanvas_CellInvoked"
@@ -295,8 +322,44 @@
 
                 <TextBlock Text="提示" FontWeight="SemiBold" />
                 <TextBlock TextWrapping="Wrap" Foreground="#555A60"
-                           Margin="0,4,0,12"
-                           Text="左键执行当前操作；右键擦除。按住 Ctrl 滚轮缩放。Shift+单击地图对象可快速选中。" />
+                            Margin="0,4,0,12"
+                            Text="左键执行当前操作；右键擦除。按住 Ctrl 滚轮缩放。Shift+单击地图对象可快速选中。" />
+
+                <TextBlock Text="AI 分析推演" FontWeight="SemiBold" />
+                <Grid Margin="0,5,0,4">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                  </Grid.ColumnDefinitions>
+                  <StackPanel Margin="0,0,5,0">
+                    <TextBlock Text="AI 等级" FontSize="11" />
+                    <ComboBox x:Name="AiLevelCombo"
+                              SelectedIndex="2"
+                              SelectionChanged="AnalysisProfile_Changed">
+                      <ComboBoxItem Content="0 基础" />
+                      <ComboBoxItem Content="1 普通" />
+                      <ComboBoxItem Content="2 警觉" />
+                      <ComboBoxItem Content="3 精锐" />
+                    </ComboBox>
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Margin="5,0,0,0">
+                    <TextBlock Text="游戏难度" FontSize="11" />
+                    <ComboBox x:Name="DifficultyCombo"
+                              SelectedIndex="1"
+                              SelectionChanged="AnalysisProfile_Changed">
+                      <ComboBoxItem Content="0 休闲" />
+                      <ComboBoxItem Content="1 标准" />
+                      <ComboBoxItem Content="2 困难" />
+                      <ComboBoxItem Content="3 专家" />
+                    </ComboBox>
+                  </StackPanel>
+                </Grid>
+                <TextBlock x:Name="AnalysisLegendText"
+                           TextWrapping="Wrap"
+                           Foreground="#555A60"
+                           FontSize="11"
+                           Margin="0,2,0,12"
+                           Text="绿色=带遮挡视线；红=攻击；蓝=听觉；橙=警报。所有近似值均标明来源。" />
 
                 <Button Content="保存为新的地图文件"
                         Click="SaveAs_Click"

@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -30,6 +31,17 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        if (!string.IsNullOrWhiteSpace(
+                Environment.GetEnvironmentVariable(
+                    "M1937_MAPEDITOR_SCREENSHOT")))
+        {
+            // Automated visual regression renders this window directly.
+            // Keep it off-screen and never steal the user's active window.
+            WindowStartupLocation = WindowStartupLocation.Manual;
+            Left = -20_000;
+            Top = -20_000;
+            ShowActivated = false;
+        }
         CommandBindings.Add(new CommandBinding(
             ApplicationCommands.New, New_Click));
         CommandBindings.Add(new CommandBinding(
@@ -107,6 +119,11 @@ public partial class MainWindow : Window
             ShowRoutesCheck.IsChecked == true;
         EditorCanvas.MotionPreviewEnabled =
             MotionPreviewCheck.IsChecked == true;
+        EditorCanvas.ShowConnectivityHeatmap =
+            ConnectivityHeatmapCheck.IsChecked == true;
+        EditorCanvas.ShowAiRanges =
+            AiRangesCheck.IsChecked == true;
+        UpdateAnalysisProfile();
         AssetList.SelectedIndex = 0;
         SelectMode.IsChecked = true;
         UpdateRouteStatus();
@@ -128,7 +145,11 @@ public partial class MainWindow : Window
 
         Dispatcher.BeginInvoke(
             DispatcherPriority.ContextIdle,
-            new Action(FitMapToWindow));
+            new Action(() =>
+            {
+                FitMapToWindow();
+                UpdateVisibleViewport();
+            }));
     }
 
     private void FitMapToWindow()
@@ -289,19 +310,74 @@ public partial class MainWindow : Window
                 "M1937_MAPEDITOR_OPEN");
             if (!string.IsNullOrWhiteSpace(mapPath) && File.Exists(mapPath))
                 OpenMapFile(mapPath);
+            MapObject? automatedSelection = null;
             var selectedScene = Environment.GetEnvironmentVariable(
                 "M1937_MAPEDITOR_SELECT_SCENE");
             if (int.TryParse(selectedScene, out var sceneIndex))
             {
-                var selected = document.Objects.FirstOrDefault(
+                automatedSelection = document.Objects.FirstOrDefault(
                     item => item.Id == $"scene-{sceneIndex}");
-                if (selected is not null)
-                    SelectObject(selected);
+                if (automatedSelection is not null)
+                    SelectObject(automatedSelection);
             }
             await Dispatcher.InvokeAsync(
                 FitMapToWindow, DispatcherPriority.ContextIdle);
+            var requestedZoom = Environment.GetEnvironmentVariable(
+                "M1937_MAPEDITOR_ZOOM");
+            if (double.TryParse(
+                    requestedZoom,
+                    System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out var automationZoom))
+            {
+                ZoomSlider.Value = Math.Clamp(
+                    automationZoom,
+                    ZoomSlider.Minimum,
+                    ZoomSlider.Maximum);
+            }
+            if (string.Equals(
+                    Environment.GetEnvironmentVariable(
+                        "M1937_MAPEDITOR_HEATMAP"),
+                    "1",
+                    StringComparison.Ordinal))
+            {
+                ConnectivityHeatmapCheck.IsChecked = true;
+            }
+            await Dispatcher.InvokeAsync(
+                UpdateLayout, DispatcherPriority.ContextIdle);
+            if (automatedSelection is not null)
+                CenterViewportAt(automatedSelection.X, automatedSelection.Y);
             await Task.Delay(2500);
             UpdateLayout();
+            var metricsPath = Environment.GetEnvironmentVariable(
+                "M1937_MAPEDITOR_METRICS");
+            if (!string.IsNullOrWhiteSpace(metricsPath))
+            {
+                var metrics = EditorCanvas.LastRenderStatistics;
+                var fullMetricsPath = Path.GetFullPath(metricsPath);
+                Directory.CreateDirectory(
+                    Path.GetDirectoryName(fullMetricsPath)!);
+                File.WriteAllText(
+                    fullMetricsPath,
+                    JsonSerializer.Serialize(
+                        new
+                        {
+                            schema_version = 1,
+                            map_width = document.Width,
+                            map_height = document.Height,
+                            zoom = EditorCanvas.Zoom,
+                            visible_cells =
+                                metrics.VisibleCells.CellCount,
+                            drawn_objects = metrics.DrawnObjects,
+                            total_objects = metrics.TotalObjects,
+                            render_microseconds =
+                                metrics.ElapsedMicroseconds
+                        },
+                        new JsonSerializerOptions
+                        {
+                            WriteIndented = true
+                        }));
+            }
             var dpi = VisualTreeHelper.GetDpi(this);
             var width = Math.Max(
                 1, (int)Math.Ceiling(ActualWidth * dpi.DpiScaleX));
@@ -478,6 +554,23 @@ public partial class MainWindow : Window
             return;
         MapDocumentSerializer.Save(document, dialog.FileName);
         StatusText.Text = $"任务包已导出：{dialog.FileName}";
+    }
+
+    private void MissionPackageWizard_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        var wizard = new MissionPackageWizard(
+            document,
+            currentVwfSourcePath,
+            assetRoot)
+        {
+            Owner = this
+        };
+        wizard.ShowDialog();
+        if (!string.IsNullOrWhiteSpace(wizard.LastPublishedPath))
+            StatusText.Text =
+                $"关卡包已生成：{wizard.LastPublishedPath}";
     }
 
     private void Validate_Click(object sender, RoutedEventArgs e)
@@ -657,6 +750,18 @@ public partial class MainWindow : Window
         UpdateRouteStatus(item);
     }
 
+    private void CenterViewportAt(int x, int y)
+    {
+        var targetX =
+            (x + 0.5) * document.EffectiveCellWidth *
+            EditorCanvas.Zoom - MapScroll.ViewportWidth / 2;
+        var targetY =
+            (y + 0.5) * document.EffectiveCellHeight *
+            EditorCanvas.Zoom - MapScroll.ViewportHeight / 2;
+        MapScroll.ScrollToHorizontalOffset(Math.Max(0, targetX));
+        MapScroll.ScrollToVerticalOffset(Math.Max(0, targetY));
+    }
+
     private void DeleteObject_Click(object sender, RoutedEventArgs e)
     {
         if (ObjectGrid.SelectedItem is not MapObject selected)
@@ -751,6 +856,79 @@ public partial class MainWindow : Window
             ShowRoutesCheck.IsChecked == true;
         EditorCanvas.MotionPreviewEnabled =
             MotionPreviewCheck.IsChecked == true;
+    }
+
+    private void AnalysisPreview_Changed(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (EditorCanvas is null)
+            return;
+        EditorCanvas.ShowConnectivityHeatmap =
+            ConnectivityHeatmapCheck?.IsChecked == true;
+        EditorCanvas.ShowAiRanges =
+            AiRangesCheck?.IsChecked == true;
+        UpdateRenderStatus();
+    }
+
+    private void AnalysisProfile_Changed(
+        object sender,
+        SelectionChangedEventArgs e) =>
+        UpdateAnalysisProfile();
+
+    private void UpdateAnalysisProfile()
+    {
+        if (EditorCanvas is null ||
+            AiLevelCombo is null ||
+            DifficultyCombo is null)
+            return;
+        var profile = EnemyPreviewProfile.ForDifficulty(
+            DifficultyCombo.SelectedIndex,
+            AiLevelCombo.SelectedIndex);
+        EditorCanvas.EnemyPreviewProfile = profile;
+        if (AnalysisLegendText is not null)
+        {
+            AnalysisLegendText.Text =
+                $"绿色=带遮挡视线 {profile.VisionRadiusWorld}；" +
+                $"红=攻击 {profile.AttackRadiusWorld}（{profile.AttackSource}）；" +
+                $"蓝=听觉 {profile.HearingRadiusWorld}（{profile.HearingSource}）；" +
+                $"橙=警报 {profile.AlertRadiusWorld}（{profile.AlertSource}）。";
+        }
+    }
+
+    private void MapScroll_ScrollChanged(
+        object sender,
+        ScrollChangedEventArgs e) =>
+        UpdateVisibleViewport();
+
+    private void MapScroll_SizeChanged(
+        object sender,
+        SizeChangedEventArgs e) =>
+        UpdateVisibleViewport();
+
+    private void UpdateVisibleViewport()
+    {
+        if (MapScroll is null || EditorCanvas is null)
+            return;
+        EditorCanvas.SetVisibleViewport(
+            MapScroll.HorizontalOffset,
+            MapScroll.VerticalOffset,
+            Math.Max(1, MapScroll.ViewportWidth),
+            Math.Max(1, MapScroll.ViewportHeight));
+        Dispatcher.BeginInvoke(
+            DispatcherPriority.ContextIdle,
+            new Action(UpdateRenderStatus));
+    }
+
+    private void UpdateRenderStatus()
+    {
+        if (RenderStatusText is null || EditorCanvas is null)
+            return;
+        var stats = EditorCanvas.LastRenderStatistics;
+        RenderStatusText.Text =
+            $"局部绘制：{stats.VisibleCells.CellCount:N0} 格 / " +
+            $"{stats.DrawnObjects:N0} 对象 / " +
+            $"{stats.ElapsedMicroseconds / 1000.0:F1} ms";
     }
 
     private void MapScroll_PreviewMouseWheel(

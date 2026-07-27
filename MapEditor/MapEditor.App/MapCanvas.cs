@@ -22,6 +22,12 @@ public sealed class MapObjectEventArgs(MapObject mapObject) : EventArgs
     public MapObject MapObject { get; } = mapObject;
 }
 
+public readonly record struct MapRenderStatistics(
+    MapGridWindow VisibleCells,
+    int DrawnObjects,
+    int TotalObjects,
+    long ElapsedMicroseconds);
+
 public sealed class MapCanvas : FrameworkElement
 {
     private readonly Dictionary<string, BitmapSource?> imageCache =
@@ -41,6 +47,13 @@ public sealed class MapCanvas : FrameworkElement
     private bool eraseDrag;
     private bool showPatrolRoutes = true;
     private bool motionPreviewEnabled = true;
+    private bool showConnectivityHeatmap;
+    private bool showAiRanges = true;
+    private Rect visibleViewport = Rect.Empty;
+    private MapReachability? reachabilityCache;
+    private string? reachabilitySourceId;
+    private EnemyPreviewProfile enemyPreviewProfile =
+        EnemyPreviewProfile.EditorDefault;
 
     public MapCanvas()
     {
@@ -70,6 +83,7 @@ public sealed class MapCanvas : FrameworkElement
             selectedObjectId = null;
             expandedRouteCache.Clear();
             livingOccupants = null;
+            ClearAnalysisCache();
             UpdateExtent();
             InvalidateVisual();
             DrawPatrolRoutes();
@@ -95,6 +109,7 @@ public sealed class MapCanvas : FrameworkElement
         set
         {
             selectedObjectId = value;
+            ClearAnalysisCache();
             InvalidateVisual();
             DrawPatrolRoutes();
             DrawMotionOverlay();
@@ -107,6 +122,7 @@ public sealed class MapCanvas : FrameworkElement
         set
         {
             zoom = Math.Clamp(value, 0.1, 3);
+            ClearAnalysisCache();
             UpdateExtent();
             InvalidateVisual();
             DrawPatrolRoutes();
@@ -139,10 +155,69 @@ public sealed class MapCanvas : FrameworkElement
 
     public bool ObjectSelectionEnabled { get; set; } = true;
 
+    public bool ShowConnectivityHeatmap
+    {
+        get => showConnectivityHeatmap;
+        set
+        {
+            if (showConnectivityHeatmap == value)
+                return;
+            showConnectivityHeatmap = value;
+            InvalidateVisual();
+        }
+    }
+
+    public bool ShowAiRanges
+    {
+        get => showAiRanges;
+        set
+        {
+            if (showAiRanges == value)
+                return;
+            showAiRanges = value;
+            InvalidateVisual();
+        }
+    }
+
+    public EnemyPreviewProfile EnemyPreviewProfile
+    {
+        get => enemyPreviewProfile;
+        set
+        {
+            enemyPreviewProfile = value ??
+                throw new ArgumentNullException(nameof(value));
+            InvalidateVisual();
+        }
+    }
+
+    public MapRenderStatistics LastRenderStatistics { get; private set; }
+
+    public void SetVisibleViewport(
+        double left,
+        double top,
+        double width,
+        double height)
+    {
+        var next = width > 0 && height > 0
+            ? new Rect(
+                Math.Max(0, left),
+                Math.Max(0, top),
+                width,
+                height)
+            : Rect.Empty;
+        if (visibleViewport == next)
+            return;
+        visibleViewport = next;
+        InvalidateVisual();
+        DrawPatrolRoutes();
+        DrawMotionOverlay();
+    }
+
     public void Refresh()
     {
         expandedRouteCache.Clear();
         livingOccupants = null;
+        ClearAnalysisCache();
         InvalidateVisual();
         DrawPatrolRoutes();
         DrawMotionOverlay();
@@ -160,6 +235,7 @@ public sealed class MapCanvas : FrameworkElement
 
     protected override void OnRender(DrawingContext drawing)
     {
+        var started = Stopwatch.GetTimestamp();
         base.OnRender(drawing);
         drawing.DrawRectangle(
             new SolidColorBrush(Color.FromRgb(221, 218, 208)), null,
@@ -171,6 +247,17 @@ public sealed class MapCanvas : FrameworkElement
         var cellHeight = document.EffectiveCellHeight * zoom;
         var mapRect = new Rect(
             0, 0, document.Width * cellWidth, document.Height * cellHeight);
+        var viewport = EffectiveVisibleViewport(mapRect);
+        var visibleCells = MapSpatialAnalysis.VisibleGridWindow(
+            viewport.Left,
+            viewport.Top,
+            viewport.Width,
+            viewport.Height,
+            cellWidth,
+            cellHeight,
+            document.Width,
+            document.Height,
+            marginCells: 2);
 
         var background = LoadAsset(document.BackgroundAsset);
         if (background is not null)
@@ -183,21 +270,34 @@ public sealed class MapCanvas : FrameworkElement
         else
         {
             DrawTerrain(drawing, document.Layer(EditorLayerKind.Terrain),
-                cellWidth, cellHeight);
+                cellWidth, cellHeight, visibleCells);
         }
 
         DrawSemantic(drawing, EditorLayerKind.LineOfSightObstacle,
-            Color.FromArgb(92, 44, 125, 50), cellWidth, cellHeight);
+            Color.FromArgb(92, 44, 125, 50), cellWidth, cellHeight,
+            visibleCells);
         DrawSemantic(drawing, EditorLayerKind.MovementObstacle,
-            Color.FromArgb(105, 190, 45, 38), cellWidth, cellHeight);
+            Color.FromArgb(105, 190, 45, 38), cellWidth, cellHeight,
+            visibleCells);
         DrawSemantic(drawing, EditorLayerKind.Event,
-            Color.FromArgb(105, 36, 105, 176), cellWidth, cellHeight);
+            Color.FromArgb(105, 36, 105, 176), cellWidth, cellHeight,
+            visibleCells);
         DrawSemantic(drawing, EditorLayerKind.ManualMovementCorrection,
-            Color.FromArgb(110, 137, 67, 170), cellWidth, cellHeight);
+            Color.FromArgb(110, 137, 67, 170), cellWidth, cellHeight,
+            visibleCells);
 
+        DrawAnalysis(
+            drawing, cellWidth, cellHeight, visibleCells, viewport);
         if (zoom >= 0.65)
-            DrawGrid(drawing, cellWidth, cellHeight);
-        DrawObjects(drawing, cellWidth, cellHeight);
+            DrawGrid(drawing, cellWidth, cellHeight, visibleCells);
+        var drawnObjects = DrawObjects(
+            drawing, cellWidth, cellHeight, viewport);
+        LastRenderStatistics = new MapRenderStatistics(
+            visibleCells,
+            drawnObjects,
+            document.Objects.Count,
+            (long)(Stopwatch.GetElapsedTime(started).TotalMilliseconds *
+                   1000));
     }
 
     protected override void OnMouseMove(MouseEventArgs e)
@@ -242,12 +342,13 @@ public sealed class MapCanvas : FrameworkElement
 
     private void DrawTerrain(
         DrawingContext drawing, EditorLayer layer,
-        double cellWidth, double cellHeight)
+        double cellWidth, double cellHeight,
+        MapGridWindow visible)
     {
         if (!layer.Visible || document is null)
             return;
-        for (var y = 0; y < document.Height; y++)
-            for (var x = 0; x < document.Width; x++)
+        for (var y = visible.Top; y < visible.BottomExclusive; y++)
+            for (var x = visible.Left; x < visible.RightExclusive; x++)
             {
                 var value = layer.Cells[y * document.Width + x];
                 if (value == 0)
@@ -267,7 +368,8 @@ public sealed class MapCanvas : FrameworkElement
 
     private void DrawSemantic(
         DrawingContext drawing, EditorLayerKind kind, Color color,
-        double cellWidth, double cellHeight)
+        double cellWidth, double cellHeight,
+        MapGridWindow visible)
     {
         if (document is null)
             return;
@@ -275,8 +377,8 @@ public sealed class MapCanvas : FrameworkElement
         if (!layer.Visible)
             return;
         var brush = new SolidColorBrush(color);
-        for (var y = 0; y < document.Height; y++)
-            for (var x = 0; x < document.Width; x++)
+        for (var y = visible.Top; y < visible.BottomExclusive; y++)
+            for (var x = visible.Left; x < visible.RightExclusive; x++)
             {
                 if (layer.Cells[y * document.Width + x] == 0)
                     continue;
@@ -289,31 +391,51 @@ public sealed class MapCanvas : FrameworkElement
     }
 
     private void DrawGrid(
-        DrawingContext drawing, double cellWidth, double cellHeight)
+        DrawingContext drawing,
+        double cellWidth,
+        double cellHeight,
+        MapGridWindow visible)
     {
         if (document is null)
             return;
         var pen = new Pen(
             new SolidColorBrush(Color.FromArgb(58, 30, 33, 36)), 0.75);
-        for (var x = 0; x <= document.Width; x++)
+        var top = visible.Top * cellHeight;
+        var bottom = visible.BottomExclusive * cellHeight;
+        var left = visible.Left * cellWidth;
+        var right = visible.RightExclusive * cellWidth;
+        for (var x = visible.Left;
+             x <= visible.RightExclusive;
+             x++)
             drawing.DrawLine(
-                pen, new Point(x * cellWidth, 0),
-                new Point(x * cellWidth, document.Height * cellHeight));
-        for (var y = 0; y <= document.Height; y++)
+                pen, new Point(x * cellWidth, top),
+                new Point(x * cellWidth, bottom));
+        for (var y = visible.Top;
+             y <= visible.BottomExclusive;
+             y++)
             drawing.DrawLine(
-                pen, new Point(0, y * cellHeight),
-                new Point(document.Width * cellWidth, y * cellHeight));
+                pen, new Point(left, y * cellHeight),
+                new Point(right, y * cellHeight));
     }
 
-    private void DrawObjects(
-        DrawingContext drawing, double cellWidth, double cellHeight)
+    private int DrawObjects(
+        DrawingContext drawing,
+        double cellWidth,
+        double cellHeight,
+        Rect visible)
     {
         if (document is null)
-            return;
-        var visible = new Rect(0, 0, RenderSize.Width, RenderSize.Height);
+            return 0;
+        var anchorVisibility = visible;
+        anchorVisibility.Inflate(
+            Math.Max(256, 640 * zoom),
+            Math.Max(256, 640 * zoom));
+        var drawn = 0;
         foreach (var item in document.Objects)
         {
             var anchor = ObjectAnchor(item, cellWidth, cellHeight);
+            if (!anchorVisibility.Contains(anchor))
+                continue;
             var selected = item.Id == selectedObjectId;
             var image = LoadAsset(item.AssetPath);
             Rect rect;
@@ -324,7 +446,10 @@ public sealed class MapCanvas : FrameworkElement
                 rect = new Rect(
                     anchor.X - width / 2, anchor.Y - height, width, height);
                 if (rect.IntersectsWith(visible))
+                {
                     drawing.DrawImage(image, rect);
+                    drawn++;
+                }
             }
             else
             {
@@ -355,6 +480,7 @@ public sealed class MapCanvas : FrameworkElement
                         : Color.FromRgb(165, 48, 42);
                 drawing.DrawRectangle(
                     new SolidColorBrush(color), new Pen(Brushes.White, 1), rect);
+                drawn++;
             }
 
             if (selected)
@@ -368,6 +494,313 @@ public sealed class MapCanvas : FrameworkElement
             if (selected || zoom >= 1.2)
                 DrawLabel(drawing, item.Name, rect);
         }
+        return drawn;
+    }
+
+    private void DrawAnalysis(
+        DrawingContext drawing,
+        double cellWidth,
+        double cellHeight,
+        MapGridWindow visible,
+        Rect viewport)
+    {
+        if (document is null)
+            return;
+        if (showConnectivityHeatmap)
+            DrawConnectivityHeatmap(
+                drawing, cellWidth, cellHeight, visible);
+        if (showAiRanges)
+            DrawSelectedEnemyRanges(drawing, viewport);
+    }
+
+    private void DrawConnectivityHeatmap(
+        DrawingContext drawing,
+        double cellWidth,
+        double cellHeight,
+        MapGridWindow visible)
+    {
+        if (document is null)
+            return;
+        var source = SelectedOrFirstPlayer();
+        if (source is null)
+            return;
+        if (reachabilityCache is null ||
+            reachabilitySourceId != source.Id)
+        {
+            var ownMarker = TrySceneIndex(
+                source.Id, out var sceneIndex)
+                ? sceneIndex + 1000
+                : -1;
+            reachabilityCache =
+                MapSpatialAnalysis.BuildReachability(
+                    document,
+                    source.X,
+                    source.Y,
+                    allowDiagonal: true,
+                    ownMarker);
+            reachabilitySourceId = source.Id;
+        }
+
+        var reachability = reachabilityCache;
+        if (reachability.ReachableCellCount == 0)
+            return;
+        var palette = BuildHeatmapPalette();
+        var maximum = Math.Max(1, reachability.MaximumDistance);
+        for (var y = visible.Top; y < visible.BottomExclusive; y++)
+        {
+            for (var x = visible.Left; x < visible.RightExclusive; x++)
+            {
+                var distance = reachability.DistanceAt(x, y);
+                if (distance < 0)
+                    continue;
+                var bucket = Math.Clamp(
+                    (int)Math.Floor(
+                        distance / (double)maximum * palette.Length),
+                    0,
+                    palette.Length - 1);
+                drawing.DrawRectangle(
+                    palette[bucket],
+                    null,
+                    new Rect(
+                        x * cellWidth,
+                        y * cellHeight,
+                        cellWidth + 0.5,
+                        cellHeight + 0.5));
+            }
+        }
+
+        var target = HeatmapTarget(source);
+        if (target is null)
+            return;
+        var ownDynamicMarker = TrySceneIndex(
+            source.Id, out var sourceSceneIndex)
+            ? sourceSceneIndex + 1000
+            : -1;
+        var path = MapSpatialAnalysis.FindShortestPath(
+            document,
+            source.X,
+            source.Y,
+            target.X,
+            target.Y,
+            ownDynamicMarker);
+        if (path.Count < 2)
+            return;
+        var pathPen = new Pen(
+            new SolidColorBrush(
+                Color.FromArgb(230, 20, 231, 255)),
+            Math.Clamp(2.0 * zoom, 1.2, 3.5));
+        for (var index = 1; index < path.Count; index++)
+        {
+            drawing.DrawLine(
+                pathPen,
+                WaypointCenter(
+                    path[index - 1], cellWidth, cellHeight),
+                WaypointCenter(
+                    path[index], cellWidth, cellHeight));
+        }
+    }
+
+    private void DrawSelectedEnemyRanges(
+        DrawingContext drawing,
+        Rect viewport)
+    {
+        if (document is null)
+            return;
+        var enemy = document.Objects.FirstOrDefault(item =>
+            item.Id == selectedObjectId && IsEnemy(item));
+        if (enemy is null)
+            return;
+
+        var originWorld =
+            MapSpatialAnalysis.ObjectWorldCenter(document, enemy);
+        var origin = new Point(
+            originWorld.X * zoom,
+            originWorld.Y * zoom);
+        var maximumRadius =
+            enemyPreviewProfile.AlertRadiusWorld * zoom;
+        var rangeBounds = new Rect(
+            origin.X - maximumRadius,
+            origin.Y - maximumRadius,
+            maximumRadius * 2,
+            maximumRadius * 2);
+        if (!rangeBounds.IntersectsWith(viewport))
+            return;
+
+        var visionPoints =
+            MapSpatialAnalysis.BuildOccludedVisionBoundary(
+                document,
+                enemy,
+                enemyPreviewProfile,
+                rayCount: 49);
+        if (visionPoints.Count >= 3)
+        {
+            var geometry = new StreamGeometry();
+            using (var context = geometry.Open())
+            {
+                var first = visionPoints[0];
+                context.BeginFigure(
+                    new Point(first.X * zoom, first.Y * zoom),
+                    isFilled: false,
+                    isClosed: true);
+                context.PolyLineTo(
+                    visionPoints.Skip(1).Select(point =>
+                        new Point(
+                            point.X * zoom,
+                            point.Y * zoom)).ToArray(),
+                    isStroked: true,
+                    isSmoothJoin: true);
+            }
+            geometry.Freeze();
+            drawing.DrawGeometry(
+                null,
+                new Pen(
+                    new SolidColorBrush(
+                        Color.FromArgb(245, 48, 219, 83)),
+                    Math.Clamp(2.1 * zoom, 1.2, 3.2)),
+                geometry);
+        }
+
+        DrawWorldRadius(
+            drawing,
+            origin,
+            enemyPreviewProfile.AttackRadiusWorld,
+            Color.FromArgb(230, 227, 51, 43),
+            null);
+        DrawWorldRadius(
+            drawing,
+            origin,
+            enemyPreviewProfile.HearingRadiusWorld,
+            Color.FromArgb(225, 38, 139, 219),
+            new DashStyle([5.0, 4.0], 0));
+        DrawWorldRadius(
+            drawing,
+            origin,
+            enemyPreviewProfile.AlertRadiusWorld,
+            Color.FromArgb(205, 238, 164, 38),
+            new DashStyle([10.0, 6.0], 0));
+
+        var directionRadians =
+            MapSpatialAnalysis.DirectionDegrees(enemy.Direction) *
+            Math.PI / 180;
+        var arrowLength = Math.Max(14, 30 * zoom);
+        drawing.DrawLine(
+            new Pen(
+                new SolidColorBrush(
+                    Color.FromArgb(255, 250, 250, 245)),
+                2),
+            origin,
+            new Point(
+                origin.X + Math.Cos(directionRadians) * arrowLength,
+                origin.Y + Math.Sin(directionRadians) * arrowLength));
+    }
+
+    private void DrawWorldRadius(
+        DrawingContext drawing,
+        Point origin,
+        int radiusWorld,
+        Color color,
+        DashStyle? dashStyle)
+    {
+        var pen = new Pen(
+            new SolidColorBrush(color),
+            Math.Clamp(1.4 * zoom, 0.9, 2.4))
+        {
+            DashStyle = dashStyle ?? DashStyles.Solid
+        };
+        var radius = radiusWorld * zoom;
+        drawing.DrawEllipse(null, pen, origin, radius, radius);
+    }
+
+    private static Brush[] BuildHeatmapPalette()
+    {
+        var palette = new Brush[16];
+        for (var index = 0; index < palette.Length; index++)
+        {
+            var ratio = index / (double)(palette.Length - 1);
+            var color = ratio < 0.5
+                ? Color.FromArgb(
+                    55,
+                    (byte)(30 + ratio * 90),
+                    (byte)(210 - ratio * 30),
+                    82)
+                : Color.FromArgb(
+                    58,
+                    (byte)(120 + (ratio - 0.5) * 240),
+                    (byte)(180 - (ratio - 0.5) * 220),
+                    48);
+            var brush = new SolidColorBrush(color);
+            brush.Freeze();
+            palette[index] = brush;
+        }
+        return palette;
+    }
+
+    private MapObject? SelectedOrFirstPlayer()
+    {
+        if (document is null)
+            return null;
+        var selected = document.Objects.FirstOrDefault(item =>
+            item.Id == selectedObjectId && IsPlayer(item));
+        return selected ?? document.Objects.FirstOrDefault(IsPlayer);
+    }
+
+    private MapObject? HeatmapTarget(MapObject source)
+    {
+        if (document is null)
+            return null;
+        var selected = document.Objects.FirstOrDefault(item =>
+            item.Id == selectedObjectId && item.Id != source.Id);
+        if (selected is not null)
+            return selected;
+        var targetIds = document.Tasks
+            .Select(task => task.TargetObjectId)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToHashSet(StringComparer.Ordinal);
+        return document.Objects.FirstOrDefault(item =>
+            targetIds.Contains(item.Id));
+    }
+
+    private static bool IsPlayer(MapObject item) =>
+        item.Faction.Equals(
+            "player", StringComparison.OrdinalIgnoreCase) ||
+        item.Faction.Equals(
+            "faction-3", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsEnemy(MapObject item) =>
+        item.Faction.Equals(
+            "enemy", StringComparison.OrdinalIgnoreCase) ||
+        item.Faction.Equals(
+            "faction-1", StringComparison.OrdinalIgnoreCase);
+
+    private static bool TrySceneIndex(
+        string id,
+        out int sceneIndex)
+    {
+        sceneIndex = -1;
+        return id.StartsWith("scene-", StringComparison.Ordinal) &&
+               int.TryParse(id.AsSpan(6), out sceneIndex);
+    }
+
+    private Rect EffectiveVisibleViewport(Rect mapRect)
+    {
+        if (visibleViewport.IsEmpty)
+        {
+            return new Rect(
+                0,
+                0,
+                Math.Min(mapRect.Width, Math.Max(1, RenderSize.Width)),
+                Math.Min(mapRect.Height, Math.Max(1, RenderSize.Height)));
+        }
+        var result = Rect.Intersect(visibleViewport, mapRect);
+        return result.IsEmpty
+            ? new Rect(0, 0, 1, 1)
+            : result;
+    }
+
+    private void ClearAnalysisCache()
+    {
+        reachabilityCache = null;
+        reachabilitySourceId = null;
     }
 
     private IReadOnlyList<MapObject> PatrolObjects() =>
@@ -385,6 +818,11 @@ public sealed class MapCanvas : FrameworkElement
 
         var cellWidth = document.EffectiveCellWidth * zoom;
         var cellHeight = document.EffectiveCellHeight * zoom;
+        var viewport = EffectiveVisibleViewport(new Rect(
+            0,
+            0,
+            document.Width * cellWidth,
+            document.Height * cellHeight));
         var routes = PatrolObjects();
         if (routes.Count == 0)
             return;
@@ -401,9 +839,14 @@ public sealed class MapCanvas : FrameworkElement
         var selected = routes.FirstOrDefault(
             item => item.Id == selectedObjectId);
 
-        foreach (var item in routes.Where(item => item != selected))
+        foreach (var item in routes.Where(item =>
+                     item != selected &&
+                     RouteIntersectsViewport(
+                         item, cellWidth, cellHeight, viewport)))
             DrawRoute(drawing, item, normalPen, cellWidth, cellHeight, false);
-        if (selected is not null)
+        if (selected is not null &&
+            RouteIntersectsViewport(
+                selected, cellWidth, cellHeight, viewport))
             DrawRoute(
                 drawing, selected, selectedPen,
                 cellWidth, cellHeight, true);
@@ -419,8 +862,15 @@ public sealed class MapCanvas : FrameworkElement
 
         var cellWidth = document.EffectiveCellWidth * zoom;
         var cellHeight = document.EffectiveCellHeight * zoom;
+        var viewport = EffectiveVisibleViewport(new Rect(
+            0,
+            0,
+            document.Width * cellWidth,
+            document.Height * cellHeight));
         foreach (var item in PatrolObjects().Where(item =>
                      item.PatrolEnabled &&
+                     RouteIntersectsViewport(
+                         item, cellWidth, cellHeight, viewport) &&
                      HasMovement(ExpandedRoute(item))))
         {
             var position = AnimatedRoutePosition(
@@ -436,6 +886,32 @@ public sealed class MapCanvas : FrameworkElement
                     Color.FromArgb(235, 22, 30, 34)), 1),
                 position, radius, radius);
         }
+    }
+
+    private static bool RouteIntersectsViewport(
+        MapObject item,
+        double cellWidth,
+        double cellHeight,
+        Rect viewport)
+    {
+        MapWaypoint[] points = item.PatrolWaypoints.Count == 0
+            ? [new MapWaypoint { X = item.X, Y = item.Y }]
+            :
+            [
+                new MapWaypoint { X = item.X, Y = item.Y },
+                .. item.PatrolWaypoints
+            ];
+        var left = points.Min(point => point.X) * cellWidth;
+        var right = (points.Max(point => point.X) + 1) * cellWidth;
+        var top = points.Min(point => point.Y) * cellHeight;
+        var bottom = (points.Max(point => point.Y) + 1) * cellHeight;
+        var routeBounds = new Rect(
+            left,
+            top,
+            Math.Max(cellWidth, right - left),
+            Math.Max(cellHeight, bottom - top));
+        routeBounds.Inflate(cellWidth * 3, cellHeight * 3);
+        return routeBounds.IntersectsWith(viewport);
     }
 
     private void DrawRoute(
