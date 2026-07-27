@@ -48,10 +48,15 @@ if (Test-Path -LiteralPath $output -PathType Container) {
     Remove-Item -LiteralPath $output -Recurse -Force
 }
 [IO.Directory]::CreateDirectory($output) | Out-Null
-dotnet publish $app -c Release --no-build -o $output
+dotnet publish $app -c Release --no-build `
+    -p:DebugType=None `
+    -p:DebugSymbols=false `
+    -o $output
 if ($LASTEXITCODE -ne 0) {
     throw "MapEditor publish failed with exit code $LASTEXITCODE."
 }
+Get-ChildItem -LiteralPath $output -Filter '*.pdb' -File |
+    Remove-Item -Force
 $executable = Join-Path $output '1937MapEditor.exe'
 if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
     throw 'Published MapEditor executable is missing.'

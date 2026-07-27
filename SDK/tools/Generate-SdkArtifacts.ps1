@@ -296,7 +296,25 @@ foreach ($entry in $outputs.GetEnumerator()) {
     } else {
         ''
     }
-    if ($actual -ceq $expected) { continue }
+    $matches = $actual -ceq $expected
+    if ($Check -and -not $matches -and
+        [IO.Path]::GetExtension($entry.Key) -eq '.json') {
+        try {
+            # ConvertTo-Json indentation differs between Windows PowerShell
+            # 5.1 and PowerShell 7. Compare generated JSON semantically so a
+            # clean checkout passes on both runtimes while value/order drift
+            # is still rejected by the single-source guard.
+            $expectedCompact = $expected | ConvertFrom-Json |
+                ConvertTo-Json -Depth 16 -Compress
+            $actualCompact = $actual | ConvertFrom-Json |
+                ConvertTo-Json -Depth 16 -Compress
+            $matches = $actualCompact -ceq $expectedCompact
+        }
+        catch {
+            $matches = $false
+        }
+    }
+    if ($matches) { continue }
     $changed += $entry.Key.Substring($repositoryRoot.Length).TrimStart('\')
     if (-not $Check) {
         $directory = Split-Path -Parent $entry.Key

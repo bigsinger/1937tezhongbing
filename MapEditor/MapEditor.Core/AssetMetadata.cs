@@ -86,9 +86,9 @@ public static class AssetMetadataService
         Directory.CreateDirectory(Path.GetDirectoryName(
             Path.GetFullPath(path))!);
         var temporary = path + ".tmp";
-        File.WriteAllText(
-            temporary,
-            JsonSerializer.Serialize(catalog, Options));
+        var json = JsonSerializer.Serialize(catalog, Options)
+            .Replace("\r\n", "\n", StringComparison.Ordinal);
+        File.WriteAllText(temporary, json);
         _ = Load(temporary);
         File.Move(temporary, path, true);
     }

@@ -88,6 +88,10 @@ $ErrorActionPreference = $previousErrorPreference
 if ($conflictExitCode -eq 0) {
     throw 'Conflicting key aliases were accepted.'
 }
+# The non-zero native exit above is the expected assertion signal. GitHub's
+# PowerShell wrapper propagates LASTEXITCODE after the script returns, so clear
+# it once the negative test has been proven successful.
+$global:LASTEXITCODE = 0
 foreach ($required in @(
     "'KeyRemapping'",
     "'MissionSidecar'",

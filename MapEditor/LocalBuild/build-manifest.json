@@ -14,17 +14,12 @@
                   {
                       "name":  "1937MapEditor.dll",
                       "length":  158720,
-                      "sha256":  "E5244F78AE1CCD5F5380583CED22EFA833559574B46F47B0A881F02C0FB7303A"
+                      "sha256":  "0C51B8789A476E8ADE8793CE5F249438E9D836CA1BCE462F4D542E123EE0CB05"
                   },
                   {
                       "name":  "1937MapEditor.exe",
                       "length":  162304,
-                      "sha256":  "A73F0080DF9F0D401B23CF9D10AB7715666D87AB905E43B4E709EF8336E43DDE"
-                  },
-                  {
-                      "name":  "1937MapEditor.pdb",
-                      "length":  58180,
-                      "sha256":  "D8450365DBB3776CF30DE324B1C073FDB6B9AB98F1A8704C4B008737D577506F"
+                      "sha256":  "B21B8F45E6FBC3F4AAED723216CAD05B4D6A9369B12170AFBEC46003DFEE64A1"
                   },
                   {
                       "name":  "1937MapEditor.runtimeconfig.json",
@@ -34,22 +29,12 @@
                   {
                       "name":  "MapEditor.Core.dll",
                       "length":  248832,
-                      "sha256":  "6A273BF67E81D684828BCD2D846FB912BAFDA38DA79358DF5B33E2FC5D7848FD"
-                  },
-                  {
-                      "name":  "MapEditor.Core.pdb",
-                      "length":  61980,
-                      "sha256":  "28D5726188D36586F490ECE63A21EECBD24F7AFA5079865992C8B05CEF11AD65"
+                      "sha256":  "9AFFFE5BF797149DB39B71481B1210201A1B763BBCC0B941D70F00864E38B475"
                   },
                   {
                       "name":  "ResourceFormats.dll",
                       "length":  180736,
-                      "sha256":  "551C22D360AF05AFD214108A17DE9128A0835D3B14BD300F127F79A4E16B75F6"
-                  },
-                  {
-                      "name":  "ResourceFormats.pdb",
-                      "length":  53928,
-                      "sha256":  "5295F44C2ABCB1F0B772C8F7A581820A7B3F7687CCC34232E62521CED3D45154"
+                      "sha256":  "B70D5C76B74DF277C241CC1911CD34468C3480945916AFDD40A65A386A94B71A"
                   }
               ]
 }

@@ -11,7 +11,7 @@
 - Asset placement metadata coverage: 1,037/1,037
 - Published executable: `MapEditor/LocalBuild/1937MapEditor.exe`
 - Executable SHA-256:
-  `A73F0080DF9F0D401B23CF9D10AB7715666D87AB905E43B4E709EF8336E43DDE`
+  `B21B8F45E6FBC3F4AAED723216CAD05B4D6A9369B12170AFBEC46003DFEE64A1`
 
 The automated UI screenshot opened m014 without activation, used local Windows
 OCR, and was compressed before visual inspection.
