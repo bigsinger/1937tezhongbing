@@ -59,6 +59,7 @@ GamekingLogo.svt
 !Mod/
 !Mod/**
 Mod/dinput_system.dll
+Mod/dinput_system_*.dll
 Mod/*.i64
 Mod/*.log
 Mod/*.SAV.m1937state.json*
