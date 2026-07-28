@@ -48,6 +48,13 @@ HWND g_replay_subclass_window = nullptr;
 volatile LONG g_extension_briefing_pending = 0;
 volatile LONG g_extension_briefing_mouse_released = 0;
 volatile LONG g_extension_briefing_keyboard_released = 0;
+volatile LONG g_extension_resume_hotkey_armed = 0;
+volatile LONG g_extension_resume_mouse_released = 0;
+volatile LONG g_extension_resume_keyboard_released = 0;
+volatile LONG g_extension_resume_accept_tick = 0;
+volatile LONG g_extension_selection_hotkey_phase = 0;
+volatile LONG g_extension_selection_hotkey_due_tick = 0;
+volatile LONG g_extension_selection_hotkey_release_tick = 0;
 
 constexpr UINT kWindowReplayMessage = WM_APP + 0x137;
 
@@ -193,7 +200,6 @@ EnhancedSearchState g_search_states[256]{};
 volatile LONG g_last_ai_tick = 0;
 int g_ai_last_mission = -1;
 std::uintptr_t g_ai_actor_table = 0;
-volatile LONG g_extension_camera_centered = 0;
 
 void ClearEnhancedSearchStates();
 
@@ -904,6 +910,8 @@ void ArmExtensionBriefingContinuation(
     const m1937::sdk::MissionRoute *route) {
     if (!route || route->selector_level < 13 || !g_executable_base) {
         InterlockedExchange(&g_extension_briefing_pending, 0);
+        InterlockedExchange(&g_extension_resume_hotkey_armed, 0);
+        InterlockedExchange(&g_extension_selection_hotkey_phase, 0);
         return;
     }
     // The same button/key that selected "Start Game" must be released before
@@ -911,6 +919,13 @@ void ArmExtensionBriefingContinuation(
     // briefing instead of consuming the menu click as its confirmation.
     InterlockedExchange(&g_extension_briefing_mouse_released, 0);
     InterlockedExchange(&g_extension_briefing_keyboard_released, 0);
+    InterlockedExchange(&g_extension_resume_hotkey_armed, 0);
+    InterlockedExchange(&g_extension_resume_mouse_released, 0);
+    InterlockedExchange(&g_extension_resume_keyboard_released, 0);
+    InterlockedExchange(&g_extension_resume_accept_tick, 0);
+    InterlockedExchange(&g_extension_selection_hotkey_phase, 0);
+    InterlockedExchange(&g_extension_selection_hotkey_due_tick, 0);
+    InterlockedExchange(&g_extension_selection_hotkey_release_tick, 0);
     InterlockedExchange(&g_extension_briefing_pending, 1);
     RecordDiagnostic(
         "extension_briefing", "armed", route->id);
@@ -924,6 +939,16 @@ void CompleteExtensionBriefingContinuation(const char *input_source) {
     }
     *reinterpret_cast<unsigned char *>(
         g_executable_base + m1937::sdk::rva::briefing_advance) = 1;
+    // Require a release after the briefing action. The next menu action
+    // returns to the mission and schedules the original F4 character hotkey.
+    // That engine-owned path selects the extension player, centers its camera
+    // and invalidates the full world surface together.
+    InterlockedExchange(&g_extension_resume_mouse_released, 0);
+    InterlockedExchange(&g_extension_resume_keyboard_released, 0);
+    InterlockedExchange(
+        &g_extension_resume_accept_tick,
+        static_cast<LONG>(GetTickCount() + 250));
+    InterlockedExchange(&g_extension_resume_hotkey_armed, 1);
     RecordDiagnostic(
         "extension_briefing", "continued", input_source);
 }
@@ -2287,93 +2312,6 @@ bool RuntimeActors(
     return true;
 }
 
-void CenterExtensionMissionCameraOnce() {
-    if (!g_executable_base ||
-        InterlockedCompareExchange(
-            &g_extension_camera_centered, 0, 0) != 0) {
-        return;
-    }
-    const int selector_level = RequestedStartLevel();
-    if (selector_level < 13 || selector_level > 15) {
-        return;
-    }
-    m1937::sdk::RuntimeActorV1 **actors = nullptr;
-    int actor_count = 0;
-    if (!RuntimeActors(&actors, &actor_count)) {
-        return;
-    }
-    m1937::sdk::RuntimeActorV1 *player = nullptr;
-    for (int index = 0; index < actor_count; ++index) {
-        auto *candidate = actors[index];
-        if (!candidate ||
-            !IsReadableRange(candidate, sizeof(*candidate)) ||
-            candidate->faction_id != 3 ||
-            candidate->dead_or_disabled != 0) {
-            continue;
-        }
-        if (!player || candidate->database_entry_id == 924) {
-            player = candidate;
-        }
-        if (candidate->database_entry_id == 924) {
-            break;
-        }
-    }
-    const std::uint32_t viewport_address =
-        *reinterpret_cast<std::uint32_t *>(
-            g_executable_base +
-            m1937::sdk::rva::viewport_controller);
-    auto *viewport =
-        reinterpret_cast<m1937::sdk::RuntimeViewportControllerV1 *>(
-            static_cast<std::uintptr_t>(viewport_address));
-    if (!player ||
-        !IsReadableRange(viewport, sizeof(*viewport)) ||
-        viewport->viewport_width <= 0 ||
-        viewport->viewport_height <= 0 ||
-        viewport->world_width < viewport->viewport_width ||
-        viewport->world_height < viewport->viewport_height ||
-        InterlockedCompareExchange(
-            &g_extension_camera_centered, 1, 0) != 0) {
-        return;
-    }
-    const int camera_x = ClampSetting(
-        player->world_x - viewport->viewport_width / 2,
-        0,
-        viewport->world_width - viewport->viewport_width);
-    const int camera_y = ClampSetting(
-        player->world_y - viewport->viewport_height / 2,
-        0,
-        viewport->world_height - viewport->viewport_height);
-
-    // The renderer uses the globals below, while hit testing and world-click
-    // coordinate conversion use the viewport controller copies. Updating only
-    // one side makes the picture and cursor disagree, so commit the complete
-    // camera rectangle together on the game thread.
-    viewport->camera_left = camera_x;
-    viewport->camera_top = camera_y;
-    viewport->camera_right = camera_x + viewport->viewport_width;
-    viewport->camera_bottom = camera_y + viewport->viewport_height;
-    viewport->input_camera_left = camera_x;
-    viewport->input_camera_top = camera_y;
-    *reinterpret_cast<int *>(
-        g_executable_base + m1937::sdk::rva::camera_x) = camera_x;
-    *reinterpret_cast<int *>(
-        g_executable_base + m1937::sdk::rva::camera_y) = camera_y;
-
-    char detail[96]{};
-    snprintf(
-        detail,
-        sizeof(detail),
-        "level_%d_camera_%d_%d_view_%d_%d",
-        selector_level,
-        camera_x,
-        camera_y,
-        viewport->viewport_width,
-        viewport->viewport_height);
-    RecordDiagnostic(
-        "extension_spawn_camera", "synchronized", detail);
-    FlushDiagnostics();
-}
-
 void DirectionVector(int direction, int *x, int *y) {
     static const int dx[] = {0, 0, 1, 1, 1, 0, -1, -1, -1};
     static const int dy[] = {0, -1, -1, 0, 1, 1, 1, 0, -1};
@@ -3306,7 +3244,6 @@ void PumpWindowMessages() {
         &g_last_message_pump_tick, static_cast<LONG>(now_tick));
     g_pumping_messages = true;
     const LONGLONG pump_started = PerformanceCounterNow();
-    CenterExtensionMissionCameraOnce();
 
     // Do not consume keyboard or mouse messages here. The original loop must
     // see them in order for F1, M and the other game hotkeys to toggle their
@@ -3649,6 +3586,141 @@ void ObserveExtensionBriefingKeyboard(DWORD size, LPVOID data) {
     }
 }
 
+void ScheduleExtensionSelectionHotkey(const char *input_source) {
+    if (InterlockedCompareExchange(
+            &g_extension_resume_hotkey_armed, 0, 1) != 1) {
+        return;
+    }
+    // Let the original Return-to-Mission click finish its transition before
+    // presenting F4 to DirectInput. Holding the synthetic key across several
+    // polls reproduces a normal key press without touching the desktop input
+    // queue or the system cursor.
+    InterlockedExchange(
+        &g_extension_selection_hotkey_due_tick,
+        static_cast<LONG>(GetTickCount() + 500));
+    InterlockedExchange(&g_extension_selection_hotkey_phase, 1);
+    const DWORD accept = static_cast<DWORD>(
+        InterlockedCompareExchange(
+            &g_extension_resume_accept_tick, 0, 0));
+    char detail[48]{};
+    snprintf(
+        detail,
+        sizeof(detail),
+        "%s_after_%lu_ms",
+        input_source,
+        static_cast<unsigned long>(GetTickCount() - accept));
+    RecordDiagnostic(
+        "extension_full_redraw", "scheduled", detail);
+}
+
+void ObserveExtensionResumeMouse(DWORD size, LPVOID data) {
+    if (InterlockedCompareExchange(
+            &g_extension_resume_hotkey_armed, 0, 0) != 1 ||
+        !data || size < sizeof(DIMOUSESTATE)) {
+        return;
+    }
+    const DWORD accept = static_cast<DWORD>(
+        InterlockedCompareExchange(
+            &g_extension_resume_accept_tick, 0, 0));
+    if (static_cast<LONG>(GetTickCount() - accept) < 0) {
+        return;
+    }
+    const auto *mouse = static_cast<const DIMOUSESTATE *>(data);
+    bool pressed = false;
+    for (int index = 0; index < 4; ++index) {
+        pressed = pressed || (mouse->rgbButtons[index] & 0x80) != 0;
+    }
+    if (!pressed) {
+        InterlockedExchange(&g_extension_resume_mouse_released, 1);
+        return;
+    }
+    if (InterlockedCompareExchange(
+            &g_extension_resume_mouse_released, 0, 0) == 1) {
+        ScheduleExtensionSelectionHotkey("mouse");
+    }
+}
+
+void ObserveExtensionResumeKeyboard(DWORD size, LPVOID data) {
+    if (InterlockedCompareExchange(
+            &g_extension_resume_hotkey_armed, 0, 0) != 1 ||
+        !data || size < 256) {
+        return;
+    }
+    const DWORD accept = static_cast<DWORD>(
+        InterlockedCompareExchange(
+            &g_extension_resume_accept_tick, 0, 0));
+    if (static_cast<LONG>(GetTickCount() - accept) < 0) {
+        return;
+    }
+    const auto *keys = static_cast<const unsigned char *>(data);
+    const bool pressed =
+        (keys[DIK_RETURN] & 0x80) != 0 ||
+        (keys[DIK_NUMPADENTER] & 0x80) != 0;
+    if (!pressed) {
+        InterlockedExchange(&g_extension_resume_keyboard_released, 1);
+        return;
+    }
+    if (InterlockedCompareExchange(
+            &g_extension_resume_keyboard_released, 0, 0) == 1) {
+        ScheduleExtensionSelectionHotkey("enter");
+    }
+}
+
+void ApplyExtensionSelectionHotkey(DWORD size, LPVOID data) {
+    if (!data || size < 256) {
+        return;
+    }
+    LONG phase = InterlockedCompareExchange(
+        &g_extension_selection_hotkey_phase, 0, 0);
+    if (phase == 0) {
+        return;
+    }
+    const DWORD now = GetTickCount();
+    if (phase == 1) {
+        const DWORD due = static_cast<DWORD>(
+            InterlockedCompareExchange(
+                &g_extension_selection_hotkey_due_tick, 0, 0));
+        if (static_cast<LONG>(now - due) < 0 ||
+            !g_executable_base ||
+            *reinterpret_cast<int *>(
+                g_executable_base +
+                m1937::sdk::rva::current_mission) <= 0) {
+            return;
+        }
+        m1937::sdk::RuntimeActorV1 **actors = nullptr;
+        int actor_count = 0;
+        if (!RuntimeActors(&actors, &actor_count) || actor_count <= 0) {
+            return;
+        }
+        if (InterlockedCompareExchange(
+                &g_extension_selection_hotkey_phase, 2, 1) != 1) {
+            return;
+        }
+        InterlockedExchange(
+            &g_extension_selection_hotkey_release_tick,
+            static_cast<LONG>(now + 180));
+        RecordDiagnostic(
+            "extension_full_redraw", "pressed", "original_f4");
+        FlushDiagnostics();
+        phase = 2;
+    }
+    if (phase != 2) {
+        return;
+    }
+    const DWORD release = static_cast<DWORD>(
+        InterlockedCompareExchange(
+            &g_extension_selection_hotkey_release_tick, 0, 0));
+    if (static_cast<LONG>(now - release) < 0) {
+        auto *keys = static_cast<unsigned char *>(data);
+        keys[DIK_F4] |= 0x80;
+        return;
+    }
+    InterlockedExchange(&g_extension_selection_hotkey_phase, 0);
+    RecordDiagnostic(
+        "extension_full_redraw", "released", "original_f4");
+    FlushDiagnostics();
+}
+
 class DeviceProxy final : public IDirectInputDeviceA {
 public:
     DeviceProxy(
@@ -3715,11 +3787,14 @@ public:
             MapSystemCursorToGameState(size, data);
             ApplyWindowReplayMouse(size, data);
             ObserveExtensionBriefingMouse(size, data);
+            ObserveExtensionResumeMouse(size, data);
         }
         if (SUCCEEDED(result) && is_keyboard_) {
             ApplyKeyboardAliases(size, data);
             ApplyWindowReplayKeyboard(size, data);
             ObserveExtensionBriefingKeyboard(size, data);
+            ObserveExtensionResumeKeyboard(size, data);
+            ApplyExtensionSelectionHotkey(size, data);
         }
         AddTiming(
             &g_telemetry.input_state_calls,

@@ -19,8 +19,11 @@ internal static class ModRegressionProbe
     private const uint ProcessQueryInformation = 0x0400;
     private const uint PclientOnly = 0x00000001;
     private const uint SwpNoSize = 0x0001;
+    private const uint SwpNoMove = 0x0002;
     private const uint SwpNoZOrder = 0x0004;
     private const uint SwpNoActivate = 0x0010;
+    private static readonly IntPtr HwndTopmost = new IntPtr(-1);
+    private static readonly IntPtr HwndNotTopmost = new IntPtr(-2);
     private const uint ReplayMessage = 0x8000 + 0x137;
     private const int ReplayKeyDown = 1;
     private const int ReplayKeyUp = 2;
@@ -144,6 +147,8 @@ internal static class ModRegressionProbe
         public Bitmap Bitmap;
         public string Sha256;
         public bool NonBlank;
+        public int LargestDarkComponentPixels;
+        public double DarkPixelRatio;
 
         public void Dispose()
         {
@@ -153,6 +158,16 @@ internal static class ModRegressionProbe
                 Bitmap = null;
             }
         }
+    }
+
+    private sealed class RenderAuditObservation
+    {
+        public bool HasVisualCapture;
+        public bool CompleteRender;
+        public string CaptureName = "";
+        public int LargestDarkComponentPixels = -1;
+        public double DarkPixelRatio = 1.0;
+        public int MapPixels;
     }
 
     private sealed class ActorSnapshot
@@ -211,6 +226,11 @@ internal static class ModRegressionProbe
         if (route == null)
             throw new InvalidOperationException("Unknown selector level.");
         bool extensionGameplaySmoke = selectorLevel >= 13;
+        bool renderAuditEnabled = String.Equals(
+            Environment.GetEnvironmentVariable("M1937_RENDER_AUDIT"),
+            "1",
+            StringComparison.Ordinal);
+        var renderAudit = new RenderAuditObservation();
 
         Directory.CreateDirectory(outputDirectory);
         string executable = Path.Combine(gameDirectory, "M1937.exe");
@@ -425,6 +445,9 @@ internal static class ModRegressionProbe
                     SaveCapture(
                         gameplay,
                         Path.Combine(outputDirectory, "02-gameplay.jpg"));
+                    if (renderAuditEnabled)
+                        ObserveRenderAudit(
+                            gameplay, "02-gameplay", renderAudit);
                 }
                 AddStage(
                     stages, game, process, imageBase, clock,
@@ -522,6 +545,22 @@ internal static class ModRegressionProbe
                     imageBase,
                     Path.Combine(
                         outputDirectory, "actor-states-steady.csv"));
+                if (renderAuditEnabled)
+                {
+                    Thread.Sleep(250);
+                    using (CaptureResult settled = CaptureWindow(window))
+                    {
+                        SaveCapture(
+                            settled,
+                            Path.Combine(
+                                outputDirectory,
+                                "03-settled-gameplay.jpg"));
+                        ObserveRenderAudit(
+                            settled,
+                            "03-settled-gameplay",
+                            renderAudit);
+                    }
+                }
                 ActorSnapshot spawnEnd =
                     FindPlayerActor(process, imageBase);
                 bool spawnSafe =
@@ -542,6 +581,26 @@ internal static class ModRegressionProbe
                     SaveCapture(
                         baseline,
                         Path.Combine(outputDirectory, "03-baseline.jpg"));
+                    if (renderAuditEnabled)
+                    {
+                        ObserveRenderAudit(
+                            baseline, "03-baseline", renderAudit);
+                        AddStage(
+                            stages, game, process, imageBase, clock,
+                            "gameplay_render_has_no_loading_residue",
+                            renderAudit.HasVisualCapture &&
+                            renderAudit.CompleteRender,
+                            string.Format(
+                                CultureInfo.InvariantCulture,
+                                "capture={0}; " +
+                                "largest_near_black_component={1}; " +
+                                "near_black_ratio={2:F4}; " +
+                                "map_pixels={3}",
+                                renderAudit.CaptureName,
+                                renderAudit.LargestDarkComponentPixels,
+                                renderAudit.DarkPixelRatio,
+                                renderAudit.MapPixels));
+                    }
                     ExerciseToggle(
                         stages, game, process, imageBase, window, clock,
                         outputDirectory, "help_f1", DikF1,
@@ -565,6 +624,19 @@ internal static class ModRegressionProbe
                     process, imageBase, window,
                     movementCellX, movementCellY,
                     out movementEvidence);
+                if (renderAuditEnabled)
+                {
+                    Thread.Sleep(500);
+                    using (CaptureResult afterMovement =
+                        CaptureWindow(window))
+                    {
+                        SaveCapture(
+                            afterMovement,
+                            Path.Combine(
+                                outputDirectory,
+                                "06-after-player-hotkey.jpg"));
+                    }
+                }
                 AddStage(
                     stages, game, process, imageBase, clock,
                     "player_input_target_delivery", mouseSent,
@@ -1370,6 +1442,22 @@ internal static class ModRegressionProbe
             {
                 Bitmap = null, Sha256 = "", NonBlank = false
             };
+        bool raisedForAudit = String.Equals(
+            Environment.GetEnvironmentVariable("M1937_RENDER_AUDIT"),
+            "1",
+            StringComparison.Ordinal);
+        if (raisedForAudit)
+        {
+            SetWindowPos(
+                window, HwndTopmost, 0, 0, 0, 0,
+                SwpNoMove | SwpNoSize | SwpNoActivate);
+            try { DwmFlush(); } catch { }
+            // SetWindowPos is intentionally non-activating. Give DWM one
+            // composition interval to expose the legacy DirectDraw surface
+            // before the window-only screen copy.
+            Thread.Sleep(120);
+            try { DwmFlush(); } catch { }
+        }
         int width = Math.Max(1, Math.Min(1024, rect.Right - rect.Left));
         int height = Math.Max(1, Math.Min(768, rect.Bottom - rect.Top));
         var bitmap = new Bitmap(width, height, PixelFormat.Format24bppRgb);
@@ -1387,43 +1475,221 @@ internal static class ModRegressionProbe
         var origin = new Point { X = 0, Y = 0 };
         if (ClientToScreen(window, ref origin))
         {
+            var compositorBitmap =
+                new Bitmap(width, height, PixelFormat.Format24bppRgb);
             try
             {
-                using (Graphics graphics = Graphics.FromImage(bitmap))
+                using (Graphics graphics =
+                    Graphics.FromImage(compositorBitmap))
                     graphics.CopyFromScreen(
                         origin.X, origin.Y, 0, 0,
                         new Size(width, height),
                         CopyPixelOperation.SourceCopy);
-                success = true;
+                // Keep PrintWindow as a fallback. A non-activating window can
+                // need more than one DWM interval before CopyFromScreen sees
+                // its DirectDraw surface; an all-white compositor copy must
+                // not overwrite a useful PrintWindow result.
+                if (HasVisualRange(compositorBitmap))
+                {
+                    bitmap.Dispose();
+                    bitmap = compositorBitmap;
+                    compositorBitmap = null;
+                    success = true;
+                }
             }
             catch { }
+            finally
+            {
+                if (compositorBitmap != null)
+                    compositorBitmap.Dispose();
+            }
+        }
+        if (raisedForAudit)
+        {
+            SetWindowPos(
+                window, HwndNotTopmost, 0, 0, 0, 0,
+                SwpNoMove | SwpNoSize | SwpNoActivate);
         }
         byte[] pixels = BitmapBytes(bitmap);
         string hash;
         using (SHA256 sha = SHA256.Create())
             hash = BitConverter.ToString(sha.ComputeHash(pixels))
                 .Replace("-", "");
-        bool nonBlank = success && pixels.Any(delegate(byte value)
-        {
-            return value != 0;
-        });
-        if (nonBlank)
-        {
-            byte minimum = byte.MaxValue;
-            byte maximum = byte.MinValue;
-            for (int index = 0; index < pixels.Length; index += 97)
-            {
-                minimum = Math.Min(minimum, pixels[index]);
-                maximum = Math.Max(maximum, pixels[index]);
-            }
-            nonBlank = maximum - minimum >= 16;
-        }
+        bool nonBlank = success && HasVisualRange(pixels);
+        int largestDarkComponent;
+        double darkPixelRatio;
+        AnalyzeMapDarkResidue(
+            bitmap,
+            out largestDarkComponent,
+            out darkPixelRatio);
         return new CaptureResult
         {
             Bitmap = bitmap,
             Sha256 = hash,
-            NonBlank = nonBlank
+            NonBlank = nonBlank,
+            LargestDarkComponentPixels = largestDarkComponent,
+            DarkPixelRatio = darkPixelRatio
         };
+    }
+
+    private static bool HasVisualRange(Bitmap bitmap)
+    {
+        return bitmap != null && HasVisualRange(BitmapBytes(bitmap));
+    }
+
+    private static bool HasVisualRange(byte[] pixels)
+    {
+        if (pixels == null || pixels.Length == 0)
+            return false;
+        byte minimum = byte.MaxValue;
+        byte maximum = byte.MinValue;
+        for (int index = 0; index < pixels.Length; index += 97)
+        {
+            minimum = Math.Min(minimum, pixels[index]);
+            maximum = Math.Max(maximum, pixels[index]);
+        }
+        return maximum - minimum >= 16;
+    }
+
+    private static void AnalyzeMapDarkResidue(
+        Bitmap bitmap,
+        out int largestComponent,
+        out double darkPixelRatio)
+    {
+        largestComponent = 0;
+        darkPixelRatio = 0;
+        if (bitmap == null || bitmap.Width <= 0 || bitmap.Height <= 80)
+            return;
+
+        int width = bitmap.Width;
+        int mapHeight = bitmap.Height - 80;
+        var area = new Rectangle(0, 0, width, bitmap.Height);
+        BitmapData data = bitmap.LockBits(
+            area, ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
+        try
+        {
+            int stride = Math.Abs(data.Stride);
+            byte[] pixels = new byte[stride * bitmap.Height];
+            Marshal.Copy(data.Scan0, pixels, 0, pixels.Length);
+            bool[] dark = new bool[width * mapHeight];
+            int darkCount = 0;
+            for (int y = 0; y < mapHeight; ++y)
+            {
+                int sourceY =
+                    data.Stride >= 0 ? y : bitmap.Height - 1 - y;
+                int row = sourceY * stride;
+                int output = y * width;
+                for (int x = 0; x < width; ++x)
+                {
+                    int pixel = row + x * 3;
+                    // The stale loading surface is exact or near black.
+                    // A very low threshold avoids treating roof texture,
+                    // shadows and night scenery as missing tiles.
+                    bool isDark =
+                        pixels[pixel] <= 4 &&
+                        pixels[pixel + 1] <= 4 &&
+                        pixels[pixel + 2] <= 4;
+                    dark[output + x] = isDark;
+                    if (isDark) ++darkCount;
+                }
+            }
+
+            int[] queue = new int[dark.Length];
+            for (int index = 0; index < dark.Length; ++index)
+            {
+                if (!dark[index]) continue;
+                int head = 0;
+                int tail = 0;
+                int component = 0;
+                dark[index] = false;
+                queue[tail++] = index;
+                while (head < tail)
+                {
+                    int current = queue[head++];
+                    ++component;
+                    int x = current % width;
+                    int y = current / width;
+                    int neighbor;
+                    if (x > 0)
+                    {
+                        neighbor = current - 1;
+                        if (dark[neighbor])
+                        {
+                            dark[neighbor] = false;
+                            queue[tail++] = neighbor;
+                        }
+                    }
+                    if (x + 1 < width)
+                    {
+                        neighbor = current + 1;
+                        if (dark[neighbor])
+                        {
+                            dark[neighbor] = false;
+                            queue[tail++] = neighbor;
+                        }
+                    }
+                    if (y > 0)
+                    {
+                        neighbor = current - width;
+                        if (dark[neighbor])
+                        {
+                            dark[neighbor] = false;
+                            queue[tail++] = neighbor;
+                        }
+                    }
+                    if (y + 1 < mapHeight)
+                    {
+                        neighbor = current + width;
+                        if (dark[neighbor])
+                        {
+                            dark[neighbor] = false;
+                            queue[tail++] = neighbor;
+                        }
+                    }
+                }
+                largestComponent =
+                    Math.Max(largestComponent, component);
+            }
+            darkPixelRatio =
+                dark.Length == 0
+                    ? 0
+                    : darkCount / (double)dark.Length;
+        }
+        finally
+        {
+            bitmap.UnlockBits(data);
+        }
+    }
+
+    private static void ObserveRenderAudit(
+        CaptureResult capture,
+        string captureName,
+        RenderAuditObservation observation)
+    {
+        if (capture == null ||
+            capture.Bitmap == null ||
+            !capture.NonBlank ||
+            observation == null)
+            return;
+
+        bool complete =
+            capture.LargestDarkComponentPixels < 50000 &&
+            capture.DarkPixelRatio < 0.22;
+        // Prefer a complete frame over an earlier corrupt frame, but never
+        // let an all-white/occluded desktop copy count as render evidence.
+        if (!observation.HasVisualCapture ||
+            (complete && !observation.CompleteRender))
+        {
+            observation.HasVisualCapture = true;
+            observation.CompleteRender = complete;
+            observation.CaptureName = captureName;
+            observation.LargestDarkComponentPixels =
+                capture.LargestDarkComponentPixels;
+            observation.DarkPixelRatio = capture.DarkPixelRatio;
+            observation.MapPixels =
+                capture.Bitmap.Width *
+                Math.Max(1, capture.Bitmap.Height - 80);
+        }
     }
 
     private static byte[] BitmapBytes(Bitmap bitmap)

@@ -47,3 +47,16 @@ scene 身份和路径拓扑全部保留。这样既有跨城区地表变化，�
 测试只向游戏进程回放 DirectInput，不移动、裁剪或接管系统鼠标。
 机器可读证据保存在
 [`Patch/analysis/results/m014-topology-safe-regression-20260728.json`](../../../Patch/analysis/results/m014-topology-safe-regression-20260728.json)。
+
+## 黑色块状残留修复
+
+第 15 关最初的实机截图曾出现大面积黑色格块和加载标题残影。地图编辑器的
+完整底图预览以及 VWF 五层校验均正常，最终确认并非地形数据缺失，而是扩展
+关卡在任务菜单尚未退出时直接改写相机坐标，绕过了原引擎的脏区失效流程。
+
+运行时现改为在“返回任务”动作结束后，通过进程内 DirectInput 状态模拟一次
+原版 F4 角色定位键。原引擎会在同一条路径内完成选择强子、相机居中和整屏
+重绘，不写系统输入队列，也不移动、裁剪或锁定桌面鼠标。回归探针同时增加
+连续近黑区域检测；修复后的 704,512 个地图像素中，最大连续近黑区域仅
+63 像素、占比 0.05%，未响应和光标裁剪均为 0。机器可读结果见
+[`Patch/analysis/results/m014-render-completeness-regression-20260728.json`](../../../Patch/analysis/results/m014-render-completeness-regression-20260728.json)。
