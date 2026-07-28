@@ -41,6 +41,8 @@ internal static class Program
             "list-gfl" => ListGfl(args),
             "extract-gfl" => ExtractGfl(args),
             "strip-briefings" => StripBriefings(args),
+            "render-text-briefings" => RenderTextBriefings(args),
+            "install-text-briefings" => InstallTextBriefings(args),
             "import" => Import(args),
             "media-catalog" => MediaCatalog(args),
             _ => UnknownCommand(args[0])
@@ -270,6 +272,62 @@ internal static class Program
         return 0;
     }
 
+    private static int RenderTextBriefings(string[] args)
+    {
+        RequireArgumentCount(
+            args,
+            3,
+            3,
+            "render-text-briefings <关卡名称.json> <output-directory>");
+        var briefings = TextBriefingRenderer.RenderCatalog(args[1]);
+        TextBriefingRenderer.WritePreviewDirectory(
+            briefings,
+            args[2],
+            includeIBlock: true);
+        Console.WriteLine(
+            $"Rendered {briefings.Count} in-game text briefings to " +
+            Path.GetFullPath(args[2]));
+        return 0;
+    }
+
+    private static int InstallTextBriefings(string[] args)
+    {
+        RequireArgumentCount(
+            args,
+            6,
+            7,
+            "install-text-briefings <关卡名称.json> " +
+            "<source-resources.GFL> <source-index.GFL> " +
+            "<output-resources.GFL> <output-index.GFL> " +
+            "[preview-directory]");
+        var briefings = TextBriefingRenderer.RenderCatalog(args[1]);
+        if (args.Length == 7)
+        {
+            TextBriefingRenderer.WritePreviewDirectory(
+                briefings,
+                args[6],
+                includeIBlock: false);
+        }
+        var payloads = briefings.ToDictionary(
+            briefing => briefing.ResourceName,
+            briefing => briefing.IBlock,
+            StringComparer.OrdinalIgnoreCase);
+        var report = GflPayloadInstaller.Install(
+            args[2],
+            args[3],
+            args[4],
+            args[5],
+            payloads,
+            "Intro_000.psd");
+        Console.WriteLine(
+            $"Installed {report.ReplacedNames.Count} replacement and " +
+            $"{report.AddedNames.Count} appended text briefings.");
+        Console.WriteLine(
+            $"Preserved {report.EntryCount} GFL resource indexes; " +
+            $"archive size is {report.OutputResourceBytes} bytes.");
+        return 0;
+    }
+
     private static int Import(string[] args)
     {
         RequireArgumentCount(args, 3, 3, "import <game-directory> <output-directory>");
@@ -476,6 +534,13 @@ internal static class Program
         Console.WriteLine(
             "  strip-briefings <1937Resources.GFL> <InterMedia.GFL> " +
             "<output-resources.GFL> <output-index.GFL>");
+        Console.WriteLine(
+            "  render-text-briefings <关卡名称.json> <output-directory>");
+        Console.WriteLine(
+            "  install-text-briefings <关卡名称.json> " +
+            "<source-resources.GFL> <source-index.GFL> " +
+            "<output-resources.GFL> <output-index.GFL> " +
+            "[preview-directory]");
         Console.WriteLine("  import <game-directory> <output-directory>");
         Console.WriteLine("  media-catalog <game-directory> <converted-directory>");
         Console.WriteLine();

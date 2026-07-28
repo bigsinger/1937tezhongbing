@@ -55,26 +55,6 @@ internal static class GameFrameProbe
     [DllImport("user32.dll")]
     private static extern bool GetClientRect(IntPtr window, out RECT rect);
 
-    private delegate bool EnumWindowsProc(IntPtr window, IntPtr parameter);
-
-    [DllImport("user32.dll")]
-    private static extern bool EnumWindows(
-        EnumWindowsProc callback, IntPtr parameter);
-
-    [DllImport("user32.dll")]
-    private static extern uint GetWindowThreadProcessId(
-        IntPtr window, out uint processId);
-
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    private static extern int GetWindowText(
-        IntPtr window, StringBuilder text, int maximum);
-
-    [DllImport("user32.dll")]
-    private static extern bool IsWindow(IntPtr window);
-
-    [DllImport("user32.dll")]
-    private static extern bool IsWindowVisible(IntPtr window);
-
     [DllImport("user32.dll")]
     private static extern bool ClientToScreen(IntPtr window, ref POINT point);
 
@@ -138,7 +118,7 @@ internal static class GameFrameProbe
             Console.Error.WriteLine(
                 "Usage: GameFrameProbe.exe GAME_DIR OUTPUT_DIR TEST_NAME [SECONDS] " +
                 "[nocapture] [nonintrusive] [forcecameracorners] " +
-                "[replacementbriefing] [level=1..15]");
+                "[level=1..15]");
             return 2;
         }
 
@@ -154,8 +134,6 @@ internal static class GameFrameProbe
             argument, "nonintrusive", StringComparison.OrdinalIgnoreCase));
         bool forceCameraCorners = args.Any(argument => string.Equals(
             argument, "forcecameracorners", StringComparison.OrdinalIgnoreCase));
-        bool replacementBriefing = args.Any(argument => string.Equals(
-            argument, "replacementbriefing", StringComparison.OrdinalIgnoreCase));
         int requestedSelectorLevel = 0;
         string levelArgument = args.FirstOrDefault(argument =>
             argument.StartsWith(
@@ -183,21 +161,11 @@ internal static class GameFrameProbe
             WorkingDirectory = gameDirectory,
             UseShellExecute = false
         };
-        if (nonIntrusive && !replacementBriefing)
+        if (nonIntrusive)
             startInfo.EnvironmentVariables["M1937_AUTOTEST"] = "1";
-        if (replacementBriefing)
-        {
-            int selectorLevel = requestedSelectorLevel > 0
-                ? requestedSelectorLevel
-                : ReadConfiguredSelectorLevel(gameDirectory);
+        if (requestedSelectorLevel > 0)
             startInfo.EnvironmentVariables["M1937_START_LEVEL"] =
-                selectorLevel.ToString(CultureInfo.InvariantCulture);
-            startInfo.EnvironmentVariables["M1937_AUTO_START"] = "1";
-            startInfo.EnvironmentVariables[
-                "M1937_REPLACE_LEGACY_BRIEFING"] = "1";
-            startInfo.EnvironmentVariables[
-                "M1937_BRIEFING_AUTOCLOSE_MS"] = "5000";
-        }
+                requestedSelectorLevel.ToString(CultureInfo.InvariantCulture);
 
         using (Process game = Process.Start(startInfo))
         {
@@ -216,34 +184,6 @@ internal static class GameFrameProbe
                 0,
                 nonIntrusive ? 0x0001u | 0x0004u | 0x0010u : 0x0001u | 0x0040u);
             if (!nonIntrusive) SetForegroundWindow(window);
-
-            string briefingTitle = string.Empty;
-            if (replacementBriefing)
-            {
-                IntPtr briefingWindow = WaitForTextBriefingWindow(
-                    game.Id, TimeSpan.FromSeconds(12), out briefingTitle);
-                if (briefingWindow == IntPtr.Zero)
-                    throw new InvalidOperationException(
-                        "The in-game text briefing window did not appear.");
-                CaptureNativeWindow(
-                    briefingWindow,
-                    Path.Combine(
-                        outputDirectory,
-                        testName + "-briefing.png"));
-                File.WriteAllText(
-                    Path.Combine(
-                        outputDirectory,
-                        testName + "-briefing.txt"),
-                    briefingTitle,
-                    Encoding.UTF8);
-                Stopwatch closing = Stopwatch.StartNew();
-                while (IsWindow(briefingWindow) &&
-                    closing.Elapsed < TimeSpan.FromSeconds(8))
-                    Thread.Sleep(50);
-                if (IsWindow(briefingWindow))
-                    throw new InvalidOperationException(
-                        "The in-game text briefing did not auto-close.");
-            }
 
             IntPtr processHandle = OpenProcess(
                 PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE,
@@ -286,10 +226,6 @@ internal static class GameFrameProbe
                     finalFrame.Dispose();
                 }
                 string summary = BuildSummary(testName, samples, durationSeconds);
-                if (replacementBriefing)
-                    summary +=
-                        "text_briefing_window=captured\r\n" +
-                        "text_briefing_title=" + briefingTitle + "\r\n";
                 File.WriteAllText(Path.Combine(outputDirectory, testName + ".txt"), summary, Encoding.UTF8);
                 Console.WriteLine(summary);
             }
@@ -312,65 +248,6 @@ internal static class GameFrameProbe
             Thread.Sleep(50);
         }
         return IntPtr.Zero;
-    }
-
-    private static IntPtr WaitForTextBriefingWindow(
-        int processId, TimeSpan timeout, out string title)
-    {
-        Stopwatch wait = Stopwatch.StartNew();
-        IntPtr match = IntPtr.Zero;
-        string foundTitle = string.Empty;
-        while (wait.Elapsed < timeout && match == IntPtr.Zero)
-        {
-            EnumWindows(delegate(IntPtr candidate, IntPtr unused)
-            {
-                uint ownerProcess;
-                GetWindowThreadProcessId(candidate, out ownerProcess);
-                if (ownerProcess != (uint)processId ||
-                    !IsWindowVisible(candidate))
-                    return true;
-                var buffer = new StringBuilder(256);
-                GetWindowText(candidate, buffer, buffer.Capacity);
-                string candidateTitle = buffer.ToString();
-                if (!candidateTitle.Contains("游戏内文字任务简报"))
-                    return true;
-                match = candidate;
-                foundTitle = candidateTitle;
-                return false;
-            }, IntPtr.Zero);
-            if (match == IntPtr.Zero) Thread.Sleep(50);
-        }
-        title = foundTitle;
-        return match;
-    }
-
-    private static void CaptureNativeWindow(IntPtr window, string path)
-    {
-        RECT rect;
-        if (!GetClientRect(window, out rect))
-            throw new InvalidOperationException(
-                "GetClientRect failed for the text briefing.");
-        int width = Math.Max(1, rect.Right - rect.Left);
-        int height = Math.Max(1, rect.Bottom - rect.Top);
-        using (var bitmap = new Bitmap(
-            width, height, PixelFormat.Format32bppArgb))
-        using (Graphics graphics = Graphics.FromImage(bitmap))
-        {
-            IntPtr dc = graphics.GetHdc();
-            bool captured;
-            try
-            {
-                captured = PrintWindow(window, dc, PW_CLIENTONLY);
-            }
-            finally
-            {
-                graphics.ReleaseHdc(dc);
-            }
-            if (!captured)
-                throw new InvalidOperationException(
-                    "PrintWindow failed for the text briefing.");
-            bitmap.Save(path, ImageFormat.Png);
-        }
     }
 
     private static void DriveGame(IntPtr process, long imageBase, IntPtr window,

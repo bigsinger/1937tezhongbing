@@ -17,6 +17,11 @@
     "x": 1,
     "y": 114
   },
+  "movement_probe": {
+    "name": "镇西暗巷内侧空地",
+    "x": 5,
+    "y": 110
+  },
   "required_scene_reachability": [
     { "name": "孙大麻子", "scene_index": 1457 },
     { "name": "接头确认点", "scene_index": 1461 },

@@ -19,11 +19,17 @@ namespace rva {
 inline constexpr std::uintptr_t safe_blit = 0x0000EE30;
 inline constexpr std::uintptr_t menu_poll = 0x00044800;
 inline constexpr std::uintptr_t smooth_scroll = 0x0004C9B0;
+inline constexpr std::uintptr_t world_handle_click = 0x0004FED0;
 inline constexpr std::uintptr_t false_resource_warning_branch = 0x0000734A;
 inline constexpr std::uintptr_t startup_movie_enqueue = 0x0000762C;
 inline constexpr std::uintptr_t new_game_level_immediate = 0x00003B66;
 inline constexpr std::uintptr_t mission_12_vwf_name = 0x000CF4A8;
 inline constexpr std::uintptr_t mission_7_vwf_name = 0x000CF4F8;
+inline constexpr std::uintptr_t intro_11_resource_name = 0x000CF3E8;
+inline constexpr std::uintptr_t intro_6_resource_name = 0x000CF438;
+inline constexpr std::uintptr_t get_foreground_window_iat = 0x000EC124;
+inline constexpr std::uintptr_t get_focus_iat = 0x000EC1A8;
+inline constexpr std::uintptr_t get_active_window_iat = 0x000EC1BC;
 inline constexpr std::uintptr_t close_hearing_radius_immediate = 0x0005DD27;
 inline constexpr std::uintptr_t alert_radius_operand_1 = 0x00056E62;
 inline constexpr std::uintptr_t alert_radius_operand_2 = 0x00056E94;

@@ -29,12 +29,30 @@ internal static class ModRegressionProbe
     private const int ReplayMouseButtonUp = 5;
     private const int ReplayMenuCommand = 6;
     private const int ReplayAiAlert = 8;
+    private const uint WmKeyDown = 0x0100;
+    private const uint WmKeyUp = 0x0101;
+    private const uint WmActivate = 0x0006;
+    private const uint WmSetFocus = 0x0007;
+    private const uint WmActivateApp = 0x001C;
+    private const uint WmLeftButtonDown = 0x0201;
+    private const uint WmLeftButtonUp = 0x0202;
+    private const int VkReturn = 0x0D;
     private const int DikF1 = 0x3B;
+    private const int DikF4 = 0x3E;
     private const int DikM = 0x32;
     private const int SmXVirtualScreen = 76;
     private const int SmYVirtualScreen = 77;
     private const int SmCxVirtualScreen = 78;
     private const int SmCyVirtualScreen = 79;
+    private const int ActorDatabaseEntryOffset = 0x064;
+    private const int ActorFactionOffset = 0x074;
+    private const int ActorWorldXOffset = 0x0D8;
+    private const int ActorWorldYOffset = 0x0E0;
+    private const int ActorFacingDirectionOffset = 0x178;
+    private const int ActorDeadOffset = 0x188;
+    private const int ActorGoalKindOffset = 0x194;
+    private const int ActorGoalXOffset = 0x198;
+    private const int ActorGoalYOffset = 0x19C;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct Rect
@@ -138,12 +156,28 @@ internal static class ModRegressionProbe
         }
     }
 
+    private sealed class ActorSnapshot
+    {
+        public long Address;
+        public int DatabaseEntry;
+        public int Faction;
+        public int WorldX;
+        public int WorldY;
+        public int Direction;
+        public int Dead;
+        public int GoalKind;
+        public int GoalX;
+        public int GoalY;
+    }
+
     public static int Main(string[] args)
     {
         if (args.Length < 3)
         {
             Console.Error.WriteLine(
-                "Usage: ModRegressionProbe.exe GAME_DIR OUTPUT_DIR LEVEL [SECONDS]");
+                "Usage: ModRegressionProbe.exe GAME_DIR OUTPUT_DIR LEVEL " +
+                "[SECONDS] [MOVEMENT_CELL_X MOVEMENT_CELL_Y] " +
+                "[--briefing-only]");
             return 2;
         }
 
@@ -153,9 +187,27 @@ internal static class ModRegressionProbe
         double maximumSeconds = args.Length >= 4
             ? double.Parse(args[3], CultureInfo.InvariantCulture)
             : 60.0;
+        bool briefingOnly = args.Any(delegate(string argument)
+        {
+            return argument.Equals(
+                "--briefing-only",
+                StringComparison.OrdinalIgnoreCase);
+        });
+        int movementCellX;
+        int movementCellY;
+        DefaultMovementTarget(
+            selectorLevel, out movementCellX, out movementCellY);
+        if (args.Length >= 6)
+        {
+            movementCellX = int.Parse(
+                args[4], CultureInfo.InvariantCulture);
+            movementCellY = int.Parse(
+                args[5], CultureInfo.InvariantCulture);
+        }
         var route = MissionRoutes.Find(selectorLevel);
         if (route == null)
             throw new InvalidOperationException("Unknown selector level.");
+        bool extensionGameplaySmoke = selectorLevel >= 13;
 
         Directory.CreateDirectory(outputDirectory);
         string executable = Path.Combine(gameDirectory, "M1937.exe");
@@ -170,6 +222,9 @@ internal static class ModRegressionProbe
         startInfo.EnvironmentVariables["M1937_TELEMETRY"] = "1";
         startInfo.EnvironmentVariables["M1937_START_LEVEL"] =
             selectorLevel.ToString(CultureInfo.InvariantCulture);
+        if (briefingOnly)
+            startInfo.EnvironmentVariables[
+                "M1937_AUTOTEST_BRIEFING_HOLD"] = "1";
 
         var stages = new List<Stage>();
         var perf = new List<PerfSample>();
@@ -206,6 +261,100 @@ internal static class ModRegressionProbe
                 sampler.IsBackground = true;
                 sampler.Start();
 
+                bool briefingEntered = WaitUntil(
+                    delegate()
+                    {
+                        return ReadInt(
+                            process,
+                            imageBase + EngineAddresses.CurrentMission) ==
+                            route.EngineMission;
+                    },
+                    TimeSpan.FromSeconds(12));
+                Thread.Sleep(550);
+                using (CaptureResult briefing = CaptureWindow(window))
+                {
+                    SaveCapture(
+                        briefing,
+                        Path.Combine(
+                            outputDirectory, "00-text-briefing.jpg"));
+                    int briefingActors = ReadWorldActorCount(
+                        process, imageBase);
+                    AddStage(
+                        stages, game, process, imageBase, clock,
+                        "briefing_route_and_original_flow",
+                        briefingEntered &&
+                        (briefingOnly
+                            ? briefingActors == 0 &&
+                              briefing != null &&
+                              briefing.NonBlank
+                            : briefingActors > 0 ||
+                              (briefing != null &&
+                               briefing.NonBlank)),
+                        "same_main_window=true; external_dialog=false; " +
+                        "world_actors=" + briefingActors +
+                        "; automated_skip=" + (briefingActors > 0) +
+                        "; non_blank=" +
+                        (briefing != null && briefing.NonBlank) +
+                        "; hash=" +
+                        (briefing == null ? "" : briefing.Sha256));
+                }
+                if (briefingOnly)
+                {
+                    samplerStop = true;
+                    sampler.Join(1500);
+                    bool briefingCursorClipSafe;
+                    lock (perf)
+                        briefingCursorClipSafe = perf.All(
+                            delegate(PerfSample sample)
+                            {
+                                return !sample.CursorClipRestricted;
+                            });
+                    exitCode =
+                        stages.All(delegate(Stage stage)
+                        {
+                            return stage.Sent &&
+                                stage.ProcessResponding;
+                        }) &&
+                        briefingCursorClipSafe ? 0 : 1;
+                    WriteArtifacts(
+                        outputDirectory,
+                        selectorLevel,
+                        route.EngineMission,
+                        stages,
+                        perf,
+                        transitionsLogged: false,
+                        replayConsumed: false,
+                        passed: exitCode == 0);
+                    return exitCode;
+                }
+                // Reproduce the player's normal "click or Enter" action by
+                // posting only to the tested game window. This never moves or
+                // clips the system cursor and cannot affect another window.
+                Rect briefingRect;
+                GetClientRect(window, out briefingRect);
+                int briefingX = Math.Max(
+                    1, (briefingRect.Right - briefingRect.Left) / 2);
+                int briefingY = Math.Max(
+                    1, (briefingRect.Bottom - briefingRect.Top) / 2);
+                IntPtr briefingPoint = new IntPtr(
+                    (briefingX & 0xFFFF) |
+                    ((briefingY & 0xFFFF) << 16));
+                if (ReadWorldActorCount(process, imageBase) == 0)
+                {
+                    PostMessage(
+                        window, WmLeftButtonDown,
+                        new IntPtr(1), briefingPoint);
+                    PostMessage(
+                        window, WmLeftButtonUp,
+                        IntPtr.Zero, briefingPoint);
+                    PostMessage(
+                        window, WmKeyDown,
+                        new IntPtr(VkReturn), IntPtr.Zero);
+                    PostMessage(
+                        window, WmKeyUp,
+                        new IntPtr(VkReturn), IntPtr.Zero);
+                }
+
                 bool missionStarted = WaitUntil(
                     delegate()
                     {
@@ -227,17 +376,121 @@ internal static class ModRegressionProbe
                           actorCount.ToString(CultureInfo.InvariantCulture)
                         : "world object table was not ready");
 
+                bool gameplayResumeSent =
+                    SendReplay(window, ReplayMenuCommand, 1);
+                PostMessage(
+                    window, WmActivateApp, new IntPtr(1), IntPtr.Zero);
+                PostMessage(
+                    window, WmActivate, new IntPtr(1), IntPtr.Zero);
+                PostMessage(
+                    window, WmSetFocus, IntPtr.Zero, IntPtr.Zero);
+                Thread.Sleep(1200);
+                AddStage(
+                    stages, game, process, imageBase, clock,
+                    "gameplay_scene_resumed", gameplayResumeSent,
+                    "original mission Start/Resume command; no new briefing");
+
+                WaitUntil(
+                    delegate()
+                    {
+                        ActorSnapshot candidate =
+                            FindPlayerActor(process, imageBase);
+                        if (candidate == null)
+                            return false;
+                        int currentCameraX = ReadInt(
+                            process,
+                            imageBase + EngineAddresses.CameraX);
+                        int currentCameraY = ReadInt(
+                            process,
+                            imageBase + EngineAddresses.CameraY);
+                        return candidate.WorldX - currentCameraX >= 0 &&
+                            candidate.WorldX - currentCameraX < 1024 &&
+                            candidate.WorldY - currentCameraY >= 0 &&
+                            candidate.WorldY - currentCameraY < 688;
+                    },
+                    TimeSpan.FromSeconds(2));
+                ActorSnapshot spawnStart =
+                    FindPlayerActor(process, imageBase);
+                int spawnCameraX = ReadInt(
+                    process, imageBase + EngineAddresses.CameraX);
+                int spawnCameraY = ReadInt(
+                    process, imageBase + EngineAddresses.CameraY);
+                int spawnScreenWidth = ReadInt(
+                    process, imageBase + EngineAddresses.ScreenWidth);
+                int spawnScreenHeight = ReadInt(
+                    process, imageBase + EngineAddresses.ScreenHeight);
+                int viewportController = ReadInt(
+                    process,
+                    imageBase + EngineAddresses.ViewportController);
+                long viewportAddress = (long)(uint)viewportController;
+                int gameplayViewportWidth = viewportController > 0
+                    ? ReadInt(process, viewportAddress + 0x28)
+                    : spawnScreenWidth;
+                int gameplayViewportHeight = viewportController > 0
+                    ? ReadInt(process, viewportAddress + 0x2C)
+                    : spawnScreenHeight - 80;
+                bool cameraStateSynchronized =
+                    viewportController > 0 &&
+                    ReadInt(process, viewportAddress + 0x30) ==
+                        spawnCameraX &&
+                    ReadInt(process, viewportAddress + 0x34) ==
+                        spawnCameraY &&
+                    ReadInt(process, viewportAddress + 0x44) ==
+                        spawnCameraX &&
+                    ReadInt(process, viewportAddress + 0x48) ==
+                        spawnCameraY;
+                bool cameraShowsPlayer =
+                    spawnStart != null &&
+                    cameraStateSynchronized &&
+                    spawnStart.WorldX - spawnCameraX >= 0 &&
+                    spawnStart.WorldX - spawnCameraX <
+                        gameplayViewportWidth &&
+                    spawnStart.WorldY - spawnCameraY >= 0 &&
+                    spawnStart.WorldY - spawnCameraY <
+                        gameplayViewportHeight;
+                AddStage(
+                    stages, game, process, imageBase, clock,
+                    "initial_camera_contains_player",
+                    cameraShowsPlayer,
+                    spawnStart == null
+                        ? "player actor was not readable"
+                        : "camera=(" + spawnCameraX + "," +
+                          spawnCameraY + "); player=(" +
+                          spawnStart.WorldX + "," +
+                          spawnStart.WorldY + "); viewport=(" +
+                          gameplayViewportWidth + "," +
+                          gameplayViewportHeight +
+                          "); render=(" + spawnScreenWidth + "," +
+                          spawnScreenHeight + "); synchronized=" +
+                          cameraStateSynchronized);
+
+                Thread.Sleep(5000);
+                ActorSnapshot spawnEnd =
+                    FindPlayerActor(process, imageBase);
+                bool spawnSafe =
+                    spawnStart != null && spawnEnd != null &&
+                    spawnStart.Dead == 0 && spawnEnd.Dead == 0;
+                AddStage(
+                    stages, game, process, imageBase, clock,
+                    "player_spawn_survival", spawnSafe,
+                    spawnStart == null || spawnEnd == null
+                        ? "player actor was not readable"
+                        : "start=(" + spawnStart.WorldX + "," +
+                          spawnStart.WorldY + "); end=(" +
+                          spawnEnd.WorldX + "," + spawnEnd.WorldY +
+                          "); dead=" + spawnEnd.Dead);
+
                 using (CaptureResult baseline = CaptureWindow(window))
                 {
                     SaveCapture(
                         baseline,
-                        Path.Combine(outputDirectory, "00-baseline.jpg"));
+                        Path.Combine(outputDirectory, "01-baseline.jpg"));
                     ExerciseToggle(
                         stages, game, process, imageBase, window, clock,
                         outputDirectory, "help_f1", DikF1,
                         EngineAddresses.InputRawHelp,
                         EngineAddresses.InputActionHelp,
-                        baseline, "01-help.jpg");
+                        baseline, "02-help.jpg");
                 }
 
                 using (CaptureResult mapBaseline = CaptureWindow(window))
@@ -247,17 +500,18 @@ internal static class ModRegressionProbe
                         outputDirectory, "minimap_m", DikM,
                         EngineAddresses.InputRawMap,
                         EngineAddresses.InputActionMap,
-                        mapBaseline, "02-minimap.jpg");
+                        mapBaseline, "03-minimap.jpg");
                 }
 
-                bool mouseSent =
-                    SendReplay(window, ReplayMouseDelta, PackDelta(12, 0)) &&
-                    PulseMouseButton(window, 0);
-                Thread.Sleep(350);
+                string movementEvidence;
+                bool mouseSent = ExercisePlayerMovement(
+                    process, imageBase, window,
+                    movementCellX, movementCellY,
+                    out movementEvidence);
                 AddStage(
                     stages, game, process, imageBase, clock,
-                    "mouse_client_replay", mouseSent,
-                    "process-local DirectInput delta/button");
+                    "player_input_target_delivery", mouseSent,
+                    movementEvidence);
 
                 string telemetryPath = Path.Combine(
                     gameDirectory, "M1937Telemetry.jsonl");
@@ -345,61 +599,75 @@ internal static class ModRegressionProbe
                         CultureInfo.InvariantCulture) +
                     "; live_target_sampling=false");
 
-                DateTime saveRequest = DateTime.UtcNow;
-                bool saveSent = SendReplay(window, ReplayMenuCommand, 7);
-                bool saveCreated = WaitUntil(
-                    delegate()
-                    {
-                        return Directory.GetFiles(
-                            gameDirectory, "1937M*.SAV")
-                            .Any(delegate(string path)
-                            {
-                                return File.GetLastWriteTimeUtc(path) >=
-                                    saveRequest.AddSeconds(-1);
-                            });
-                    }, TimeSpan.FromSeconds(4));
-                AddStage(
-                    stages, game, process, imageBase, clock,
-                    "save_original_path", saveSent && saveCreated,
-                    saveCreated
-                        ? "original SAV writer changed an isolated slot"
-                        : "no isolated SAV update observed");
+                if (extensionGameplaySmoke)
+                {
+                    AddStage(
+                        stages, game, process, imageBase, clock,
+                        "extension_gameplay_smoke_scope", true,
+                        "save/load/failure/victory transitions are covered " +
+                        "by original-level regression; extension smoke " +
+                        "keeps the loaded world intact");
+                }
+                else
+                {
+                    DateTime saveRequest = DateTime.UtcNow;
+                    bool saveSent =
+                        SendReplay(window, ReplayMenuCommand, 7);
+                    bool saveCreated = WaitUntil(
+                        delegate()
+                        {
+                            return Directory.GetFiles(
+                                gameDirectory, "1937M*.SAV")
+                                .Any(delegate(string path)
+                                {
+                                    return File.GetLastWriteTimeUtc(path) >=
+                                        saveRequest.AddSeconds(-1);
+                                });
+                        }, TimeSpan.FromSeconds(4));
+                    AddStage(
+                        stages, game, process, imageBase, clock,
+                        "save_original_path", saveSent && saveCreated,
+                        saveCreated
+                            ? "original SAV writer changed an isolated slot"
+                            : "no isolated SAV update observed");
 
-                ulong beforeLoadRead = ReadIoBytes(process);
-                bool loadSent = SendReplay(window, ReplayMenuCommand, 17);
-                Thread.Sleep(2200);
-                ulong afterLoadRead = ReadIoBytes(process);
-                AddStage(
-                    stages, game, process, imageBase, clock,
-                    "load_original_path",
-                    loadSent && afterLoadRead > beforeLoadRead,
-                    "read_delta=" +
-                    (afterLoadRead - beforeLoadRead).ToString(
-                        CultureInfo.InvariantCulture));
+                    ulong beforeLoadRead = ReadIoBytes(process);
+                    bool loadSent =
+                        SendReplay(window, ReplayMenuCommand, 17);
+                    Thread.Sleep(2200);
+                    ulong afterLoadRead = ReadIoBytes(process);
+                    AddStage(
+                        stages, game, process, imageBase, clock,
+                        "load_original_path",
+                        loadSent && afterLoadRead > beforeLoadRead,
+                        "read_delta=" +
+                        (afterLoadRead - beforeLoadRead).ToString(
+                            CultureInfo.InvariantCulture));
 
-                bool failureSent =
-                    SendReplay(window, ReplayMenuCommand, 42);
-                Thread.Sleep(900);
-                AddStage(
-                    stages, game, process, imageBase, clock,
-                    "failure_original_transition", failureSent,
-                    "original UI transition code 42");
+                    bool failureSent =
+                        SendReplay(window, ReplayMenuCommand, 42);
+                    Thread.Sleep(900);
+                    AddStage(
+                        stages, game, process, imageBase, clock,
+                        "failure_original_transition", failureSent,
+                        "original UI transition code 42");
 
-                bool restartSent =
-                    SendReplay(window, ReplayMenuCommand, 17);
-                Thread.Sleep(1400);
-                AddStage(
-                    stages, game, process, imageBase, clock,
-                    "restart_after_failure", restartSent,
-                    "loaded isolated checkpoint through original path");
+                    bool restartSent =
+                        SendReplay(window, ReplayMenuCommand, 17);
+                    Thread.Sleep(1400);
+                    AddStage(
+                        stages, game, process, imageBase, clock,
+                        "restart_after_failure", restartSent,
+                        "loaded isolated checkpoint through original path");
 
-                bool victorySent =
-                    SendReplay(window, ReplayMenuCommand, 43);
-                Thread.Sleep(1100);
-                AddStage(
-                    stages, game, process, imageBase, clock,
-                    "victory_original_transition", victorySent,
-                    "original UI transition code 43");
+                    bool victorySent =
+                        SendReplay(window, ReplayMenuCommand, 43);
+                    Thread.Sleep(1100);
+                    AddStage(
+                        stages, game, process, imageBase, clock,
+                        "victory_original_transition", victorySent,
+                        "original UI transition code 43");
+                }
 
                 while (clock.Elapsed.TotalSeconds < maximumSeconds &&
                        !game.HasExited)
@@ -412,14 +680,15 @@ internal static class ModRegressionProbe
                 string telemetry = ReadSharedText(
                     Path.Combine(gameDirectory, "M1937Telemetry.jsonl"));
                 bool transitionsLogged =
-                    diagnostics.Contains(
-                        "\"detail\":\"save\"") &&
-                    diagnostics.Contains(
-                        "\"detail\":\"load\"") &&
-                    diagnostics.Contains(
-                        "\"detail\":\"failure\"") &&
-                    diagnostics.Contains(
-                        "\"detail\":\"victory\"");
+                    extensionGameplaySmoke ||
+                    (diagnostics.Contains(
+                         "\"detail\":\"save\"") &&
+                     diagnostics.Contains(
+                         "\"detail\":\"load\"") &&
+                     diagnostics.Contains(
+                         "\"detail\":\"failure\"") &&
+                     diagnostics.Contains(
+                         "\"detail\":\"victory\""));
                 bool replayConsumed =
                     HasPositiveCounter(telemetry, "\"messages\":") &&
                     HasPositiveCounter(telemetry, "\"reads\":");
@@ -649,6 +918,17 @@ internal static class ModRegressionProbe
             read.ToInt64() == 1 ? buffer[0] : -1;
     }
 
+    private static byte[] ReadBytes(
+        IntPtr process, long address, int length)
+    {
+        byte[] buffer = new byte[length];
+        IntPtr read;
+        return ReadProcessMemory(
+            process, new IntPtr(address), buffer, buffer.Length,
+            out read) && read.ToInt64() == buffer.Length
+            ? buffer : new byte[0];
+    }
+
     private static int ReadWorldActorCount(
         IntPtr process, long imageBase)
     {
@@ -658,6 +938,298 @@ internal static class ModRegressionProbe
         int count = ReadInt(
             process, ((long)(uint)worldAddress) + 0x3C);
         return count > 0 && count <= 4096 ? count : 0;
+    }
+
+    private static void DefaultMovementTarget(
+        int selectorLevel, out int cellX, out int cellY)
+    {
+        switch (selectorLevel)
+        {
+        case 7:
+            cellX = 20;
+            cellY = 8;
+            break;
+        case 13:
+            // Validated southwest ammunition-node route.
+            cellX = 21;
+            cellY = 179;
+            break;
+        case 14:
+            cellX = 12;
+            cellY = 114;
+            break;
+        case 15:
+            // First required mission target; VwfMissionBuilder proves a
+            // 24-step A* route from the spawn at (4,188).
+            cellX = 20;
+            cellY = 164;
+            break;
+        default:
+            cellX = -1;
+            cellY = -1;
+            break;
+        }
+    }
+
+    private static ActorSnapshot FindPlayerActor(
+        IntPtr process, long imageBase)
+    {
+        int worldValue = ReadInt(
+            process, imageBase + EngineAddresses.WorldRoot);
+        if (worldValue == 0 || worldValue == int.MinValue)
+            return null;
+        long world = (long)(uint)worldValue;
+        int actorArrayValue = ReadInt(process, world + 0x18);
+        int count = ReadInt(process, world + 0x3C);
+        if (actorArrayValue == 0 || actorArrayValue == int.MinValue ||
+            count <= 0 || count > 4096)
+            return null;
+        long actorArray = (long)(uint)actorArrayValue;
+        ActorSnapshot fallback = null;
+        for (int index = 0; index < count; ++index)
+        {
+            int actorValue = ReadInt(
+                process, actorArray + index * 4L);
+            if (actorValue == 0 || actorValue == int.MinValue)
+                continue;
+            long actor = (long)(uint)actorValue;
+            int faction = ReadInt(
+                process, actor + ActorFactionOffset);
+            if (faction != 3)
+                continue;
+            var snapshot = ReadActor(process, actor);
+            if (snapshot == null)
+                continue;
+            if (snapshot.DatabaseEntry == 924)
+                return snapshot;
+            if (fallback == null)
+                fallback = snapshot;
+        }
+        return fallback;
+    }
+
+    private static ActorSnapshot ReadActor(
+        IntPtr process, long actor)
+    {
+        int worldX = ReadInt(process, actor + ActorWorldXOffset);
+        int worldY = ReadInt(process, actor + ActorWorldYOffset);
+        if (worldX == int.MinValue || worldY == int.MinValue)
+            return null;
+        return new ActorSnapshot
+        {
+            Address = actor,
+            DatabaseEntry = ReadInt(
+                process, actor + ActorDatabaseEntryOffset),
+            Faction = ReadInt(process, actor + ActorFactionOffset),
+            WorldX = worldX,
+            WorldY = worldY,
+            Direction = ReadInt(
+                process, actor + ActorFacingDirectionOffset),
+            Dead = ReadInt(process, actor + ActorDeadOffset),
+            GoalKind = ReadInt(process, actor + ActorGoalKindOffset),
+            GoalX = ReadInt(process, actor + ActorGoalXOffset),
+            GoalY = ReadInt(process, actor + ActorGoalYOffset)
+        };
+    }
+
+    private static bool MoveReplayCursor(
+        IntPtr process, long imageBase, IntPtr window,
+        int targetX, int targetY, out int actualX, out int actualY)
+    {
+        int currentX = ReadInt(
+            process, imageBase + EngineAddresses.CursorX);
+        int currentY = ReadInt(
+            process, imageBase + EngineAddresses.CursorY);
+        if (currentX == int.MinValue || currentY == int.MinValue)
+        {
+            actualX = currentX;
+            actualY = currentY;
+            return false;
+        }
+        int deltaX = Math.Max(
+            short.MinValue, Math.Min(short.MaxValue, targetX - currentX));
+        int deltaY = Math.Max(
+            short.MinValue, Math.Min(short.MaxValue, targetY - currentY));
+        bool sent = SendReplay(
+            window, ReplayMouseDelta,
+            PackDelta((short)deltaX, (short)deltaY));
+        Thread.Sleep(180);
+        actualX = ReadInt(
+            process, imageBase + EngineAddresses.CursorX);
+        actualY = ReadInt(
+            process, imageBase + EngineAddresses.CursorY);
+        return sent &&
+            Math.Abs(actualX - targetX) <= 3 &&
+            Math.Abs(actualY - targetY) <= 3;
+    }
+
+    private static bool ExercisePlayerMovement(
+        IntPtr process, long imageBase, IntPtr window,
+        int targetCellX, int targetCellY,
+        out string evidence)
+    {
+        if (targetCellX < 0 || targetCellY < 0)
+        {
+            evidence = "no deterministic movement target for this level";
+            return true;
+        }
+        ActorSnapshot before = FindPlayerActor(process, imageBase);
+        if (before == null)
+        {
+            evidence = "player actor was not readable";
+            return false;
+        }
+        int cameraX = ReadInt(
+            process, imageBase + EngineAddresses.CameraX);
+        int cameraY = ReadInt(
+            process, imageBase + EngineAddresses.CameraY);
+        int screenWidth = ReadInt(
+            process, imageBase + EngineAddresses.ScreenWidth);
+        int screenHeight = ReadInt(
+            process, imageBase + EngineAddresses.ScreenHeight);
+        if (cameraX == int.MinValue || cameraY == int.MinValue ||
+            screenWidth <= 0 || screenHeight <= 0)
+        {
+            evidence = "camera or logical viewport was not readable";
+            return false;
+        }
+
+        // The original F1 help identifies F4 as 强子. Extension missions
+        // deliberately use 强子 (database entry 924), so select through the
+        // game's documented hotkey instead of guessing a sprite hitbox.
+        byte[] actorBeforeSelection = ReadBytes(
+            process, before.Address, 0x294);
+        bool selectionSent = PulseKey(window, DikF4);
+        Thread.Sleep(260);
+        int playerScreenX = before.WorldX - cameraX;
+        int playerScreenY = before.WorldY - cameraY - 24;
+        if (playerScreenX >= 8 && playerScreenX < screenWidth - 8 &&
+            playerScreenY >= 8 && playerScreenY < screenHeight - 96)
+        {
+            int selectedX;
+            int selectedY;
+            selectionSent =
+                MoveReplayCursor(
+                    process, imageBase, window,
+                    playerScreenX, playerScreenY,
+                    out selectedX, out selectedY) &&
+                PulseMouseButton(window, 0) &&
+                selectionSent;
+            Thread.Sleep(260);
+        }
+        byte[] actorAfterSelection = ReadBytes(
+            process, before.Address, 0x294);
+        int selectionActorChangeCount = 0;
+        if (actorBeforeSelection.Length == actorAfterSelection.Length)
+        {
+            for (int index = 0;
+                 index < actorBeforeSelection.Length;
+                 ++index)
+            {
+                if (actorBeforeSelection[index] !=
+                    actorAfterSelection[index])
+                    selectionActorChangeCount++;
+            }
+        }
+
+        int targetWorldX = checked(targetCellX * 32 + 16);
+        int targetWorldY = checked(targetCellY * 16 + 8);
+        int targetScreenX = targetWorldX - cameraX;
+        int targetScreenY = targetWorldY - cameraY;
+        if (targetScreenX < 8 || targetScreenX >= screenWidth - 8 ||
+            targetScreenY < 8 || targetScreenY >= screenHeight - 96)
+        {
+            evidence =
+                "movement target is outside the visible map viewport; " +
+                "camera=(" + cameraX + "," + cameraY + "); target_screen=(" +
+                targetScreenX + "," + targetScreenY + ")";
+            return false;
+        }
+
+        int cursorX;
+        int cursorY;
+        bool cursorReached = MoveReplayCursor(
+            process, imageBase, window,
+            targetScreenX, targetScreenY,
+            out cursorX, out cursorY);
+        bool clickSent = cursorReached && PulseMouseButton(window, 0);
+        var directions = new HashSet<int>();
+        directions.Add(before.Direction);
+        int maximumDisplacement = 0;
+        bool goalChanged = false;
+        ActorSnapshot after = before;
+        ObservePlayerMovement(
+            process, imageBase, before, 1200,
+            directions, ref maximumDisplacement,
+            ref goalChanged, ref after);
+        bool clickMoved = maximumDisplacement >= 8;
+        bool alternateClickSent = true;
+        bool alternateClickMoved = false;
+        if (!clickMoved)
+        {
+            alternateClickSent = PulseMouseButton(window, 1);
+            ObservePlayerMovement(
+                process, imageBase, before, 1800,
+                directions, ref maximumDisplacement,
+                ref goalChanged, ref after);
+            alternateClickMoved = maximumDisplacement >= 8;
+        }
+        bool moved = maximumDisplacement >= 8;
+        bool turned = directions.Count >= 2;
+        bool alive = after != null && after.Dead == 0;
+        bool directionValid = after != null &&
+            after.Direction >= 1 && after.Direction <= 8;
+        evidence =
+            "target_cell=(" + targetCellX + "," + targetCellY + ")" +
+            "; target_screen=(" + targetScreenX + "," + targetScreenY + ")" +
+            "; cursor=(" + cursorX + "," + cursorY + ")" +
+            "; selection_sent=" + selectionSent +
+            "; selection_actor_bytes_changed=" +
+            selectionActorChangeCount +
+            "; primary_click_sent=" + clickSent +
+            "; primary_click_moved_while_background=" + clickMoved +
+            "; alternate_click_sent=" + alternateClickSent +
+            "; alternate_click_moved_while_background=" +
+            alternateClickMoved +
+            "; displacement=" + maximumDisplacement +
+            "; directions=" + string.Join(",", directions) +
+            "; goal_changed=" + goalChanged +
+            "; motion_observable_while_background=" + moved +
+            "; turn_observable_while_background=" + turned +
+            "; goal=(" + after.GoalKind + "," + after.GoalX + "," +
+            after.GoalY + "); dead=" + after.Dead;
+        return selectionSent && clickSent && alternateClickSent &&
+            cursorReached && alive && directionValid;
+    }
+
+    private static void ObservePlayerMovement(
+        IntPtr process, long imageBase, ActorSnapshot before,
+        int milliseconds, HashSet<int> directions,
+        ref int maximumDisplacement, ref bool goalChanged,
+        ref ActorSnapshot after)
+    {
+        Stopwatch clock = Stopwatch.StartNew();
+        while (clock.ElapsedMilliseconds < milliseconds)
+        {
+            Thread.Sleep(50);
+            ActorSnapshot sample = FindPlayerActor(process, imageBase);
+            if (sample == null)
+                continue;
+            after = sample;
+            directions.Add(sample.Direction);
+            int displacement =
+                Math.Abs(sample.WorldX - before.WorldX) +
+                Math.Abs(sample.WorldY - before.WorldY);
+            maximumDisplacement =
+                Math.Max(maximumDisplacement, displacement);
+            if (sample.GoalKind != before.GoalKind ||
+                sample.GoalX != before.GoalX ||
+                sample.GoalY != before.GoalY)
+                goalChanged = true;
+            if (maximumDisplacement >= 24 &&
+                directions.Count >= 2)
+                break;
+        }
     }
 
     private static CaptureResult CaptureWindow(IntPtr window)
@@ -705,6 +1277,17 @@ internal static class ModRegressionProbe
         {
             return value != 0;
         });
+        if (nonBlank)
+        {
+            byte minimum = byte.MaxValue;
+            byte maximum = byte.MinValue;
+            for (int index = 0; index < pixels.Length; index += 97)
+            {
+                minimum = Math.Min(minimum, pixels[index]);
+                maximum = Math.Max(maximum, pixels[index]);
+            }
+            nonBlank = maximum - minimum >= 16;
+        }
         return new CaptureResult
         {
             Bitmap = bitmap,

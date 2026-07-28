@@ -16,11 +16,17 @@ namespace Mission1937.SDK.Generated
         public const long SafeBlit = 0x0000EE30L;
         public const long MenuPoll = 0x00044800L;
         public const long SmoothScroll = 0x0004C9B0L;
+        public const long WorldHandleClick = 0x0004FED0L;
         public const long FalseResourceWarningBranch = 0x0000734AL;
         public const long StartupMovieEnqueue = 0x0000762CL;
         public const long NewGameLevelImmediate = 0x00003B66L;
         public const long Mission12VwfName = 0x000CF4A8L;
         public const long Mission7VwfName = 0x000CF4F8L;
+        public const long Intro11ResourceName = 0x000CF3E8L;
+        public const long Intro6ResourceName = 0x000CF438L;
+        public const long GetForegroundWindowIat = 0x000EC124L;
+        public const long GetFocusIat = 0x000EC1A8L;
+        public const long GetActiveWindowIat = 0x000EC1BCL;
         public const long CloseHearingRadiusImmediate = 0x0005DD27L;
         public const long AlertRadiusOperand1 = 0x00056E62L;
         public const long AlertRadiusOperand2 = 0x00056E94L;

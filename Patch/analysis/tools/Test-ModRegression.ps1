@@ -4,7 +4,8 @@ param(
     [ValidateRange(20, 600)]
     [int]$DurationSeconds = 60,
     [string]$OutputRoot = '',
-    [switch]$KeepRuntime
+    [switch]$KeepRuntime,
+    [switch]$BriefingOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -117,6 +118,10 @@ Set-Ini $runtimeDdraw 'ddraw' 'devmode' 'true'
 Set-Ini $runtimeDdraw 'ddraw' 'no_dinput_hook' 'true'
 Set-Ini $runtimeDdraw 'ddraw' 'adjmouse' 'false'
 Set-Ini $runtimeDdraw 'ddraw' 'savesettings' '0'
+# The isolated probe never requests real foreground focus. Let its window-only
+# WM_ACTIVATE messages reach the original game so gameplay input can be
+# exercised without stealing focus from the user's desktop.
+Set-Ini $runtimeDdraw 'ddraw' 'noactivateapp' 'false'
 
 $routes = (Get-Content -LiteralPath $routesPath -Raw -Encoding UTF8 |
     ConvertFrom-Json).routes
@@ -137,7 +142,26 @@ foreach ($level in $Levels) {
     [IO.Directory]::CreateDirectory($levelOutput) | Out-Null
     Write-Host ("Running isolated level {0:D2}: {1}" -f
         $level, [string]$route.title)
-    & $probe $runtime $levelOutput $level $DurationSeconds
+    $probeArguments = @(
+        $runtime, $levelOutput, $level, $DurationSeconds)
+    if ($level -ge 13) {
+        $missionId = 'm{0:D3}' -f ($level - 1)
+        $missionDefinition = Join-Path $repositoryRoot (
+            "MapEditor\Missions\$missionId\mission.json")
+        if (Test-Path -LiteralPath $missionDefinition -PathType Leaf) {
+            $mission = Get-Content -LiteralPath $missionDefinition `
+                -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($null -ne $mission.movement_probe) {
+                $probeArguments += @(
+                    [int]$mission.movement_probe.x,
+                    [int]$mission.movement_probe.y)
+            }
+        }
+    }
+    if ($BriefingOnly) {
+        $probeArguments += '--briefing-only'
+    }
+    & $probe @probeArguments
     $probeExit = $LASTEXITCODE
     $resultPath = Join-Path $levelOutput 'result.json'
     $result = if (Test-Path -LiteralPath $resultPath -PathType Leaf) {

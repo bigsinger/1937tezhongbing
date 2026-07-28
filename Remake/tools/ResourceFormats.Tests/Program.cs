@@ -18,6 +18,7 @@ internal static class Program
         {
             ReadsSyntheticGfl(temporaryDirectory);
             RewritesSyntheticGflBriefings(temporaryDirectory);
+            InstallsSyntheticGflBriefings(temporaryDirectory);
             RejectsTruncatedGfl(temporaryDirectory);
             DetectsLegacyHeaders();
             ReadsSyntheticSoundLibrary(temporaryDirectory);
@@ -155,6 +156,76 @@ internal static class Program
                 report.RemovedPayloadBytes,
             new FileInfo(outputResource).Length,
             "rewritten GFL compacted length");
+    }
+
+    private static void InstallsSyntheticGflBriefings(
+        string directory)
+    {
+        var resourcePath = System.IO.Path.Combine(
+            directory,
+            "briefing-install-source.gfl");
+        CreateSyntheticGfl(
+            resourcePath,
+            [
+                ("Intro_000.psd", Array.Empty<byte>()),
+                ("淇濈暀璧勬簮.spr",
+                    Encoding.ASCII.GetBytes("SPR1 retained fixture"))
+            ]);
+        var source = GflArchive.Open(resourcePath);
+        var indexPath = System.IO.Path.Combine(
+            directory,
+            "briefing-install-source-index.gfl");
+        CreateSyntheticIndex(indexPath, source);
+        var outputResource = System.IO.Path.Combine(
+            directory,
+            "briefing-installed.gfl");
+        var outputIndex = System.IO.Path.Combine(
+            directory,
+            "briefing-installed-index.gfl");
+        var replacement = Encoding.ASCII.GetBytes(
+            "IBLOCK generated intro");
+        var extension = Encoding.ASCII.GetBytes(
+            "IBLOCK generated extension");
+        var report = GflPayloadInstaller.Install(
+            resourcePath,
+            indexPath,
+            outputResource,
+            outputIndex,
+            new Dictionary<string, byte[]>(
+                StringComparer.OrdinalIgnoreCase)
+            {
+                ["Intro_000.psd"] = replacement,
+                ["Brief_012.psd"] = extension
+            },
+            "Intro_000.psd");
+
+        Equal(
+            3,
+            report.EntryCount,
+            "installed GFL entry count");
+        Equal(
+            1,
+            report.ReplacedNames.Count,
+            "installed GFL replacement count");
+        Equal(
+            1,
+            report.AddedNames.Count,
+            "installed GFL appended count");
+        var installed = GflArchive.Open(
+            outputResource,
+            outputIndex);
+        Equal(
+            "淇濈暀璧勬簮.spr",
+            installed.Entries[1].OriginalName,
+            "installed GFL preserves unrelated numeric index");
+        Equal(
+            "Brief_012.psd",
+            installed.Entries[2].OriginalName,
+            "installed GFL appends extension briefing");
+        Equal(
+            checked((uint)replacement.Length),
+            installed.Entries[0].Length,
+            "installed GFL replacement length");
     }
 
     private static void DetectsLegacyHeaders()

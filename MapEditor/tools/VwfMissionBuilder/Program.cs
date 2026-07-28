@@ -49,6 +49,7 @@ internal sealed class MissionDefinition
     public double MinimumReachableWalkableRatio { get; set; }
     public int MaximumPatrolSegmentPathLength { get; set; }
     public GridCell PlayerSpawn { get; set; } = new();
+    public ReachabilityTarget? MovementProbe { get; set; }
     public List<EntityEdit> EntityEdits { get; set; } = [];
     public List<ReachabilityTarget> RequiredReachability { get; set; } = [];
     public List<SceneReachabilityTarget> RequiredSceneReachability { get; set; } = [];
@@ -82,6 +83,12 @@ internal sealed class SceneReachabilityTarget
 
 internal sealed class MissionBuilder
 {
+    private const int WorldViewportLeftOffset = 103;
+    private const int WorldViewportTopOffset = 107;
+    private const int WorldViewportRightOffset = 111;
+    private const int WorldViewportBottomOffset = 115;
+    private const int CellWidth = 32;
+    private const int CellHeight = 16;
     private const int EntityPrefixWorldX = 60;
     private const int EntityPrefixWorldY = 64;
     private const int EntityPrefixReferenceX = 104;
@@ -123,6 +130,7 @@ internal sealed class MissionBuilder
     public string Build(string outputPath)
     {
         var sourceHash = Hash(sourcePath);
+        var initialViewport = CenterInitialViewportOnPlayer();
         ClearOriginalOccupancy();
         foreach (var edit in definition.EntityEdits)
             ApplyEntityEdit(edit);
@@ -140,6 +148,10 @@ internal sealed class MissionBuilder
         var outputScenes = VwfSceneList.Open(outputPath);
         if (outputWorld.GridWidth != world.GridWidth ||
             outputWorld.GridHeight != world.GridHeight ||
+            outputWorld.ViewportLeft != initialViewport.Left ||
+            outputWorld.ViewportTop != initialViewport.Top ||
+            outputWorld.ViewportRight != initialViewport.Right ||
+            outputWorld.ViewportBottom != initialViewport.Bottom ||
             outputScenes.SlotCount != scenes.SlotCount ||
             outputScenes.Entities.Count != scenes.Entities.Count ||
             outputTerrain.SceneListOffset != terrain.SceneListOffset)
@@ -150,7 +162,42 @@ internal sealed class MissionBuilder
 
         return BuildReport(
             sourceHash, Hash(outputPath), outputPath,
-            outputScenes, spawnSafety, navigationCoverage, validations);
+            outputScenes, initialViewport,
+            spawnSafety, navigationCoverage, validations);
+    }
+
+    private InitialViewport CenterInitialViewportOnPlayer()
+    {
+        var spawnWorldX = checked(
+            definition.PlayerSpawn.X * CellWidth +
+            CellWidth / 2);
+        var spawnWorldY = checked(
+            definition.PlayerSpawn.Y * CellHeight +
+            CellHeight / 2);
+        var viewportWidth = checked((int)world.ViewportWidth);
+        var viewportHeight = checked((int)world.ViewportHeight);
+        var worldWidth = checked(
+            (int)world.GridWidth * CellWidth);
+        var worldHeight = checked(
+            (int)world.GridHeight * CellHeight);
+        var left = Math.Clamp(
+            spawnWorldX - viewportWidth / 2,
+            0,
+            Math.Max(0, worldWidth - viewportWidth));
+        var top = Math.Clamp(
+            spawnWorldY - viewportHeight / 2,
+            0,
+            Math.Max(0, worldHeight - viewportHeight));
+        var viewport = new InitialViewport(
+            left,
+            top,
+            checked(left + viewportWidth),
+            checked(top + viewportHeight));
+        WriteInt32(WorldViewportLeftOffset, viewport.Left);
+        WriteInt32(WorldViewportTopOffset, viewport.Top);
+        WriteInt32(WorldViewportRightOffset, viewport.Right);
+        WriteInt32(WorldViewportBottomOffset, viewport.Bottom);
+        return viewport;
     }
 
     private void ValidateDefinition()
@@ -215,6 +262,16 @@ internal sealed class MissionBuilder
             definition.PlayerSpawn.X,
             definition.PlayerSpawn.Y,
             "player spawn");
+        if (definition.MovementProbe is not null)
+        {
+            if (string.IsNullOrWhiteSpace(definition.MovementProbe.Name))
+                throw new InvalidDataException(
+                    "movement_probe requires a descriptive name.");
+            ValidateCell(
+                definition.MovementProbe.X,
+                definition.MovementProbe.Y,
+                definition.MovementProbe.Name);
+        }
         foreach (var target in definition.RequiredReachability)
             ValidateCell(target.X, target.Y, target.Name);
         foreach (var target in definition.RequiredSceneReachability)
@@ -328,7 +385,23 @@ internal sealed class MissionBuilder
                 checked((uint)edit.Direction.Value));
 
         if (edit.Patrol is not null)
-            ApplyPatrolEdit(entity, edit.Patrol);
+            ApplyPatrolEdit(
+                entity,
+                NormalizePatrolStart(
+                    edit.Patrol,
+                    new GridCell { X = edit.CellX, Y = edit.CellY }));
+        else if (entity.Patrol is not null)
+            ApplyPatrolEdit(
+                entity,
+                NormalizePatrolStart(
+                    entity.Patrol.Waypoints
+                        .Select(point => new GridCell
+                        {
+                            X = checked((int)point.X),
+                            Y = checked((int)point.Y)
+                        })
+                        .ToList(),
+                    new GridCell { X = edit.CellX, Y = edit.CellY }));
     }
 
     private void EnsureTargetOpen(
@@ -426,6 +499,34 @@ internal sealed class MissionBuilder
         var results = new List<PathValidation>();
         var failures = new List<string>();
         var spawn = definition.PlayerSpawn;
+        if (definition.MovementProbe is not null)
+        {
+            var probe = definition.MovementProbe;
+            var probeIndex = CellIndex(probe.X, probe.Y);
+            var occupant = ReadUInt32(checked(
+                movementLayerOffset + probeIndex * sizeof(uint)));
+            var length = FindPathLength(spawn, probe);
+            if (occupant != 0)
+            {
+                failures.Add(
+                    $"Movement probe “{probe.Name}” at " +
+                    $"({probe.X}, {probe.Y}) is occupied by grid value " +
+                    $"{occupant}. Nearby open cells: " +
+                    $"{NearbyOpenCells(probe.X, probe.Y)}.");
+            }
+            else if (length <= 0)
+            {
+                failures.Add(
+                    $"Movement probe “{probe.Name}” must be a distinct, " +
+                    "reachable empty cell.");
+            }
+            else
+            {
+                results.Add(new PathValidation(
+                    $"自动实机移动探针 → {probe.Name}",
+                    spawn.X, spawn.Y, probe.X, probe.Y, length));
+            }
+        }
         foreach (var target in definition.RequiredReachability)
         {
             var length = FindPathLength(spawn, target);
@@ -617,17 +718,41 @@ internal sealed class MissionBuilder
         var edit = definition.EntityEdits.FirstOrDefault(
             item => item.SceneIndex == sceneIndex);
         if (edit?.Patrol is not null)
-            return edit.Patrol;
+            return NormalizePatrolStart(
+                edit.Patrol,
+                new GridCell { X = edit.CellX, Y = edit.CellY });
         var patrol = entities[sceneIndex].Patrol;
         if (patrol is null)
             return [];
-        return patrol.Waypoints
+        return NormalizePatrolStart(
+            patrol.Waypoints
             .Select(point => new GridCell
             {
                 X = checked((int)point.X),
                 Y = checked((int)point.Y)
             })
-            .ToList();
+            .ToList(),
+            EffectiveCell(sceneIndex));
+    }
+
+    private static IReadOnlyList<GridCell> NormalizePatrolStart(
+        IReadOnlyList<GridCell> route, GridCell spawn)
+    {
+        // The original engine immediately replans every zero-length first
+        // segment. A mission with many redeployed patrols can therefore hitch
+        // on its first active frame. Patrol arrays are cyclic, so rotating a
+        // leading spawn waypoint to the end preserves the route while making
+        // every actor begin with a real movement segment.
+        if (route.Count <= 1 ||
+            route[0].X != spawn.X ||
+            route[0].Y != spawn.Y)
+            return route;
+
+        var normalized = new List<GridCell>(route.Count);
+        for (var index = 1; index < route.Count; index++)
+            normalized.Add(route[index]);
+        normalized.Add(route[0]);
+        return normalized;
     }
 
     private static int WorldDistance(GridCell left, GridCell right)
@@ -760,6 +885,7 @@ internal sealed class MissionBuilder
         string outputHash,
         string outputPath,
         VwfSceneList outputScenes,
+        InitialViewport initialViewport,
         SpawnSafetyValidation spawnSafety,
         NavigationCoverage navigationCoverage,
         IReadOnlyList<PathValidation> validations)
@@ -887,4 +1013,10 @@ internal sealed class MissionBuilder
         int ReachableCells,
         int TraversableCells,
         double Ratio);
+
+    private sealed record InitialViewport(
+        int Left,
+        int Top,
+        int Right,
+        int Bottom);
 }

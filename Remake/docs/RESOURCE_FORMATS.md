@@ -78,25 +78,34 @@ plain[i] = (cipher[i] - key[i]) & 0xff
 
 WAV 共约 128.6 秒，以 22050 Hz/16-bit 单声道为主，少量为 8-bit 或 11025 Hz。
 
-### MOD 的无图片简报变体
+### MOD 的原流程文字简报
 
-`ResourceTool strip-briefings` 用于生成文字简报版所需的 GFL 对。它不会
-删除记录或改变编号，而是把 `Intro_000.psd`—`Intro_011.psd`（索引
-1048—1059）的 payload 长度改为 0，再为后续记录重算
-`payload_data_offset`，同步生成新的 `InterMedia.GFL`。输出会被
-`GflArchive.Open(resource, index)` 逐条重读，名称、属性、非目标长度、
-偏移和 1,394 个条目数任一不一致都会失败。
+最终方案不再清空简报资源或显示额外窗口。`ResourceTool
+install-text-briefings` 读取 `Mod/关卡名称.json`，把十五关文字绘制为
+640×480 RGB565，使用本项目的 LZO1X 编码器封装为 IBLOCK，再重建成对
+GFL：
+
+- `Intro_000.psd`—`Intro_011.psd`（原索引 1048—1059）原位替换；
+- `Brief_012.psd`—`Brief_014.psd` 追加在资源尾部；
+- 所有原有名称、属性、非目标载荷及数字索引保持；
+- 完成后用 `GflArchive.Open(resource, index)` 逐项重读验证。
 
 ```powershell
 dotnet run --project .\tools\ResourceTool -c Release -- `
-  strip-briefings .\原版\1937Resources.GFL .\原版\InterMedia.GFL `
-  .\输出\1937Resources.GFL .\输出\InterMedia.GFL
+  install-text-briefings .\Mod\关卡名称.json `
+  .\Mod\1937Resources.GFL .\Mod\InterMedia.GFL `
+  .\输出\1937Resources.GFL .\输出\InterMedia.GFL `
+  E:\1937\text-briefing-previews
 ```
 
-该命令要求输出文件尚不存在，也拒绝源/目标路径重合。合成 fixture 覆盖
-索引保持、载荷清空、非目标资源逐字节长度保持、伴随索引重读和压缩后长度。
-`Mod` 的最终归档减少 5,461,822 字节；第 1、12 关已在原引擎中分别验证
-首尾简报索引不会再被读取。
+仓库入口 `Patch/tools/Update-TextBriefings.ps1` 还会在生成成功后以同卷
+临时文件成对替换 Mod 资源，异常时恢复备份。最终归档有 1,397 个条目，
+SHA-256 为
+`C5C785E926E300D779E8DFB6EEB4B26FA4597011B4D425347907DD56753D9158`。
+连续生成哈希一致。合成 fixture 覆盖 LZO1X/IBLOCK 往返、原位替换、
+扩展资源追加、非目标索引保持和伴随索引重读。
+
+`strip-briefings` 作为容器研究与回归工具继续保留，但不再用于发布产品。
 
 ## LZO1X、RGB565 与旧引擎兼容行为
 

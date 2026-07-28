@@ -40,15 +40,21 @@ foreach ($forbiddenBriefingPrimitive in @(
     }
 }
 foreach ($requiredBriefingElement in @(
-    'ShowTextMissionBriefing',
-    'LoadBriefingCatalogOverride',
-    'SW_SHOWNOACTIVATE',
-    'legacy_briefing')) {
+    'original_text_asset',
+    'Brief_012.psd',
+    'Brief_013.psd',
+    'Brief_014.psd',
+    'briefing_advance')) {
     if (-not $source.Contains($requiredBriefingElement)) {
         throw (
-            'Proxy is missing in-game text briefing element: ' +
+            'Proxy is missing original-flow text briefing element: ' +
             $requiredBriefingElement)
     }
+}
+if ($source -notmatch (
+        '(?s)#if\s+0\s+struct TextBriefingContent.*?' +
+        '#endif\s+bool UseEnhancedEnemyAI')) {
+    throw 'The obsolete top-level briefing dialog is not compile-disabled.'
 }
 
 $snapshotStart = $source.IndexOf(
@@ -88,6 +94,7 @@ foreach ($required in @(
     TelemetryDiskIoOnInputThread = 0
     TelemetryQueue = 'bounded'
     TelemetryWriterPriority = 'below-normal'
-    InGameTextBriefing = 'native-noactivate-test-path'
-    RuntimeEditableCatalog = $true
+    InGameTextBriefing = 'original-screen-gfl-text-picture'
+    ExternalBriefingDialog = $false
+    RuntimeEditableCatalog = 'rebuild-gfl-from-json'
 }

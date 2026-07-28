@@ -11,6 +11,11 @@
     "x": 1,
     "y": 198
   },
+  "movement_probe": {
+    "name": "西南排水沟内侧空地",
+    "x": 5,
+    "y": 194
+  },
   "required_scene_reachability": [
     { "name": "日军空军指挥官", "scene_index": 759 },
     { "name": "西南弹药节点", "scene_index": 1350 },

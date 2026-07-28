@@ -20,7 +20,7 @@ powershell -NoProfile -ExecutionPolicy Bypass `
   -File .\MapEditor\Missions\m014\Build-Mission.ps1
 ```
 
-中间文件默认只写到系统临时目录的 `1937-vwf\m014`；也可通过
+中间文件默认只写到 `E:\1937\1937-vwf\m014`；也可通过
 `-WorkDirectory` 指定开发工作区。源 SHA-256、区块排列、
 新地表指纹和同位差异率见 `composition.md`；出生安全、任务锚点和逐段
 A* 结果见 `validation.md`。
@@ -33,11 +33,13 @@ A* 结果见 `validation.md`。
 单逻辑核占用约 42.5%，表现为画面卡顿且难以卷到地图边缘。
 
 当前版本保留两个 scene 的 42/23 个原生序列槽位，只把内容改为目标区
-附近的短循环；最长单段为 9 步。`mission.json` 同时声明
+附近的短循环；这两条路线最长单段为 16 步，全关最长单段为 50 步。
+`mission.json` 同时声明
 `maximum_patrol_segment_path_length: 64`，生成器会拒绝任何超过该预算
 的巡逻段，避免静态“可达”但运行时不可玩的关卡再次发布。
 
 修复后 VWF 的 SHA-256 为
-`412468E20B40BCBD4A71089F11A7BF5A29EDFC8F34E8EFE1C94EE0D6CBA4B23D`。
-隔离窗口探针测得单逻辑核占用约 8—9%、未响应 0 次；进程内四角验证覆盖
+`EB42E7F606D1926E35EB7617652BCCA7AB906E8762F77A4B75B5B32AF2C8BFFA`。
+隔离窗口探针测得单逻辑核占用约 5.35%、未响应 0 次；起始相机
+`(0,2492)` 的渲染、命中换算和矩形副本完全同步，进程内四角验证覆盖
 完整合法相机范围 3044×2589，不移动、裁剪或接管系统鼠标。

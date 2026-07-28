@@ -11,5 +11,5 @@
   "output_vwf": "Mod/1937m013.vwf",
   "mission_definition": "MapEditor/Missions/m013/mission.json",
   "mission_report": "MapEditor/Missions/m013/validation.md",
-  "expected_output_sha256": "668535E9431F5B38F7361D546B585C4DCF32257DB21E7E954D0E1BF6578AFE3C"
+  "expected_output_sha256": "1D806244F6F930FAD56C1B584C49369022B8C604CE7CB5D616608AB05B3460E3"
 }

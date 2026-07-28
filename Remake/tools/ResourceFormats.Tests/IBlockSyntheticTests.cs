@@ -75,6 +75,38 @@ internal static class IBlockSyntheticTests
             "embedded IBLOCK decode",
             ref checks);
 
+        var generatedRgb565 = new byte[640 * 24 * 2];
+        for (var index = 0;
+             index < generatedRgb565.Length;
+             index += 2)
+        {
+            var pixel = (ushort)(
+                index % 257 == 0 ? 0xFFFF : 0x18E3);
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                generatedRgb565.AsSpan(index, 2),
+                pixel);
+        }
+        var generatedBlock = IBlockImageEncoder.EncodeRgb565(
+            640,
+            24,
+            generatedRgb565);
+        var generatedImage = IBlockImage.Read(
+            new MemoryStream(generatedBlock));
+        var generatedExpected = IBlockImage.FromRgb565(
+            640,
+            24,
+            generatedRgb565);
+        True(
+            generatedImage.Rgba32.Span.SequenceEqual(
+                generatedExpected.Rgba32.Span),
+            "generated IBLOCK LZO round-trip",
+            ref checks);
+        True(
+            generatedBlock.Length <
+                IBlockImage.HeaderSize + generatedRgb565.Length / 4,
+            "generated briefing IBLOCK compression",
+            ref checks);
+
         return checks;
     }
 

@@ -28,14 +28,12 @@ DirectInputCreateAProc g_real_create = nullptr;
 unsigned char *g_executable_base = nullptr;
 HWND g_game_window = nullptr;
 bool g_timer_period_active = false;
-DWORD g_probe_mission_started_at = 0;
 thread_local bool g_pumping_messages = false;
 volatile LONG g_last_message_pump_tick = 0;
 void *g_safe_blit_trampoline = nullptr;
 void *g_menu_poll_trampoline = nullptr;
 void *g_alert_propagation_trampoline = nullptr;
 volatile LONG g_auto_start_consumed = 0;
-DWORD g_probe_last_advance_at = 0;
 wchar_t g_mod_log[MAX_PATH]{};
 wchar_t g_telemetry_log[MAX_PATH]{};
 wchar_t g_real_dinput_copy[MAX_PATH]{};
@@ -49,9 +47,6 @@ WNDPROC g_original_replay_window_proc = nullptr;
 HWND g_replay_subclass_window = nullptr;
 
 constexpr UINT kWindowReplayMessage = WM_APP + 0x137;
-constexpr UINT_PTR kTextBriefingTimer = 0x1937;
-constexpr wchar_t kTextBriefingWindowClass[] =
-    L"M1937TextMissionBriefingWindow";
 
 enum WindowReplayCommand : WPARAM {
     replay_key_down = 1,
@@ -195,6 +190,7 @@ EnhancedSearchState g_search_states[256]{};
 volatile LONG g_last_ai_tick = 0;
 int g_ai_last_mission = -1;
 std::uintptr_t g_ai_actor_table = 0;
+volatile LONG g_extension_camera_centered = 0;
 
 void ClearEnhancedSearchStates();
 
@@ -919,23 +915,22 @@ bool IsAutomatedLaunchEnabled() {
     return IsAutomatedProbeEnabled() || IsAutomaticMissionStartEnabled();
 }
 
-DWORD TextBriefingAutoCloseMilliseconds() {
-    char value[16]{};
+bool HoldAutomatedBriefingForCapture() {
+    char value[8]{};
     const DWORD length = GetEnvironmentVariableA(
-        "M1937_BRIEFING_AUTOCLOSE_MS",
+        "M1937_AUTOTEST_BRIEFING_HOLD",
         value,
         static_cast<DWORD>(sizeof(value)));
-    if (length > 0 && length < sizeof(value)) {
-        char *end = nullptr;
-        const long milliseconds = strtol(value, &end, 10);
-        if (end != value && *end == '\0' &&
-            milliseconds >= 50 && milliseconds <= 60000) {
-            return static_cast<DWORD>(milliseconds);
-        }
-    }
-    return IsAutomatedProbeEnabled() ? 150U : 0U;
+    return length > 0 && length < sizeof(value) &&
+        strcmp(value, "1") == 0;
 }
 
+// Historical note: v1.4.1 temporarily rendered the briefing in a separate
+// top-level Win32 dialog. Keep the old parser/renderer below excluded for one
+// release so existing diagnostics can still be compared, but it is no longer
+// compiled or reachable. Text is now rasterized into the original GFL briefing
+// picture and displayed by the game's own screen and continuation loop.
+#if 0
 struct TextBriefingContent {
     std::wstring title;
     std::wstring briefing;
@@ -1807,6 +1802,7 @@ bool ShowTextMissionBriefing(
         route.id);
     return dialog.accepted;
 }
+#endif
 
 bool UseEnhancedEnemyAI() {
     char value[8]{};
@@ -1966,28 +1962,29 @@ int FinalizeMenuCommand(int command) {
     if (command != 1 || !g_executable_base) {
         return command;
     }
-    const auto *route = RequestedBriefingRoute();
-    if (route) {
-        if (!ShowTextMissionBriefing(*route)) {
+    const int mission = *reinterpret_cast<int *>(
+        g_executable_base + m1937::sdk::rva::current_mission);
+    if (mission == 0) {
+        const auto *route = RequestedBriefingRoute();
+        if (route) {
+            // Keep the original synchronous briefing screen and its original
+            // click/Enter continuation path. Only the GFL picture payload (or
+            // the extension-level resource name) is replaced with text art.
+            RecordDiagnostic(
+                "legacy_briefing", "original_text_asset", route->id);
+        }
+        if (IsAutomatedProbeEnabled() &&
+            !HoldAutomatedBriefingForCapture()) {
+            // A normal unattended gameplay run must prime the byte before the
+            // original synchronous briefing loop snapshots it. The separate
+            // briefing-only probe leaves it clear and terminates after taking
+            // a window-only capture. Real player launches never enter either
+            // branch.
             *reinterpret_cast<unsigned char *>(
                 g_executable_base +
-                m1937::sdk::rva::briefing_advance) = 0;
-            FlushDiagnostics();
-            return 0;
+                m1937::sdk::rva::briefing_advance) = 1;
         }
-        // The player has accepted the in-process text briefing. The original
-        // caller now enters its synchronous image loop; acknowledge that loop
-        // with its own state byte so no picture or synthetic click is needed.
-        *reinterpret_cast<unsigned char *>(
-            g_executable_base +
-            m1937::sdk::rva::briefing_advance) = 1;
-        RecordDiagnostic(
-            "legacy_briefing", "replaced", route->id);
         FlushDiagnostics();
-    } else if (IsAutomatedProbeEnabled()) {
-        *reinterpret_cast<unsigned char *>(
-            g_executable_base +
-            m1937::sdk::rva::briefing_advance) = 1;
     }
     return command;
 }
@@ -2264,6 +2261,93 @@ bool RuntimeActors(
     return true;
 }
 
+void CenterExtensionMissionCameraOnce() {
+    if (!g_executable_base ||
+        InterlockedCompareExchange(
+            &g_extension_camera_centered, 0, 0) != 0) {
+        return;
+    }
+    const int selector_level = RequestedStartLevel();
+    if (selector_level < 13 || selector_level > 15) {
+        return;
+    }
+    m1937::sdk::RuntimeActorV1 **actors = nullptr;
+    int actor_count = 0;
+    if (!RuntimeActors(&actors, &actor_count)) {
+        return;
+    }
+    m1937::sdk::RuntimeActorV1 *player = nullptr;
+    for (int index = 0; index < actor_count; ++index) {
+        auto *candidate = actors[index];
+        if (!candidate ||
+            !IsReadableRange(candidate, sizeof(*candidate)) ||
+            candidate->faction_id != 3 ||
+            candidate->dead_or_disabled != 0) {
+            continue;
+        }
+        if (!player || candidate->database_entry_id == 924) {
+            player = candidate;
+        }
+        if (candidate->database_entry_id == 924) {
+            break;
+        }
+    }
+    const std::uint32_t viewport_address =
+        *reinterpret_cast<std::uint32_t *>(
+            g_executable_base +
+            m1937::sdk::rva::viewport_controller);
+    auto *viewport =
+        reinterpret_cast<m1937::sdk::RuntimeViewportControllerV1 *>(
+            static_cast<std::uintptr_t>(viewport_address));
+    if (!player ||
+        !IsReadableRange(viewport, sizeof(*viewport)) ||
+        viewport->viewport_width <= 0 ||
+        viewport->viewport_height <= 0 ||
+        viewport->world_width < viewport->viewport_width ||
+        viewport->world_height < viewport->viewport_height ||
+        InterlockedCompareExchange(
+            &g_extension_camera_centered, 1, 0) != 0) {
+        return;
+    }
+    const int camera_x = ClampSetting(
+        player->world_x - viewport->viewport_width / 2,
+        0,
+        viewport->world_width - viewport->viewport_width);
+    const int camera_y = ClampSetting(
+        player->world_y - viewport->viewport_height / 2,
+        0,
+        viewport->world_height - viewport->viewport_height);
+
+    // The renderer uses the globals below, while hit testing and world-click
+    // coordinate conversion use the viewport controller copies. Updating only
+    // one side makes the picture and cursor disagree, so commit the complete
+    // camera rectangle together on the game thread.
+    viewport->camera_left = camera_x;
+    viewport->camera_top = camera_y;
+    viewport->camera_right = camera_x + viewport->viewport_width;
+    viewport->camera_bottom = camera_y + viewport->viewport_height;
+    viewport->input_camera_left = camera_x;
+    viewport->input_camera_top = camera_y;
+    *reinterpret_cast<int *>(
+        g_executable_base + m1937::sdk::rva::camera_x) = camera_x;
+    *reinterpret_cast<int *>(
+        g_executable_base + m1937::sdk::rva::camera_y) = camera_y;
+
+    char detail[96]{};
+    snprintf(
+        detail,
+        sizeof(detail),
+        "level_%d_camera_%d_%d_view_%d_%d",
+        selector_level,
+        camera_x,
+        camera_y,
+        viewport->viewport_width,
+        viewport->viewport_height);
+    RecordDiagnostic(
+        "extension_spawn_camera", "synchronized", detail);
+    FlushDiagnostics();
+}
+
 void DirectionVector(int direction, int *x, int *y) {
     static const int dx[] = {0, 0, 1, 1, 1, 0, -1, -1, -1};
     static const int dy[] = {0, -1, -1, 0, 1, 1, 1, 0, -1};
@@ -2307,6 +2391,7 @@ void AssignSearchGoal(
     actor->goal_repath_pending = 1;
     actor->goal_motion_pending = 1;
     actor->search_or_return_active = 1;
+    actor->movement_active = 1;
 }
 
 void ClearEnhancedSearchStates() {
@@ -2743,6 +2828,91 @@ bool ApplyExpandedViewportPatches(unsigned char *base) {
     return success;
 }
 
+using WindowQueryProc = HWND(WINAPI *)();
+WindowQueryProc g_real_game_get_foreground_window = nullptr;
+WindowQueryProc g_real_game_get_focus = nullptr;
+WindowQueryProc g_real_game_get_active_window = nullptr;
+
+HWND WINAPI AutomatedGameGetForegroundWindow() {
+    return g_game_window
+        ? g_game_window
+        : (g_real_game_get_foreground_window
+            ? g_real_game_get_foreground_window()
+            : nullptr);
+}
+
+HWND WINAPI AutomatedGameGetFocus() {
+    return g_game_window
+        ? g_game_window
+        : (g_real_game_get_focus ? g_real_game_get_focus() : nullptr);
+}
+
+HWND WINAPI AutomatedGameGetActiveWindow() {
+    return g_game_window
+        ? g_game_window
+        : (g_real_game_get_active_window
+            ? g_real_game_get_active_window()
+            : nullptr);
+}
+
+bool PatchWindowQueryImport(
+    unsigned char *base,
+    std::uintptr_t slot_rva,
+    const char *name,
+    void *replacement,
+    WindowQueryProc *original) {
+    if (!base || !name || !replacement || !original) {
+        return false;
+    }
+    HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    auto expected = user32
+        ? reinterpret_cast<void *>(GetProcAddress(user32, name))
+        : nullptr;
+    auto **slot = reinterpret_cast<void **>(base + slot_rva);
+    // cnc-ddraw may already wrap these imports before the proxy initializes.
+    // The executable identity and cataloged IAT slot still provide the guard;
+    // accept either USER32's pointer or its existing non-null local wrapper.
+    if (!expected || !*slot) {
+        return false;
+    }
+    DWORD previous = 0;
+    if (!VirtualProtect(
+            slot, sizeof(*slot), PAGE_READWRITE, &previous)) {
+        return false;
+    }
+    *original = reinterpret_cast<WindowQueryProc>(*slot);
+    *slot = replacement;
+    DWORD ignored = 0;
+    VirtualProtect(slot, sizeof(*slot), previous, &ignored);
+    FlushInstructionCache(GetCurrentProcess(), slot, sizeof(*slot));
+    return true;
+}
+
+bool InstallAutomatedForegroundQueryHooks(unsigned char *base) {
+    if (!IsWindowReplayEnabled()) {
+        return false;
+    }
+    const bool foreground = PatchWindowQueryImport(
+        base,
+        m1937::sdk::rva::get_foreground_window_iat,
+        "GetForegroundWindow",
+        reinterpret_cast<void *>(&AutomatedGameGetForegroundWindow),
+        &g_real_game_get_foreground_window);
+    const bool focus = PatchWindowQueryImport(
+        base,
+        m1937::sdk::rva::get_focus_iat,
+        "GetFocus",
+        reinterpret_cast<void *>(&AutomatedGameGetFocus),
+        &g_real_game_get_focus);
+    const bool active = PatchWindowQueryImport(
+        base,
+        m1937::sdk::rva::get_active_window_iat,
+        "GetActiveWindow",
+        reinterpret_cast<void *>(&AutomatedGameGetActiveWindow),
+        &g_real_game_get_active_window);
+    return foreground && focus && active;
+}
+
 void ApplyLegacyExecutablePatches() {
     const auto module = m1937::sdk::ModuleView::current_process();
     const auto compatibility = module.compatibility();
@@ -2757,6 +2927,14 @@ void ApplyLegacyExecutablePatches() {
     }
     auto *base = reinterpret_cast<unsigned char *>(module.base());
     g_executable_base = base;
+    if (IsWindowReplayEnabled()) {
+        RecordDiagnostic(
+            "autotest_window_queries",
+            InstallAutomatedForegroundQueryHooks(base)
+                ? "process_local"
+                : "rejected",
+            "no_system_focus_change");
+    }
     if (g_mod_config.enabled) {
         int expanded_width = 0;
         int expanded_height = 0;
@@ -2769,7 +2947,7 @@ void ApplyLegacyExecutablePatches() {
                 safe_blit ? "patch_group" : "safe_blit_signature");
         }
     }
-    if (IsAutomatedLaunchEnabled() || RequestedBriefingRoute()) {
+    if (IsAutomatedLaunchEnabled()) {
         RecordDiagnostic(
             "menu_command_hook",
             InstallAutoStartMenuHook(base) ? "enabled" : "rejected",
@@ -2805,10 +2983,12 @@ void ApplyLegacyExecutablePatches() {
         "signature_guard");
 
     // The original "New Game" thunk always writes mission number 1 to
-    // The selector-to-engine mapping and optional fixed-length filename
-    // redirect come from SDK/mission-routes.json. A normal launch keeps the
-    // original first-mission behavior. Validation is completed before any
-    // route byte is changed, and a failed second write rolls the first back.
+    // The selector-to-engine mapping and optional fixed-length VWF/briefing
+    // resource redirects come from SDK/mission-routes.json. A normal launch
+    // keeps the original first-mission behavior. The first twelve Intro_*.psd
+    // GFL payloads are text-rendered pictures, while extension missions point
+    // their reused engine slot at a unique appended Brief_*.psd resource.
+    // Every address is signature-checked before the route is changed.
     const int requested_level = RequestedStartLevel();
     const auto *route = m1937::sdk::find_mission_route(requested_level);
     if (route) {
@@ -2818,6 +2998,28 @@ void ApplyLegacyExecutablePatches() {
         auto *redirect_address = route->redirect_rva == 0
             ? nullptr
             : base + route->redirect_rva;
+        unsigned char *briefing_address = nullptr;
+        const char *briefing_expected = nullptr;
+        const char *briefing_replacement = nullptr;
+        if (route->selector_level == 13) {
+            briefing_address =
+                base + m1937::sdk::rva::intro_11_resource_name;
+            briefing_expected = "Intro_011.psd";
+            briefing_replacement = "Brief_012.psd";
+        } else if (route->selector_level == 14) {
+            briefing_address =
+                base + m1937::sdk::rva::intro_6_resource_name;
+            briefing_expected = "Intro_006.psd";
+            briefing_replacement = "Brief_013.psd";
+        } else if (route->selector_level == 15) {
+            briefing_address =
+                base + m1937::sdk::rva::intro_6_resource_name;
+            briefing_expected = "Intro_006.psd";
+            briefing_replacement = "Brief_014.psd";
+        }
+        const size_t briefing_size = briefing_expected
+            ? strlen(briefing_expected) + 1
+            : 0;
         const int original_level = 1;
         const bool level_matches =
             memcmp(level_address, &original_level, sizeof(original_level)) == 0;
@@ -2826,11 +3028,19 @@ void ApplyLegacyExecutablePatches() {
             (strlen(route->redirect_expected) + 1 == vwf_size &&
              memcmp(
                  redirect_address, route->redirect_expected, vwf_size) == 0);
+        const bool briefing_matches =
+            !briefing_address ||
+            (strlen(briefing_replacement) + 1 == briefing_size &&
+             memcmp(
+                 briefing_address,
+                 briefing_expected,
+                 briefing_size) == 0);
         const bool file_exists =
             !route->requires_file ||
             GetFileAttributesA(route->vwf_name) != INVALID_FILE_ATTRIBUTES;
 
-        if (level_matches && redirect_matches && file_exists) {
+        if (level_matches && redirect_matches &&
+            briefing_matches && file_exists) {
             const bool redirected =
                 !redirect_address ||
                 PatchExecutableBytes(
@@ -2839,8 +3049,18 @@ void ApplyLegacyExecutablePatches() {
                         route->redirect_expected),
                     reinterpret_cast<const unsigned char *>(route->vwf_name),
                     vwf_size);
-            const bool level_patched =
+            const bool briefing_redirected =
                 redirected &&
+                (!briefing_address ||
+                 PatchExecutableBytes(
+                     briefing_address,
+                     reinterpret_cast<const unsigned char *>(
+                         briefing_expected),
+                     reinterpret_cast<const unsigned char *>(
+                         briefing_replacement),
+                     briefing_size));
+            const bool level_patched =
+                briefing_redirected &&
                 PatchImmediate32(
                     base,
                     m1937::sdk::rva::new_game_level_immediate,
@@ -2854,6 +3074,16 @@ void ApplyLegacyExecutablePatches() {
                         route->redirect_expected),
                     vwf_size);
             }
+            if (!level_patched &&
+                briefing_address && briefing_redirected) {
+                PatchExecutableBytes(
+                    briefing_address,
+                    reinterpret_cast<const unsigned char *>(
+                        briefing_replacement),
+                    reinterpret_cast<const unsigned char *>(
+                        briefing_expected),
+                    briefing_size);
+            }
             RecordDiagnostic(
                 "mission_route",
                 level_patched ? "enabled" : "rolled_back",
@@ -2861,7 +3091,11 @@ void ApplyLegacyExecutablePatches() {
         } else {
             RecordDiagnostic(
                 "mission_route", "original",
-                !file_exists ? "missing_vwf" : "signature_guard");
+                !file_exists
+                    ? "missing_vwf"
+                    : (!briefing_matches
+                        ? "briefing_signature_guard"
+                        : "signature_guard"));
         }
     }
 
@@ -3045,30 +3279,7 @@ void PumpWindowMessages() {
         &g_last_message_pump_tick, static_cast<LONG>(now_tick));
     g_pumping_messages = true;
     const LONGLONG pump_started = PerformanceCounterNow();
-
-    // Automated validation can continue through later mission modal states
-    // without activating the window or moving the user's physical mouse.
-    // The initial image briefing is handled exactly once by the menu-command
-    // hook after the in-process text dialog has been accepted.
-    const bool automated_probe = IsAutomatedProbeEnabled();
-    if (automated_probe && g_executable_base) {
-        const int mission =
-            *reinterpret_cast<int *>(
-                g_executable_base +
-                m1937::sdk::rva::current_mission);
-        if (mission >= 1 && mission <= 12) {
-            if (g_probe_mission_started_at == 0) {
-                g_probe_mission_started_at = GetTickCount();
-            } else if (
-                GetTickCount() - g_probe_mission_started_at >= 1500 &&
-                GetTickCount() - g_probe_last_advance_at >= 2000) {
-                *reinterpret_cast<unsigned char *>(
-                    g_executable_base +
-                    m1937::sdk::rva::briefing_advance) = 1;
-                g_probe_last_advance_at = GetTickCount();
-            }
-        }
-    }
+    CenterExtensionMissionCameraOnce();
 
     // Do not consume keyboard or mouse messages here. The original loop must
     // see them in order for F1, M and the other game hotkeys to toggle their

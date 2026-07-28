@@ -32,7 +32,8 @@ struct RuntimeActorV1 final {
     std::int32_t goal_motion_pending;       // +0x1A8
     std::byte unknown_1ac[40];
     std::int32_t search_or_return_active;   // +0x1D4
-    std::byte unknown_1d8[60];
+    std::int32_t movement_active;           // +0x1D8
+    std::byte unknown_1dc[56];
     std::uint32_t target_actor_address;     // +0x214
     std::byte unknown_218[48];
     std::int32_t search_delay_limit;        // +0x248
@@ -51,6 +52,29 @@ struct RuntimeWorldV1 final {
     std::byte unknown_01c[32];
     std::int32_t actor_count;                // +0x03C
 };
+
+struct RuntimeViewportControllerV1 final {
+    std::byte unknown_000[40];
+    std::int32_t viewport_width;              // +0x028
+    std::int32_t viewport_height;             // +0x02C
+    std::int32_t camera_left;                 // +0x030
+    std::int32_t camera_top;                  // +0x034
+    std::int32_t camera_right;                // +0x038
+    std::int32_t camera_bottom;               // +0x03C
+    std::byte unknown_040[4];
+    std::int32_t input_camera_left;           // +0x044
+    std::int32_t input_camera_top;            // +0x048
+    std::int32_t grid_width;                  // +0x04C
+    std::int32_t grid_height;                 // +0x050
+    std::int32_t world_width;                 // +0x054
+    std::int32_t world_height;                // +0x058
+    std::int32_t scroll_velocity;             // +0x05C
+    std::int32_t scroll_velocity_limit;       // +0x060
+    std::int32_t scroll_direction;            // +0x064
+    std::int32_t render_width;                // +0x068
+    std::int32_t render_height;               // +0x06C
+    std::int32_t scroll_disabled;             // +0x070
+};
 #pragma pack(pop)
 
 static_assert(offsetof(RuntimeActorV1, database_entry_id) == 0x064);
@@ -66,6 +90,7 @@ static_assert(offsetof(RuntimeActorV1, interest_actor_address) == 0x1A0);
 static_assert(offsetof(RuntimeActorV1, goal_repath_pending) == 0x1A4);
 static_assert(offsetof(RuntimeActorV1, goal_motion_pending) == 0x1A8);
 static_assert(offsetof(RuntimeActorV1, search_or_return_active) == 0x1D4);
+static_assert(offsetof(RuntimeActorV1, movement_active) == 0x1D8);
 static_assert(offsetof(RuntimeActorV1, target_actor_address) == 0x214);
 static_assert(offsetof(RuntimeActorV1, search_delay_limit) == 0x248);
 static_assert(offsetof(RuntimeActorV1, contact_state) == 0x250);
@@ -75,5 +100,12 @@ static_assert(offsetof(RuntimeActorV1, path_override_active) == 0x290);
 static_assert(sizeof(RuntimeActorV1) == 0x294);
 static_assert(offsetof(RuntimeWorldV1, actor_array_address) == 0x18);
 static_assert(offsetof(RuntimeWorldV1, actor_count) == 0x3C);
+static_assert(offsetof(RuntimeViewportControllerV1, viewport_width) == 0x28);
+static_assert(offsetof(RuntimeViewportControllerV1, camera_left) == 0x30);
+static_assert(offsetof(RuntimeViewportControllerV1, input_camera_left) == 0x44);
+static_assert(offsetof(RuntimeViewportControllerV1, world_width) == 0x54);
+static_assert(offsetof(RuntimeViewportControllerV1, scroll_velocity) == 0x5C);
+static_assert(offsetof(RuntimeViewportControllerV1, scroll_disabled) == 0x70);
+static_assert(sizeof(RuntimeViewportControllerV1) == 0x74);
 
 }  // namespace m1937::sdk

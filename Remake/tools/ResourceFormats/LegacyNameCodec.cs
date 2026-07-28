@@ -71,7 +71,9 @@ public static class LegacyNameCodec
         }
     }
 
-    internal static byte[] EncodeObfuscatedNameForTests(string value, int fieldLength = 256)
+    public static byte[] EncodeObfuscatedName(
+        string value,
+        int fieldLength = 256)
     {
         var encoded = StrictGbk.GetBytes(value);
         if (encoded.Length > NameKey.Length || encoded.Length + 1 > fieldLength)
@@ -88,4 +90,9 @@ public static class LegacyNameCodec
 
         return field;
     }
+
+    internal static byte[] EncodeObfuscatedNameForTests(
+        string value,
+        int fieldLength = 256) =>
+        EncodeObfuscatedName(value, fieldLength);
 }
