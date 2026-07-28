@@ -533,7 +533,9 @@ internal sealed class MissionBuilder
             {
                 failures.Add(
                     $"Movement probe “{probe.Name}” at " +
-                    $"({probe.X}, {probe.Y}) has no visible ground tile.");
+                    $"({probe.X}, {probe.Y}) has no visible ground tile. " +
+                    $"Nearby open cells: " +
+                    $"{NearbyOpenCells(probe.X, probe.Y)}.");
             }
             else if (occupant != 0)
             {
