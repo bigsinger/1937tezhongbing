@@ -1,10 +1,11 @@
 {
   "id": "m014-composite",
-  "title": "第十五关合成底图：破晓密令",
-  "story": "以原版晴天小镇素材为积木，将八个完整城区全部换位，并同步重排道路、院落、建筑、树木、阻挡、活动对象和巡逻数据；任务对象仍保留原 scene 身份，以便原版任务状态机可靠识别。",
-  "source_sha256": "28A48B7295A8C390BB4D35DE1E2D6B154FA0F7536ACB7A9DA3EB8D5C7CEE2090",
+  "title": "第十五关拓扑安全合成底图：破晓密令",
+  "story": "以原版晴天小镇素材为积木，让八个城区的开放地表材质交叉重组，同时完整保留道路连通、院落与建筑阻挡、视线、事件、活动对象和巡逻拓扑；任务对象继续保留原 scene 身份，使原版任务状态机与硬编码路径可靠工作。",
+  "source_sha256": "1D806244F6F930FAD56C1B584C49369022B8C604CE7CB5D616608AB05B3460E3",
   "block_width": 60,
   "block_height": 50,
   "require_all_blocks_moved": true,
+  "preserve_navigation_topology": true,
   "destination_to_source_blocks": [2, 7, 3, 4, 6, 1, 0, 5]
 }

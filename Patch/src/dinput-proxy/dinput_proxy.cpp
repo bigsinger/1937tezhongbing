@@ -45,6 +45,9 @@ volatile LONG g_replay_state_reads = 0;
 volatile LONGLONG g_replay_input_qpc = 0;
 WNDPROC g_original_replay_window_proc = nullptr;
 HWND g_replay_subclass_window = nullptr;
+volatile LONG g_extension_briefing_pending = 0;
+volatile LONG g_extension_briefing_mouse_released = 0;
+volatile LONG g_extension_briefing_keyboard_released = 0;
 
 constexpr UINT kWindowReplayMessage = WM_APP + 0x137;
 
@@ -890,6 +893,39 @@ const m1937::sdk::MissionRoute *RequestedBriefingRoute() {
     const auto *route =
         m1937::sdk::find_mission_route(selector_level);
     return route && route->replace_legacy_briefing ? route : nullptr;
+}
+
+bool RequiresExtensionBriefingContinuation() {
+    const auto *route = RequestedBriefingRoute();
+    return route && route->selector_level >= 13;
+}
+
+void ArmExtensionBriefingContinuation(
+    const m1937::sdk::MissionRoute *route) {
+    if (!route || route->selector_level < 13 || !g_executable_base) {
+        InterlockedExchange(&g_extension_briefing_pending, 0);
+        return;
+    }
+    // The same button/key that selected "Start Game" must be released before
+    // a second action can dismiss the briefing. This preserves the visible
+    // briefing instead of consuming the menu click as its confirmation.
+    InterlockedExchange(&g_extension_briefing_mouse_released, 0);
+    InterlockedExchange(&g_extension_briefing_keyboard_released, 0);
+    InterlockedExchange(&g_extension_briefing_pending, 1);
+    RecordDiagnostic(
+        "extension_briefing", "armed", route->id);
+}
+
+void CompleteExtensionBriefingContinuation(const char *input_source) {
+    if (!g_executable_base ||
+        InterlockedCompareExchange(
+            &g_extension_briefing_pending, 0, 1) != 1) {
+        return;
+    }
+    *reinterpret_cast<unsigned char *>(
+        g_executable_base + m1937::sdk::rva::briefing_advance) = 1;
+    RecordDiagnostic(
+        "extension_briefing", "continued", input_source);
 }
 
 bool IsWindowReplayEnabled() {
@@ -1972,17 +2008,7 @@ int FinalizeMenuCommand(int command) {
             // the extension-level resource name) is replaced with text art.
             RecordDiagnostic(
                 "legacy_briefing", "original_text_asset", route->id);
-        }
-        if (IsAutomatedProbeEnabled() &&
-            !HoldAutomatedBriefingForCapture()) {
-            // A normal unattended gameplay run must prime the byte before the
-            // original synchronous briefing loop snapshots it. The separate
-            // briefing-only probe leaves it clear and terminates after taking
-            // a window-only capture. Real player launches never enter either
-            // branch.
-            *reinterpret_cast<unsigned char *>(
-                g_executable_base +
-                m1937::sdk::rva::briefing_advance) = 1;
+            ArmExtensionBriefingContinuation(route);
         }
         FlushDiagnostics();
     }
@@ -2947,7 +2973,8 @@ void ApplyLegacyExecutablePatches() {
                 safe_blit ? "patch_group" : "safe_blit_signature");
         }
     }
-    if (IsAutomatedLaunchEnabled()) {
+    if (IsAutomatedLaunchEnabled() ||
+        RequiresExtensionBriefingContinuation()) {
         RecordDiagnostic(
             "menu_command_hook",
             InstallAutoStartMenuHook(base) ? "enabled" : "rejected",
@@ -3581,6 +3608,47 @@ void ApplyWindowReplayMouse(DWORD size, LPVOID data) {
     }
 }
 
+void ObserveExtensionBriefingMouse(DWORD size, LPVOID data) {
+    if (InterlockedCompareExchange(
+            &g_extension_briefing_pending, 0, 0) != 1 ||
+        !data || size < sizeof(DIMOUSESTATE)) {
+        return;
+    }
+    const auto *mouse = static_cast<const DIMOUSESTATE *>(data);
+    bool pressed = false;
+    for (int index = 0; index < 4; ++index) {
+        pressed = pressed || (mouse->rgbButtons[index] & 0x80) != 0;
+    }
+    if (!pressed) {
+        InterlockedExchange(&g_extension_briefing_mouse_released, 1);
+        return;
+    }
+    if (InterlockedCompareExchange(
+            &g_extension_briefing_mouse_released, 0, 0) == 1) {
+        CompleteExtensionBriefingContinuation("mouse");
+    }
+}
+
+void ObserveExtensionBriefingKeyboard(DWORD size, LPVOID data) {
+    if (InterlockedCompareExchange(
+            &g_extension_briefing_pending, 0, 0) != 1 ||
+        !data || size < 256) {
+        return;
+    }
+    const auto *keys = static_cast<const unsigned char *>(data);
+    const bool pressed =
+        (keys[DIK_RETURN] & 0x80) != 0 ||
+        (keys[DIK_NUMPADENTER] & 0x80) != 0;
+    if (!pressed) {
+        InterlockedExchange(&g_extension_briefing_keyboard_released, 1);
+        return;
+    }
+    if (InterlockedCompareExchange(
+            &g_extension_briefing_keyboard_released, 0, 0) == 1) {
+        CompleteExtensionBriefingContinuation("enter");
+    }
+}
+
 class DeviceProxy final : public IDirectInputDeviceA {
 public:
     DeviceProxy(
@@ -3646,10 +3714,12 @@ public:
         if (SUCCEEDED(result) && is_mouse_) {
             MapSystemCursorToGameState(size, data);
             ApplyWindowReplayMouse(size, data);
+            ObserveExtensionBriefingMouse(size, data);
         }
         if (SUCCEEDED(result) && is_keyboard_) {
             ApplyKeyboardAliases(size, data);
             ApplyWindowReplayKeyboard(size, data);
+            ObserveExtensionBriefingKeyboard(size, data);
         }
         AddTiming(
             &g_telemetry.input_state_calls,

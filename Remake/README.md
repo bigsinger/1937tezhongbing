@@ -4,6 +4,8 @@
 
 最新本地试玩包请运行 `LocalBuild/1937Remake/Play-1937-Remake.cmd`。
 
+![Godot 运行时格式研究原型](../Screenshots/Remake-runtime-prototype.jpg)
+
 ![右下角实时小地图](Screenshots/tactical-map.png)
 
 ![五列背包界面](Screenshots/inventory.png)

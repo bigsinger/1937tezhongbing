@@ -37,6 +37,9 @@ try {
 
     [IO.Directory]::CreateDirectory($outputPath) | Out-Null
     $terrainPath = Join-Path $outputPath 'terrain.png'
+    $preserveTopology = (
+        $null -ne $definition.preserve_navigation_topology -and
+        [bool]$definition.preserve_navigation_topology)
     $destination = [Drawing.Bitmap]::new(
         $source.Width,
         $source.Height,
@@ -46,26 +49,34 @@ try {
         try {
             $graphics.CompositingMode =
                 [Drawing.Drawing2D.CompositingMode]::SourceCopy
-            for ($destinationBlock = 0;
-                 $destinationBlock -lt $permutation.Count;
-                 $destinationBlock++) {
-                $sourceBlock = [int]$permutation[$destinationBlock]
-                $sourceRectangle = [Drawing.Rectangle]::new(
-                    ($sourceBlock % $columns) * $blockWidth,
-                    [Math]::Floor($sourceBlock / $columns) * $blockHeight,
-                    $blockWidth,
-                    $blockHeight)
-                $destinationRectangle = [Drawing.Rectangle]::new(
-                    ($destinationBlock % $columns) * $blockWidth,
-                    [Math]::Floor($destinationBlock / $columns) *
-                        $blockHeight,
-                    $blockWidth,
-                    $blockHeight)
+            if ($preserveTopology) {
                 $graphics.DrawImage(
                     $source,
-                    $destinationRectangle,
-                    $sourceRectangle,
-                    [Drawing.GraphicsUnit]::Pixel)
+                    [Drawing.Rectangle]::new(
+                        0, 0, $source.Width, $source.Height))
+            } else {
+                for ($destinationBlock = 0;
+                     $destinationBlock -lt $permutation.Count;
+                     $destinationBlock++) {
+                    $sourceBlock = [int]$permutation[$destinationBlock]
+                    $sourceRectangle = [Drawing.Rectangle]::new(
+                        ($sourceBlock % $columns) * $blockWidth,
+                        [Math]::Floor($sourceBlock / $columns) *
+                            $blockHeight,
+                        $blockWidth,
+                        $blockHeight)
+                    $destinationRectangle = [Drawing.Rectangle]::new(
+                        ($destinationBlock % $columns) * $blockWidth,
+                        [Math]::Floor($destinationBlock / $columns) *
+                            $blockHeight,
+                        $blockWidth,
+                        $blockHeight)
+                    $graphics.DrawImage(
+                        $source,
+                        $destinationRectangle,
+                        $sourceRectangle,
+                        [Drawing.GraphicsUnit]::Pixel)
+                }
             }
         } finally {
             $graphics.Dispose()

@@ -62,9 +62,11 @@
 并对真实任务 scene、出生区以及保留/改写后的每一段巡逻路线执行 A* 校验。
 
 第 15 关“破晓密令”还增加了 `tools/VwfBlueprintComposer`：它先按
-`Missions/m014/blueprint.json` 重排 8 个地形区域，同时迁移五层网格、
-场景坐标与巡逻点，再交给任务生成器部署剧情对象。编辑器可让合成地形和
-原版场景精灵使用不同的素材别名，因此预览与游戏中的最终布局一致。
+`Missions/m014/blueprint.json` 让 8 个城区的开放地表材质交叉合成，
+但保持移动/视线/事件/人工修正层、场景坐标和巡逻记录不变，再交给任务
+生成器验证剧情对象。这个“拓扑安全”模式用于兼容原任务 7 的硬编码路线；
+普通关卡仍可使用完整区块迁移模式。编辑器预览使用最终拓扑和素材，因此
+与游戏中的可行走布局一致。
 
 三个扩展关现在都由 `Missions/mNNN/mission-package.json` 描述，使用同一
 入口构建并校验确定性哈希：
@@ -127,3 +129,5 @@ dotnet run --project .\MapEditor.Tests\MapEditor.Tests.csproj -c Release
 ![持续改进版本](../Screenshots/MapEditor-v3-continuous-improvement.jpg)
 
 ![高级任务 Sidecar 可视化编辑](../Screenshots/MapEditor-v4-sidecar-authoring.jpg)
+
+![第 15 关拓扑、巡逻与任务分析](../Screenshots/MapEditor-module-overview.jpg)

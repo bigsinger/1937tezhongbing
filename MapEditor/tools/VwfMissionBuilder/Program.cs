@@ -48,6 +48,7 @@ internal sealed class MissionDefinition
     public int MinimumSpawnPatrolDistanceWorld { get; set; }
     public double MinimumReachableWalkableRatio { get; set; }
     public int MaximumPatrolSegmentPathLength { get; set; }
+    public bool ValidateAllSerializedPatrols { get; set; }
     public GridCell PlayerSpawn { get; set; } = new();
     public ReachabilityTarget? MovementProbe { get; set; }
     public List<EntityEdit> EntityEdits { get; set; } = [];
@@ -103,10 +104,12 @@ internal sealed class MissionBuilder
     private readonly VwfSceneList scenes;
     private readonly byte[] data;
     private readonly int cellCount;
+    private readonly int groundLayerOffset;
     private readonly int lineOfSightLayerOffset;
     private readonly int movementLayerOffset;
     private readonly Dictionary<int, VwfSceneEntity> entities;
     private readonly HashSet<uint> editedOccupants;
+    private readonly HashSet<int> playerScenes;
 
     public MissionBuilder(string sourcePath, MissionDefinition definition)
     {
@@ -117,9 +120,11 @@ internal sealed class MissionBuilder
         scenes = VwfSceneList.Open(sourcePath);
         data = File.ReadAllBytes(sourcePath);
         cellCount = checked((int)(world.GridWidth * world.GridHeight));
+        groundLayerOffset = LayerDataOffset(0);
         lineOfSightLayerOffset = LayerDataOffset(1);
         movementLayerOffset = LayerDataOffset(2);
         entities = scenes.Entities.ToDictionary(entity => entity.SceneIndex);
+        playerScenes = definition.PlayerSceneIndices.ToHashSet();
         editedOccupants = definition.EntityEdits
             .Select(edit => checked((uint)(edit.SceneIndex + 1000)))
             .ToHashSet();
@@ -407,6 +412,18 @@ internal sealed class MissionBuilder
     private void EnsureTargetOpen(
         int layerOffset, int targetIndex, EntityEdit edit)
     {
+        if (layerOffset == lineOfSightLayerOffset &&
+            playerScenes.Contains(edit.SceneIndex))
+        {
+            var ground = ReadUInt32(checked(
+                groundLayerOffset + targetIndex * sizeof(uint)));
+            if (ground == 0)
+                throw new InvalidDataException(
+                    $"Entity {edit.SceneIndex} target cell " +
+                    $"({edit.CellX}, {edit.CellY}) has no ground tile. " +
+                    $"Nearby open cells: " +
+                    $"{NearbyOpenCells(edit.CellX, edit.CellY)}.");
+        }
         var value = ReadUInt32(
             checked(layerOffset + targetIndex * sizeof(uint)));
         if (value != 0)
@@ -435,11 +452,15 @@ internal sealed class MissionBuilder
                         !InBounds(x, y))
                         continue;
                     var index = CellIndex(x, y);
+                    var ground = ReadUInt32(checked(
+                        groundLayerOffset + index * sizeof(uint)));
                     var lineOfSight = ReadUInt32(checked(
                         lineOfSightLayerOffset + index * sizeof(uint)));
                     var movement = ReadUInt32(checked(
                         movementLayerOffset + index * sizeof(uint)));
-                    if (lineOfSight == 0 && movement == 0)
+                    if (ground != 0 &&
+                        lineOfSight == 0 &&
+                        movement == 0)
                         candidates.Add($"({x},{y})");
                 }
             }
@@ -503,10 +524,18 @@ internal sealed class MissionBuilder
         {
             var probe = definition.MovementProbe;
             var probeIndex = CellIndex(probe.X, probe.Y);
+            var ground = ReadUInt32(checked(
+                groundLayerOffset + probeIndex * sizeof(uint)));
             var occupant = ReadUInt32(checked(
                 movementLayerOffset + probeIndex * sizeof(uint)));
             var length = FindPathLength(spawn, probe);
-            if (occupant != 0)
+            if (ground == 0)
+            {
+                failures.Add(
+                    $"Movement probe “{probe.Name}” at " +
+                    $"({probe.X}, {probe.Y}) has no visible ground tile.");
+            }
+            else if (occupant != 0)
             {
                 failures.Add(
                     $"Movement probe “{probe.Name}” at " +
@@ -563,14 +592,23 @@ internal sealed class MissionBuilder
             }
         }
 
-        foreach (var edit in definition.EntityEdits)
+        // A full district composition can opt into auditing every serialized
+        // patrol. Topology-preserving missions validate only their edited
+        // deployment because the original mission script owns the remaining
+        // routes and may rewrite them after load.
+        var patrolSceneIndices =
+            definition.ValidateAllSerializedPatrols
+                ? entities.Values.Select(entity => entity.SceneIndex)
+                : definition.EntityEdits.Select(edit => edit.SceneIndex);
+        foreach (var sceneIndex in patrolSceneIndices.Distinct())
         {
-            var route = EffectivePatrol(edit.SceneIndex);
+            var route = EffectivePatrol(sceneIndex);
             if (route.Count == 0)
                 continue;
+            var start = EffectiveCell(sceneIndex);
             var points = new List<GridCell>
             {
-                new() { X = edit.CellX, Y = edit.CellY }
+                start
             };
             points.AddRange(route);
             for (var index = 1; index < points.Count; index++)
@@ -579,7 +617,7 @@ internal sealed class MissionBuilder
                 if (length < 0)
                 {
                     failures.Add(
-                        $"Entity {edit.SceneIndex} patrol segment " +
+                        $"Entity {sceneIndex} patrol segment " +
                         $"{index} is not traversable: " +
                         $"({points[index - 1].X}, {points[index - 1].Y}) → " +
                         $"({points[index].X}, {points[index].Y}).");
@@ -591,7 +629,7 @@ internal sealed class MissionBuilder
                         definition.MaximumPatrolSegmentPathLength)
                     {
                         failures.Add(
-                            $"Entity {edit.SceneIndex} patrol segment " +
+                            $"Entity {sceneIndex} patrol segment " +
                             $"{index} requires {length} A* steps; the mission " +
                             $"limit is " +
                             $"{definition.MaximumPatrolSegmentPathLength}. " +
@@ -600,7 +638,7 @@ internal sealed class MissionBuilder
                         continue;
                     }
                     results.Add(new PathValidation(
-                        $"场景 {edit.SceneIndex} 巡逻段 {index}",
+                        $"场景 {sceneIndex} 巡逻段 {index}",
                         points[index - 1].X, points[index - 1].Y,
                         points[index].X, points[index].Y, length));
                 }
@@ -875,9 +913,13 @@ internal sealed class MissionBuilder
 
     private bool IsTraversable(int index)
     {
-        var value = ReadUInt32(
+        var movement = ReadUInt32(
             checked(movementLayerOffset + index * sizeof(uint)));
-        return value == 0 || editedOccupants.Contains(value);
+        // Mirror the original engine: navigation is governed by the movement
+        // plane, while the ground plane is visual data. Actor/task endpoints
+        // are checked separately by EnsureTargetOpen so they can never be
+        // deployed into an invisible ground hole.
+        return movement == 0 || editedOccupants.Contains(movement);
     }
 
     private string BuildReport(

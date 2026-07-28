@@ -29,14 +29,9 @@ internal static class ModRegressionProbe
     private const int ReplayMouseButtonUp = 5;
     private const int ReplayMenuCommand = 6;
     private const int ReplayAiAlert = 8;
-    private const uint WmKeyDown = 0x0100;
-    private const uint WmKeyUp = 0x0101;
     private const uint WmActivate = 0x0006;
     private const uint WmSetFocus = 0x0007;
     private const uint WmActivateApp = 0x001C;
-    private const uint WmLeftButtonDown = 0x0201;
-    private const uint WmLeftButtonUp = 0x0202;
-    private const int VkReturn = 0x0D;
     private const int DikF1 = 0x3B;
     private const int DikF4 = 0x3E;
     private const int DikM = 0x32;
@@ -53,6 +48,10 @@ internal static class ModRegressionProbe
     private const int ActorGoalKindOffset = 0x194;
     private const int ActorGoalXOffset = 0x198;
     private const int ActorGoalYOffset = 0x19C;
+    private const int ActorGoalRepathPendingOffset = 0x1A4;
+    private const int ActorGoalMotionPendingOffset = 0x1A8;
+    private const int ActorMovementActiveOffset = 0x1D8;
+    private const int ActorPathOverrideActiveOffset = 0x290;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct Rect
@@ -168,6 +167,10 @@ internal static class ModRegressionProbe
         public int GoalKind;
         public int GoalX;
         public int GoalY;
+        public int GoalRepathPending;
+        public int GoalMotionPending;
+        public int MovementActive;
+        public int PathOverrideActive;
     }
 
     public static int Main(string[] args)
@@ -271,8 +274,11 @@ internal static class ModRegressionProbe
                     },
                     TimeSpan.FromSeconds(12));
                 Thread.Sleep(550);
+                string briefingCaptureHash = "";
                 using (CaptureResult briefing = CaptureWindow(window))
                 {
+                    briefingCaptureHash =
+                        briefing == null ? "" : briefing.Sha256;
                     SaveCapture(
                         briefing,
                         Path.Combine(
@@ -327,33 +333,43 @@ internal static class ModRegressionProbe
                         passed: exitCode == 0);
                     return exitCode;
                 }
-                // Reproduce the player's normal "click or Enter" action by
-                // posting only to the tested game window. This never moves or
-                // clips the system cursor and cannot affect another window.
-                Rect briefingRect;
-                GetClientRect(window, out briefingRect);
-                int briefingX = Math.Max(
-                    1, (briefingRect.Right - briefingRect.Left) / 2);
-                int briefingY = Math.Max(
-                    1, (briefingRect.Bottom - briefingRect.Top) / 2);
-                IntPtr briefingPoint = new IntPtr(
-                    (briefingX & 0xFFFF) |
-                    ((briefingY & 0xFFFF) << 16));
-                if (ReadWorldActorCount(process, imageBase) == 0)
+                // Reproduce the player's second click after choosing
+                // "Start Game". The proxy consumes this through the tested
+                // process' private DirectInput replay queue; no system cursor
+                // or desktop input is touched.
+                PostMessage(
+                    window, WmActivateApp, new IntPtr(1), IntPtr.Zero);
+                PostMessage(
+                    window, WmActivate, new IntPtr(1), IntPtr.Zero);
+                PostMessage(
+                    window, WmSetFocus, IntPtr.Zero, IntPtr.Zero);
+                bool briefingContinueSent = PulseMouseButton(window, 0);
+                Thread.Sleep(1200);
+                bool briefingVisualChanged = false;
+                string missionMenuHash = "";
+                using (CaptureResult missionMenu = CaptureWindow(window))
                 {
-                    PostMessage(
-                        window, WmLeftButtonDown,
-                        new IntPtr(1), briefingPoint);
-                    PostMessage(
-                        window, WmLeftButtonUp,
-                        IntPtr.Zero, briefingPoint);
-                    PostMessage(
-                        window, WmKeyDown,
-                        new IntPtr(VkReturn), IntPtr.Zero);
-                    PostMessage(
-                        window, WmKeyUp,
-                        new IntPtr(VkReturn), IntPtr.Zero);
+                    missionMenuHash =
+                        missionMenu == null ? "" : missionMenu.Sha256;
+                    briefingVisualChanged =
+                        missionMenu != null &&
+                        !String.Equals(
+                            briefingCaptureHash,
+                            missionMenu.Sha256,
+                            StringComparison.OrdinalIgnoreCase);
+                    SaveCapture(
+                        missionMenu,
+                        Path.Combine(
+                            outputDirectory, "01-mission-menu.jpg"));
                 }
+                AddStage(
+                    stages, game, process, imageBase, clock,
+                    "briefing_dismissed",
+                    briefingContinueSent && briefingVisualChanged,
+                    "process_local_mouse=true; visual_changed=" +
+                    briefingVisualChanged + "; briefing_hash=" +
+                    briefingCaptureHash + "; mission_menu_hash=" +
+                    missionMenuHash);
 
                 bool missionStarted = WaitUntil(
                     delegate()
@@ -376,19 +392,50 @@ internal static class ModRegressionProbe
                           actorCount.ToString(CultureInfo.InvariantCulture)
                         : "world object table was not ready");
 
+                // After the original briefing closes, the loaded mission
+                // remains behind the full menu. Resume it through the third
+                // "Return to Mission" entry. The first entry is New Game and
+                // would deliberately reopen the briefing.
+                int returnToMissionCursorX;
+                int returnToMissionCursorY;
                 bool gameplayResumeSent =
-                    SendReplay(window, ReplayMenuCommand, 1);
-                PostMessage(
-                    window, WmActivateApp, new IntPtr(1), IntPtr.Zero);
-                PostMessage(
-                    window, WmActivate, new IntPtr(1), IntPtr.Zero);
-                PostMessage(
-                    window, WmSetFocus, IntPtr.Zero, IntPtr.Zero);
-                Thread.Sleep(1200);
+                    MoveReplayCursor(
+                        process,
+                        imageBase,
+                        window,
+                        272,
+                        365,
+                        out returnToMissionCursorX,
+                        out returnToMissionCursorY) &&
+                    PulseMouseButton(window, 0);
+                Thread.Sleep(4200);
+                bool gameplayVisualChanged = false;
+                string gameplayHash = "";
+                using (CaptureResult gameplay = CaptureWindow(window))
+                {
+                    gameplayHash =
+                        gameplay == null ? "" : gameplay.Sha256;
+                    gameplayVisualChanged =
+                        gameplay != null &&
+                        gameplay.NonBlank &&
+                        !String.Equals(
+                            missionMenuHash,
+                            gameplay.Sha256,
+                            StringComparison.OrdinalIgnoreCase);
+                    SaveCapture(
+                        gameplay,
+                        Path.Combine(outputDirectory, "02-gameplay.jpg"));
+                }
                 AddStage(
                     stages, game, process, imageBase, clock,
-                    "gameplay_scene_resumed", gameplayResumeSent,
-                    "original mission Start/Resume command; no new briefing");
+                    "gameplay_scene_resumed",
+                    gameplayResumeSent,
+                    "original Return to Mission click; cursor=(" +
+                    returnToMissionCursorX + "," +
+                    returnToMissionCursorY + "); " +
+                    "visual_changed=" + gameplayVisualChanged +
+                    "; mission_menu_hash=" + missionMenuHash +
+                    "; gameplay_hash=" + gameplayHash);
 
                 WaitUntil(
                     delegate()
@@ -464,7 +511,17 @@ internal static class ModRegressionProbe
                           spawnScreenHeight + "); synchronized=" +
                           cameraStateSynchronized);
 
+                WriteActorStateSnapshot(
+                    process,
+                    imageBase,
+                    Path.Combine(
+                        outputDirectory, "actor-states-entry.csv"));
                 Thread.Sleep(5000);
+                WriteActorStateSnapshot(
+                    process,
+                    imageBase,
+                    Path.Combine(
+                        outputDirectory, "actor-states-steady.csv"));
                 ActorSnapshot spawnEnd =
                     FindPlayerActor(process, imageBase);
                 bool spawnSafe =
@@ -484,13 +541,13 @@ internal static class ModRegressionProbe
                 {
                     SaveCapture(
                         baseline,
-                        Path.Combine(outputDirectory, "01-baseline.jpg"));
+                        Path.Combine(outputDirectory, "03-baseline.jpg"));
                     ExerciseToggle(
                         stages, game, process, imageBase, window, clock,
                         outputDirectory, "help_f1", DikF1,
                         EngineAddresses.InputRawHelp,
                         EngineAddresses.InputActionHelp,
-                        baseline, "02-help.jpg");
+                        baseline, "04-help.jpg");
                 }
 
                 using (CaptureResult mapBaseline = CaptureWindow(window))
@@ -500,7 +557,7 @@ internal static class ModRegressionProbe
                         outputDirectory, "minimap_m", DikM,
                         EngineAddresses.InputRawMap,
                         EngineAddresses.InputActionMap,
-                        mapBaseline, "03-minimap.jpg");
+                        mapBaseline, "05-minimap.jpg");
                 }
 
                 string movementEvidence;
@@ -971,6 +1028,59 @@ internal static class ModRegressionProbe
         }
     }
 
+    private static void WriteActorStateSnapshot(
+        IntPtr process, long imageBase, string path)
+    {
+        int worldValue = ReadInt(
+            process, imageBase + EngineAddresses.WorldRoot);
+        if (worldValue == 0 || worldValue == int.MinValue)
+            return;
+        long world = (long)(uint)worldValue;
+        int actorArrayValue = ReadInt(process, world + 0x18);
+        int count = ReadInt(process, world + 0x3C);
+        if (actorArrayValue == 0 || actorArrayValue == int.MinValue ||
+            count <= 0 || count > 4096)
+            return;
+
+        long actorArray = (long)(uint)actorArrayValue;
+        var text = new StringBuilder();
+        text.AppendLine(
+            "index,address,database_entry,faction,world_x,world_y," +
+            "direction,dead,goal_kind,goal_x,goal_y,repath_pending," +
+            "motion_pending,movement_active,path_override");
+        for (int index = 0; index < count; ++index)
+        {
+            int actorValue = ReadInt(
+                process, actorArray + index * 4L);
+            if (actorValue == 0 || actorValue == int.MinValue)
+                continue;
+            long actor = (long)(uint)actorValue;
+            ActorSnapshot snapshot = ReadActor(process, actor);
+            if (snapshot == null)
+                continue;
+            text.AppendFormat(
+                CultureInfo.InvariantCulture,
+                "{0},0x{1:X8},{2},{3},{4},{5},{6},{7},{8},{9},{10}," +
+                "{11},{12},{13},{14}\r\n",
+                index,
+                snapshot.Address,
+                snapshot.DatabaseEntry,
+                snapshot.Faction,
+                snapshot.WorldX,
+                snapshot.WorldY,
+                snapshot.Direction,
+                snapshot.Dead,
+                snapshot.GoalKind,
+                snapshot.GoalX,
+                snapshot.GoalY,
+                snapshot.GoalRepathPending,
+                snapshot.GoalMotionPending,
+                snapshot.MovementActive,
+                snapshot.PathOverrideActive);
+        }
+        File.WriteAllText(path, text.ToString(), new UTF8Encoding(false));
+    }
+
     private static ActorSnapshot FindPlayerActor(
         IntPtr process, long imageBase)
     {
@@ -1028,7 +1138,15 @@ internal static class ModRegressionProbe
             Dead = ReadInt(process, actor + ActorDeadOffset),
             GoalKind = ReadInt(process, actor + ActorGoalKindOffset),
             GoalX = ReadInt(process, actor + ActorGoalXOffset),
-            GoalY = ReadInt(process, actor + ActorGoalYOffset)
+            GoalY = ReadInt(process, actor + ActorGoalYOffset),
+            GoalRepathPending = ReadInt(
+                process, actor + ActorGoalRepathPendingOffset),
+            GoalMotionPending = ReadInt(
+                process, actor + ActorGoalMotionPendingOffset),
+            MovementActive = ReadInt(
+                process, actor + ActorMovementActiveOffset),
+            PathOverrideActive = ReadInt(
+                process, actor + ActorPathOverrideActiveOffset)
         };
     }
 
@@ -1101,6 +1219,13 @@ internal static class ModRegressionProbe
             process, before.Address, 0x294);
         bool selectionSent = PulseKey(window, DikF4);
         Thread.Sleep(260);
+        // Character hotkeys intentionally center the camera. Refresh the
+        // origin before converting either the actor or destination into
+        // screen coordinates.
+        cameraX = ReadInt(
+            process, imageBase + EngineAddresses.CameraX);
+        cameraY = ReadInt(
+            process, imageBase + EngineAddresses.CameraY);
         int playerScreenX = before.WorldX - cameraX;
         int playerScreenY = before.WorldY - cameraY - 24;
         if (playerScreenX >= 8 && playerScreenX < screenWidth - 8 &&
@@ -1197,9 +1322,14 @@ internal static class ModRegressionProbe
             "; motion_observable_while_background=" + moved +
             "; turn_observable_while_background=" + turned +
             "; goal=(" + after.GoalKind + "," + after.GoalX + "," +
-            after.GoalY + "); dead=" + after.Dead;
+            after.GoalY + "); path_state=(" +
+            after.GoalRepathPending + "," +
+            after.GoalMotionPending + "," +
+            after.MovementActive + "," +
+            after.PathOverrideActive + "); dead=" + after.Dead;
         return selectionSent && clickSent && alternateClickSent &&
-            cursorReached && alive && directionValid;
+            cursorReached && alive && directionValid &&
+            moved && turned && goalChanged;
     }
 
     private static void ObservePlayerMovement(

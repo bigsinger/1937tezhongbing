@@ -7,7 +7,7 @@
   "selector_level": 15,
   "engine_mission": 7,
   "runtime_vwf": "1937M014.VWF",
-  "source_vwf": "Mod/1937m006.vwf",
+  "source_vwf": "Mod/1937m013.vwf",
   "output_vwf": "Mod/1937m014.vwf",
   "blueprint_definition": "MapEditor/Missions/m014/blueprint.json",
   "composition_report": "MapEditor/Missions/m014/composition.md",
@@ -16,5 +16,5 @@
   "mission_report": "MapEditor/Missions/m014/validation.md",
   "preview_source_terrain": "MapEditor/Assets/Original/maps/m006/terrain.png",
   "preview_output_directory": "MapEditor/Assets/Original/maps/m014",
-  "expected_output_sha256": "EB42E7F606D1926E35EB7617652BCCA7AB906E8762F77A4B75B5B32AF2C8BFFA"
+  "expected_output_sha256": "4A5794086DC9F3514A32B3A683149E071CE48A39BEF2944DFEE8A4D72CCD79D8"
 }

@@ -11,6 +11,17 @@
 | [`SDK/`](SDK/) | 已验证 EXE 的地址、结构、补丁原语和运行时访问接口 |
 | [`Remake/`](Remake/) | 已停止继续扩张、保留作格式研究和现代实现参考的 Godot 工程 |
 
+## 项目效果一览
+
+| MapEditor：原版地图、活动路线与任务分析 | Mod：第 15 关实机与动态小地图 |
+|---|---|
+| [![MapEditor 可视化编辑器](Screenshots/MapEditor-module-overview.jpg)](Screenshots/MapEditor-module-overview.jpg) | [![Mod 第 15 关实机画面](Screenshots/Mod-level15-gameplay.jpg)](Screenshots/Mod-level15-gameplay.jpg) |
+| **Patch：15 关现代启动中心** | **Remake：Godot 格式研究原型** |
+| [![Patch 现代启动中心](Screenshots/Patch-modern-launcher.jpg)](Screenshots/Patch-modern-launcher.jpg) | [![Remake 运行时研究原型](Screenshots/Remake-runtime-prototype.jpg)](Screenshots/Remake-runtime-prototype.jpg) |
+
+以上均为本机实际程序窗口截图；图片已在本地完成 OCR 检查和 JPEG 压缩，
+没有提交完整桌面或未压缩原图。
+
 ## 直接玩增强版
 
 本仓库的完整资源由 Git LFS 管理：
@@ -49,8 +60,9 @@ cd .\1937tezhongbing\Mod
 - 原版 12 个 `Intro_*.psd` 资源在原索引原位替换，第 13—15 关追加三个
   独立 `Brief_*.psd`；修改 `Mod/关卡名称.json` 后运行
   `Patch/tools/Update-TextBriefings.ps1` 即可安全重建 GFL；
-- “破晓密令”已消除零长度/跨全图巡逻重算，并同步渲染相机与点击换算
-  相机；第 13—15 关隔离回归单逻辑核占用约 3.9%—5.4%，未响应为 0；
+- “破晓密令”采用拓扑安全合成：8 个城区交叉替换开放地表材质，同时保留
+  原版已验证的移动、阻挡、事件、对象和巡逻拓扑；最新实机回归中角色实际
+  移动 72 像素，P95/P99 为 8.351/12.703 ms，未响应和光标裁剪均为 0；
 - 兼容全屏保留底栏、F1 帮助、M 小地图和全部原版热键，可选择保持
   比例或无黑边铺满；
 - 设置保存在原版 `rungame.ini` 新增的 `[mod]` 段。
@@ -85,8 +97,8 @@ cd .\1937tezhongbing\Mod
   顺序和当前位置；
 - 内置 1,037 项相对路径素材，包括角色、树木、院墙、房屋、门、
   障碍物、车辆、物品、地表图块和 12 张关卡整图；前两个扩展关在完整
-  原版地形上重新部署，第 15 关则将 8 个地形区域重新编排，并同步迁移
-  五层网格、1,470 个场景对象和全部巡逻点；
+  原版地形上重新部署，第 15 关则让 8 个城区的开放地表材质交叉合成，
+  并保持五层碰撞语义、1,470 个场景对象和巡逻拓扑稳定；
 - 高对比浅色界面，默认使用“打开地图→选择素材→另存”三步流程；
 - 素材库第一项为默认“鼠标箭头（仅查看）”，浏览时不会误放置对象；
 - 地表、视线障碍、移动障碍、事件、人工通行修正五层编辑；
@@ -119,7 +131,7 @@ cd .\1937tezhongbing\Mod
 
 ![锄奸行动城镇与出生点预览](Screenshots/MapEditor-m013-anti-traitor-preview.jpg)
 
-![破晓密令全新合成地图预览](Screenshots/MapEditor-m014-composite-preview.jpg)
+![破晓密令拓扑安全合成地图与巡逻预览](Screenshots/MapEditor-module-overview.jpg)
 
 开发构建：
 
@@ -179,6 +191,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Patch\tools\Build-Mod.ps1
 - MapEditor Release 构建为 0 警告、0 错误，JSON 往返测试通过；
 - 15 关十阶段隔离回归全部通过；未响应、光标裁剪限制以及系统
   鼠标/输入/焦点调用均为 0；
+- 第 15 关完成原流程文字简报、菜单、进入地图、真实移动、方向帧、
+  相机跟随、F1、M 和 40 秒稳定性回归；玩家位移 72 像素；
 - AI 搜索 44 次、路径重规划 176 次、脱离成功 44/44，最大 tick
   为 620 μs，且警报后不采样视线外玩家的实时位置；
 - 菜单、小/中/大地图各 10 分钟共 38,739 个样本，P99 为

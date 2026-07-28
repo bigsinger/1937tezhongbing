@@ -43,7 +43,17 @@ internal sealed class BlueprintDefinition
     public int BlockWidth { get; set; }
     public int BlockHeight { get; set; }
     public bool RequireAllBlocksMoved { get; set; } = true;
+    public bool PreserveNavigationTopology { get; set; }
     public List<int> DestinationToSourceBlocks { get; set; } = [];
+    public List<ConnectorCell> ConnectorCells { get; set; } = [];
+}
+
+internal sealed class ConnectorCell
+{
+    public int X { get; set; }
+    public int Y { get; set; }
+    public int GroundSourceX { get; set; }
+    public int GroundSourceY { get; set; }
 }
 
 internal sealed class BlueprintComposer
@@ -93,10 +103,21 @@ internal sealed class BlueprintComposer
 
     public string Compose(string outputPath)
     {
-        for (var layer = 0; layer < VwfTerrainGrid.LayerCount; layer++)
-            ComposeLayer(layer);
-        foreach (var entity in scenes.Entities)
-            ComposeEntity(entity);
+        if (blueprint.PreserveNavigationTopology)
+        {
+            ComposeTopologySafeGround();
+        }
+        else
+        {
+            for (var layer = 0; layer < VwfTerrainGrid.LayerCount; layer++)
+                ComposeLayer(layer);
+        }
+        ApplyConnectorCells();
+        if (!blueprint.PreserveNavigationTopology)
+        {
+            foreach (var entity in scenes.Entities)
+                ComposeEntity(entity);
+        }
 
         Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
         var temporary = outputPath + ".tmp";
@@ -176,6 +197,14 @@ internal sealed class BlueprintComposer
                 "The blueprint requires every district to move, but at least " +
                 "one block maps to its original position.");
         }
+        foreach (var connector in blueprint.ConnectorCells)
+        {
+            ValidateCell(connector.X, connector.Y, "connector");
+            ValidateCell(
+                connector.GroundSourceX,
+                connector.GroundSourceY,
+                "connector ground source");
+        }
     }
 
     private int[] BuildInversePermutation()
@@ -215,6 +244,104 @@ internal sealed class BlueprintComposer
                         CellIndex(destinationX, destinationY) *
                         sizeof(uint)),
                     value);
+            }
+        }
+    }
+
+    private void ComposeTopologySafeGround()
+    {
+        var groundOffset = LayerDataOffset(0);
+        for (var destinationY = 0;
+             destinationY < height;
+             destinationY++)
+        {
+            for (var destinationX = 0;
+                 destinationX < width;
+                 destinationX++)
+            {
+                var destinationIndex =
+                    CellIndex(destinationX, destinationY);
+                var sourceCell = SourceCellForDestination(
+                    destinationX, destinationY);
+                var sourceIndex =
+                    CellIndex(sourceCell.X, sourceCell.Y);
+                if (!CanExchangeGround(
+                        destinationIndex, sourceIndex))
+                    continue;
+                var sourceGround = ReadUInt32(
+                    source,
+                    checked(
+                        groundOffset +
+                        sourceIndex * sizeof(uint)));
+                WriteUInt32(
+                    output,
+                    checked(
+                        groundOffset +
+                        destinationIndex * sizeof(uint)),
+                    sourceGround);
+            }
+        }
+    }
+
+    private bool CanExchangeGround(
+        int destinationIndex, int sourceIndex)
+    {
+        var destinationGround = terrain.Layers[0]
+            .Values[destinationIndex];
+        var sourceGround = terrain.Layers[0].Values[sourceIndex];
+        if (destinationGround == 0 || sourceGround == 0)
+            return false;
+        // Only exchange visually open floor cells. All collision, sight,
+        // event and correction planes remain byte-identical, as do entities
+        // and patrol records. This lets an extension mission look different
+        // without invalidating hard-coded original mission paths.
+        for (var layer = 1;
+             layer < VwfTerrainGrid.LayerCount;
+             layer++)
+        {
+            if (terrain.Layers[layer].Values[destinationIndex] != 0 ||
+                terrain.Layers[layer].Values[sourceIndex] != 0)
+                return false;
+        }
+        return true;
+    }
+
+    private void ApplyConnectorCells()
+    {
+        foreach (var connector in blueprint.ConnectorCells)
+        {
+            var targetIndex = CellIndex(connector.X, connector.Y);
+            var sourceIndex = CellIndex(
+                connector.GroundSourceX,
+                connector.GroundSourceY);
+            var sourceGround = ReadUInt32(
+                output,
+                checked(
+                    LayerDataOffset(0) +
+                    sourceIndex * sizeof(uint)));
+            if (sourceGround == 0)
+            {
+                throw new InvalidDataException(
+                    $"Connector ground source " +
+                    $"({connector.GroundSourceX}," +
+                    $"{connector.GroundSourceY}) has no ground tile.");
+            }
+            WriteUInt32(
+                output,
+                checked(
+                    LayerDataOffset(0) +
+                    targetIndex * sizeof(uint)),
+                sourceGround);
+            for (var layer = 1;
+                 layer < VwfTerrainGrid.LayerCount;
+                 layer++)
+            {
+                WriteUInt32(
+                    output,
+                    checked(
+                        LayerDataOffset(layer) +
+                        targetIndex * sizeof(uint)),
+                    0);
             }
         }
     }
@@ -389,8 +516,15 @@ internal sealed class BlueprintComposer
             "- 目标到来源排列（按目标区块顺序）：" +
             $"`{string.Join(", ", blueprint.DestinationToSourceBlocks)}`");
         builder.AppendLine(
-            "- 五个地形/视线/移动/事件/人工修正图层同步换位；" +
-            "全部 scene 世界坐标、参考坐标和巡逻数组同步映射。");
+            blueprint.PreserveNavigationTopology
+                ? "- 拓扑安全模式：八城区开放地表材质交叉合成；" +
+                  "视线、移动、事件、人工修正、scene 坐标与巡逻记录" +
+                  "保持逐字节不变。"
+                : "- 五个地形/视线/移动/事件/人工修正图层同步换位；" +
+                  "全部 scene 世界坐标、参考坐标和巡逻数组同步映射。");
+        builder.AppendLine(
+            $"- 区块接缝通路：{blueprint.ConnectorCells.Count} 格；" +
+            "地表复用原图块，阻挡、视线与事件层在通路格清空。");
         builder.AppendLine();
         builder.AppendLine("## 新地图差异量化");
         builder.AppendLine();
@@ -434,6 +568,16 @@ internal sealed class BlueprintComposer
     }
 
     private int CellIndex(int x, int y) => checked(y * width + x);
+
+    private void ValidateCell(int x, int y, string description)
+    {
+        if (x < 0 || x >= width || y < 0 || y >= height)
+        {
+            throw new InvalidDataException(
+                $"{description} cell ({x},{y}) is outside " +
+                $"{width}x{height}.");
+        }
+    }
 
     private static void WritePoint(byte[] data, int offset, Cell point)
     {
