@@ -21,5 +21,14 @@ identity that has a recovered, reviewable mapping may be assigned a VWF
 `scene_index`; unproven enemy identities are deliberately excluded from this
 first baseline.
 
+`m000-enemy-patrol-v1.json` is a four-checkpoint, two-interval observation of
+46 enemy actors resolved by
+`validation/identities/mod/m000-runtime-actors-v1.json`. It was captured from
+the canonical isolated 1024x768 runtime after the original “Return to Mission”
+flow actually resumed world simulation. A second isolated run reproduced the
+kinematics within the documented tolerances. Exact route phase remains a
+diagnostic comparison; maximum displacement, 90th-percentile displacement,
+moving/stationary counts, and all 46 identities are strict gates.
+
 Run `Remake/tools/Run-RuntimeProbe.ps1` to generate the matching Remake trace
 and `comparison.json` / `comparison.md`.

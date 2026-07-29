@@ -141,6 +141,8 @@ static func _capture_actor(actor: Node2D, group_name: String) -> Dictionary:
 			"behavior_state": int(actor.get("behavior_state")),
 			"patrol_index": int(actor.get("patrol_index")),
 			"patrol_enabled": bool(actor.get("patrol_enabled")),
+			"patrol_wait_remaining": float(actor.get("patrol_wait_remaining")),
+			"patrol_path_in_flight": bool(actor.get("patrol_path_in_flight")),
 			"last_known_x": (actor.get("last_known_target_position") as Vector2).x,
 			"last_known_y": (actor.get("last_known_target_position") as Vector2).y,
 			"search_elapsed": float(actor.get("search_elapsed")),
@@ -439,6 +441,14 @@ static func _restore_actor(game: Node, actor: Node2D, record: Dictionary, group_
 		actor.set("behavior_state", int(ai.get("behavior_state", 0)))
 		actor.set("patrol_index", int(ai.get("patrol_index", 0)))
 		actor.set("patrol_enabled", bool(ai.get("patrol_enabled", true)))
+		actor.set(
+			"patrol_wait_remaining",
+			maxf(float(ai.get("patrol_wait_remaining", 0.0)), 0.0),
+		)
+		actor.set(
+			"patrol_path_in_flight",
+			bool(ai.get("patrol_path_in_flight", false)),
+		)
 		actor.set("last_known_target_position", Vector2(float(ai.get("last_known_x", 0.0)), float(ai.get("last_known_y", 0.0))))
 		actor.set("search_elapsed", float(ai.get("search_elapsed", 0.0)))
 		actor.set("attack_count", int(ai.get("attack_count", 0)))

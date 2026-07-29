@@ -579,10 +579,13 @@ func _init() -> void:
 			"display_name": "fixture enemy",
 			"x": 64,
 			"y": 32,
+			"reference_x": 160,
+			"reference_y": 80,
 			"direction_index": 3,
 			"current_hit_points": 16,
 			"default_attack_type": 3,
-			"patrol_waypoints": [],
+			"patrol_waypoints": [{"x": 10, "y": 5}],
+			"patrol_enabled": true,
 		},
 		null,
 		empty_animation_groups,
@@ -594,10 +597,67 @@ func _init() -> void:
 			enemy_fixture.current_hit_points == 16
 			and enemy_fixture.maximum_hit_points == 16
 			and int(enemy_fixture.weapon_profile.get("attack_type", 0)) == 3
+			and enemy_fixture.position == Vector2(160, 80)
+			and is_equal_approx(
+				enemy_fixture.move_speed,
+				ENEMY_UNIT_SCRIPT.STABLE_MOD_BASE_PATROL_SPEED,
+			)
 		),
-		"enemy runtime consumes recovered hit points and default attack type",
+		"enemy runtime consumes recovered spawn, speed, hit points, and attack type",
 		failures,
 	)
+	enemy_fixture.path_request_delay_remaining = 0.0
+	enemy_fixture.patrol_path_in_flight = true
+	enemy_fixture._update_patrol(0.1)
+	expect(
+		(
+			not enemy_fixture.patrol_path_in_flight
+			and is_equal_approx(
+				enemy_fixture.patrol_wait_remaining,
+				ENEMY_UNIT_SCRIPT.STABLE_MOD_PATROL_WAYPOINT_HOLD_SECONDS,
+			)
+		),
+		"completed patrol legs enter the recovered endpoint hold instead of reversing immediately",
+		failures,
+	)
+	var silent_target = SQUAD_UNIT_SCRIPT.new()
+	silent_target.configure(
+		"silent target",
+		Color.WHITE,
+		Vector2(260, 80),
+		null,
+		empty_animation_groups,
+		empty_animation_groups,
+		-1,
+		null,
+	)
+	silent_target.configure_combat(
+		3,
+		8,
+		COMBAT_PROFILES.weapon_profile("pistol_attack"),
+	)
+	var silent_targets: Array[Node2D] = [silent_target]
+	enemy_fixture.set_potential_targets(silent_targets)
+	enemy_fixture._update_detection()
+	expect(
+		(
+			enemy_fixture.current_target == null
+			and enemy_fixture.behavior_state == ENEMY_UNIT_SCRIPT.BehaviorState.PATROL
+		),
+		"a silent hostile inside hearing range does not create a passive omnidirectional alert",
+		failures,
+	)
+	expect(
+		(
+			enemy_fixture.investigate_position(silent_target.position)
+			and enemy_fixture.current_target == null
+			and enemy_fixture.behavior_state == ENEMY_UNIT_SCRIPT.BehaviorState.SEARCH
+			and enemy_fixture.last_known_target_position == silent_target.position
+		),
+		"an explicit noise event sends the enemy to investigate its world position without live tracking",
+		failures,
+	)
+	silent_target.free()
 	enemy_fixture.free()
 	expect(
 		(

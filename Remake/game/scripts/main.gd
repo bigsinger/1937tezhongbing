@@ -14,6 +14,7 @@ const MISSION_RUNTIME_SCRIPT: Script = preload("res://scripts/mission_runtime.gd
 const MISSION_DIRECTION_RUNTIME_SCRIPT: Script = preload("res://scripts/mission_direction_runtime.gd")
 const MISSION_AI_COORDINATOR_SCRIPT: Script = preload("res://scripts/mission_ai_coordinator.gd")
 const COMBAT_PROFILES: Script = preload("res://scripts/combat_profiles.gd")
+const TACTICAL_SENSES: Script = preload("res://scripts/tactical_senses.gd")
 const PROJECTILE_WORLD_SCRIPT: Script = preload("res://scripts/projectile_world.gd")
 const MEDIA_DIRECTOR_SCRIPT: Script = preload("res://scripts/media_director.gd")
 const GAME_SHELL_SCRIPT: Script = preload("res://scripts/game_shell.gd")
@@ -729,10 +730,13 @@ func spawn_squad() -> void:
 		if playable_entities.has(name):
 			entity = playable_entities[name] as Dictionary
 			scene_index = int(entity["scene_index"])
-			start_position = Vector2(float(entity["x"]), float(entity["y"]))
 			source_reference_position = Vector2(
 				float(entity["reference_x"]), float(entity["reference_y"])
 			)
+			# VWF x/y is frequently a patrol/action endpoint. The original
+			# RuntimeActor world coordinate is initialized from the reference
+			# pair, which is therefore the authoritative live spawn.
+			start_position = source_reference_position
 			texture = load_entity_texture(entity)
 			run_groups = load_entity_action_groups(entity, "run")
 			walk_groups = load_entity_action_groups(entity, "walk")
@@ -2016,12 +2020,27 @@ func _queue_or_broadcast_alert(
 
 func emit_noise_at(world_position: Vector2, radius: float = 640.0) -> int:
 	var source: Node2D = selected_units[0] if not selected_units.is_empty() else null
-	var target: Node2D = source
 	var alerted := 0
 	for enemy: ENEMY_UNIT in enemies:
 		if not enemy.is_alive or source == null:
 			continue
-		if enemy.position.distance_to(world_position) <= radius and enemy.receive_alert(source, world_position):
+		var profile: Dictionary = enemy.sense_profile
+		var recovered_hearing_radius := float(profile.get("hearing_radius", 0.0))
+		if recovered_hearing_radius <= 0.0:
+			recovered_hearing_radius = maxf(
+				float(profile.get("horizontal_radius", 0.0)),
+				float(profile.get("vertical_radius", 0.0)),
+			)
+		var effective_radius := minf(maxf(radius, 0.0), recovered_hearing_radius)
+		if (
+			effective_radius > 0.0
+			and TACTICAL_SENSES.is_within_hearing_range(
+				enemy.position,
+				world_position,
+				{"hearing_radius": effective_radius},
+			)
+			and enemy.investigate_position(world_position)
+		):
 			alerted += 1
 	update_status("制造声音：%d 名敌人前往调查" % alerted)
 	return alerted

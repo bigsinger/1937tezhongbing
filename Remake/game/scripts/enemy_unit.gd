@@ -9,6 +9,15 @@ const CHASE_REPLAN_SECONDS := 0.50
 const SEARCH_TIMEOUT_SECONDS := 2.50
 const PATROL_PATH_RETRY_MIN_SECONDS := 0.75
 const PATROL_PATH_RETRY_STEP_SECONDS := 0.05
+## Stable-MOD differential capture recovers a 134 px/s uninterrupted patrol
+## displacement in m000. Its verified mission profile applies 0.90, so this
+## source speed yields the original interval without hiding the profile in the
+## movement integrator.
+const STABLE_MOD_BASE_PATROL_SPEED := 134.0 / 0.90
+## Entry/steady MOD snapshots are five seconds apart. Across 25 guards that
+## reverse a recovered waypoint in that window, the median residual endpoint
+## hold is about 1.9 seconds after subtracting travel at 134 px/s.
+const STABLE_MOD_PATROL_WAYPOINT_HOLD_SECONDS := 1.9
 const ATTACK_RECHECK_MIN_SECONDS := 20.0 * BASE_SPRITE_TICK_SECONDS
 const ATTACK_RECHECK_MAX_SECONDS := 39.0 * BASE_SPRITE_TICK_SECONDS
 ## Editorial accuracy model. The original executable's exact miss formula has
@@ -24,6 +33,8 @@ var behavior_state := BehaviorState.PATROL
 var patrol_waypoints := PackedVector2Array()
 var patrol_index := 0
 var patrol_enabled := false
+var patrol_wait_remaining := 0.0
+var patrol_path_in_flight := false
 var original_direction_index := 1
 var sense_profile: Dictionary = {}
 var potential_targets: Array[Node2D] = []
@@ -71,7 +82,10 @@ func configure_enemy(
 	configure(
 		str(entity.get("display_name", "enemy")),
 		Color("b86b5b"),
-		Vector2(float(entity.get("x", 0)), float(entity.get("y", 0))),
+		Vector2(
+			float(entity.get("reference_x", entity.get("x", 0))),
+			float(entity.get("reference_y", entity.get("y", 0))),
+		),
 		texture,
 		new_movement_groups,
 		new_idle_groups,
@@ -82,9 +96,7 @@ func configure_enemy(
 			float(entity.get("reference_y", entity.get("y", 0))),
 		),
 	)
-	# Recovered walk cadence is slower than the old remake default; this keeps
-	# patrols readable and leaves room for the authored run/crawl speeds.
-	move_speed = 72.0
+	move_speed = STABLE_MOD_BASE_PATROL_SPEED
 	blocked_replan_seconds = 0.65 + float(posmod(scene_index * 11, 8)) * 0.05
 	patrol_path_retry_seconds = (
 		PATROL_PATH_RETRY_MIN_SECONDS
@@ -118,6 +130,8 @@ func configure_enemy(
 	patrol_waypoints = patrol_world_points(entity.get("patrol_waypoints", []))
 	patrol_index = clampi(int(entity.get("patrol_current_waypoint_index", 0)), 0, maxi(0, patrol_waypoints.size() - 1))
 	patrol_enabled = bool(entity.get("patrol_enabled", true)) and not patrol_waypoints.is_empty()
+	patrol_wait_remaining = 0.0
+	patrol_path_in_flight = false
 	attack_recheck_seconds = _deterministic_attack_interval()
 	queue_redraw()
 
@@ -252,6 +266,8 @@ func apply_special_control(_source: Node2D = null) -> bool:
 		behavior_state = BehaviorState.PATROL
 		clear_combat_target()
 		cancel_path()
+		patrol_wait_remaining = 0.0
+		patrol_path_in_flight = false
 		_interrupt_combat_action()
 		apply_idle_frame()
 		queue_redraw()
@@ -293,8 +309,11 @@ func _update_detection() -> void:
 			bool(target.get("is_crawling")),
 			ignored,
 		)
-		var heard: bool = (not visible) and TACTICAL_SENSES.is_within_hearing_range(position, target.position, sense_profile)
-		if not visible and not heard:
+		# Hearing is event driven. A standing, silent target inside the recovered
+		# radius must not be treated as a continuous omnidirectional noise source;
+		# Main routes explicit N-key, dropped-item, shot and explosion events to
+		# investigate_position/receive_alert.
+		if not visible:
 			continue
 		var distance_squared := position.distance_squared_to(target.position)
 		if distance_squared < nearest_distance_squared:
@@ -322,7 +341,7 @@ func _update_detection() -> void:
 func _update_behavior(delta: float) -> void:
 	match behavior_state:
 		BehaviorState.PATROL:
-			_update_patrol()
+			_update_patrol(delta)
 		BehaviorState.CHASE:
 			if current_target == null or not is_instance_valid(current_target):
 				_enter_patrol()
@@ -386,12 +405,20 @@ func _update_behavior(delta: float) -> void:
 				chase_replan_elapsed = CHASE_REPLAN_SECONDS
 
 
-func _update_patrol() -> void:
+func _update_patrol(delta: float) -> void:
 	if not patrol_enabled or patrol_waypoints.is_empty():
 		return
 	if path_request_delay_remaining > 0.0:
 		return
 	if movement_path_index < movement_path.size():
+		return
+	if patrol_path_in_flight:
+		patrol_path_in_flight = false
+		patrol_wait_remaining = STABLE_MOD_PATROL_WAYPOINT_HOLD_SECONDS
+		apply_idle_frame()
+		return
+	if patrol_wait_remaining > 0.0:
+		patrol_wait_remaining = maxf(patrol_wait_remaining - maxf(delta, 0.0), 0.0)
 		return
 	var next_index := next_unreached_patrol_index(patrol_waypoints, patrol_index, position)
 	if next_index < 0:
@@ -399,7 +426,7 @@ func _update_patrol() -> void:
 		return
 	patrol_index = next_index
 	var destination := patrol_waypoints[patrol_index]
-	_issue_path_to(destination)
+	patrol_path_in_flight = _issue_path_to(destination)
 
 
 func _enter_patrol() -> void:
@@ -407,6 +434,8 @@ func _enter_patrol() -> void:
 	search_elapsed = 0.0
 	regroup_remaining = 0.0
 	chase_replan_elapsed = CHASE_REPLAN_SECONDS
+	patrol_wait_remaining = 0.0
+	patrol_path_in_flight = false
 	cancel_path()
 
 

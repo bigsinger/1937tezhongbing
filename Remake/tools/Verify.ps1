@@ -27,6 +27,13 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 & (Join-Path $PSScriptRoot 'Test-ModParityContract.ps1')
+if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
+    & (Join-Path $PSScriptRoot 'Test-ModRuntimeIdentityCatalog.ps1') `
+        -LevelManifest $realAssetManifest
+}
+else {
+    & (Join-Path $PSScriptRoot 'Test-ModRuntimeIdentityCatalog.ps1')
+}
 & (Join-Path $PSScriptRoot 'Test-RuntimeParityTrace.ps1')
 
 $modResource = Join-Path `
@@ -172,6 +179,15 @@ if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
     if ($LASTEXITCODE -ne 0) {
         throw "Godot obstacle-route parity probe failed with exit code $LASTEXITCODE."
     }
+    & $GodotExecutable --headless --path $game `
+        --max-fps 60 --disable-vsync `
+        --script 'res://tests/parity_runtime_probe.gd' -- `
+        "--output-dir=$parityProbeOutput" `
+        '--scenario-id=m000-enemy-patrol-v1' `
+        '--observation-seconds=1.0'
+    if ($LASTEXITCODE -ne 0) {
+        throw "Godot enemy-patrol parity probe failed with exit code $LASTEXITCODE."
+    }
     foreach ($parityScenarioId in @(
         'm000-basic-movement-v1',
         'm000-obstacle-route-v1'
@@ -192,6 +208,27 @@ if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
                 Join-Path $parityProbeOutput (
                     $parityScenarioId + '-comparison.md')) | Out-Null
     }
+    $patrolBaseline = Join-Path $remakeRoot (
+        'validation\baselines\mod\m000-enemy-patrol-v1.json')
+    $patrolCandidate = Join-Path $parityProbeOutput (
+        'remake-m000-enemy-patrol-v1.json')
+    & (Join-Path $PSScriptRoot 'Compare-RuntimeParityTrace.ps1') `
+        -ReferenceTrace $patrolBaseline `
+        -CandidateTrace $patrolCandidate `
+        -ElapsedToleranceMs 500 `
+        -AllowMismatch `
+        -OutputJson (
+            Join-Path $parityProbeOutput (
+                'm000-enemy-patrol-v1-route-phase-comparison.json')) `
+        -OutputMarkdown (
+            Join-Path $parityProbeOutput (
+                'm000-enemy-patrol-v1-route-phase-comparison.md')) | Out-Null
+    & (Join-Path $PSScriptRoot 'Compare-PatrolKinematics.ps1') `
+        -ReferenceTrace $patrolBaseline `
+        -CandidateTrace $patrolCandidate `
+        -OutputJson (
+            Join-Path $parityProbeOutput (
+                'm000-enemy-patrol-v1-kinematics.json')) | Out-Null
 
     $realMediaCatalog = Join-Path $remakeRoot 'LocalAssets\converted\legacy-media-catalog.json'
     if (Test-Path -LiteralPath $realMediaCatalog -PathType Leaf) {

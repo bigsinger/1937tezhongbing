@@ -1,0 +1,276 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/bigsinger/1937tezhongbing/SDK/schemas/runtime-actor-identity-catalog-v1.schema.json",
+  "title": "M1937 stable-MOD runtime actor identity catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "catalog_id",
+    "content_profile",
+    "level",
+    "provenance",
+    "summary",
+    "identities"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "catalog_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "content_profile": {
+      "type": "string",
+      "minLength": 1
+    },
+    "level": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "selector_level",
+        "engine_mission"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^m[0-9]{3}$"
+        },
+        "selector_level": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        },
+        "engine_mission": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "runtime_snapshot",
+        "level_manifest",
+        "field_semantics"
+      ]
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtime_object_count",
+        "runtime_dynamic_actor_count",
+        "vwf_dynamic_actor_count",
+        "resolved_count",
+        "unresolved_count",
+        "method_counts"
+      ],
+      "properties": {
+        "runtime_object_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "runtime_dynamic_actor_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "vwf_dynamic_actor_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "resolved_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unresolved_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "method_counts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "identities": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/identity"
+      }
+    }
+  },
+  "$defs": {
+    "point": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        }
+      ],
+      "items": false
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scene_index",
+        "database_entry_id",
+        "display_name",
+        "runtime_type",
+        "vwf_faction_id",
+        "reference_distance"
+      ],
+      "properties": {
+        "scene_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "database_entry_id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "runtime_type": {
+          "type": "integer"
+        },
+        "vwf_faction_id": {
+          "type": "integer"
+        },
+        "reference_distance": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtime_index",
+        "runtime_type",
+        "runtime_faction_id",
+        "observed",
+        "status",
+        "mapping_scope"
+      ],
+      "properties": {
+        "runtime_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "runtime_type": {
+          "type": "integer"
+        },
+        "runtime_faction_id": {
+          "type": "integer"
+        },
+        "observed": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "position",
+            "facing_direction",
+            "goal_kind",
+            "goal"
+          ],
+          "properties": {
+            "position": {
+              "$ref": "#/$defs/point"
+            },
+            "facing_direction": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 8
+            },
+            "goal_kind": {
+              "type": "integer"
+            },
+            "goal": {
+              "$ref": "#/$defs/point"
+            }
+          }
+        },
+        "status": {
+          "enum": [
+            "resolved",
+            "unresolved"
+          ]
+        },
+        "mapping_scope": {
+          "const": "captured-runtime-array-index-within-supported-content-profile"
+        },
+        "scene_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "database_entry_id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "vwf_faction_id": {
+          "type": "integer"
+        },
+        "method": {
+          "type": "string"
+        },
+        "confidence": {
+          "enum": [
+            "exact",
+            "high"
+          ]
+        },
+        "evidence": {
+          "type": "object"
+        },
+        "candidates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/candidate"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "resolved"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "scene_index",
+              "database_entry_id",
+              "display_name",
+              "vwf_faction_id",
+              "method",
+              "confidence",
+              "evidence"
+            ]
+          },
+          "else": {
+            "required": [
+              "candidates"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

@@ -179,8 +179,15 @@ godot --path .\game -- --level=m007
 原版基线位于
 [`validation/baselines/mod/m000-basic-movement-v1.json`](validation/baselines/mod/m000-basic-movement-v1.json)。
 结果写入 `LocalAssets/qa/runtime-probe/parity/`；已有基线一旦出现位置、
-目标、朝向、树边绕行方向或时间区间差异，脚本会直接失败。本地
-`Verify.ps1` 在发现真实导入资源时也会执行这两条严格差分门禁。
+目标、朝向、树边绕行方向或时间区间差异，脚本会直接失败。
+
+同一命令还重放
+[`m000-enemy-patrol-v1.json`](validation/baselines/mod/m000-enemy-patrol-v1.json)：
+它用版本化身份目录核对 46 名敌军，并严格比较两个一秒区间的最大/P90
+位移、移动数和静止数。该基线恢复了 `reference_x/reference_y` 出生、
+约 134 px/s 巡逻和约 1.9 秒端点停留；精确路线相位保留为诊断，未恢复的
+脚本编队不会被伪造映射。本地 `Verify.ps1` 在发现真实导入资源时会执行
+两条玩家移动门禁和这条敌军巡逻门禁。
 
 ## 5. 生成 Windows 本地试玩程序
 

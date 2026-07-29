@@ -49,14 +49,14 @@
     {
       "id": "navigation_routes_and_doors",
       "status": "partial",
-      "evidence": ["L3 A*", "516 patrol routes", "dynamic occupancy and replanning", "m000 obstacle-free command replacement and movement-vector parity at 260 px/s", "m000 tree-edge one-open-side diagonal and early corridor recovery parity"],
-      "gaps": ["all non-character footprints", "all open/closed door state transitions", "remaining foreground route-shape parity", "corridor coordination parity"]
+      "evidence": ["L3 A*", "516 patrol routes", "dynamic occupancy and replanning", "m000 obstacle-free command replacement and movement-vector parity at 260 px/s", "m000 tree-edge one-open-side diagonal and early corridor recovery parity", "m000 46-enemy two-interval patrol kinematics gate from stable MOD runtime"],
+      "gaps": ["all non-character footprints", "all open/closed door state transitions", "exact patrol phase for scripted and blocked routes", "remaining foreground route-shape parity", "corridor coordination parity"]
     },
     {
       "id": "vision_hearing_and_ai",
       "status": "partial",
-      "evidence": ["directional near/far perception", "L2 occlusion", "hearing, alert sharing and last-known search"],
-      "gaps": ["exact hearing values per actor", "corpse discovery cascade", "original search/return timing and cooperation rules"]
+      "evidence": ["directional near/far perception", "L2 occlusion", "recovered 640-pixel ordinary-enemy hearing radius", "event-driven noise investigation without omniscient live-target tracking", "alert sharing and last-known search"],
+      "gaps": ["special-actor hearing overrides", "corpse discovery cascade", "original search/return timing and cooperation rules"]
     },
     {
       "id": "mission_state_machines",
@@ -96,7 +96,7 @@
     }
   ],
   "levels": [
-    {"id": "m000", "number": 1, "title": "营救行动", "status": "partial", "gaps": ["combat/inventory/mission differential traces", "door/foreground obstacle-path parity", "save/reload at each objective"]},
+    {"id": "m000", "number": 1, "title": "营救行动", "status": "partial", "gaps": ["combat/inventory/mission differential traces", "exact scripted patrol phases for unresolved formations", "door/foreground obstacle-path parity", "save/reload at each objective"]},
     {"id": "m001", "number": 2, "title": "奇袭火车站", "status": "partial", "gaps": ["victory/failure traces", "uniform and train interaction parity", "difficulty calibration"]},
     {"id": "m002", "number": 3, "title": "劫狱", "status": "partial", "gaps": ["victory/failure traces", "prison interaction parity", "difficulty calibration"]},
     {"id": "m003", "number": 4, "title": "铁路桥", "status": "partial", "gaps": ["victory/failure traces", "bridge explosion parity", "difficulty calibration"]},

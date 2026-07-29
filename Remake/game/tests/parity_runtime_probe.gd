@@ -54,14 +54,27 @@ func _run_probe() -> void:
 	var started := Time.get_ticks_usec()
 
 	var trace = TRACE_SCRIPT.new()
+	var scenario_description := (
+		"Observe the audited m000 enemy patrol roster in two one-second intervals."
+		if scenario_id == "m000-enemy-patrol-v1"
+		else "Select 强子, issue two original-coordinate move orders, and observe facing/path replacement."
+	)
 	trace.configure(
 		"remake",
 		"m000",
 		1,
 		1,
 		scenario_id,
-		"Select 强子, issue two original-coordinate move orders, and observe facing/path replacement.",
+		scenario_description,
 	)
+	if scenario_id == "m000-enemy-patrol-v1":
+		await _run_enemy_patrol_probe(
+			main,
+			trace,
+			started,
+			observation_seconds,
+		)
+		return
 	trace.capture_main("gameplay_ready", main, _elapsed_ms(started))
 
 	var primary = _primary_unit(main)
@@ -134,6 +147,81 @@ func _run_probe() -> void:
 			{
 				"trace": trace_path,
 				"checkpoints": (trace.document.get("checkpoints", []) as Array).size(),
+				"failures": failures,
+			}
+		)
+	)
+	main.queue_free()
+	if failures.is_empty():
+		quit(0)
+		return
+	for failure: String in failures:
+		push_error(failure)
+	quit(1)
+
+
+func _run_enemy_patrol_probe(
+	main: Node,
+	trace: RefCounted,
+	started: int,
+	observation_seconds: float,
+) -> void:
+	# Let the staggered path scheduler issue every first patrol request before
+	# measuring. The reference MOD trace likewise starts only after gameplay is
+	# fully resumed; commanded/observed pairs compare interval movement rather
+	# than unrelated absolute startup phase.
+	# The isolated MOD probe resumes the original menu, waits 4.2 seconds for
+	# the gameplay capture, then observes five seconds of spawn safety before
+	# its first patrol checkpoint. Reproduce that 9.2-second phase here.
+	await create_timer(9.2).timeout
+	var enemy_count := (main.get("enemies") as Array).size()
+	_expect(enemy_count >= 46, "m000 imported enemy roster is available")
+	trace.call(
+		"capture_main",
+		"patrol_interval_1_commanded",
+		main,
+		_elapsed_ms(started),
+		{"scope": "audited_m000_enemy_identities"},
+	)
+	await create_timer(observation_seconds).timeout
+	trace.call(
+		"capture_main",
+		"patrol_interval_1_observed",
+		main,
+		_elapsed_ms(started),
+		{"scope": "audited_m000_enemy_identities"},
+	)
+	trace.call(
+		"capture_main",
+		"patrol_interval_2_commanded",
+		main,
+		_elapsed_ms(started),
+		{"scope": "audited_m000_enemy_identities"},
+	)
+	await create_timer(observation_seconds).timeout
+	trace.call(
+		"capture_main",
+		"patrol_interval_2_observed",
+		main,
+		_elapsed_ms(started),
+		{"scope": "audited_m000_enemy_identities"},
+	)
+	var trace_path := ""
+	if not output_directory.is_empty():
+		trace_path = output_directory.path_join(
+			"remake-m000-enemy-patrol-v1.json"
+		)
+		_expect(
+			trace.call("write_to_file", trace_path) == OK,
+			"Remake patrol parity trace writes",
+		)
+	var trace_document: Dictionary = trace.get("document") as Dictionary
+	print(
+		"PARITY_RUNTIME_PROBE_RESULT %s"
+		% JSON.stringify(
+			{
+				"trace": trace_path,
+				"checkpoints": (trace_document.get("checkpoints", []) as Array).size(),
 				"failures": failures,
 			}
 		)

@@ -12,6 +12,8 @@ $baselinePath = Join-Path $remakeRoot `
     'validation\baselines\mod\m000-basic-movement-v1.json'
 $obstacleBaselinePath = Join-Path $remakeRoot `
     'validation\baselines\mod\m000-obstacle-route-v1.json'
+$patrolBaselinePath = Join-Path $remakeRoot `
+    'validation\baselines\mod\m000-enemy-patrol-v1.json'
 
 $schema = Get-Content -LiteralPath $schemaPath -Raw -Encoding UTF8 |
     ConvertFrom-Json
@@ -40,6 +42,26 @@ if ($obstacleBaseline.runtime -ne 'mod' -or
     @($obstacleBaseline.checkpoints[3].tags.observed_positions).Count -lt 10 -or
     [int]$obstacleBaseline.checkpoints[0].actors[0].scene_index -ne 1436) {
     throw 'The checked-in m000 obstacle-route baseline is invalid.'
+}
+$patrolBaseline = Get-Content -LiteralPath $patrolBaselinePath `
+    -Raw -Encoding UTF8 | ConvertFrom-Json
+$patrolCheckpointIds = @(
+    'patrol_interval_1_commanded',
+    'patrol_interval_1_observed',
+    'patrol_interval_2_commanded',
+    'patrol_interval_2_observed'
+)
+if ($patrolBaseline.runtime -ne 'mod' -or
+    $patrolBaseline.scenario.id -ne 'm000-enemy-patrol-v1' -or
+    @($patrolBaseline.checkpoints).Count -ne 4 -or
+    (Compare-Object `
+        $patrolCheckpointIds `
+        @($patrolBaseline.checkpoints.id)).Count -ne 0 -or
+    @($patrolBaseline.checkpoints |
+        Where-Object { @($_.actors).Count -ne 46 }).Count -ne 0 -or
+    @($patrolBaseline.checkpoints[0].actors.scene_index |
+        Select-Object -Unique).Count -ne 46) {
+    throw 'The checked-in m000 enemy-patrol baseline is invalid.'
 }
 
 $temporaryBase = if (Test-Path -LiteralPath 'E:\1937') {
@@ -166,7 +188,8 @@ try {
     }
     foreach ($checkedBaseline in @(
         $baselinePath,
-        $obstacleBaselinePath
+        $obstacleBaselinePath,
+        $patrolBaselinePath
     )) {
         $baselineSelf = & $compareScript `
             -ReferenceTrace $checkedBaseline `

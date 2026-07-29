@@ -344,6 +344,32 @@ func _test_alert_propagation(failures: Array[String]) -> void:
 		"enemy alert receiver rejects a missing or dead combat target",
 		failures,
 	)
+	var sound_guard = _make_alert_enemy("sound guard", Vector2(320.0, 0.0), clear_sight)
+	var distant_sound_guard = _make_alert_enemy(
+		"distant sound guard", Vector2(720.0, 0.0), clear_sight
+	)
+	sound_guard.sense_profile = {"hearing_radius": 640.0}
+	distant_sound_guard.sense_profile = {"hearing_radius": 640.0}
+	arena.add_child(sound_guard)
+	arena.add_child(distant_sound_guard)
+	main.enemies.append(sound_guard)
+	main.enemies.append(distant_sound_guard)
+	main.selected_units.append(attacker)
+	_expect(
+		main.emit_noise_at(Vector2.ZERO, 640.0) == 1,
+		"explicit noise uses each enemy's recovered hearing radius",
+		failures,
+	)
+	_expect(
+		(
+			sound_guard.current_target == null
+			and sound_guard.behavior_state == ENEMY_UNIT_SCRIPT.BehaviorState.SEARCH
+			and sound_guard.last_known_target_position == Vector2.ZERO
+			and distant_sound_guard.behavior_state == ENEMY_UNIT_SCRIPT.BehaviorState.PATROL
+		),
+		"noise creates a position investigation rather than omniscient live-target pursuit",
+		failures,
+	)
 	var coordinator := MockAiCoordinator.new()
 	main.mission_ai_coordinator = coordinator
 	var dead_enemy = _make_alert_enemy("dead source", Vector2(240.0, 0.0), clear_sight)

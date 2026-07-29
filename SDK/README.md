@@ -20,6 +20,8 @@ PE 指纹和原始指令字节。
   VWF 文件要求；
 - `schemas/runtime-parity-trace-v1.schema.json` 固定 MOD 与 Remake 共用的
   运行轨迹格式，供位置、朝向、武器、背包、任务与 AI 行为逐项差分；
+- `schemas/runtime-actor-identity-catalog-v1.schema.json` 固定原版活动对象
+  到 VWF scene/DBL 的证据映射，禁止用运行时数组下标猜 scene；
 - CI 会重新生成并比对产物，同时扫描代理、探针和编辑器，禁止复制已知
   裸 RVA。
 - 提供不可变最后目击观察、有界增援/搜索/截击策略及难度调校类型；
@@ -69,6 +71,14 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 跨运行时轨迹不是地址清单生成物；其 schema 由 SDK 版本化维护，MOD
 只读探针与 Remake 回放器共同消费。已证明的原版对象映射才能写入轨迹，
 运行时活动对象数组下标不得直接冒充 VWF `scene_index`。
+
+第一关身份目录由
+`Remake/tools/Build-ModRuntimeIdentityCatalog.ps1` 生成并由
+`Test-ModRuntimeIdentityCatalog.ps1` 校验。当前 62 个动态阵营对象中
+54 个已一对一解析，8 个脚本编队对象保留 unresolved。字段语义必须保持：
+`RuntimeActorV1 +0x064` 是对应 VWF
+`database_header_values[2]` 的运行时类型，不是 DBL id；实际 DBL id 是
+`database_entry_id`。46 名已解析敌军已用于 m000 巡逻差分门禁。
 
 不要直接编辑这些文件；`Test-SdkSingleSource.ps1` 会验证它们与两个 JSON
 机器源一致。

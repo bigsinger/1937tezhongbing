@@ -96,6 +96,21 @@ if ($LASTEXITCODE -ne 0) {
     throw "Godot obstacle-route parity probe failed with exit code $LASTEXITCODE."
 }
 
+& $GodotExecutable `
+    --headless `
+    --path $gameDirectory `
+    --max-fps 60 `
+    --disable-vsync `
+    --log-file (Join-Path $OutputDirectory 'parity-patrol.log') `
+    --script 'res://tests/parity_runtime_probe.gd' `
+    -- `
+    "--output-dir=$parityOutput" `
+    '--scenario-id=m000-enemy-patrol-v1' `
+    '--observation-seconds=1.0'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot enemy-patrol parity probe failed with exit code $LASTEXITCODE."
+}
+
 $parityScenarios = @(
     'm000-basic-movement-v1',
     'm000-obstacle-route-v1'
@@ -117,6 +132,30 @@ foreach ($scenarioId in $parityScenarios) {
             Join-Path $parityOutput ($scenarioId + '-comparison.md')) |
         Out-Null
 }
+
+$patrolBaseline = Join-Path $remakeRoot (
+    'validation\baselines\mod\m000-enemy-patrol-v1.json')
+$patrolTrace = Join-Path $parityOutput (
+    'remake-m000-enemy-patrol-v1.json')
+& (Join-Path $PSScriptRoot 'Compare-RuntimeParityTrace.ps1') `
+    -ReferenceTrace $patrolBaseline `
+    -CandidateTrace $patrolTrace `
+    -ElapsedToleranceMs 500 `
+    -AllowMismatch `
+    -OutputJson (
+        Join-Path $parityOutput (
+            'm000-enemy-patrol-v1-route-phase-comparison.json')) `
+    -OutputMarkdown (
+        Join-Path $parityOutput (
+            'm000-enemy-patrol-v1-route-phase-comparison.md')) |
+    Out-Null
+& (Join-Path $PSScriptRoot 'Compare-PatrolKinematics.ps1') `
+    -ReferenceTrace $patrolBaseline `
+    -CandidateTrace $patrolTrace `
+    -OutputJson (
+        Join-Path $parityOutput (
+            'm000-enemy-patrol-v1-kinematics.json')) |
+    Out-Null
 
 $productUiOutput = Join-Path $OutputDirectory 'product-ui'
 New-Item -ItemType Directory -Force -Path $productUiOutput | Out-Null

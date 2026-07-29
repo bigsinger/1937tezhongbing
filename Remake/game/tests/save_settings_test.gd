@@ -708,6 +708,14 @@ func _test_mid_mission_capture_and_apply(failures: Array[String]) -> void:
 		"enemy pursuit target and behavior restore together",
 		failures,
 	)
+	_expect(
+		(
+			is_equal_approx(float(target_game.enemies[0].patrol_wait_remaining), 1.25)
+			and bool(target_game.enemies[0].patrol_path_in_flight)
+		),
+		"enemy patrol endpoint hold and active-leg state survive a mid-mission save",
+		failures,
+	)
 	_expect(target_unit.ammo_item_count(43) == 2, "integer-key deployable inventory restores", failures)
 	_expect(target_unit.ammo_item_count(36) == 35, "integer-key ammunition inventory restores", failures)
 	var restored_seen := target_game.current_mission_state.seen_values["secure"] as Dictionary
@@ -984,6 +992,8 @@ func _make_mock_game(populated: bool) -> MockGame:
 		game.selected_units = [unit]
 		enemy.current_target = unit
 		enemy.behavior_state = ENEMY_UNIT.BehaviorState.CHASE
+		enemy.patrol_wait_remaining = 1.25
+		enemy.patrol_path_in_flight = true
 		unit.current_hit_points = 6
 		unit.add_ammo_item(36, 3)
 		unit.add_ammo_item(43, 2)

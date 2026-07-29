@@ -48,7 +48,8 @@ if ($PSVersionTable.PSEdition -eq 'Core') {
 $references = @(
     'System.dll',
     'System.Core.dll',
-    'System.Drawing.dll'
+    'System.Drawing.dll',
+    'System.Web.Extensions.dll'
 )
 foreach ($name in @(
     'OriginalLevelProbe',

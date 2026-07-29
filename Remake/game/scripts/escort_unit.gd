@@ -23,7 +23,10 @@ func configure_escort(
 	configure(
 		str(entity.get("display_name", "escort")),
 		Color("d3c27a"),
-		Vector2(float(entity.get("x", 0)), float(entity.get("y", 0))),
+		Vector2(
+			float(entity.get("reference_x", entity.get("x", 0))),
+			float(entity.get("reference_y", entity.get("y", 0))),
+		),
 		texture,
 		new_movement_groups,
 		new_idle_groups,
