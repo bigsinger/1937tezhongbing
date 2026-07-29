@@ -51,9 +51,13 @@ internal static class ModRegressionProbe
     private const int ActorGoalKindOffset = 0x194;
     private const int ActorGoalXOffset = 0x198;
     private const int ActorGoalYOffset = 0x19C;
-    private const int ActorGoalRepathPendingOffset = 0x1A4;
-    private const int ActorGoalMotionPendingOffset = 0x1A8;
+    private const int ActorCommandVariantOffset = 0x1A4;
+    private const int ActorCommandPendingOffset = 0x1A8;
     private const int ActorMovementActiveOffset = 0x1D8;
+    private const int ActorMovementPathStateOffset = 0x1FC;
+    private const int ActorMovementModeOffset = 0x208;
+    private const int ActorResolvedGoalXOffset = 0x218;
+    private const int ActorResolvedGoalYOffset = 0x220;
     private const int ActorPathOverrideActiveOffset = 0x290;
 
     [StructLayout(LayoutKind.Sequential)]
@@ -182,10 +186,29 @@ internal static class ModRegressionProbe
         public int GoalKind;
         public int GoalX;
         public int GoalY;
-        public int GoalRepathPending;
-        public int GoalMotionPending;
+        public int CommandVariant;
+        public int CommandPending;
         public int MovementActive;
+        public int MovementPathState;
+        public int MovementMode;
+        public int ResolvedGoalX;
+        public int ResolvedGoalY;
         public int PathOverrideActive;
+    }
+
+    private sealed class MovementSegmentObservation
+    {
+        public ActorSnapshot Last;
+        public int Samples;
+        public int MovingSamples;
+        public int AlignedSamples;
+        public int OppositeSamples;
+        public int PerpendicularSamples;
+        public int MaximumDisplacement;
+        public int StartTargetDistance;
+        public int EndTargetDistance;
+        public int MinimumTargetDistance;
+        public readonly HashSet<int> Directions = new HashSet<int>();
     }
 
     public static int Main(string[] args)
@@ -194,8 +217,9 @@ internal static class ModRegressionProbe
         {
             Console.Error.WriteLine(
                 "Usage: ModRegressionProbe.exe GAME_DIR OUTPUT_DIR LEVEL " +
-                "[SECONDS] [MOVEMENT_CELL_X MOVEMENT_CELL_Y] " +
-                "[--briefing-only]");
+                "[SECONDS] [MOVEMENT_CELL_X MOVEMENT_CELL_Y " +
+                "[RETURN_CELL_X RETURN_CELL_Y]] " +
+                "[--briefing-only] [--movement-only]");
             return 2;
         }
 
@@ -211,6 +235,12 @@ internal static class ModRegressionProbe
                 "--briefing-only",
                 StringComparison.OrdinalIgnoreCase);
         });
+        bool movementOnly = args.Any(delegate(string argument)
+        {
+            return argument.Equals(
+                "--movement-only",
+                StringComparison.OrdinalIgnoreCase);
+        });
         int movementCellX;
         int movementCellY;
         DefaultMovementTarget(
@@ -221,6 +251,17 @@ internal static class ModRegressionProbe
                 args[4], CultureInfo.InvariantCulture);
             movementCellY = int.Parse(
                 args[5], CultureInfo.InvariantCulture);
+        }
+        int returnCellX;
+        int returnCellY;
+        DefaultMovementReturnTarget(
+            selectorLevel, out returnCellX, out returnCellY);
+        if (args.Length >= 8)
+        {
+            returnCellX = int.Parse(
+                args[6], CultureInfo.InvariantCulture);
+            returnCellY = int.Parse(
+                args[7], CultureInfo.InvariantCulture);
         }
         var route = MissionRoutes.Find(selectorLevel);
         if (route == null)
@@ -623,6 +664,7 @@ internal static class ModRegressionProbe
                 bool mouseSent = ExercisePlayerMovement(
                     process, imageBase, window,
                     movementCellX, movementCellY,
+                    returnCellX, returnCellY,
                     out movementEvidence);
                 if (renderAuditEnabled)
                 {
@@ -644,8 +686,12 @@ internal static class ModRegressionProbe
 
                 string telemetryPath = Path.Combine(
                     gameDirectory, "M1937Telemetry.jsonl");
-                bool aiSent = SendReplay(window, ReplayAiAlert, 0);
-                bool aiObserved = WaitUntil(
+                bool aiSent =
+                    movementOnly ||
+                    SendReplay(window, ReplayAiAlert, 0);
+                bool aiObserved =
+                    movementOnly ||
+                    WaitUntil(
                     delegate()
                     {
                         return HasPositiveCounter(
@@ -653,8 +699,10 @@ internal static class ModRegressionProbe
                             "\"alerts\":");
                     }, TimeSpan.FromSeconds(3));
                 string aiTelemetry = ReadSharedText(telemetryPath);
-                long maximumReinforcements = MaximumCounter(
-                    aiTelemetry, "\"reinforcements\":");
+                long maximumReinforcements = movementOnly
+                    ? 0
+                    : MaximumCounter(
+                        aiTelemetry, "\"reinforcements\":");
                 bool reactionObserved =
                     maximumReinforcements <= 0 ||
                     WaitUntil(
@@ -700,7 +748,9 @@ internal static class ModRegressionProbe
                     maximumReinforcements <= 4;
                 AddStage(
                     stages, game, process, imageBase, clock,
-                    "ai_last_known_coordination",
+                    movementOnly
+                        ? "ai_skipped_movement_only_scope"
+                        : "ai_last_known_coordination",
                     aiSent && aiObserved &&
                     boundedReinforcements && reactionObserved &&
                     escapeObserved,
@@ -1100,6 +1150,27 @@ internal static class ModRegressionProbe
         }
     }
 
+    private static void DefaultMovementReturnTarget(
+        int selectorLevel, out int cellX, out int cellY)
+    {
+        switch (selectorLevel)
+        {
+        case 13:
+            cellX = 1;
+            cellY = 189;
+            break;
+        case 14:
+        case 15:
+            cellX = 2;
+            cellY = 118;
+            break;
+        default:
+            cellX = -1;
+            cellY = -1;
+            break;
+        }
+    }
+
     private static void WriteActorStateSnapshot(
         IntPtr process, long imageBase, string path)
     {
@@ -1118,8 +1189,9 @@ internal static class ModRegressionProbe
         var text = new StringBuilder();
         text.AppendLine(
             "index,address,database_entry,faction,world_x,world_y," +
-            "direction,dead,goal_kind,goal_x,goal_y,repath_pending," +
-            "motion_pending,movement_active,path_override");
+            "direction,dead,goal_kind,goal_x,goal_y,command_variant," +
+            "command_pending,movement_active,movement_path_state," +
+            "movement_mode,resolved_goal_x,resolved_goal_y,path_override");
         for (int index = 0; index < count; ++index)
         {
             int actorValue = ReadInt(
@@ -1133,7 +1205,7 @@ internal static class ModRegressionProbe
             text.AppendFormat(
                 CultureInfo.InvariantCulture,
                 "{0},0x{1:X8},{2},{3},{4},{5},{6},{7},{8},{9},{10}," +
-                "{11},{12},{13},{14}\r\n",
+                "{11},{12},{13},{14},{15},{16},{17},{18}\r\n",
                 index,
                 snapshot.Address,
                 snapshot.DatabaseEntry,
@@ -1145,9 +1217,13 @@ internal static class ModRegressionProbe
                 snapshot.GoalKind,
                 snapshot.GoalX,
                 snapshot.GoalY,
-                snapshot.GoalRepathPending,
-                snapshot.GoalMotionPending,
+                snapshot.CommandVariant,
+                snapshot.CommandPending,
                 snapshot.MovementActive,
+                snapshot.MovementPathState,
+                snapshot.MovementMode,
+                snapshot.ResolvedGoalX,
+                snapshot.ResolvedGoalY,
                 snapshot.PathOverrideActive);
         }
         File.WriteAllText(path, text.ToString(), new UTF8Encoding(false));
@@ -1211,12 +1287,20 @@ internal static class ModRegressionProbe
             GoalKind = ReadInt(process, actor + ActorGoalKindOffset),
             GoalX = ReadInt(process, actor + ActorGoalXOffset),
             GoalY = ReadInt(process, actor + ActorGoalYOffset),
-            GoalRepathPending = ReadInt(
-                process, actor + ActorGoalRepathPendingOffset),
-            GoalMotionPending = ReadInt(
-                process, actor + ActorGoalMotionPendingOffset),
+            CommandVariant = ReadInt(
+                process, actor + ActorCommandVariantOffset),
+            CommandPending = ReadInt(
+                process, actor + ActorCommandPendingOffset),
             MovementActive = ReadInt(
                 process, actor + ActorMovementActiveOffset),
+            MovementPathState = ReadInt(
+                process, actor + ActorMovementPathStateOffset),
+            MovementMode = ReadInt(
+                process, actor + ActorMovementModeOffset),
+            ResolvedGoalX = ReadInt(
+                process, actor + ActorResolvedGoalXOffset),
+            ResolvedGoalY = ReadInt(
+                process, actor + ActorResolvedGoalYOffset),
             PathOverrideActive = ReadInt(
                 process, actor + ActorPathOverrideActiveOffset)
         };
@@ -1256,12 +1340,19 @@ internal static class ModRegressionProbe
     private static bool ExercisePlayerMovement(
         IntPtr process, long imageBase, IntPtr window,
         int targetCellX, int targetCellY,
+        int returnCellX, int returnCellY,
         out string evidence)
     {
         if (targetCellX < 0 || targetCellY < 0)
         {
             evidence = "no deterministic movement target for this level";
             return true;
+        }
+        if (returnCellX < 0 || returnCellY < 0)
+        {
+            evidence =
+                "no deterministic second movement target for this level";
+            return false;
         }
         ActorSnapshot before = FindPlayerActor(process, imageBase);
         if (before == null)
@@ -1290,30 +1381,14 @@ internal static class ModRegressionProbe
         byte[] actorBeforeSelection = ReadBytes(
             process, before.Address, 0x294);
         bool selectionSent = PulseKey(window, DikF4);
-        Thread.Sleep(260);
+        Thread.Sleep(320);
         // Character hotkeys intentionally center the camera. Refresh the
-        // origin before converting either the actor or destination into
-        // screen coordinates.
+        // origin before converting the destination into screen coordinates.
         cameraX = ReadInt(
             process, imageBase + EngineAddresses.CameraX);
         cameraY = ReadInt(
             process, imageBase + EngineAddresses.CameraY);
-        int playerScreenX = before.WorldX - cameraX;
-        int playerScreenY = before.WorldY - cameraY - 24;
-        if (playerScreenX >= 8 && playerScreenX < screenWidth - 8 &&
-            playerScreenY >= 8 && playerScreenY < screenHeight - 96)
-        {
-            int selectedX;
-            int selectedY;
-            selectionSent =
-                MoveReplayCursor(
-                    process, imageBase, window,
-                    playerScreenX, playerScreenY,
-                    out selectedX, out selectedY) &&
-                PulseMouseButton(window, 0) &&
-                selectionSent;
-            Thread.Sleep(260);
-        }
+        ActorSnapshot selected = FindPlayerActor(process, imageBase);
         byte[] actorAfterSelection = ReadBytes(
             process, before.Address, 0x294);
         int selectionActorChangeCount = 0;
@@ -1327,6 +1402,11 @@ internal static class ModRegressionProbe
                     actorAfterSelection[index])
                     selectionActorChangeCount++;
             }
+        }
+        if (selected == null)
+        {
+            evidence = "player actor disappeared after F4 selection";
+            return false;
         }
 
         int targetWorldX = checked(targetCellX * 32 + 16);
@@ -1350,29 +1430,80 @@ internal static class ModRegressionProbe
             targetScreenX, targetScreenY,
             out cursorX, out cursorY);
         bool clickSent = cursorReached && PulseMouseButton(window, 0);
-        var directions = new HashSet<int>();
-        directions.Add(before.Direction);
-        int maximumDisplacement = 0;
-        bool goalChanged = false;
-        ActorSnapshot after = before;
-        ObservePlayerMovement(
-            process, imageBase, before, 1200,
-            directions, ref maximumDisplacement,
-            ref goalChanged, ref after);
-        bool clickMoved = maximumDisplacement >= 8;
-        bool alternateClickSent = true;
-        bool alternateClickMoved = false;
-        if (!clickMoved)
-        {
-            alternateClickSent = PulseMouseButton(window, 1);
-            ObservePlayerMovement(
-                process, imageBase, before, 1800,
-                directions, ref maximumDisplacement,
-                ref goalChanged, ref after);
-            alternateClickMoved = maximumDisplacement >= 8;
-        }
-        bool moved = maximumDisplacement >= 8;
+        ActorSnapshot firstGoal = null;
+        bool firstGoalAccepted = clickSent && WaitForPlayerGoal(
+            process, imageBase,
+            targetWorldX, targetWorldY, 900,
+            out firstGoal);
+        MovementSegmentObservation outbound = ObserveMovementSegment(
+            process, imageBase,
+            firstGoal ?? selected,
+            targetWorldX, targetWorldY,
+            1800);
+        bool firstMoved =
+            outbound.MaximumDisplacement >= 24 &&
+            outbound.EndTargetDistance <
+                outbound.StartTargetDistance - 8;
+        bool firstFacingAligned =
+            outbound.MovingSamples >= 2 &&
+            outbound.AlignedSamples > 0 &&
+            outbound.OppositeSamples == 0;
+
+        // A second primary click must replace the still-active first goal.
+        // Click a second verified open cell on the other side of the route.
+        // Do not reuse the original spawn: the legacy occupancy grid may keep
+        // that cell reserved briefly while the actor is leaving it.
+        ActorSnapshot returnStart = outbound.Last;
+        int returnWorldX = checked(returnCellX * 32 + 16);
+        int returnWorldY = checked(returnCellY * 16 + 8);
+        cameraX = ReadInt(
+            process, imageBase + EngineAddresses.CameraX);
+        cameraY = ReadInt(
+            process, imageBase + EngineAddresses.CameraY);
+        int returnScreenX = returnWorldX - cameraX;
+        int returnScreenY = returnWorldY - cameraY;
+        bool returnTargetVisible =
+            returnScreenX >= 8 &&
+            returnScreenX < screenWidth - 8 &&
+            returnScreenY >= 8 &&
+            returnScreenY < screenHeight - 96;
+        int returnCursorX = int.MinValue;
+        int returnCursorY = int.MinValue;
+        bool returnCursorReached =
+            returnTargetVisible &&
+            MoveReplayCursor(
+                process, imageBase, window,
+                returnScreenX, returnScreenY,
+                out returnCursorX, out returnCursorY);
+        bool returnClickSent =
+            returnCursorReached && PulseMouseButton(window, 0);
+        ActorSnapshot returnGoal = null;
+        bool returnGoalAccepted = returnClickSent && WaitForPlayerGoal(
+            process, imageBase,
+            returnWorldX, returnWorldY, 900,
+            out returnGoal);
+        MovementSegmentObservation inbound = ObserveMovementSegment(
+            process, imageBase,
+            returnGoal ?? returnStart,
+            returnWorldX, returnWorldY,
+            1800);
+        bool returnMoved =
+            inbound.MaximumDisplacement >= 16 &&
+            inbound.EndTargetDistance <
+                inbound.StartTargetDistance - 8;
+        bool returnFacingAligned =
+            inbound.MovingSamples >= 2 &&
+            inbound.AlignedSamples > 0 &&
+            inbound.OppositeSamples == 0;
+
+        var directions = new HashSet<int>(outbound.Directions);
+        directions.UnionWith(inbound.Directions);
+        bool goalReplaced =
+            firstGoalAccepted && returnGoalAccepted &&
+            (targetWorldX != returnWorldX ||
+             targetWorldY != returnWorldY);
         bool turned = directions.Count >= 2;
+        ActorSnapshot after = inbound.Last ?? outbound.Last ?? selected;
         bool alive = after != null && after.Dead == 0;
         bool directionValid = after != null &&
             after.Direction >= 1 && after.Direction <= 8;
@@ -1384,54 +1515,182 @@ internal static class ModRegressionProbe
             "; selection_actor_bytes_changed=" +
             selectionActorChangeCount +
             "; primary_click_sent=" + clickSent +
-            "; primary_click_moved_while_background=" + clickMoved +
-            "; alternate_click_sent=" + alternateClickSent +
-            "; alternate_click_moved_while_background=" +
-            alternateClickMoved +
-            "; displacement=" + maximumDisplacement +
+            "; primary_goal_exact=" + firstGoalAccepted +
+            "; outbound_displacement=" +
+            outbound.MaximumDisplacement +
+            "; outbound_distance=" +
+            outbound.StartTargetDistance + "->" +
+            outbound.EndTargetDistance + " (min=" +
+            outbound.MinimumTargetDistance + ")" +
+            "; outbound_end=(" +
+            outbound.Last.WorldX + "," +
+            outbound.Last.WorldY + ")" +
+            "; outbound_facing=" +
+            outbound.AlignedSamples + "/" +
+            outbound.MovingSamples +
+            "; outbound_opposite=" +
+            outbound.OppositeSamples +
+            "; return_target_screen=(" +
+            returnScreenX + "," + returnScreenY + ")" +
+            "; return_target_cell=(" +
+            returnCellX + "," + returnCellY + ")" +
+            "; return_cursor=(" +
+            returnCursorX + "," + returnCursorY + ")" +
+            "; return_click_sent=" + returnClickSent +
+            "; return_goal_exact=" + returnGoalAccepted +
+            "; return_displacement=" +
+            inbound.MaximumDisplacement +
+            "; return_distance=" +
+            inbound.StartTargetDistance + "->" +
+            inbound.EndTargetDistance + " (min=" +
+            inbound.MinimumTargetDistance + ")" +
+            "; return_end=(" +
+            inbound.Last.WorldX + "," +
+            inbound.Last.WorldY + ")" +
+            "; return_facing=" +
+            inbound.AlignedSamples + "/" +
+            inbound.MovingSamples +
+            "; return_opposite=" +
+            inbound.OppositeSamples +
+            "; goal_replaced=" + goalReplaced +
             "; directions=" + string.Join(",", directions) +
-            "; goal_changed=" + goalChanged +
-            "; motion_observable_while_background=" + moved +
+            "; both_segments_moved=" +
+            (firstMoved && returnMoved) +
+            "; both_segments_face_motion=" +
+            (firstFacingAligned && returnFacingAligned) +
             "; turn_observable_while_background=" + turned +
             "; goal=(" + after.GoalKind + "," + after.GoalX + "," +
             after.GoalY + "); path_state=(" +
-            after.GoalRepathPending + "," +
-            after.GoalMotionPending + "," +
+            after.CommandVariant + "," +
+            after.CommandPending + "," +
             after.MovementActive + "," +
+            after.MovementPathState + "," +
+            after.MovementMode + "," +
+            after.ResolvedGoalX + "," +
+            after.ResolvedGoalY + "," +
             after.PathOverrideActive + "); dead=" + after.Dead;
-        return selectionSent && clickSent && alternateClickSent &&
-            cursorReached && alive && directionValid &&
-            moved && turned && goalChanged;
+        return selectionSent && clickSent && cursorReached &&
+            returnTargetVisible && returnClickSent &&
+            returnCursorReached && alive && directionValid &&
+            firstGoalAccepted && returnGoalAccepted &&
+            goalReplaced && firstMoved && returnMoved &&
+            firstFacingAligned && returnFacingAligned && turned;
     }
 
-    private static void ObservePlayerMovement(
-        IntPtr process, long imageBase, ActorSnapshot before,
-        int milliseconds, HashSet<int> directions,
-        ref int maximumDisplacement, ref bool goalChanged,
-        ref ActorSnapshot after)
+    private static bool WaitForPlayerGoal(
+        IntPtr process, long imageBase,
+        int expectedX, int expectedY, int milliseconds,
+        out ActorSnapshot accepted)
     {
+        accepted = null;
         Stopwatch clock = Stopwatch.StartNew();
         while (clock.ElapsedMilliseconds < milliseconds)
         {
-            Thread.Sleep(50);
+            ActorSnapshot sample = FindPlayerActor(process, imageBase);
+            if (sample != null &&
+                sample.GoalKind == 1 &&
+                sample.GoalX == expectedX &&
+                sample.GoalY == expectedY)
+            {
+                accepted = sample;
+                return true;
+            }
+            Thread.Sleep(25);
+        }
+        accepted = FindPlayerActor(process, imageBase);
+        return false;
+    }
+
+    private static MovementSegmentObservation ObserveMovementSegment(
+        IntPtr process, long imageBase, ActorSnapshot start,
+        int targetX, int targetY,
+        int milliseconds)
+    {
+        var observation = new MovementSegmentObservation();
+        observation.Last = start;
+        if (start == null)
+            return observation;
+        observation.Directions.Add(start.Direction);
+        observation.StartTargetDistance =
+            ManhattanDistance(start.WorldX, start.WorldY, targetX, targetY);
+        observation.EndTargetDistance =
+            observation.StartTargetDistance;
+        observation.MinimumTargetDistance =
+            observation.StartTargetDistance;
+
+        ActorSnapshot previous = start;
+        Stopwatch clock = Stopwatch.StartNew();
+        while (clock.ElapsedMilliseconds < milliseconds)
+        {
+            Thread.Sleep(40);
             ActorSnapshot sample = FindPlayerActor(process, imageBase);
             if (sample == null)
                 continue;
-            after = sample;
-            directions.Add(sample.Direction);
+            observation.Samples++;
+            observation.Last = sample;
+            observation.Directions.Add(sample.Direction);
             int displacement =
-                Math.Abs(sample.WorldX - before.WorldX) +
-                Math.Abs(sample.WorldY - before.WorldY);
-            maximumDisplacement =
-                Math.Max(maximumDisplacement, displacement);
-            if (sample.GoalKind != before.GoalKind ||
-                sample.GoalX != before.GoalX ||
-                sample.GoalY != before.GoalY)
-                goalChanged = true;
-            if (maximumDisplacement >= 24 &&
-                directions.Count >= 2)
-                break;
+                ManhattanDistance(
+                    sample.WorldX, sample.WorldY,
+                    start.WorldX, start.WorldY);
+            observation.MaximumDisplacement =
+                Math.Max(
+                    observation.MaximumDisplacement,
+                    displacement);
+            observation.EndTargetDistance =
+                ManhattanDistance(
+                    sample.WorldX, sample.WorldY,
+                    targetX, targetY);
+            observation.MinimumTargetDistance =
+                Math.Min(
+                    observation.MinimumTargetDistance,
+                    observation.EndTargetDistance);
+
+            int deltaX = sample.WorldX - previous.WorldX;
+            int deltaY = sample.WorldY - previous.WorldY;
+            if (deltaX != 0 || deltaY != 0)
+            {
+                observation.MovingSamples++;
+                int currentDot = DirectionDot(
+                    sample.Direction, deltaX, deltaY);
+                int previousDot = DirectionDot(
+                    previous.Direction, deltaX, deltaY);
+                if (Math.Max(currentDot, previousDot) > 0)
+                    observation.AlignedSamples++;
+                else if (currentDot < 0 && previousDot < 0)
+                    observation.OppositeSamples++;
+                else
+                    observation.PerpendicularSamples++;
+            }
+            previous = sample;
         }
+        return observation;
+    }
+
+    private static int ManhattanDistance(
+        int x1, int y1, int x2, int y2)
+    {
+        return Math.Abs(x1 - x2) + Math.Abs(y1 - y2);
+    }
+
+    private static int DirectionDot(
+        int direction, int deltaX, int deltaY)
+    {
+        int directionX = 0;
+        int directionY = 0;
+        switch (direction)
+        {
+        case 1: directionY = -1; break;
+        case 2: directionX = 1; directionY = -1; break;
+        case 3: directionX = 1; break;
+        case 4: directionX = 1; directionY = 1; break;
+        case 5: directionY = 1; break;
+        case 6: directionX = -1; directionY = 1; break;
+        case 7: directionX = -1; break;
+        case 8: directionX = -1; directionY = -1; break;
+        default: return int.MinValue;
+        }
+        return checked(directionX * deltaX + directionY * deltaY);
     }
 
     private static CaptureResult CaptureWindow(IntPtr window)

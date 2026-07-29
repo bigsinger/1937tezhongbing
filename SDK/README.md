@@ -86,5 +86,10 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 首版 SDK 已由 `Patch/src/dinput-proxy` 实际引用，因此它不是只供阅读的
 地址文档，而是 MOD 增强层的公共底座。
 
+`RuntimeActorV1` 现已固定角色世界坐标、导航网格缓存、地面命令、
+寻路状态、解析后目标和八方向朝向字段；地址表同时收录地面命令分派点及
+原版的移动重置/命令清理函数。兼容层只在签名完全匹配时修复导航缓存，
+随后仍由原版 A*、动作状态机和序列帧系统完成寻路与朝向更新。
+
 任务定义、事件、原子状态和原生插件开发详见
 [`docs/任务Sidecar与原生插件开发指南.md`](docs/任务Sidecar与原生插件开发指南.md)。

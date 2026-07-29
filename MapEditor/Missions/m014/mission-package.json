@@ -16,5 +16,5 @@
   "mission_report": "MapEditor/Missions/m014/validation.md",
   "preview_source_terrain": "MapEditor/Assets/Original/maps/m006/terrain.png",
   "preview_output_directory": "MapEditor/Assets/Original/maps/m014",
-  "expected_output_sha256": "4A5794086DC9F3514A32B3A683149E071CE48A39BEF2944DFEE8A4D72CCD79D8"
+  "expected_output_sha256": "DCDF4B0FB6E085566A3A2F0E5415CCFACF59919388668F9261322462E3D67942"
 }

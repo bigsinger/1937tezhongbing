@@ -16,26 +16,38 @@ struct RuntimeActorV1 final {
     std::int32_t faction_id;              // +0x074
     std::byte unknown_078[96];
     std::int32_t world_x;                 // +0x0D8
-    std::byte unknown_0dc[4];
+    std::int32_t world_height;            // +0x0DC
     std::int32_t world_y;                 // +0x0E0
-    std::byte unknown_0e4[148];
+    std::byte unknown_0e4[36];
+    std::int32_t navigation_cell_x;       // +0x108
+    std::int32_t navigation_height_cell;  // +0x10C
+    std::int32_t navigation_cell_y;       // +0x110
+    std::byte unknown_114[100];
     std::int32_t facing_direction;        // +0x178, 1..8
     std::byte unknown_17c[12];
     std::int32_t dead_or_disabled;         // +0x188
     std::byte unknown_18c[4];
     std::int32_t target_status;            // +0x190
     std::int32_t goal_kind;                // +0x194
-    std::int32_t last_known_x;             // +0x198
-    std::int32_t last_known_y;             // +0x19C
+    std::int32_t goal_x;                   // +0x198
+    std::int32_t goal_y;                   // +0x19C
     std::uint32_t interest_actor_address;  // +0x1A0
-    std::int32_t goal_repath_pending;       // +0x1A4
-    std::int32_t goal_motion_pending;       // +0x1A8
-    std::byte unknown_1ac[40];
+    std::int32_t command_variant;           // +0x1A4
+    std::int32_t command_pending;           // +0x1A8
+    std::int32_t selected_for_command;      // +0x1AC
+    std::byte unknown_1b0[36];
     std::int32_t search_or_return_active;   // +0x1D4
     std::int32_t movement_active;           // +0x1D8
-    std::byte unknown_1dc[56];
+    std::byte unknown_1dc[32];
+    std::int32_t movement_path_state;       // +0x1FC
+    std::byte unknown_200[8];
+    std::int32_t movement_mode;             // +0x208
+    std::byte unknown_20c[8];
     std::uint32_t target_actor_address;     // +0x214
-    std::byte unknown_218[48];
+    std::int32_t resolved_goal_x;           // +0x218
+    std::byte unknown_21c[4];
+    std::int32_t resolved_goal_y;           // +0x220
+    std::byte unknown_224[36];
     std::int32_t search_delay_limit;        // +0x248
     std::int32_t search_delay_counter;      // +0x24C
     std::int32_t contact_state;             // +0x250
@@ -80,18 +92,27 @@ struct RuntimeViewportControllerV1 final {
 static_assert(offsetof(RuntimeActorV1, database_entry_id) == 0x064);
 static_assert(offsetof(RuntimeActorV1, faction_id) == 0x074);
 static_assert(offsetof(RuntimeActorV1, world_x) == 0x0D8);
+static_assert(offsetof(RuntimeActorV1, world_height) == 0x0DC);
 static_assert(offsetof(RuntimeActorV1, world_y) == 0x0E0);
+static_assert(offsetof(RuntimeActorV1, navigation_cell_x) == 0x108);
+static_assert(offsetof(RuntimeActorV1, navigation_height_cell) == 0x10C);
+static_assert(offsetof(RuntimeActorV1, navigation_cell_y) == 0x110);
 static_assert(offsetof(RuntimeActorV1, facing_direction) == 0x178);
 static_assert(offsetof(RuntimeActorV1, dead_or_disabled) == 0x188);
 static_assert(offsetof(RuntimeActorV1, goal_kind) == 0x194);
-static_assert(offsetof(RuntimeActorV1, last_known_x) == 0x198);
-static_assert(offsetof(RuntimeActorV1, last_known_y) == 0x19C);
+static_assert(offsetof(RuntimeActorV1, goal_x) == 0x198);
+static_assert(offsetof(RuntimeActorV1, goal_y) == 0x19C);
 static_assert(offsetof(RuntimeActorV1, interest_actor_address) == 0x1A0);
-static_assert(offsetof(RuntimeActorV1, goal_repath_pending) == 0x1A4);
-static_assert(offsetof(RuntimeActorV1, goal_motion_pending) == 0x1A8);
+static_assert(offsetof(RuntimeActorV1, command_variant) == 0x1A4);
+static_assert(offsetof(RuntimeActorV1, command_pending) == 0x1A8);
+static_assert(offsetof(RuntimeActorV1, selected_for_command) == 0x1AC);
 static_assert(offsetof(RuntimeActorV1, search_or_return_active) == 0x1D4);
 static_assert(offsetof(RuntimeActorV1, movement_active) == 0x1D8);
+static_assert(offsetof(RuntimeActorV1, movement_path_state) == 0x1FC);
+static_assert(offsetof(RuntimeActorV1, movement_mode) == 0x208);
 static_assert(offsetof(RuntimeActorV1, target_actor_address) == 0x214);
+static_assert(offsetof(RuntimeActorV1, resolved_goal_x) == 0x218);
+static_assert(offsetof(RuntimeActorV1, resolved_goal_y) == 0x220);
 static_assert(offsetof(RuntimeActorV1, search_delay_limit) == 0x248);
 static_assert(offsetof(RuntimeActorV1, contact_state) == 0x250);
 static_assert(offsetof(RuntimeActorV1, target_lost) == 0x254);

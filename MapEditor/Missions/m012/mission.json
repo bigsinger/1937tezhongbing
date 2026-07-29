@@ -16,6 +16,11 @@
     "x": 4,
     "y": 194
   },
+  "movement_return_probe": {
+    "name": "西南排水沟回折空地",
+    "x": 1,
+    "y": 189
+  },
   "required_scene_reachability": [
     { "name": "日军空军指挥官", "scene_index": 759 },
     { "name": "西南弹药节点", "scene_index": 1350 },

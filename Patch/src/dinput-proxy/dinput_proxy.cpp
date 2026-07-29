@@ -136,6 +136,7 @@ struct TelemetryCounters {
     volatile LONG replay_latency_samples = 0;
     volatile LONG replay_latency_microseconds = 0;
     volatile LONG replay_latency_max_microseconds = 0;
+    volatile LONG player_ground_reroutes = 0;
     volatile LONG ai_ticks = 0;
     volatile LONG ai_tick_microseconds = 0;
     volatile LONG ai_tick_max_microseconds = 0;
@@ -626,6 +627,8 @@ void FlushTelemetrySnapshot(bool force = false) {
         TakeCounter(&g_telemetry.replay_latency_microseconds);
     const LONG replay_latency_max =
         TakeCounter(&g_telemetry.replay_latency_max_microseconds);
+    const LONG player_ground_reroutes =
+        TakeCounter(&g_telemetry.player_ground_reroutes);
     const LONG ai_ticks = TakeCounter(&g_telemetry.ai_ticks);
     const LONG ai_us = TakeCounter(&g_telemetry.ai_tick_microseconds);
     const LONG ai_max = TakeCounter(&g_telemetry.ai_tick_max_microseconds);
@@ -665,6 +668,7 @@ void FlushTelemetrySnapshot(bool force = false) {
         "\"replay\":{\"messages\":%ld,\"reads\":%ld,"
         "\"latency_samples\":%ld,\"latency_total_us\":%ld,"
         "\"latency_max_us\":%ld},"
+        "\"player\":{\"ground_reroutes\":%ld},"
         "\"ai\":{\"ticks\":%ld,\"tick_total_us\":%ld,"
         "\"tick_max_us\":%ld,\"alerts\":%ld,"
         "\"reinforcements\":%ld,\"searches_started\":%ld,"
@@ -683,7 +687,7 @@ void FlushTelemetrySnapshot(bool force = false) {
         data_calls, data_us, data_max,
         replay_messages, replay_reads,
         replay_latency_samples, replay_latency_us,
-        replay_latency_max,
+        replay_latency_max, player_ground_reroutes,
         ai_ticks, ai_us, ai_max, ai_alerts,
         reinforcements, searches_started, replans, intercepts,
         reaction_samples, reaction_total, reaction_max,
@@ -1957,6 +1961,30 @@ bool PatchExecutableJump(
         address, expected, size, destination);
 }
 
+bool PatchExecutableCall(
+    unsigned char *address,
+    const unsigned char *expected,
+    const void *destination) {
+    if (!address || !expected || !destination ||
+        memcmp(address, expected, 5) != 0) {
+        return false;
+    }
+    const auto from =
+        reinterpret_cast<intptr_t>(address + 5);
+    const auto to =
+        reinterpret_cast<intptr_t>(destination);
+    const auto relative = to - from;
+    if (relative < INT32_MIN || relative > INT32_MAX) {
+        return false;
+    }
+    unsigned char replacement[5] = {0xE8, 0, 0, 0, 0};
+    const int32_t displacement =
+        static_cast<int32_t>(relative);
+    memcpy(replacement + 1, &displacement, sizeof(displacement));
+    return PatchExecutableBytes(
+        address, expected, replacement, sizeof(replacement));
+}
+
 using OriginalBlitProc = int(__thiscall *)(
     void *, int, int, void *, int, int);
 
@@ -2350,10 +2378,10 @@ void AssignSearchGoal(
         return;
     }
     actor->goal_kind = 1;
-    actor->last_known_x = x;
-    actor->last_known_y = y;
-    actor->goal_repath_pending = 1;
-    actor->goal_motion_pending = 1;
+    actor->goal_x = x;
+    actor->goal_y = y;
+    actor->command_variant = 1;
+    actor->command_pending = 1;
     actor->search_or_return_active = 1;
     actor->movement_active = 1;
 }
@@ -2505,8 +2533,8 @@ int __fastcall EnhancedAlertPropagation(
         }
         candidate->goal_kind = 1;
         candidate->interest_actor_address = 0;
-        candidate->goal_repath_pending = 1;
-        candidate->goal_motion_pending = 1;
+        candidate->command_variant = 1;
+        candidate->command_pending = 1;
         candidate->search_or_return_active = 1;
         StartEnhancedSearch(
             candidate, anchor_x, anchor_y, direction,
@@ -2692,10 +2720,10 @@ void TickEnhancedEnemyAI() {
         }
         const long long delta_x =
             static_cast<long long>(actor->world_x) -
-            actor->last_known_x;
+            actor->goal_x;
         const long long delta_y =
             static_cast<long long>(actor->world_y) -
-            actor->last_known_y;
+            actor->goal_y;
         const bool arrived =
             delta_x * delta_x + delta_y * delta_y <= 32LL * 32LL;
         const bool path_stalled =
@@ -2709,6 +2737,54 @@ void TickEnhancedEnemyAI() {
         &g_telemetry.ai_tick_microseconds,
         &g_telemetry.ai_tick_max_microseconds,
         started);
+}
+
+using ActorMovementProc =
+    void(__thiscall *)(m1937::sdk::RuntimeActorV1 *);
+
+// This wrapper replaces only the first cleanup CALL in command-dispatch case
+// 1. At this exact point the original code has established that the queued
+// ground cell differs from the resolved cell, but has not overwritten the
+// resolved destination or rebuilt A*. Synchronizing the cached navigation
+// origin and clearing an active player path here makes the remainder of the
+// original case rebuild its waypoints and facing in one coherent update.
+void __fastcall ResetPlayerPathBeforeGroundCommand(
+    m1937::sdk::RuntimeActorV1 *actor, void *) {
+    if (actor && g_executable_base &&
+        IsReadableRange(actor, sizeof(*actor)) &&
+        actor->faction_id == 3 &&
+        actor->dead_or_disabled == 0) {
+        // Extension missions redeploy the serialized actor's world vector,
+        // while the legacy loader can retain the source mission's cached
+        // navigation cell at +0x108/+0x110. The movement routine steers from
+        // those cached cells, so a mismatch makes the sprite run away from
+        // the clicked goal. Re-derive exactly as sub_455E30 does.
+        actor->navigation_cell_x = actor->world_x / 32;
+        actor->navigation_height_cell =
+            actor->world_height / 16;
+        actor->navigation_cell_y = actor->world_y / 16;
+        reinterpret_cast<ActorMovementProc>(
+            g_executable_base +
+            m1937::sdk::rva::reset_actor_movement)(actor);
+        InterlockedIncrement(
+            &g_telemetry.player_ground_reroutes);
+    }
+    if (actor && g_executable_base) {
+        reinterpret_cast<ActorMovementProc>(
+            g_executable_base +
+            m1937::sdk::rva::clear_actor_command_targets)(actor);
+    }
+}
+
+bool InstallPlayerGroundRedirectFix(unsigned char *base) {
+    static const unsigned char expected[] = {
+        0xE8, 0x5A, 0x36, 0x00, 0x00};
+    return PatchExecutableCall(
+        base +
+            m1937::sdk::rva::player_ground_command_reset_call,
+        expected,
+        reinterpret_cast<const void *>(
+            &ResetPlayerPathBeforeGroundCommand));
 }
 
 bool ApplyExpandedViewportPatches(unsigned char *base) {
@@ -3065,6 +3141,12 @@ void ApplyLegacyExecutablePatches() {
     }
 
     if (g_mod_config.enabled) {
+        RecordDiagnostic(
+            "player_ground_redirect",
+            InstallPlayerGroundRedirectFix(base)
+                ? "enabled"
+                : "original",
+            "case1_pre_path_rebuild");
         // The original unobstructed close-hearing check is 128 world units.
         // Keep its original no-line-of-sight semantics and configure only the
         // comparison operand.

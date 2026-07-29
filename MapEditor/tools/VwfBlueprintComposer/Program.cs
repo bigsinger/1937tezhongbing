@@ -106,6 +106,7 @@ internal sealed class BlueprintComposer
         if (blueprint.PreserveNavigationTopology)
         {
             ComposeTopologySafeGround();
+            ValidateTopologySafeOutput();
         }
         else
         {
@@ -205,6 +206,14 @@ internal sealed class BlueprintComposer
                 connector.GroundSourceY,
                 "connector ground source");
         }
+        if (blueprint.PreserveNavigationTopology &&
+            blueprint.ConnectorCells.Count != 0)
+        {
+            throw new InvalidDataException(
+                "Topology-safe composition cannot add connector cells, " +
+                "because connectors deliberately change collision, sight " +
+                "and event planes.");
+        }
     }
 
     private int[] BuildInversePermutation()
@@ -291,6 +300,13 @@ internal sealed class BlueprintComposer
         var sourceGround = terrain.Layers[0].Values[sourceIndex];
         if (destinationGround == 0 || sourceGround == 0)
             return false;
+        // The high word selects the tile-group/map resource and the low word
+        // selects a tile/frame inside it. Moving a raw value across groups can
+        // make the legacy renderer use the low word against the wrong sheet,
+        // which appears as black blocks. Preserve the resource identity.
+        if (TileGroupMapId(destinationGround) !=
+            TileGroupMapId(sourceGround))
+            return false;
         // Only exchange visually open floor cells. All collision, sight,
         // event and correction planes remain byte-identical, as do entities
         // and patrol records. This lets an extension mission look different
@@ -305,6 +321,51 @@ internal sealed class BlueprintComposer
         }
         return true;
     }
+
+    private void ValidateTopologySafeOutput()
+    {
+        var groundOffset = LayerDataOffset(0);
+        for (var index = 0; index < cellCount; index++)
+        {
+            var sourceGround = ReadUInt32(
+                source,
+                checked(groundOffset + index * sizeof(uint)));
+            var outputGround = ReadUInt32(
+                output,
+                checked(groundOffset + index * sizeof(uint)));
+            if (TileGroupMapId(sourceGround) !=
+                TileGroupMapId(outputGround))
+            {
+                throw new InvalidDataException(
+                    $"Topology-safe composition changed TileGroupMapId " +
+                    $"at cell ({index % width},{index / width}).");
+            }
+        }
+        for (var layer = 1;
+             layer < VwfTerrainGrid.LayerCount;
+             layer++)
+        {
+            var offset = LayerDataOffset(layer);
+            var byteCount = checked(cellCount * sizeof(uint));
+            if (!source.AsSpan(offset, byteCount)
+                    .SequenceEqual(output.AsSpan(offset, byteCount)))
+            {
+                throw new InvalidDataException(
+                    $"Topology-safe composition changed protected layer " +
+                    $"{layer}.");
+            }
+        }
+        var sceneOffset = checked((int)terrain.SceneListOffset);
+        if (!source.AsSpan(sceneOffset)
+                .SequenceEqual(output.AsSpan(sceneOffset)))
+        {
+            throw new InvalidDataException(
+                "Topology-safe composition changed scene or patrol data.");
+        }
+    }
+
+    private static ushort TileGroupMapId(uint rawTile) =>
+        checked((ushort)(rawTile >> 16));
 
     private void ApplyConnectorCells()
     {
@@ -477,11 +538,15 @@ internal sealed class BlueprintComposer
                 sourceBlock == destinationBlock ? 0 : 1)
             .Sum();
         var changedTerrainCells = 0;
+        var changedTileGroupCells = 0;
         for (var index = 0; index < cellCount; index++)
         {
             if (terrain.Layers[0].Values[index] !=
                 outputTerrain.Layers[0].Values[index])
                 changedTerrainCells++;
+            if (TileGroupMapId(terrain.Layers[0].Values[index]) !=
+                TileGroupMapId(outputTerrain.Layers[0].Values[index]))
+                changedTileGroupCells++;
         }
         var sourceEntities = scenes.Entities.ToDictionary(
             entity => entity.SceneIndex);
@@ -517,9 +582,10 @@ internal sealed class BlueprintComposer
             $"`{string.Join(", ", blueprint.DestinationToSourceBlocks)}`");
         builder.AppendLine(
             blueprint.PreserveNavigationTopology
-                ? "- 拓扑安全模式：八城区开放地表材质交叉合成；" +
-                  "视线、移动、事件、人工修正、scene 坐标与巡逻记录" +
-                  "保持逐字节不变。"
+                ? "- 引擎语义安全模式：八城区只在相同 " +
+                  "TileGroupMapId 内交叉替换开放地表 TileIndex/帧；" +
+                  "地块资源身份、视线、移动、事件、人工修正、scene " +
+                  "坐标与巡逻记录保持不变。"
                 : "- 五个地形/视线/移动/事件/人工修正图层同步换位；" +
                   "全部 scene 世界坐标、参考坐标和巡逻数组同步映射。");
         builder.AppendLine(
@@ -531,6 +597,9 @@ internal sealed class BlueprintComposer
         builder.AppendLine(
             $"- 原位置地表发生变化：{changedTerrainCells}/{cellCount} " +
             $"格（{changedPercent:F2}%）");
+        builder.AppendLine(
+            $"- TileGroupMapId 发生变化：{changedTileGroupCells}/" +
+            $"{cellCount}（安全模式必须为 0）");
         builder.AppendLine(
             $"- scene 世界坐标发生变化：{movedEntities}/" +
             $"{outputScenes.Entities.Count}");

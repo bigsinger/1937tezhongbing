@@ -5,7 +5,8 @@ param(
     [int]$DurationSeconds = 60,
     [string]$OutputRoot = '',
     [switch]$KeepRuntime,
-    [switch]$BriefingOnly
+    [switch]$BriefingOnly,
+    [switch]$MovementOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -155,11 +156,19 @@ foreach ($level in $Levels) {
                 $probeArguments += @(
                     [int]$mission.movement_probe.x,
                     [int]$mission.movement_probe.y)
+                if ($null -ne $mission.movement_return_probe) {
+                    $probeArguments += @(
+                        [int]$mission.movement_return_probe.x,
+                        [int]$mission.movement_return_probe.y)
+                }
             }
         }
     }
     if ($BriefingOnly) {
         $probeArguments += '--briefing-only'
+    }
+    if ($MovementOnly) {
+        $probeArguments += '--movement-only'
     }
     & $probe @probeArguments
     $probeExit = $LASTEXITCODE

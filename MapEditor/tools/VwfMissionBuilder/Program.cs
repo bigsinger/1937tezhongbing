@@ -51,6 +51,7 @@ internal sealed class MissionDefinition
     public bool ValidateAllSerializedPatrols { get; set; }
     public GridCell PlayerSpawn { get; set; } = new();
     public ReachabilityTarget? MovementProbe { get; set; }
+    public ReachabilityTarget? MovementReturnProbe { get; set; }
     public List<EntityEdit> EntityEdits { get; set; } = [];
     public List<ReachabilityTarget> RequiredReachability { get; set; } = [];
     public List<SceneReachabilityTarget> RequiredSceneReachability { get; set; } = [];
@@ -276,6 +277,20 @@ internal sealed class MissionBuilder
                 definition.MovementProbe.X,
                 definition.MovementProbe.Y,
                 definition.MovementProbe.Name);
+        }
+        if (definition.MovementReturnProbe is not null)
+        {
+            if (definition.MovementProbe is null)
+                throw new InvalidDataException(
+                    "movement_return_probe requires movement_probe.");
+            if (string.IsNullOrWhiteSpace(
+                    definition.MovementReturnProbe.Name))
+                throw new InvalidDataException(
+                    "movement_return_probe requires a descriptive name.");
+            ValidateCell(
+                definition.MovementReturnProbe.X,
+                definition.MovementReturnProbe.Y,
+                definition.MovementReturnProbe.Name);
         }
         foreach (var target in definition.RequiredReachability)
             ValidateCell(target.X, target.Y, target.Name);
@@ -556,6 +571,47 @@ internal sealed class MissionBuilder
                 results.Add(new PathValidation(
                     $"自动实机移动探针 → {probe.Name}",
                     spawn.X, spawn.Y, probe.X, probe.Y, length));
+            }
+        }
+        if (definition.MovementReturnProbe is not null)
+        {
+            var probe = definition.MovementProbe!;
+            var returnProbe = definition.MovementReturnProbe;
+            var returnIndex = CellIndex(
+                returnProbe.X, returnProbe.Y);
+            var ground = ReadUInt32(checked(
+                groundLayerOffset + returnIndex * sizeof(uint)));
+            var occupant = ReadUInt32(checked(
+                movementLayerOffset + returnIndex * sizeof(uint)));
+            var length = FindPathLength(probe, returnProbe);
+            if (ground == 0)
+            {
+                failures.Add(
+                    $"Movement return probe “{returnProbe.Name}” at " +
+                    $"({returnProbe.X}, {returnProbe.Y}) has no visible " +
+                    $"ground tile. Nearby open cells: " +
+                    $"{NearbyOpenCells(returnProbe.X, returnProbe.Y)}.");
+            }
+            else if (occupant != 0)
+            {
+                failures.Add(
+                    $"Movement return probe “{returnProbe.Name}” at " +
+                    $"({returnProbe.X}, {returnProbe.Y}) is occupied by " +
+                    $"grid value {occupant}. Nearby open cells: " +
+                    $"{NearbyOpenCells(returnProbe.X, returnProbe.Y)}.");
+            }
+            else if (length <= 0)
+            {
+                failures.Add(
+                    $"Movement return probe “{returnProbe.Name}” must be " +
+                    "a distinct, reachable empty cell.");
+            }
+            else
+            {
+                results.Add(new PathValidation(
+                    $"{probe.Name} → 二次改道 {returnProbe.Name}",
+                    probe.X, probe.Y,
+                    returnProbe.X, returnProbe.Y, length));
             }
         }
         foreach (var target in definition.RequiredReachability)

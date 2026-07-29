@@ -34,6 +34,9 @@ namespace Mission1937.SDK.Generated
         public const long AlertRadiusOperand4 = 0x00057187L;
         public const long ActorDistance = 0x0005A040L;
         public const long AlertEffectiveRadius = 0x0005A7C0L;
+        public const long ResetActorMovement = 0x0005C1C0L;
+        public const long ClearActorCommandTargets = 0x0005C1E0L;
+        public const long PlayerGroundCommandResetCall = 0x00058B81L;
         public const long EnemyAiUpdate = 0x0005C710L;
         public const long AlertPropagation = 0x0005DDA0L;
         public const long LoadGameFile = 0x0004BB00L;
