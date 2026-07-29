@@ -45,3 +45,13 @@ if (-not $GodotExecutable.EndsWith('_console.exe', [System.StringComparison]::Or
 if ($LASTEXITCODE -ne 0) {
     throw "Real imported-asset tests failed with exit code $LASTEXITCODE."
 }
+
+& $GodotExecutable `
+    --headless `
+    --path $gameDirectory `
+    --script 'res://tests/real_mission_world_loop_test.gd' `
+    -- `
+    '--skip-briefing'
+if ($LASTEXITCODE -ne 0) {
+    throw "Real twelve-level mission world-loop tests failed with exit code $LASTEXITCODE."
+}

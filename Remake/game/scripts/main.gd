@@ -4063,7 +4063,7 @@ func interact_with_mission_world() -> void:
 		):
 			_report_direction_action("pickup_role_drop")
 			return
-		_publish_mission_event("item_acquired", payload)
+		_publish_item_acquired_if_mission_bound(payload)
 		_report_direction_action("pickup_role_drop")
 		update_status("已取得任务物品")
 		return
@@ -4162,7 +4162,7 @@ func _collect_original_inventory_pickup(
 	if not accepted:
 		# Collection is already committed by the original interaction flow.
 		# Preserve the evidence in the mission event instead of silently losing it.
-		_publish_mission_event("item_acquired", payload)
+		_publish_item_acquired_if_mission_bound(payload)
 		update_status("物品容器冲突，已按任务物品记录")
 		return true
 	var item_name := str(
@@ -4173,11 +4173,27 @@ func _collect_original_inventory_pickup(
 	)
 	var event_payload := payload.duplicate(true)
 	event_payload["item_name"] = item_name
-	_publish_mission_event("item_acquired", event_payload)
+	_publish_item_acquired_if_mission_bound(event_payload)
 	_play_media_audio("ui_confirm")
 	update_status("%s 拾取 %s" % [collector.display_name, item_name])
 	_refresh_inventory_ui()
 	return true
+
+
+func _publish_item_acquired_if_mission_bound(
+	payload: Dictionary,
+) -> Array[String]:
+	# Most DBL world pickups are ordinary actor inventory, not mission facts.
+	# MissionRuntime deliberately rejects unbound scenes, so only route the
+	# acquisition when its source participates in this mission's binding graph.
+	for field: String in [
+		"scene_index",
+		"source_scene_index",
+		"trigger_scene_index",
+	]:
+		if payload.has(field) and _scene_is_mission_bound(int(payload[field])):
+			return _publish_mission_event("item_acquired", payload)
+	return []
 
 
 func _collector_can_use_field_pickup(collector: SQUAD_UNIT, pickup: Node2D) -> bool:
@@ -4242,7 +4258,7 @@ func _activate_bound_scene(binding_kind: String, scene_index: int) -> bool:
 	if raw_pickups is Dictionary and (raw_pickups as Dictionary).has(binding_kind):
 		var payload := ((raw_pickups as Dictionary)[binding_kind] as Dictionary).duplicate(true)
 		payload["source_scene_index"] = scene_index
-		_publish_mission_event("item_acquired", payload)
+		_publish_item_acquired_if_mission_bound(payload)
 		activated_mission_scenes[scene_index] = true
 		queue_redraw()
 		return true
@@ -4700,8 +4716,13 @@ func _scene_is_mission_bound(scene_index: int) -> bool:
 	if not raw_bindings is Dictionary:
 		return false
 	for binding_value: Variant in (raw_bindings as Dictionary).values():
-		if binding_value is Array and (binding_value as Array).has(scene_index):
-			return true
+		if not binding_value is Array:
+			continue
+		# Godot's JSON parser exposes integral JSON numbers as floats in the
+		# raw mission dictionary. Normalize before comparing with runtime ints.
+		for raw_scene: Variant in binding_value as Array:
+			if int(raw_scene) == scene_index:
+				return true
 	return false
 
 

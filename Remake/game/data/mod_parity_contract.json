@@ -37,8 +37,8 @@
     {
       "id": "inventory_items_and_world_pickups",
       "status": "partial",
-      "evidence": ["five-column inventory", "real map pickups", "drop/lure interaction", "27 exact player identities and 83 ordered initial weapon-container entries across all 12 levels"],
-      "gaps": ["actor+552 item-container initial contents", "all pickup quantities", "all usable item effects and ownership rules"]
+      "evidence": ["five-column inventory", "real map pickups", "drop/lure interaction", "27 exact player identities and 83 ordered initial weapon-container entries across all 12 levels", "650 exact actor+552 item containers with 538 ordered entries", "ten exact DBL world-pickup item/container/mode/quantity mappings"],
+      "gaps": ["exact effects and ownership rules for remaining world-interaction items 33/48/49/52/82/83"]
     },
     {
       "id": "weapons_ammo_and_combat",
@@ -61,8 +61,8 @@
     {
       "id": "mission_state_machines",
       "status": "partial",
-      "evidence": ["12 data-driven mission graphs", "scene bindings", "dependency/count/time/failure/victory runtime"],
-      "gaps": ["12 full human-equivalent victory traces", "major failure traces", "original control-flow decisions for every mission"]
+      "evidence": ["12 data-driven mission graphs", "scene bindings", "dependency/count/time/failure/victory runtime", "12 real-content product-world-action victory closures", "combat-driven required-character failures", "m001/m007/m010 time-limit failures", "m008 premature-detonation failure"],
+      "gaps": ["12 MOD-matched human-input victory traces", "remaining level-specific major failure traces", "original control-flow decisions for every mission"]
     },
     {
       "id": "dialogue_camera_tutorial_and_cutscenes",
@@ -79,8 +79,8 @@
     {
       "id": "save_load_settings_and_progression",
       "status": "partial",
-      "evidence": ["10 slots", "quick/autosave", "atomic JSON with backup", "remapping and channel volumes"],
-      "gaps": ["save at every mission phase", "cross-version migration policy", "campaign progression parity"]
+      "evidence": ["10 slots", "quick/autosave", "atomic JSON with backup", "remapping and channel volumes", "12 real-content heterogeneous mid-mission capture/rebuild hash round-trips"],
+      "gaps": ["physical-disk slot save at every mission phase", "cross-version migration policy", "campaign progression parity"]
     },
     {
       "id": "audio_and_media",
