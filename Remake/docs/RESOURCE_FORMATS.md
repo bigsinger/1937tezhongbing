@@ -389,7 +389,7 @@ DBL sprite 的 `header[0]` 还是运行时绘制队列的权威字段：1 为地
 
 `TerrainRasterizer` 使用 DBL 的 45 项 tile-group 顺序解析 VWF 第一平面，从对应 TLG 图集复制 32×16 tile。`m000` 的 155×140 网格生成 4960×2240 RGBA PNG；其余十一关按各自网格尺寸使用同一算法。group 0 按原程序行为保持透明，不会因为低 16 位恰好为 1—6 而误画地形。
 
-ResourceTool 现会批量生成 `m000`—`m011` 的 `terrain.png`、`level.json` 和 `navigation.bin`，并写出 `levels/index.json`。Godot 可按启动参数或 `PageUp` / `PageDown` 加载十二关，并已具备基于 L3 的 A* 寻路、动态占位、基于 L2 的格线视线、敌人巡逻/感知/攻击，以及背包、投射物、type 8/10 世界对象、type 11 AI 状态和任务世界事件闭环。十二关第一版 `MissionAiCoordinator` 已提供带 `remake_editorial` 标签的协作/增援与难度调校。仍需恢复的是其余非角色实体精确足印、声音遮挡/尸体发现等高层 AI、特殊动作原版数值，以及用原版录像校准的逐关导演内容。
+ResourceTool 现会批量生成 `m000`—`m011` 的 `terrain.png`、`level.json` 和 `navigation.bin`，并写出 `levels/index.json`。Godot 可按启动参数或 `PageUp` / `PageDown` 加载十二关，并已具备基于 L3 的 A* 寻路、动态占位、基于 L2 的格线视线、敌人巡逻/感知/攻击，以及背包、投射物、type 8/10 世界对象、type 11 注意力保持状态和任务世界事件闭环。十二关第一版 `MissionAiCoordinator` 已提供带 `remake_editorial` 标签的协作/增援与难度调校。仍需恢复的是其余非角色实体精确足印、声音遮挡/尸体发现等高层 AI、actor 62 残留显示 tick，以及用原版录像校准的逐关导演内容。
 
 ## 任务控制流恢复
 

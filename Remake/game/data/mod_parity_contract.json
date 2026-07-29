@@ -43,8 +43,8 @@
     {
       "id": "weapons_ammo_and_combat",
       "status": "partial",
-      "evidence": ["attack types 1-11", "recovered item ids 36-45 and 99", "recovered direct-count modes 0/1/2 and proof that the original has no magazine/reload abstraction", "12-level initial weapon baseline and runtime gate", "hit-frame damage", "projectiles and explosions", "m000 natural-contact differential with exact 54-actor HP/attack-type state, player 8-to-6-to-4 damage sequence, and scene 1598 as both damage sources"],
-      "gaps": ["post-pickup and post-attack inventory differential traces", "damage and timing table", "type 8/10/11 exact parameters"]
+      "evidence": ["attack types 1-11", "recovered item ids 36-45 and 99", "recovered direct-count modes 0/1/2 and proof that the original has no magazine/reload abstraction", "12-level initial weapon baseline and runtime gate", "hit-frame damage", "projectiles and explosions", "type 8/10 actor 84/85 deployment, actor 62 primary and special damage bands, 800 alert, and type 11 source-anchored attention-hold semantics", "m000 natural-contact differential with exact 54-actor HP/attack-type state, player 8-to-6-to-4 damage sequence, and scene 1598 as both damage sources"],
+      "gaps": ["post-pickup and post-attack inventory differential traces", "remaining ordinary/projectile damage and timing table", "actor 62 resolved-visual lifetime"]
     },
     {
       "id": "navigation_routes_and_doors",

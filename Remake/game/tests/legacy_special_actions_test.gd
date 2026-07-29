@@ -17,6 +17,10 @@ class MockActor:
 	var faction_id := 0
 	var hit_points := 10
 	var scene_index := -1
+	var runtime_actor_type := 0
+	var target_position := Vector2.ZERO
+	var movement_path := PackedVector2Array()
+	var movement_path_index := 0
 
 	func configure(
 		new_faction_id: int,
@@ -25,6 +29,9 @@ class MockActor:
 	) -> void:
 		faction_id = new_faction_id
 		position = world_position
+		target_position = world_position
+		movement_path = PackedVector2Array()
+		movement_path_index = 0
 		scene_index = new_scene_index
 
 	func is_combat_alive() -> bool:
@@ -34,6 +41,11 @@ class MockActor:
 		var applied := mini(maxi(amount, 0), hit_points)
 		hit_points -= applied
 		return applied
+
+	func issue_move(destination: Vector2) -> void:
+		target_position = destination
+		movement_path = PackedVector2Array([destination])
+		movement_path_index = 0
 
 
 class ClearSight:
@@ -103,6 +115,7 @@ func _run_tests() -> void:
 	_test_type_8_triggered_object_without_assets(failures)
 	_test_type_10_hundred_tick_object_without_assets(failures)
 	_test_type_11_reversible_control_without_assets(failures)
+	_test_recovered_special_damage_bands(failures)
 	_test_recovered_consumption_rules(failures)
 	_test_squad_routes_special_actions_without_direct_damage(failures)
 	_test_special_item_cost_commits_at_valid_hit_frame(failures)
@@ -133,8 +146,15 @@ func _test_evidence_profiles(failures: Array[String]) -> void:
 	_expect(
 		float(type_8.get("trigger_horizontal_radius", 0.0)) == 32.0
 		and float(type_8.get("trigger_vertical_radius", 0.0)) == 16.0
-		and int(type_8.get("trigger_faction_id", 0)) == 1,
-		"type 8 preserves the recovered living faction-1 32x16 trigger",
+		and int(type_8.get("trigger_faction_id", 0)) == 1
+		and int(type_8.get("explosion_actor_type", 0)) == 62
+		and int(type_8.get("blast_damage", 0)) == 128
+		and Vector2(
+			float(type_8.get("blast_horizontal_radius", 0.0)),
+			float(type_8.get("blast_vertical_radius", 0.0)),
+		) == Vector2(128.0, 64.0)
+		and float(type_8.get("alert_radius", 0.0)) == 800.0,
+		"type 8 preserves the recovered trigger and actor-62 primary explosion",
 		failures,
 	)
 	var type_10: Dictionary = SPECIAL_PROFILES.profile_for_attack_type(10)
@@ -142,8 +162,21 @@ func _test_evidence_profiles(failures: Array[String]) -> void:
 		int(type_10.get("original_actor_type", 0)) == 85
 		and int(type_10.get("original_gfl_index", 0)) == 900
 		and int(type_10.get("ammo_item_id", 0)) == 45
-		and int(type_10.get("fuse_world_ticks", 0)) == 100,
-		"type 10 preserves recovered actor 85, GFL 900, item 45, and 100 ticks",
+		and int(type_10.get("fuse_world_ticks", 0)) == 100
+		and int(type_10.get("explosion_actor_type", 0)) == 62
+		and int(type_10.get("blast_damage", 0)) == 128
+		and Vector2(
+			float(type_10.get("blast_horizontal_radius", 0.0)),
+			float(type_10.get("blast_vertical_radius", 0.0)),
+		) == Vector2(128.0, 64.0)
+		and float(type_10.get("alert_radius", 0.0)) == 800.0,
+		"type 10 preserves recovered deployment, fuse, and actor-62 explosion",
+		failures,
+	)
+	_expect(
+		(type_8.get("special_damage_bands", []) as Array).size() == 2
+		and type_8.get("special_damage_bands") == type_10.get("special_damage_bands"),
+		"types 8 and 10 share the two recovered actor-62 special damage bands",
 		failures,
 	)
 	var type_11: Dictionary = SPECIAL_PROFILES.profile_for_attack_type(11)
@@ -156,16 +189,18 @@ func _test_evidence_profiles(failures: Array[String]) -> void:
 	)
 	var type_11_sources := type_11.get("source_status", {}) as Dictionary
 	_expect(
-		String(type_11_sources.get("remake_behavior", "")) == "unresolved_remake_default"
-		and String(type_11_sources.get("duration_world_ticks", "")) == "unresolved_remake_default",
-		"type 11 AI meaning and lifetime remain explicitly labelled remake defaults",
+		String(type_11.get("remake_behavior", "")) == "attention_hold"
+		and String(type_11_sources.get("remake_behavior", "")) == "recovered"
+		and String(type_11_sources.get("release_on_source_movement", "")) == "recovered"
+		and String(type_11_sources.get("release_on_combat_transition", "")) == "recovered",
+		"type 11 preserves the recovered attention-hold and release rules",
 		failures,
 	)
-	var mislabeled_type_11 := type_11.duplicate(true)
-	(mislabeled_type_11["source_status"] as Dictionary)["remake_behavior"] = "recovered"
+	var altered_type_11 := type_11.duplicate(true)
+	altered_type_11["release_on_source_movement"] = false
 	_expect(
-		not SPECIAL_PROFILES.is_valid_profile(mislabeled_type_11),
-		"evidence profiles reject an unresolved type 11 behavior relabelled as recovered",
+		not SPECIAL_PROFILES.is_valid_profile(altered_type_11),
+		"evidence profiles reject a changed type 11 release rule",
 		failures,
 	)
 
@@ -211,7 +246,7 @@ func _test_type_8_triggered_object_without_assets(failures: Array[String]) -> vo
 	_expect(
 		sink.last_damage == int(profile["blast_damage"])
 		and sink.last_radii == Vector2(float(profile["blast_horizontal_radius"]), float(profile["blast_vertical_radius"])),
-		"type 8 emits its explicitly defaulted blast payload",
+		"type 8 emits its recovered actor-62 primary blast payload",
 		failures,
 	)
 	world_object.advance_world_ticks(1)
@@ -299,19 +334,100 @@ func _test_type_11_reversible_control_without_assets(failures: Array[String]) ->
 		failures,
 	)
 	_expect(enemy.current_hit_points == hit_points_before, "type 11 applies no ordinary direct damage", failures)
-	effect.advance_world_ticks(effect.duration_world_ticks - 1)
-	_expect(effect.is_active() and enemy.is_special_controlled(), "type 11 remains active before its explicit remake duration", failures)
+	effect.advance_world_ticks(1000)
+	_expect(
+		effect.is_active() and enemy.is_special_controlled(),
+		"type 11 has no invented timeout while the source remains stationary",
+		failures,
+	)
+	source.issue_move(Vector2(16.0, 0.0))
 	effect.advance_world_ticks(1)
 	_expect(
 		not effect.is_active()
 		and not enemy.is_special_controlled()
 		and sink.release_count == 1
-		and sink.last_target == enemy,
-		"type 11 expires once and releases the target AI",
+		and sink.last_target == enemy
+		and String(effect.release_reason) == "source_movement",
+		"type 11 releases once when its source begins moving",
 		failures,
 	)
 	_expect(not effect.release(), "released type 11 state is idempotent", failures)
+
+	source.configure(3, Vector2.ZERO, 300)
+	var combat_effect = SPECIAL_CONTROL_SCRIPT.new()
+	arena.add_child(combat_effect)
+	_expect(
+		combat_effect.configure(profile, source, enemy),
+		"type 11 can be applied again after its movement release",
+		failures,
+	)
+	enemy.receive_alert(source, source.position)
+	combat_effect.advance_world_ticks(1)
+	_expect(
+		not combat_effect.is_active()
+		and not enemy.is_special_controlled()
+		and String(combat_effect.release_reason) == "target_combat_transition",
+		"type 11 releases on the target's recovered combat transition",
+		failures,
+	)
 	arena.queue_free()
+
+
+func _test_recovered_special_damage_bands(failures: Array[String]) -> void:
+	var game = MAIN_SCRIPT.new()
+	game.converted_root = ""
+	var attacker := MockActor.new()
+	attacker.configure(3, Vector2.ZERO, 350)
+	game.add_child(attacker)
+	var test_cases := [
+		{"type": 1, "position": Vector2(100.0, 0.0), "expected": 128},
+		{"type": 1, "position": Vector2(300.0, 0.0), "expected": 0},
+		{"type": 34, "position": Vector2(100.0, 0.0), "expected": 256},
+		{"type": 34, "position": Vector2(300.0, 0.0), "expected": 128},
+		{"type": 66, "position": Vector2(200.0, 0.0), "expected": 128},
+		{"type": 66, "position": Vector2(256.0, 0.0), "expected": 0},
+	]
+	var test_units: Array[SQUAD_UNIT_SCRIPT] = []
+	for index: int in range(test_cases.size()):
+		var test_case: Dictionary = test_cases[index]
+		var unit = SQUAD_UNIT_SCRIPT.new()
+		unit.scene_index = 360 + index
+		unit.faction_id = 1
+		unit.runtime_actor_type = int(test_case["type"])
+		unit.maximum_hit_points = 500
+		unit.current_hit_points = 500
+		unit.is_alive = true
+		unit.position = test_case["position"]
+		game.add_child(unit)
+		game.units.append(unit)
+		test_units.append(unit)
+	var world_object = SPECIAL_WORLD_OBJECT_SCRIPT.new()
+	game.add_child(world_object)
+	var profile: Dictionary = SPECIAL_PROFILES.profile_for_attack_type(8)
+	_expect(
+		world_object.configure(profile, Vector2.ZERO, attacker, 3, null),
+		"actor-62 damage-band fixture configures from the recovered type-8 profile",
+		failures,
+	)
+	game.call(
+		"_on_world_explosion_requested",
+		world_object,
+		attacker,
+		Vector2.ZERO,
+		128,
+		128.0,
+		64.0,
+		3,
+	)
+	for index: int in range(test_cases.size()):
+		var expected_damage := int((test_cases[index] as Dictionary)["expected"])
+		_expect(
+			test_units[index].damage_taken_total == expected_damage,
+			"actor-62 primary/special band case %d applies %d damage"
+			% [index, expected_damage],
+			failures,
+		)
+	game.free()
 
 
 func _test_recovered_consumption_rules(failures: Array[String]) -> void:
@@ -489,8 +605,8 @@ func _test_main_special_action_lifecycle_without_assets(failures: Array[String])
 	var enemy = ENEMY_UNIT_SCRIPT.new()
 	enemy.scene_index = 501
 	enemy.faction_id = 1
-	enemy.current_hit_points = 30
-	enemy.maximum_hit_points = 30
+	enemy.current_hit_points = 300
+	enemy.maximum_hit_points = 300
 	enemy.is_alive = true
 	enemy.position = Vector2(8.0, 0.0)
 	game.add_child(enemy)
@@ -509,7 +625,7 @@ func _test_main_special_action_lifecycle_without_assets(failures: Array[String])
 		failures,
 	)
 	game.legacy_special_world_objects[0].call("advance_world_ticks", 1)
-	_expect(enemy.current_hit_points == 22, "Main receives the type 8 explosion request and applies its blast", failures)
+	_expect(enemy.current_hit_points == 172, "Main receives the recovered 128-damage type 8 blast", failures)
 
 	game.call(
 		"_on_legacy_special_action_requested",
@@ -525,9 +641,9 @@ func _test_main_special_action_lifecycle_without_assets(failures: Array[String])
 		failures,
 	)
 	timed_object.call("advance_world_ticks", 99)
-	_expect(enemy.current_hit_points == 22, "Main type 10 object remains harmless through tick 99", failures)
+	_expect(enemy.current_hit_points == 172, "Main type 10 object remains harmless through tick 99", failures)
 	timed_object.call("advance_world_ticks", 1)
-	_expect(enemy.current_hit_points == 14, "Main type 10 object applies its blast on tick 100", failures)
+	_expect(enemy.current_hit_points == 44, "Main type 10 applies its recovered 128-damage blast on tick 100", failures)
 
 	var hp_before_control: int = enemy.current_hit_points
 	game.call(
@@ -549,12 +665,19 @@ func _test_main_special_action_lifecycle_without_assets(failures: Array[String])
 	)
 	_expect(game.legacy_ai_control_effects.size() == 1, "reapplying type 11 refreshes instead of stacking control locks", failures)
 	var effect: Node = game.legacy_ai_control_effects[0]
-	effect.call("advance_world_ticks", int(effect.get("duration_world_ticks")))
+	effect.call("advance_world_ticks", 1000)
+	_expect(
+		game.legacy_ai_control_effects.size() == 1 and enemy.is_special_controlled(),
+		"Main keeps type 11 active without an invented timeout",
+		failures,
+	)
+	attacker.issue_move(Vector2(16.0, 0.0))
+	effect.call("advance_world_ticks", 1)
 	_expect(
 		game.legacy_ai_control_effects.is_empty()
 		and not enemy.is_special_controlled()
 		and enemy.current_hit_points == hp_before_control,
-		"Main removes the expired type 11 status without direct damage",
+		"Main removes type 11 on source movement without direct damage",
 		failures,
 	)
 	game.free()
@@ -601,7 +724,7 @@ func _test_special_action_save_restore_lifecycle(failures: Array[String]) -> voi
 	_expect(
 		(world.get("legacy_ai_control_effects", []) as Array).size() == 1
 		and int(((world["legacy_ai_control_effects"] as Array)[0] as Dictionary).get("elapsed_world_ticks", 0)) == 23,
-		"session capture preserves an active type 11 status timer",
+		"session capture preserves the active type 11 diagnostic age",
 		failures,
 	)
 
@@ -635,7 +758,15 @@ func _test_special_action_save_restore_lifecycle(failures: Array[String]) -> voi
 		target_game.legacy_ai_control_effects.size() == 1
 		and int(target_game.legacy_ai_control_effects[0].get("elapsed_world_ticks")) == 23
 		and target_enemy.is_special_controlled(),
-		"type 11 status resumes on its saved target with its saved timer",
+		"type 11 status resumes with its saved source anchor and diagnostic age",
+		failures,
+	)
+	target_unit.issue_move(Vector2(12.0, 0.0))
+	target_game.legacy_ai_control_effects[0].call("advance_world_ticks", 1)
+	_expect(
+		target_game.legacy_ai_control_effects.is_empty()
+		and not target_enemy.is_special_controlled(),
+		"restored type 11 still releases when the restored source begins moving",
 		failures,
 	)
 	source_game.free()

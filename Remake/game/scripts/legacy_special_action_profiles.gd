@@ -3,10 +3,11 @@ extends RefCounted
 
 # Evidence boundary for attack types 8/10/11.
 #
-# `recovered` fields below come from the original sub_456DF0 dispatch and the
-# actor 84/85 update handlers.  `unresolved_remake_default` fields are only the
-# playable behavior supplied by this remake; they must not be cited as facts
-# about the 2001 executable.
+# `recovered` fields below come from the original sub_456DF0 dispatch, actor
+# 84/85 deployment handlers, actor 62 explosion handler and the enemy update
+# paths that consume target flag +656. `unresolved_remake_default` fields are
+# only playable behavior supplied by this remake; they must not be cited as
+# facts about the 2001 executable.
 const VALID_SOURCE_STATUSES := {
 	"recovered": true,
 	"unresolved_remake_default": true,
@@ -26,10 +27,29 @@ const PROFILES := {
 		"trigger_faction_id": 1,
 		"trigger_horizontal_radius": 32.0,
 		"trigger_vertical_radius": 16.0,
-		# Final damage and blast geometry have not yet been recovered.
-		"blast_damage": 8,
-		"blast_horizontal_radius": 32.0,
-		"blast_vertical_radius": 16.0,
+		"explosion_actor_type": 62,
+		"blast_damage": 128,
+		"blast_horizontal_radius": 128.0,
+		"blast_vertical_radius": 64.0,
+		"alert_radius": 800.0,
+		"special_damage_bands": [
+			{
+				"runtime_actor_types": [34, 86, 87, 88, 94, 95, 96, 97],
+				"geometry": "ellipse",
+				"horizontal_radius": 384.0,
+				"vertical_radius": 192.0,
+				"damage": 128,
+				"original_visual_effect_type": 11,
+			},
+			{
+				"runtime_actor_types": [66, 67, 68, 77, 93],
+				"geometry": "euclidean_radius",
+				"radius": 256.0,
+				"exclusive_boundary": true,
+				"damage": 128,
+				"original_visual_effect_type": 15,
+			},
+		],
 		"resolved_visual_ticks": 8,
 		"source_status": {
 			"runtime_kind": "recovered",
@@ -40,9 +60,12 @@ const PROFILES := {
 			"trigger_faction_id": "recovered",
 			"trigger_horizontal_radius": "recovered",
 			"trigger_vertical_radius": "recovered",
-			"blast_damage": "unresolved_remake_default",
-			"blast_horizontal_radius": "unresolved_remake_default",
-			"blast_vertical_radius": "unresolved_remake_default",
+			"explosion_actor_type": "recovered",
+			"blast_damage": "recovered",
+			"blast_horizontal_radius": "recovered",
+			"blast_vertical_radius": "recovered",
+			"alert_radius": "recovered",
+			"special_damage_bands": "recovered",
 			"resolved_visual_ticks": "unresolved_remake_default",
 		},
 	},
@@ -54,10 +77,29 @@ const PROFILES := {
 		"ammo_item_id": 45,
 		"consumes_item": true,
 		"fuse_world_ticks": 100,
-		# Final damage and blast geometry have not yet been recovered.
-		"blast_damage": 8,
-		"blast_horizontal_radius": 64.0,
-		"blast_vertical_radius": 32.0,
+		"explosion_actor_type": 62,
+		"blast_damage": 128,
+		"blast_horizontal_radius": 128.0,
+		"blast_vertical_radius": 64.0,
+		"alert_radius": 800.0,
+		"special_damage_bands": [
+			{
+				"runtime_actor_types": [34, 86, 87, 88, 94, 95, 96, 97],
+				"geometry": "ellipse",
+				"horizontal_radius": 384.0,
+				"vertical_radius": 192.0,
+				"damage": 128,
+				"original_visual_effect_type": 11,
+			},
+			{
+				"runtime_actor_types": [66, 67, 68, 77, 93],
+				"geometry": "euclidean_radius",
+				"radius": 256.0,
+				"exclusive_boundary": true,
+				"damage": 128,
+				"original_visual_effect_type": 15,
+			},
+		],
 		"resolved_visual_ticks": 8,
 		"source_status": {
 			"runtime_kind": "recovered",
@@ -66,9 +108,12 @@ const PROFILES := {
 			"ammo_item_id": "recovered",
 			"consumes_item": "recovered",
 			"fuse_world_ticks": "recovered",
-			"blast_damage": "unresolved_remake_default",
-			"blast_horizontal_radius": "unresolved_remake_default",
-			"blast_vertical_radius": "unresolved_remake_default",
+			"explosion_actor_type": "recovered",
+			"blast_damage": "recovered",
+			"blast_horizontal_radius": "recovered",
+			"blast_vertical_radius": "recovered",
+			"alert_radius": "recovered",
+			"special_damage_bands": "recovered",
 			"resolved_visual_ticks": "unresolved_remake_default",
 		},
 	},
@@ -78,18 +123,21 @@ const PROFILES := {
 		"ammo_item_id": 99,
 		"consumes_item": false,
 		"original_target_flag_offset": 656,
-		# The original sets and later clears this target flag, but the exact
-		# semantics and lifetime remain unresolved.  Temporarily suppressing the
-		# target AI for 180 world ticks is the remake's explicit playable rule.
-		"remake_behavior": "suppress_ai",
-		"duration_world_ticks": 180,
+		"remake_behavior": "attention_hold",
+		"pauses_idle_movement": true,
+		"faces_source_actor": true,
+		"release_on_source_movement": true,
+		"release_on_combat_transition": true,
 		"source_status": {
 			"runtime_kind": "recovered",
 			"ammo_item_id": "recovered",
 			"consumes_item": "recovered",
 			"original_target_flag_offset": "recovered",
-			"remake_behavior": "unresolved_remake_default",
-			"duration_world_ticks": "unresolved_remake_default",
+			"remake_behavior": "recovered",
+			"pauses_idle_movement": "recovered",
+			"faces_source_actor": "recovered",
+			"release_on_source_movement": "recovered",
+			"release_on_combat_transition": "recovered",
 		},
 	},
 }
@@ -141,9 +189,12 @@ static func is_valid_profile(profile: Dictionary) -> bool:
 		if (
 			int(profile.get("original_actor_type", 0)) != int(canonical["original_actor_type"])
 			or int(profile.get("original_gfl_index", 0)) != int(canonical["original_gfl_index"])
+			or int(profile.get("explosion_actor_type", 0)) != int(canonical["explosion_actor_type"])
 			or int(profile.get("blast_damage", 0)) <= 0
 			or float(profile.get("blast_horizontal_radius", 0.0)) <= 0.0
 			or float(profile.get("blast_vertical_radius", 0.0)) <= 0.0
+			or float(profile.get("alert_radius", 0.0)) <= 0.0
+			or profile.get("special_damage_bands") != canonical["special_damage_bands"]
 		):
 			return false
 	if attack_type == 8:
@@ -158,5 +209,12 @@ static func is_valid_profile(profile: Dictionary) -> bool:
 		int(profile.get("original_target_flag_offset", 0))
 			== int(canonical["original_target_flag_offset"])
 		and String(profile.get("remake_behavior", "")) == String(canonical["remake_behavior"])
-		and int(profile.get("duration_world_ticks", 0)) > 0
+		and bool(profile.get("pauses_idle_movement", false))
+			== bool(canonical["pauses_idle_movement"])
+		and bool(profile.get("faces_source_actor", false))
+			== bool(canonical["faces_source_actor"])
+		and bool(profile.get("release_on_source_movement", false))
+			== bool(canonical["release_on_source_movement"])
+		and bool(profile.get("release_on_combat_transition", false))
+			== bool(canonical["release_on_combat_transition"])
 	)

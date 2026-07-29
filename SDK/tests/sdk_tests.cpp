@@ -258,6 +258,70 @@ int main(int argc, char** argv) {
                 m1937::sdk::gasoline_barrel_item_id == 53,
             "gasoline barrel identity mismatch", checks);
 
+        require(
+            m1937::sdk::rva::special_attack_dispatch != 0 &&
+                m1937::sdk::rva::explosion_actor_update != 0 &&
+                m1937::sdk::rva::special_attention_source != 0 &&
+                m1937::sdk::rva::special_attack_dispatch !=
+                    m1937::sdk::rva::explosion_actor_update,
+            "special-action RVA catalog mismatch", checks);
+        const auto& triggered =
+            m1937::sdk::triggered_special_action;
+        const auto& timed =
+            m1937::sdk::timed_special_action;
+        require(
+            triggered.attack_type == 8 &&
+                triggered.consumed_item_id == 43 &&
+                triggered.deployment_actor_type == 84 &&
+                triggered.deployment_gfl_index == 470 &&
+                triggered.trigger_faction_id == 1 &&
+                triggered.trigger_horizontal_radius == 32 &&
+                triggered.trigger_vertical_radius == 16,
+            "type-8 deployment semantics mismatch", checks);
+        require(
+            timed.attack_type == 10 &&
+                timed.consumed_item_id == 45 &&
+                timed.deployment_actor_type == 85 &&
+                timed.deployment_gfl_index == 900 &&
+                timed.fuse_world_ticks == 100,
+            "type-10 deployment semantics mismatch", checks);
+        require(
+            triggered.explosion_actor_type == 62 &&
+                triggered.primary_damage == 128 &&
+                triggered.blast_horizontal_radius == 128 &&
+                triggered.blast_vertical_radius == 64 &&
+                triggered.alert_radius == 800 &&
+                timed.explosion_actor_type ==
+                    triggered.explosion_actor_type &&
+                timed.primary_damage == triggered.primary_damage,
+            "actor-62 primary explosion semantics mismatch", checks);
+        require(
+            m1937::sdk::explosion_actor_extra_damage(
+                34, 100, 0) == 128 &&
+                m1937::sdk::explosion_actor_extra_damage(
+                    34, 385, 0) == 0 &&
+                m1937::sdk::explosion_actor_extra_damage(
+                    66, 255, 0) == 128 &&
+                m1937::sdk::explosion_actor_extra_damage(
+                    66, 256, 0) == 0 &&
+                m1937::sdk::explosion_actor_extra_damage(
+                    1, 100, 0) == 0,
+            "actor-62 special damage-band semantics mismatch", checks);
+        require(
+            m1937::sdk::special_attention_rules.attack_type == 11 &&
+                m1937::sdk::special_attention_rules.inventory_item_id ==
+                    99 &&
+                m1937::sdk::special_attention_rules.target_flag_offset ==
+                    0x290 &&
+                !m1937::sdk::special_attention_rules.consumes_item &&
+                m1937::sdk::special_attention_rules.pauses_idle_movement &&
+                m1937::sdk::special_attention_rules.faces_source_actor &&
+                m1937::sdk::special_attention_rules
+                    .releases_on_source_movement &&
+                m1937::sdk::special_attention_rules
+                    .releases_on_combat_transition,
+            "type-11 attention-hold semantics mismatch", checks);
+
         using namespace m1937::sdk::enemy_ai;
         const auto novice = tuning_for(0, 0);
         const auto veteran = tuning_for(3, 3);

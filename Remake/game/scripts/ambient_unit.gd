@@ -38,6 +38,7 @@ func configure_ambient(
 		new_dynamic_occupancy,
 		reference_position,
 	)
+	configure_runtime_actor_type(entity)
 	var header_values: Variant = entity.get("database_header_values", [])
 	var authored_speed := 36.0
 	if header_values is Array and (header_values as Array).size() > 4:

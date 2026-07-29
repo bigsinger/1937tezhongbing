@@ -897,10 +897,10 @@ static func _restore_legacy_ai_control_effects(
 		)
 		if (
 			not effect is Node
-			or not (effect as Node).has_method("restore_elapsed_ticks")
+			or not (effect as Node).has_method("restore_runtime_state")
 			or not bool((effect as Node).call(
-				"restore_elapsed_ticks",
-				int(record.get("elapsed_world_ticks", 0)),
+				"restore_runtime_state",
+				record,
 			))
 		):
 			warnings.append("a legacy AI control effect could not be restored")

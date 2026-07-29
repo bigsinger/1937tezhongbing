@@ -39,6 +39,8 @@ var fuse_world_ticks := 0
 var blast_damage := 0
 var blast_horizontal_radius := 0.0
 var blast_vertical_radius := 0.0
+var alert_radius := 0.0
+var special_damage_bands: Array[Dictionary] = []
 var resolved_visual_ticks := 0
 var original_texture: Texture2D
 var original_frames: Array[Texture2D] = []
@@ -75,6 +77,11 @@ func configure(
 	blast_damage = maxi(int(profile.get("blast_damage", 0)), 0)
 	blast_horizontal_radius = maxf(float(profile.get("blast_horizontal_radius", 0.0)), 0.0)
 	blast_vertical_radius = maxf(float(profile.get("blast_vertical_radius", 0.0)), 0.0)
+	alert_radius = maxf(float(profile.get("alert_radius", 0.0)), 0.0)
+	special_damage_bands.clear()
+	for raw_band: Variant in profile.get("special_damage_bands", []) as Array:
+		if raw_band is Dictionary:
+			special_damage_bands.append((raw_band as Dictionary).duplicate(true))
 	resolved_visual_ticks = maxi(int(profile.get("resolved_visual_ticks", 0)), 0)
 	original_frames.clear()
 	original_frame_hold_ticks = 1
@@ -168,6 +175,8 @@ func explosion_payload() -> Dictionary:
 		"damage": blast_damage,
 		"horizontal_radius": blast_horizontal_radius,
 		"vertical_radius": blast_vertical_radius,
+		"alert_radius": alert_radius,
+		"special_damage_bands": special_damage_bands.duplicate(true),
 		"source_faction_id": faction_id,
 		"attack_type": attack_type,
 		"original_actor_type": original_actor_type,

@@ -118,5 +118,12 @@ DBL 1003/物品 53 仍明确归入可受伤汽油桶生命周期，不会误作�
 兼容层只在签名完全匹配时修复导航缓存，随后仍由原版 A*、动作状态机和
 序列帧系统完成寻路与朝向更新。
 
+`SpecialActions.hpp` 固化 type 8/10/11 的原版语义：actor 84/GFL 470
+触发部署、actor 85/GFL 900 的 100 world-tick 定时部署、两者共用的 actor 62
+主爆炸与两组特殊对象伤害带，以及 type 11 在 actor `+0x290` 的来源锚定
+注意力保持。它同时说明 type 11 不消费项目 99、不是定时眩晕，并由来源移动或
+目标战斗转换释放。相关函数入口和 `SpecialAttentionSource` 全局量均由
+`address-catalog.json` 生成到 C++/C# 常量，补丁和 Remake 不再各自复制魔数。
+
 任务定义、事件、原子状态和原生插件开发详见
 [`docs/任务Sidecar与原生插件开发指南.md`](docs/任务Sidecar与原生插件开发指南.md)。

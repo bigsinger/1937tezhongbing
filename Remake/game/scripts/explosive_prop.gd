@@ -18,6 +18,7 @@ signal destroyed(prop: Node2D, instigator: Node2D)
 const EXPLOSIVE_BEHAVIOR := "explosive_prop"
 
 var database_entry_id := 0
+var runtime_actor_type := 0
 var scene_index := -1
 var profile_key := ""
 var original_display_name := ""
@@ -50,6 +51,10 @@ func configure(
 	):
 		return false
 	database_entry_id = int(profile["database_entry_id"])
+	runtime_actor_type = 0
+	var header_values: Variant = metadata.get("database_header_values", [])
+	if header_values is Array and (header_values as Array).size() > 2:
+		runtime_actor_type = int((header_values as Array)[2])
 	profile_key = String(profile.get("key", ""))
 	original_display_name = String(profile.get("original_display_name", profile_key))
 	entity_metadata = metadata.duplicate(true)

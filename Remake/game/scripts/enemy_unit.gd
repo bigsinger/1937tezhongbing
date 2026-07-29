@@ -55,6 +55,7 @@ var attack_count := 0
 var path_request_delay_remaining := 0.0
 var patrol_path_retry_seconds := PATROL_PATH_RETRY_MIN_SECONDS
 var special_control_lock_count := 0
+var special_control_source: Node2D
 var tactical_ranges_visible := false
 var mission_ai_coordinator: Node
 ## No miss dispersion is applied until an explicitly editorial difficulty
@@ -105,6 +106,7 @@ func configure_enemy(
 			float(entity.get("reference_y", entity.get("y", 0))),
 		),
 	)
+	configure_runtime_actor_type(entity)
 	move_speed = STABLE_MOD_BASE_PATROL_SPEED
 	blocked_replan_seconds = 0.65 + float(posmod(scene_index * 11, 8)) * 0.05
 	patrol_path_retry_seconds = (
@@ -243,12 +245,6 @@ static func deterministic_aim_sample(enemy_scene_index: int, attack_serial: int)
 
 func _physics_process(delta: float) -> void:
 	var safe_delta := maxf(delta, 0.0)
-	if is_special_controlled() and is_alive:
-		# Original type 11 sets and later clears target offset +656. Its exact AI
-		# semantics are unresolved; pausing this remake AI is the labelled,
-		# reversible playable interpretation owned by LegacyAiControlEffect.
-		super._physics_process(safe_delta)
-		return
 	if not is_alive or combat_action != CombatAction.NONE or hurt_remaining > 0.0:
 		super._physics_process(safe_delta)
 		return
@@ -259,27 +255,45 @@ func _physics_process(delta: float) -> void:
 	if sense_elapsed >= SENSE_INTERVAL_SECONDS and behavior_state != BehaviorState.REGROUP:
 		sense_elapsed = fmod(sense_elapsed, SENSE_INTERVAL_SECONDS)
 		_update_detection()
-	_update_behavior(safe_delta)
+	var attention_holds_idle := (
+		is_special_controlled()
+		and behavior_state == BehaviorState.PATROL
+		and current_target == null
+	)
+	if not attention_holds_idle:
+		_update_behavior(safe_delta)
 	super._physics_process(safe_delta)
+	if attention_holds_idle and is_special_controlled():
+		_face_special_control_source()
 	original_direction_index = (
 		IMPORTED_SPRITE_ANIMATION.direction_index_for_legacy_group(animation_group_index)
 	)
 
 
-func apply_special_control(_source: Node2D = null) -> bool:
+func apply_special_control(source: Node2D = null) -> bool:
 	if not is_alive:
 		return false
 	special_control_lock_count += 1
+	special_control_source = source
 	if special_control_lock_count == 1:
-		current_target = null
-		behavior_state = BehaviorState.PATROL
-		clear_combat_target()
-		cancel_path()
-		patrol_wait_remaining = 0.0
-		patrol_path_in_flight = false
-		_interrupt_combat_action()
-		apply_idle_frame()
+		# Target +656 does not erase an existing combat target. It suppresses
+		# ordinary idle/path updates and makes the target face the dedicated
+		# source actor until movement or a combat transition clears the flag.
+		if behavior_state == BehaviorState.PATROL and current_target == null:
+			cancel_path()
+			patrol_wait_remaining = 0.0
+			patrol_path_in_flight = false
+			apply_idle_frame()
+			_face_special_control_source()
 		queue_redraw()
+	return true
+
+
+func refresh_special_control_source(source: Node2D = null) -> bool:
+	if special_control_lock_count <= 0:
+		return false
+	special_control_source = source
+	_face_special_control_source()
 	return true
 
 
@@ -288,6 +302,7 @@ func release_special_control(_source: Node2D = null) -> bool:
 		return false
 	special_control_lock_count -= 1
 	if special_control_lock_count == 0:
+		special_control_source = null
 		sense_elapsed = SENSE_INTERVAL_SECONDS
 		chase_replan_elapsed = CHASE_REPLAN_SECONDS
 		path_request_delay_remaining = 0.0
@@ -297,6 +312,27 @@ func release_special_control(_source: Node2D = null) -> bool:
 
 func is_special_controlled() -> bool:
 	return special_control_lock_count > 0
+
+
+func _release_special_control_for_combat() -> bool:
+	if special_control_lock_count <= 0:
+		return false
+	special_control_lock_count = 0
+	special_control_source = null
+	path_request_delay_remaining = 0.0
+	queue_redraw()
+	return true
+
+
+func _face_special_control_source() -> void:
+	if not is_instance_valid(special_control_source):
+		return
+	var direction := special_control_source.position - position
+	if direction.is_zero_approx():
+		return
+	set_animation_group(direction_group_index(direction))
+	apply_idle_frame()
+	queue_redraw()
 
 
 func _update_detection() -> void:
@@ -329,6 +365,7 @@ func _update_detection() -> void:
 			nearest_distance_squared = distance_squared
 			nearest_visible = target
 	if nearest_visible != null:
+		_release_special_control_for_combat()
 		var already_tracking := (
 			current_target == nearest_visible
 			and behavior_state in [BehaviorState.CHASE, BehaviorState.ATTACK]
@@ -345,6 +382,7 @@ func _update_detection() -> void:
 				BehaviorState.ATTACK if _can_attack_current_target() else BehaviorState.CHASE
 			)
 	elif current_target != null and behavior_state in [BehaviorState.CHASE, BehaviorState.ATTACK]:
+		_release_special_control_for_combat()
 		behavior_state = BehaviorState.SEARCH
 		search_elapsed = 0.0
 		_issue_path_to(last_known_target_position)
@@ -488,6 +526,7 @@ func _can_attack_current_target() -> bool:
 func receive_alert(target: Node2D, world_position: Vector2) -> bool:
 	if not is_alive or not _is_hostile_target(target):
 		return false
+	_release_special_control_for_combat()
 	current_target = target
 	last_known_target_position = world_position
 	# Search slightly ahead of the last sound/shot when a moving target exposes a
@@ -506,6 +545,7 @@ func receive_alert(target: Node2D, world_position: Vector2) -> bool:
 func investigate_position(world_position: Vector2) -> bool:
 	if not is_alive:
 		return false
+	_release_special_control_for_combat()
 	current_target = null
 	last_known_target_position = world_position
 	search_elapsed = 0.0

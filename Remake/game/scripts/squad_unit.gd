@@ -53,6 +53,7 @@ var damage_event_count := 0
 var damage_taken_total := 0
 var last_damage_attacker_scene_index := -1
 var scene_index := -1
+var runtime_actor_type := 0
 var dynamic_occupancy: RefCounted
 var dynamic_registered := false
 var sprite_texture: Texture2D
@@ -118,6 +119,7 @@ func configure(
 	is_crawling = false
 	move_speed = RUN_SPEED
 	scene_index = new_scene_index
+	runtime_actor_type = 0
 	dynamic_occupancy = new_dynamic_occupancy
 	position = start_position
 	target_position = start_position
@@ -158,6 +160,14 @@ func configure(
 	elif sprite_texture != null:
 		sprite_anchor = sprite_texture.get_size() * 0.5
 	queue_redraw()
+
+
+func configure_runtime_actor_type(entity: Dictionary) -> int:
+	runtime_actor_type = 0
+	var header_values: Variant = entity.get("database_header_values", [])
+	if header_values is Array and (header_values as Array).size() > 2:
+		runtime_actor_type = int((header_values as Array)[2])
+	return runtime_actor_type
 
 
 func configure_movement_modes(

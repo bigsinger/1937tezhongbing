@@ -67,7 +67,14 @@ struct RuntimeActorV1 final {
     std::byte unknown_258[4];
     std::int32_t reaction_state;            // +0x25C
     std::byte unknown_260[48];
-    std::int32_t path_override_active;       // +0x290
+    union {
+        // Historical SDK name retained for source compatibility.
+        std::int32_t path_override_active;   // +0x290
+        // Type-11 sets this field to hold idle movement and face the actor
+        // referenced by SpecialAttentionSource. Source movement or a combat
+        // transition clears it; it is not a timed stun.
+        std::int32_t special_attention_hold; // +0x290
+    };
 };
 
 struct RuntimeInventoryContainerV1 final {
@@ -141,6 +148,7 @@ static_assert(offsetof(RuntimeActorV1, contact_state) == 0x250);
 static_assert(offsetof(RuntimeActorV1, target_lost) == 0x254);
 static_assert(offsetof(RuntimeActorV1, reaction_state) == 0x25C);
 static_assert(offsetof(RuntimeActorV1, path_override_active) == 0x290);
+static_assert(offsetof(RuntimeActorV1, special_attention_hold) == 0x290);
 static_assert(sizeof(RuntimeActorV1) == 0x294);
 static_assert(offsetof(RuntimeInventoryContainerV1, item_ids_address) == 0x00);
 static_assert(offsetof(RuntimeInventoryContainerV1, quantities_address) == 0x04);

@@ -42,6 +42,7 @@ func configure_escort(
 			float(entity.get("reference_y", entity.get("y", 0))),
 		),
 	)
+	configure_runtime_actor_type(entity)
 	move_speed = 118.0
 	var weapon_profile: Dictionary = COMBAT_PROFILES.weapon_profile_for_attack_type(
 		int(entity.get("default_attack_type", 0))

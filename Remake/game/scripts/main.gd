@@ -824,6 +824,7 @@ func spawn_squad() -> void:
 				source_reference_position,
 			)
 		)
+		unit.configure_runtime_actor_type(entity)
 		unit.configure_movement_modes(run_groups, walk_groups, crawl_groups)
 		var attack_type := playable_initial_attack_type(entity, name)
 		var level_id := str(
@@ -2119,6 +2120,12 @@ func _on_world_explosion_requested(
 		)
 		if normalized_distance <= 1.0:
 			candidate.call("take_damage", damage, instigator if instigator != null else source)
+	_apply_legacy_special_damage_bands(
+		source,
+		instigator,
+		world_position,
+		candidates,
+	)
 	var alert_source: Node2D = instigator
 	if alert_source == null or not is_instance_valid(alert_source):
 		for unit: SQUAD_UNIT in units:
@@ -2130,7 +2137,79 @@ func _on_world_explosion_requested(
 		world_position,
 		horizontal_radius,
 		vertical_radius,
+		_legacy_special_alert_radius(source),
 	)
+
+
+static func _legacy_special_alert_radius(source: Node2D) -> float:
+	if source == null or source.get_script() != LEGACY_SPECIAL_WORLD_OBJECT_SCRIPT:
+		return 0.0
+	return maxf(float(source.get("alert_radius")), 0.0)
+
+
+func _apply_legacy_special_damage_bands(
+	source: Node2D,
+	instigator: Node2D,
+	world_position: Vector2,
+	candidates: Array[Node2D],
+) -> void:
+	if source == null or source.get_script() != LEGACY_SPECIAL_WORLD_OBJECT_SCRIPT:
+		return
+	var raw_bands: Variant = source.get("special_damage_bands")
+	if not raw_bands is Array:
+		return
+	for raw_band: Variant in raw_bands as Array:
+		if not raw_band is Dictionary:
+			continue
+		var band := raw_band as Dictionary
+		var actor_types: Variant = band.get("runtime_actor_types", [])
+		var band_damage := maxi(int(band.get("damage", 0)), 0)
+		if not actor_types is Array or band_damage <= 0:
+			continue
+		for candidate: Node2D in candidates:
+			if (
+				candidate == source
+				or not is_instance_valid(candidate)
+				or not candidate.has_method("is_combat_alive")
+				or not bool(candidate.call("is_combat_alive"))
+				or not candidate.has_method("take_damage")
+				or not (actor_types as Array).has(int(candidate.get("runtime_actor_type")))
+				or not _legacy_special_band_contains(
+					band,
+					candidate.global_position - world_position,
+				)
+			):
+				continue
+			candidate.call(
+				"take_damage",
+				band_damage,
+				instigator if instigator != null else source,
+			)
+
+
+static func _legacy_special_band_contains(band: Dictionary, offset: Vector2) -> bool:
+	match String(band.get("geometry", "")):
+		"ellipse":
+			var horizontal_radius := float(band.get("horizontal_radius", 0.0))
+			var vertical_radius := float(band.get("vertical_radius", 0.0))
+			if horizontal_radius <= 0.0 or vertical_radius <= 0.0:
+				return false
+			return (
+				offset.x * offset.x / (horizontal_radius * horizontal_radius)
+				+ offset.y * offset.y / (vertical_radius * vertical_radius)
+			) <= 1.0
+		"euclidean_radius":
+			var radius := float(band.get("radius", 0.0))
+			if radius <= 0.0:
+				return false
+			var distance_squared := offset.length_squared()
+			var radius_squared := radius * radius
+			return (
+				distance_squared < radius_squared
+				if bool(band.get("exclusive_boundary", false))
+				else distance_squared <= radius_squared
+			)
+	return false
 
 
 func _on_projectile_exploded(
@@ -2138,6 +2217,7 @@ func _on_projectile_exploded(
 	world_position: Vector2,
 	_horizontal_radius: float,
 	_vertical_radius: float,
+	alert_radius_override: float = 0.0,
 ) -> void:
 	_play_media_audio("explosion")
 	if attacker == null or not is_instance_valid(attacker):
@@ -2147,7 +2227,11 @@ func _on_projectile_exploded(
 		var enemy_attacker := attacker as ENEMY_UNIT
 		if enemy_attacker.current_target != null:
 			alert_target = enemy_attacker.current_target
-	var alert_radius: float = COMBAT_PROFILES.alert_radius("attack_extended")
+	var alert_radius: float = (
+		alert_radius_override
+		if alert_radius_override > 0.0
+		else COMBAT_PROFILES.alert_radius("attack_extended")
+	)
 	_queue_or_broadcast_alert(attacker, alert_target, world_position, alert_radius)
 
 

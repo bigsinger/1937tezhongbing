@@ -241,7 +241,7 @@
       "horizontal_range": 32.0,
       "vertical_range": 16.0,
       "requires_line_of_sight": true,
-      "damage": 8,
+      "damage": 128,
       "burst_count": 1,
       "ammo_item_id": 43,
       "ammo_per_attack": 1,
@@ -252,18 +252,18 @@
       "reload_seconds": 0.0,
       "recovery_seconds": 0.5,
       "source_status": {
-        "damage": "unresolved_remake_default",
+        "damage": "recovered",
         "burst_count": "recovered",
         "ammo_item_id": "recovered",
         "ammo_per_attack": "recovered",
         "hit_frame_mode": "recovered",
-        "alert_radius": "unresolved_remake_default",
+        "alert_radius": "recovered",
         "magazine_capacity": "unresolved_remake_default",
         "starting_reserve_ammo": "unresolved_remake_default",
         "reload_seconds": "unresolved_remake_default",
         "recovery_seconds": "unresolved_remake_default"
       },
-      "damage_notes": "The original action creates actor 84/GFL 470 instead of using ordinary direct damage. This schema-required value is not applied directly; the dedicated world-object profile labels its still-unresolved blast damage as a remake default."
+      "damage_notes": "The original action creates actor 84/GFL 470 instead of using ordinary direct damage. This schema-required value is not applied directly; actor 84 creates explosion actor 62, whose recovered primary blast applies 128 damage in a 128x64 isometric ellipse and propagates an 800-radius alert. The zero action alert remains exact because deployment itself does not broadcast; the later world explosion owns the alert."
     },
     "grenade_attack": {
       "attack_type": 9,
@@ -301,7 +301,7 @@
       "horizontal_range": 32.0,
       "vertical_range": 16.0,
       "requires_line_of_sight": true,
-      "damage": 8,
+      "damage": 128,
       "burst_count": 1,
       "ammo_item_id": 45,
       "ammo_per_attack": 1,
@@ -312,18 +312,18 @@
       "reload_seconds": 0.0,
       "recovery_seconds": 0.5,
       "source_status": {
-        "damage": "unresolved_remake_default",
+        "damage": "recovered",
         "burst_count": "recovered",
         "ammo_item_id": "recovered",
         "ammo_per_attack": "recovered",
         "hit_frame_mode": "recovered",
-        "alert_radius": "unresolved_remake_default",
+        "alert_radius": "recovered",
         "magazine_capacity": "unresolved_remake_default",
         "starting_reserve_ammo": "unresolved_remake_default",
         "reload_seconds": "unresolved_remake_default",
         "recovery_seconds": "unresolved_remake_default"
       },
-      "damage_notes": "The original action creates actor 85/GFL 900 instead of using ordinary direct damage. This schema-required value is not applied directly; the dedicated world-object profile labels its still-unresolved blast damage as a remake default."
+      "damage_notes": "The original action creates actor 85/GFL 900 instead of using ordinary direct damage. This schema-required value is not applied directly; after exactly 100 world ticks actor 85 creates explosion actor 62, whose recovered primary blast applies 128 damage in a 128x64 isometric ellipse and propagates an 800-radius alert. The zero action alert remains exact because deployment itself does not broadcast."
     },
     "special_attack": {
       "attack_type": 11,
@@ -347,13 +347,13 @@
         "ammo_item_id": "recovered",
         "ammo_per_attack": "recovered",
         "hit_frame_mode": "recovered",
-        "alert_radius": "unresolved_remake_default",
+        "alert_radius": "recovered",
         "magazine_capacity": "unresolved_remake_default",
         "starting_reserve_ammo": "unresolved_remake_default",
         "reload_seconds": "unresolved_remake_default",
         "recovery_seconds": "unresolved_remake_default"
       },
-      "damage_notes": "The original path sets target offset +656 and later code clears it; it does not apply ordinary direct damage. This schema-required value is intentionally unused while AI suppression and duration remain labelled remake defaults."
+      "damage_notes": "The original path sets target offset +656 and does not apply ordinary direct damage or consume item 99. The recovered flag semantics are an attention hold: pause ordinary idle movement and face the dedicated source actor, then release when that source starts moving or the target enters a combat transition. This schema-required damage value remains intentionally unused."
     }
   }
 }

@@ -8,5 +8,6 @@
 #include "Patch.hpp"
 #include "Runtime.hpp"
 #include "RuntimeTypes.hpp"
+#include "SpecialActions.hpp"
 #include "PluginABI.hpp"
 #include "Types.hpp"

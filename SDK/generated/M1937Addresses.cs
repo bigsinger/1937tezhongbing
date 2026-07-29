@@ -34,6 +34,17 @@ namespace Mission1937.SDK.Generated
         public const long AlertRadiusOperand4 = 0x00057187L;
         public const long ActorDistance = 0x0005A040L;
         public const long AlertEffectiveRadius = 0x0005A7C0L;
+        public const long SpecialActorUpdateDispatch = 0x00054960L;
+        public const long TimedSpecialUpdate = 0x000553B0L;
+        public const long ExplosionActorUpdate = 0x000554A0L;
+        public const long TriggeredSpecialUpdate = 0x000556B0L;
+        public const long SpecialAttackDispatch = 0x00056DF0L;
+        public const long ApplyActorDamage = 0x00058700L;
+        public const long FaceActor = 0x00059B70L;
+        public const long IsometricEllipseContains = 0x0005A8C0L;
+        public const long CreateEffectActor = 0x00065250L;
+        public const long EffectDispatch = 0x000656C0L;
+        public const long SetFacingFromAngle = 0x00066790L;
         public const long ResetActorMovement = 0x0005C1C0L;
         public const long ClearActorCommandTargets = 0x0005C1E0L;
         public const long PlayerGroundCommandResetCall = 0x00058B81L;
@@ -56,6 +67,7 @@ namespace Mission1937.SDK.Generated
         public const long CursorY = 0x000E6FACL;
         public const long MouseLeftReleased = 0x000E6FB0L;
         public const long CurrentActionId = 0x000E7048L;
+        public const long SpecialAttentionSource = 0x000E70B4L;
         public const long CurrentMission = 0x000E7060L;
         public const long SelectedSaveSlot = 0x000E705CL;
         public const long WorldRoot = 0x000E700CL;

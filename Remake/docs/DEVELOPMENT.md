@@ -116,7 +116,7 @@ Godot 端的责任分工为：
 
 `combat_profiles.json` 当前的普通敌人/军犬感知、11 类攻击距离、普通伤害、连发次数、弹药物品 ID、每次消耗和末帧提交语义来自 `M1937.exe` 字段级逆向，不能随意当作手感参数改写。每个新战斗字段都必须标记 `recovered`、`recovered_with_unresolved_override` 或 `unresolved_remake_default`。原版已确认不存在弹匣/备弹/装填抽象；正式关卡必须使用 `original_initial_weapon_inventory.json` 的直接数量和模式，profile 中旧字段只供 schema 1 迁移及合成测试兼容。十类场景拾取的 DBL `header[2]` 物品 ID、`sub_45AE10` 容器/mode 和 `sub_453F70` 单件数量已经恢复；仍为重制默认的是交互半径、投射物速度/弧高/碰撞半径及手榴弹、地雷、油桶的爆炸参数。听觉遮挡、尸体发现和更高层走廊会车尚未完成。
 
-type 8/10/11 已由专用运行时接管：type 8 创建 actor 84 / GFL 470、消费物品 43，并由存活 faction 1 进入 32×16 椭圆触发；type 10 创建 actor 85 / GFL 900、消费物品 45，在第 100 个 world tick 爆炸；type 11 不直接结算伤害、不消费物品 99，重复施加刷新状态，超时/死亡/切关释放。活跃对象与状态均进入 `GameSessionState`。最终伤害、爆炸几何、type 11 精确语义和 180 tick 时长仍是 `unresolved_remake_default`，修改时不得把它们伪标为原版数值。详见 [原版行为取证摘要](ORIGINAL_BEHAVIOR_FORENSICS.md)。
+type 8/10/11 已由专用运行时接管：type 8 创建 actor 84 / GFL 470、消费物品 43，并由存活 faction 1 进入 32×16 椭圆触发；type 10 创建 actor 85 / GFL 900、消费物品 45，在第 100 个 world tick 爆炸；二者随后创建 actor 62，主爆炸在 128×64 等距椭圆内造成 128 伤害并传播 800 半径警报，另按运行时 actor type 执行两组已恢复的 128 伤害带。type 11 不直接结算伤害、不消费物品 99；它设置目标 `+656/+0x290` 为注意力保持，暂停普通空闲移动并面向专用来源，来源开始移动或目标进入战斗状态时释放，不存在 180 tick 超时。活跃对象与状态均进入 `GameSessionState`；目前只剩 actor 62 爆炸结束后的残留显示 tick 仍为 `unresolved_remake_default`。详见 [原版行为取证摘要](ORIGINAL_BEHAVIOR_FORENSICS.md)。
 
 m011 不再编辑性发放项目 99。原版项目 99 的取得脚本和持有者仍未知；在恢复
 证据前，不得把它加入任何正式关卡开局配置。
