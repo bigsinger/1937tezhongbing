@@ -124,7 +124,12 @@ direction.ai_directive_requested.connect(
 - `should_flank()` / `should_use_suppressive_fire()` 用 scene index 和命令序号做无随机状态的稳定采样，支持确定性回放；
 - `release_reinforcement` 只能消耗逐关预算，无法越权无限增援；`cease_reinforcement` 可永久关闭该关剩余增援。
 
-全局 `easy/normal/hard` 不是另一套关卡数据，而是在逐关 Normal 曲线上做 ±15% 缩放；反应时间和瞄准误差因“越高越容易”而反向缩放。
+产品默认 `original` 是稳定 MOD 的可审计复刻模式：生命、伤害、反应、
+巡逻、感知和警报半径乘数均为 1.0，不启用补写的协作增援、同时攻击者上限
+或确定性瞄准误差。全局 `easy/normal/hard` 是显式可选的重制调校，不是
+另一套关卡数据；它们在逐关 Normal 曲线上做 ±15% 缩放，反应时间和瞄准
+误差因“越高越容易”而反向缩放。暂停菜单会持久化选择，并提示在重开、
+切关或读取对应存档时生效。
 
 ## 存档与重放
 
@@ -138,7 +143,7 @@ direction.ai_directive_requested.connect(
 
 `restore_state()` 拒绝跨关卡、跨难度、未知 beat/tutorial、重复事件和非法时间。恢复本身不重播已看过的对白或镜头，后续未触发节点仍能继续正常派发。
 
-产品存档已经把该快照和 `MissionAiCoordinator` 的姿态、剩余增援预算、禁用标志及确定性命令序号放入 `GameSessionState.world`。读取时先重建关卡和两个运行时，再恢复状态；旧版存档没有该字段，或非空快照未通过结构/关卡一致性校验时，会记录降级警告并从本关开场重新启动导演。尚未送达的亚秒级警报和一般瞬态 presentation 队列包含节点/媒体引用，不直接写入 JSON，读取后从耐久任务/AI 状态继续。
+产品存档已经把该快照和可选 `MissionAiCoordinator` 的姿态、剩余增援预算、禁用标志及确定性命令序号放入 `GameSessionState.world`。读取时先采用快照里的难度，再重建关卡和相应运行时，最后恢复状态；这避免在另一全局难度下读档时角色数值或导演快照被拒绝。旧版存档没有该字段，或非空快照未通过结构/关卡一致性校验时，会记录降级警告并从本关开场重新启动导演。尚未送达的亚秒级警报和一般瞬态 presentation 队列包含节点/媒体引用，不直接写入 JSON，读取后从耐久任务/AI 状态继续。
 
 胜利演出单独保存 `victory_presentation_completed`：胜利瞬间先写入值为 `false` 的安全自动档；若此时退出，读取会只重放已经 fired 的胜利对白/镜头并恢复 `on_victory` 结局媒体，不会重复 AI、教程或任务效果。对白、影片和结局确认全部结束后，系统把标志改为 `true` 并二次自动保存；完成档不再重复演出。旧档缺少该字段时默认视为已完成，避免升级后意外重播历史演出。
 
@@ -149,7 +154,7 @@ direction.ai_directive_requested.connect(
 - 十二关目录与 `missions.json` 的 title/objective/binding 交叉校验；
 - 每关对白、镜头、教程、AI、开场、胜利覆盖；
 - 43 节奏节点与 45 行补写对白来源标签；
-- 难度曲线连续性及 Easy/Normal/Hard 方向；
+- `original` 中性复刻 profile，以及 Easy/Normal/Hard 曲线方向；
 - 教程门控、先发生事件的回放、单次触发和定时节点；
 - 同帧“目标完成 + 胜利”对白的顺序队列，防止后一句覆盖前一句；
 - 存档恢复与非法快照拒绝；

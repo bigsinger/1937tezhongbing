@@ -188,6 +188,17 @@ if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
     if ($LASTEXITCODE -ne 0) {
         throw "Godot enemy-patrol parity probe failed with exit code $LASTEXITCODE."
     }
+    & $GodotExecutable --headless --path $game `
+        --max-fps 60 --disable-vsync `
+        --script 'res://tests/parity_runtime_probe.gd' -- `
+        "--output-dir=$parityProbeOutput" `
+        '--scenario-id=m000-natural-contact-v1' `
+        '--outbound-target=1392,536' `
+        '--return-target=1360,536' `
+        '--observation-seconds=1.8'
+    if ($LASTEXITCODE -ne 0) {
+        throw "Godot natural-contact parity probe failed with exit code $LASTEXITCODE."
+    }
     foreach ($parityScenarioId in @(
         'm000-basic-movement-v1',
         'm000-obstacle-route-v1'
@@ -228,7 +239,18 @@ if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
         -CandidateTrace $patrolCandidate `
         -OutputJson (
             Join-Path $parityProbeOutput (
-                'm000-enemy-patrol-v1-kinematics.json')) | Out-Null
+            'm000-enemy-patrol-v1-kinematics.json')) | Out-Null
+
+    $contactBaseline = Join-Path $remakeRoot (
+        'validation\baselines\mod\m000-natural-contact-v1.json')
+    $contactCandidate = Join-Path $parityProbeOutput (
+        'remake-m000-natural-contact-v1.json')
+    & (Join-Path $PSScriptRoot 'Compare-NaturalContactParity.ps1') `
+        -ReferenceTrace $contactBaseline `
+        -CandidateTrace $contactCandidate `
+        -OutputJson (
+            Join-Path $parityProbeOutput (
+                'm000-natural-contact-v1-comparison.json')) | Out-Null
 
     $realMediaCatalog = Join-Path $remakeRoot 'LocalAssets\converted\legacy-media-catalog.json'
     if (Test-Path -LiteralPath $realMediaCatalog -PathType Leaf) {

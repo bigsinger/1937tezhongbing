@@ -30,6 +30,18 @@ function Get-EntityRuntimeType {
     return [int]$header[2]
 }
 
+function Get-ObservationRuntimeType {
+    param([Parameter(Mandatory)]$Observation)
+    if ($null -ne $Observation.runtime_type -and
+        -not [string]::IsNullOrWhiteSpace(
+            [string]$Observation.runtime_type)) {
+        return [int]$Observation.runtime_type
+    }
+    # Backward compatibility for evidence captured before the +0x064 field
+    # was correctly renamed from database_entry to runtime_type.
+    return [int]$Observation.database_entry
+}
+
 function Get-ReferenceX {
     param([Parameter(Mandatory)]$Entity)
     if ($null -ne $Entity.reference_x) {
@@ -134,7 +146,7 @@ function Add-IdentityMapping {
 # exactly one authored VWF actor. Runtime faction is deliberately not a key:
 # mission scripting can change it after the VWF has been loaded.
 foreach ($observation in $observations) {
-    $runtimeType = [int]$observation.database_entry
+    $runtimeType = Get-ObservationRuntimeType $observation
     $candidates = @($entities |
         Where-Object {
             -not $assignedScenes.ContainsKey([int]$_.scene_index) -and
@@ -167,7 +179,7 @@ foreach ($observation in $observations) {
     if ($mappings.ContainsKey($runtimeIndex)) {
         continue
     }
-    $runtimeType = [int]$observation.database_entry
+    $runtimeType = Get-ObservationRuntimeType $observation
     $candidates = @($entities |
         Where-Object {
             -not $assignedScenes.ContainsKey([int]$_.scene_index) -and
@@ -200,7 +212,7 @@ foreach ($observation in $observations) {
     if ($mappings.ContainsKey($runtimeIndex)) {
         continue
     }
-    $runtimeType = [int]$observation.database_entry
+    $runtimeType = Get-ObservationRuntimeType $observation
     $ranked = @($entities |
         Where-Object {
             -not $assignedScenes.ContainsKey([int]$_.scene_index) -and
@@ -261,11 +273,11 @@ foreach ($observation in $observations) {
     if ($mappings.ContainsKey($runtimeIndex)) {
         continue
     }
-    $runtimeType = [int]$observation.database_entry
+    $runtimeType = Get-ObservationRuntimeType $observation
     $remainingObservations = @($observations |
         Where-Object {
             -not $mappings.ContainsKey([int]$_.index) -and
-            [int]$_.database_entry -eq $runtimeType
+            (Get-ObservationRuntimeType $_) -eq $runtimeType
         })
     $remainingEntities = @($entities |
         Where-Object {
@@ -293,7 +305,7 @@ foreach ($observation in $observations) {
     if ($mappings.ContainsKey($runtimeIndex)) {
         continue
     }
-    $runtimeType = [int]$observation.database_entry
+    $runtimeType = Get-ObservationRuntimeType $observation
     $ranked = @($entities |
         Where-Object {
             -not $assignedScenes.ContainsKey([int]$_.scene_index) -and
@@ -329,7 +341,7 @@ $identities = foreach ($observation in $observations) {
     $runtimeIndex = [int]$observation.index
     $base = [ordered]@{
         runtime_index = $runtimeIndex
-        runtime_type = [int]$observation.database_entry
+        runtime_type = Get-ObservationRuntimeType $observation
         runtime_faction_id = [int]$observation.faction
         observed = [ordered]@{
             position = @(
@@ -356,12 +368,14 @@ $identities = foreach ($observation in $observations) {
         $base.database_entry_id = [int]$entity.database_entry_id
         $base.display_name = [string]$entity.display_name
         $base.vwf_faction_id = [int]$entity.faction_id
+        $base.authored_hit_points = [int]$entity.current_hit_points
+        $base.authored_attack_type = [int]$entity.default_attack_type
         $base.method = [string]$mapping.Method
         $base.confidence = [string]$mapping.Confidence
         $base.evidence = $mapping.Evidence
     }
     else {
-        $runtimeType = [int]$observation.database_entry
+        $runtimeType = Get-ObservationRuntimeType $observation
         $base.candidates = @($entities |
             Where-Object {
                 -not $assignedScenes.ContainsKey([int]$_.scene_index) -and
@@ -426,6 +440,12 @@ $catalog = [ordered]@{
             vwf_runtime_type = 'entity.database_header_values[2]'
             vwf_database_entry_id = (
                 'entity.database_entry_id; the actual DBL resource identity')
+            runtime_current_hit_points = (
+                'RuntimeActorV1 +0x1C0; exact m000 correlation with ' +
+                'entity.current_hit_points across all 54 resolved actors')
+            runtime_default_attack_type = (
+                'RuntimeActorV1 +0x20C; exact m000 correlation with ' +
+                'entity.default_attack_type across all 54 resolved actors')
             patrol_world_coordinate = (
                 '[waypoint.x * 32 + 16, waypoint.y * 16 + 8]')
             runtime_index = (

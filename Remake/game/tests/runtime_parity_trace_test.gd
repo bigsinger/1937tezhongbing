@@ -43,6 +43,9 @@ class FakeActor:
 	var infinite_ammo := false
 	var combat_action := 0
 	var behavior_state := 0
+	var current_target: Node2D
+	var movement_path := PackedVector2Array()
+	var patrol_wait_remaining := 0.0
 
 	func inventory_snapshot() -> Dictionary:
 		return {
@@ -56,6 +59,7 @@ class FakeMain:
 
 	var units: Array = []
 	var escorts: Array = []
+	var ambient_units: Array = []
 	var enemies: Array = []
 	var selected_units: Array = []
 	var level_camera: Camera2D
@@ -66,6 +70,7 @@ class FakeMain:
 		1436: {"database_entry_id": 924},
 		1427: {"database_entry_id": 923},
 		1500: {"database_entry_id": 350},
+		1621: {"database_entry_id": 888},
 	}
 	var current_mission := {"id": "m000"}
 	var current_mission_state := FakeMissionState.new()
@@ -88,11 +93,15 @@ func _run_tests() -> void:
 	var primary := _actor("强子", 1436, 3, Vector2(241.0, 51.0), 5)
 	var enemy := _actor("敌军", 1500, 1, Vector2(400.0, 300.0), 7)
 	enemy.behavior_state = 2
+	enemy.current_target = primary
+	var ambient := _actor("d鸡", 1621, 2, Vector2(336.0, 1000.0), 1)
 	main.add_child(second_player)
 	main.add_child(primary)
 	main.add_child(enemy)
+	main.add_child(ambient)
 	main.units = [primary, second_player]
 	main.enemies = [enemy]
+	main.ambient_units = [ambient]
 	main.selected_units = [primary]
 
 	var trace = TRACE_SCRIPT.new()
@@ -124,10 +133,11 @@ func _run_tests() -> void:
 	)
 	var actors := ready.get("actors", []) as Array
 	_expect(
-		actors.size() == 3
+		actors.size() == 4
 		and int((actors[0] as Dictionary).get("scene_index", -1)) == 1427
 		and int((actors[1] as Dictionary).get("scene_index", -1)) == 1436
-		and int((actors[2] as Dictionary).get("scene_index", -1)) == 1500,
+		and int((actors[2] as Dictionary).get("scene_index", -1)) == 1500
+		and int((actors[3] as Dictionary).get("scene_index", -1)) == 1621,
 		"actors are canonically ordered by original VWF scene index",
 		failures,
 	)
@@ -146,6 +156,24 @@ func _run_tests() -> void:
 		and int(weapon.get("magazine_ammo", 0)) == 5
 		and inventory.has("items"),
 		"weapon, ammunition, and inventory are captured in one checkpoint",
+		failures,
+	)
+	var enemy_record := actors[2] as Dictionary
+	var enemy_native := enemy_record.get("native", {}) as Dictionary
+	_expect(
+		int(enemy_native.get("contact_state", 0)) == 1
+		and int(enemy_native.get("target_lost", 1)) == 0
+		and int(enemy_native.get("interest_scene_index", -1)) == 1436
+		and int(enemy_native.get("target_scene_index", -1)) == 1436,
+		"native enemy contact retains the live stable-MOD target identity",
+		failures,
+	)
+	var ambient_record := actors[3] as Dictionary
+	_expect(
+		str(ambient_record.get("role", "")) == "escort"
+		and int(ambient_record.get("database_entry_id", 0)) == 888
+		and int(ambient_record.get("faction_id", 0)) == 2,
+		"live ambient actors use the MOD trace role convention and keep DBL identity",
 		failures,
 	)
 	var mission := ready.get("mission", {}) as Dictionary

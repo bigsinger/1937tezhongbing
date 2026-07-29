@@ -33,32 +33,49 @@ internal static class ModRegressionProbe
     private const int ReplayMouseButtonUp = 5;
     private const int ReplayMenuCommand = 6;
     private const int ReplayAiAlert = 8;
+    private const int ReplayCameraCenter = 9;
     private const uint WmActivate = 0x0006;
     private const uint WmSetFocus = 0x0007;
     private const uint WmActivateApp = 0x001C;
     private const int DikF1 = 0x3B;
     private const int DikF4 = 0x3E;
     private const int DikM = 0x32;
+    private const int DikUp = 0xC8;
+    private const int DikLeft = 0xCB;
+    private const int DikRight = 0xCD;
+    private const int DikDown = 0xD0;
     private const int SmXVirtualScreen = 76;
     private const int SmYVirtualScreen = 77;
     private const int SmCxVirtualScreen = 78;
     private const int SmCyVirtualScreen = 79;
-    private const int ActorDatabaseEntryOffset = 0x064;
+    private const int ActorRuntimeTypeOffset = 0x064;
     private const int ActorFactionOffset = 0x074;
     private const int ActorWorldXOffset = 0x0D8;
     private const int ActorWorldYOffset = 0x0E0;
     private const int ActorFacingDirectionOffset = 0x178;
     private const int ActorDeadOffset = 0x188;
+    private const int ActorTargetStatusOffset = 0x190;
     private const int ActorGoalKindOffset = 0x194;
     private const int ActorGoalXOffset = 0x198;
     private const int ActorGoalYOffset = 0x19C;
+    private const int ActorInterestAddressOffset = 0x1A0;
     private const int ActorCommandVariantOffset = 0x1A4;
     private const int ActorCommandPendingOffset = 0x1A8;
+    private const int ActorSelectedForCommandOffset = 0x1AC;
+    private const int ActorCurrentHitPointsOffset = 0x1C0;
+    private const int ActorSearchOrReturnActiveOffset = 0x1D4;
     private const int ActorMovementActiveOffset = 0x1D8;
     private const int ActorMovementPathStateOffset = 0x1FC;
     private const int ActorMovementModeOffset = 0x208;
+    private const int ActorDefaultAttackTypeOffset = 0x20C;
+    private const int ActorTargetAddressOffset = 0x214;
     private const int ActorResolvedGoalXOffset = 0x218;
     private const int ActorResolvedGoalYOffset = 0x220;
+    private const int ActorSearchDelayLimitOffset = 0x248;
+    private const int ActorSearchDelayCounterOffset = 0x24C;
+    private const int ActorContactStateOffset = 0x250;
+    private const int ActorTargetLostOffset = 0x254;
+    private const int ActorReactionStateOffset = 0x25C;
     private const int ActorPathOverrideActiveOffset = 0x290;
 
     [StructLayout(LayoutKind.Sequential)]
@@ -179,22 +196,34 @@ internal static class ModRegressionProbe
     {
         public int SceneIndex;
         public long Address;
-        public int DatabaseEntry;
+        public int RuntimeType;
         public int Faction;
         public int WorldX;
         public int WorldY;
         public int Direction;
         public int Dead;
+        public int TargetStatus;
         public int GoalKind;
         public int GoalX;
         public int GoalY;
+        public long InterestAddress;
         public int CommandVariant;
         public int CommandPending;
+        public int SelectedForCommand;
+        public int CurrentHitPoints;
+        public int SearchOrReturnActive;
         public int MovementActive;
         public int MovementPathState;
         public int MovementMode;
+        public int DefaultAttackType;
+        public long TargetAddress;
         public int ResolvedGoalX;
         public int ResolvedGoalY;
+        public int SearchDelayLimit;
+        public int SearchDelayCounter;
+        public int ContactState;
+        public int TargetLost;
+        public int ReactionState;
         public int PathOverrideActive;
     }
 
@@ -236,6 +265,8 @@ internal static class ModRegressionProbe
         public int DatabaseEntryId;
         public int VwfFactionId;
         public string DisplayName;
+        public int AuthoredHitPoints;
+        public int AuthoredAttackType;
     }
 
     public static int Main(string[] args)
@@ -247,8 +278,10 @@ internal static class ModRegressionProbe
                 "[SECONDS] [MOVEMENT_CELL_X MOVEMENT_CELL_Y " +
                 "[RETURN_CELL_X RETURN_CELL_Y]] " +
                 "[--briefing-only] [--movement-only] " +
-                "[--identity-catalog=PATH --parity-patrol-only " +
-                "--parity-scenario=ID --patrol-observation-ms=MS]");
+                "[--identity-catalog=PATH --parity-patrol-only | " +
+                "--parity-contact-only --parity-scenario=ID " +
+                "--patrol-observation-ms=MS " +
+                "--contact-observation-ms=MS] [--actor-layout-dump]");
             return 2;
         }
 
@@ -322,6 +355,24 @@ internal static class ModRegressionProbe
                 "--parity-patrol-only",
                 StringComparison.OrdinalIgnoreCase);
         });
+        bool parityContactOnly = args.Any(delegate(string argument)
+        {
+            return argument.Equals(
+                "--parity-contact-only",
+                StringComparison.OrdinalIgnoreCase);
+        });
+        bool actorLayoutDump = args.Any(delegate(string argument)
+        {
+            return argument.Equals(
+                "--actor-layout-dump",
+                StringComparison.OrdinalIgnoreCase);
+        });
+        if (parityPatrolOnly && parityContactOnly)
+        {
+            throw new InvalidOperationException(
+                "Patrol-only and contact-only parity scenarios are " +
+                "mutually exclusive.");
+        }
         int patrolObservationMilliseconds = 1000;
         string patrolObservationValue = ArgumentValue(
             args, "--patrol-observation-ms=");
@@ -337,14 +388,30 @@ internal static class ModRegressionProbe
                 100,
                 Math.Min(10000, parsedPatrolObservationMilliseconds));
         }
+        int contactObservationMilliseconds = 1800;
+        string contactObservationValue = ArgumentValue(
+            args, "--contact-observation-ms=");
+        int parsedContactObservationMilliseconds;
+        if (!String.IsNullOrWhiteSpace(contactObservationValue) &&
+            int.TryParse(
+                contactObservationValue,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out parsedContactObservationMilliseconds))
+        {
+            contactObservationMilliseconds = Math.Max(
+                500,
+                Math.Min(10000, parsedContactObservationMilliseconds));
+        }
         Dictionary<int, RuntimeActorIdentity> actorIdentities =
             String.IsNullOrWhiteSpace(identityCatalogPath)
                 ? new Dictionary<int, RuntimeActorIdentity>()
                 : ReadIdentityCatalog(identityCatalogPath);
-        if (parityPatrolOnly && actorIdentities.Count == 0)
+        if ((parityPatrolOnly || parityContactOnly) &&
+            actorIdentities.Count == 0)
         {
             throw new InvalidOperationException(
-                "The patrol parity scenario requires a non-empty " +
+                "Actor parity scenarios require a non-empty " +
                 "--identity-catalog.");
         }
         var route = MissionRoutes.Find(selectorLevel);
@@ -665,6 +732,16 @@ internal static class ModRegressionProbe
                     imageBase,
                     Path.Combine(
                         outputDirectory, "actor-states-entry.csv"));
+                if (actorLayoutDump)
+                {
+                    WriteActorLayoutSnapshot(
+                        process,
+                        imageBase,
+                        actorIdentities,
+                        Path.Combine(
+                            outputDirectory,
+                            "actor-layout-entry.csv"));
+                }
                 Thread.Sleep(5000);
                 WriteActorStateSnapshot(
                     process,
@@ -701,6 +778,102 @@ internal static class ModRegressionProbe
                           spawnStart.WorldY + "); end=(" +
                           spawnEnd.WorldX + "," + spawnEnd.WorldY +
                           "); dead=" + spawnEnd.Dead);
+                if (parityContactOnly)
+                {
+                    CaptureParityCheckpoint(
+                        parityCheckpoints,
+                        process,
+                        imageBase,
+                        clock,
+                        "contact_ready");
+                    string contactMovementEvidence;
+                    bool contactInputDelivered = ExercisePlayerMovement(
+                        process,
+                        imageBase,
+                        window,
+                        movementCellX,
+                        movementCellY,
+                        returnCellX,
+                        returnCellY,
+                        contactObservationMilliseconds,
+                        parityCheckpoints,
+                        clock,
+                        true,
+                        out contactMovementEvidence);
+                    AddStage(
+                        stages, game, process, imageBase, clock,
+                        "natural_contact_input",
+                        contactInputDelivered,
+                        contactMovementEvidence);
+                    Thread.Sleep(1000);
+                    CaptureParityCheckpoint(
+                        parityCheckpoints,
+                        process,
+                        imageBase,
+                        clock,
+                        "contact_settled");
+                    samplerStop = true;
+                    sampler.Join(1500);
+                    bool contactCursorClipSafe;
+                    lock (perf)
+                        contactCursorClipSafe = perf.All(
+                            delegate(PerfSample sample)
+                            {
+                                return !sample.CursorClipRestricted;
+                            });
+                    bool contactProcessResponsive = stages.All(
+                        delegate(Stage stage)
+                        {
+                            return stage.ProcessResponding;
+                        });
+                    bool contactActorsReady =
+                        parityCheckpoints.Count >= 7 &&
+                        parityCheckpoints.All(
+                            delegate(ParityCheckpoint checkpoint)
+                            {
+                                return checkpoint.Actors.Count(
+                                    delegate(ActorSnapshot actor)
+                                    {
+                                        return actorIdentities.ContainsKey(
+                                            actor.SceneIndex);
+                                    }) == 54;
+                            });
+                    bool naturalContactObserved =
+                        HasResolvedPlayerContact(
+                            parityCheckpoints,
+                            actorIdentities);
+                    exitCode =
+                        missionStarted &&
+                        spawnSafe &&
+                        contactInputDelivered &&
+                        contactProcessResponsive &&
+                        contactActorsReady &&
+                        naturalContactObserved &&
+                        contactCursorClipSafe ? 0 : 1;
+                    WriteParityTrace(
+                        outputDirectory,
+                        selectorLevel,
+                        route.EngineMission,
+                        movementCellX,
+                        movementCellY,
+                        returnCellX,
+                        returnCellY,
+                        parityCheckpoints,
+                        parityScenarioOverride,
+                        actorIdentities,
+                        false,
+                        true);
+                    WriteArtifacts(
+                        outputDirectory,
+                        selectorLevel,
+                        route.EngineMission,
+                        stages,
+                        perf,
+                        transitionsLogged: false,
+                        replayConsumed: true,
+                        passed: exitCode == 0);
+                    return exitCode;
+                }
                 if (parityPatrolOnly)
                 {
                     CaptureParityCheckpoint(
@@ -775,7 +948,8 @@ internal static class ModRegressionProbe
                         parityCheckpoints,
                         parityScenarioOverride,
                         actorIdentities,
-                        true);
+                        true,
+                        false);
                     WriteArtifacts(
                         outputDirectory,
                         selectorLevel,
@@ -843,7 +1017,7 @@ internal static class ModRegressionProbe
                     movementCellX, movementCellY,
                     returnCellX, returnCellY,
                     selectorLevel == 1 ? 750 : 1800,
-                    parityCheckpoints, clock,
+                    parityCheckpoints, clock, false,
                     out movementEvidence);
                 if (renderAuditEnabled)
                 {
@@ -1075,6 +1249,7 @@ internal static class ModRegressionProbe
                     parityCheckpoints,
                     parityScenarioOverride,
                     actorIdentities,
+                    false,
                     false);
                 WriteArtifacts(
                     outputDirectory, selectorLevel, route.EngineMission,
@@ -1195,8 +1370,15 @@ internal static class ModRegressionProbe
                 item, "vwf_faction_id");
             identity.DisplayName = JsonString(
                 item, "display_name");
+            identity.AuthoredHitPoints = JsonInteger(
+                item, "authored_hit_points");
+            identity.AuthoredAttackType = JsonInteger(
+                item, "authored_attack_type");
             if (identity.SceneIndex < 0 ||
                 identity.DatabaseEntryId < 0 ||
+                identity.AuthoredHitPoints <= 0 ||
+                identity.AuthoredAttackType < 0 ||
+                identity.AuthoredAttackType > 11 ||
                 identity.VwfFactionId < 1 ||
                 identity.VwfFactionId > 3 ||
                 result.ContainsKey(identity.RuntimeIndex))
@@ -1477,7 +1659,7 @@ internal static class ModRegressionProbe
         long actorArray = (long)(uint)actorArrayValue;
         var text = new StringBuilder();
         text.AppendLine(
-            "index,address,database_entry,faction,world_x,world_y," +
+            "index,address,runtime_type,faction,world_x,world_y," +
             "direction,dead,goal_kind,goal_x,goal_y,command_variant," +
             "command_pending,movement_active,movement_path_state," +
             "movement_mode,resolved_goal_x,resolved_goal_y,path_override");
@@ -1498,7 +1680,7 @@ internal static class ModRegressionProbe
                 "{11},{12},{13},{14},{15},{16},{17},{18}\r\n",
                 index,
                 snapshot.Address,
-                snapshot.DatabaseEntry,
+                snapshot.RuntimeType,
                 snapshot.Faction,
                 snapshot.WorldX,
                 snapshot.WorldY,
@@ -1517,6 +1699,74 @@ internal static class ModRegressionProbe
                 snapshot.PathOverrideActive);
         }
         File.WriteAllText(path, text.ToString(), new UTF8Encoding(false));
+    }
+
+    private static void WriteActorLayoutSnapshot(
+        IntPtr process,
+        long imageBase,
+        Dictionary<int, RuntimeActorIdentity> actorIdentities,
+        string path)
+    {
+        int worldValue = ReadInt(
+            process, imageBase + EngineAddresses.WorldRoot);
+        if (worldValue == 0 || worldValue == int.MinValue)
+            return;
+        long world = (long)(uint)worldValue;
+        int actorArrayValue = ReadInt(process, world + 0x18);
+        int count = ReadInt(process, world + 0x3C);
+        if (actorArrayValue == 0 || actorArrayValue == int.MinValue ||
+            count <= 0 || count > 4096)
+            return;
+
+        const int actorSize = 0x294;
+        long actorArray = (long)(uint)actorArrayValue;
+        var text = new StringBuilder();
+        text.Append(
+            "runtime_index,scene_index,database_entry_id,address");
+        for (int offset = 0; offset < actorSize; offset += 4)
+        {
+            text.AppendFormat(
+                CultureInfo.InvariantCulture,
+                ",off_{0:X3}",
+                offset);
+        }
+        text.AppendLine();
+        for (int runtimeIndex = 0;
+             runtimeIndex < count;
+             ++runtimeIndex)
+        {
+            int actorValue = ReadInt(
+                process, actorArray + runtimeIndex * 4L);
+            if (actorValue == 0 || actorValue == int.MinValue)
+                continue;
+            long actorAddress = (long)(uint)actorValue;
+            byte[] bytes = ReadBytes(
+                process, actorAddress, actorSize);
+            if (bytes.Length != actorSize)
+                continue;
+            RuntimeActorIdentity identity = null;
+            bool resolved =
+                actorIdentities != null &&
+                actorIdentities.TryGetValue(
+                    runtimeIndex, out identity);
+            text.AppendFormat(
+                CultureInfo.InvariantCulture,
+                "{0},{1},{2},0x{3:X8}",
+                runtimeIndex,
+                resolved ? identity.SceneIndex : -1,
+                resolved ? identity.DatabaseEntryId : -1,
+                actorAddress);
+            for (int offset = 0; offset < actorSize; offset += 4)
+            {
+                text.AppendFormat(
+                    CultureInfo.InvariantCulture,
+                    ",{0}",
+                    BitConverter.ToInt32(bytes, offset));
+            }
+            text.AppendLine();
+        }
+        File.WriteAllText(
+            path, text.ToString(), new UTF8Encoding(false));
     }
 
     private static ActorSnapshot FindPlayerActor(
@@ -1549,7 +1799,7 @@ internal static class ModRegressionProbe
             if (snapshot == null)
                 continue;
             snapshot.SceneIndex = index;
-            if (snapshot.DatabaseEntry == 924)
+            if (snapshot.RuntimeType == 1)
                 return snapshot;
             if (fallback == null)
                 fallback = snapshot;
@@ -1567,31 +1817,55 @@ internal static class ModRegressionProbe
         return new ActorSnapshot
         {
             Address = actor,
-            DatabaseEntry = ReadInt(
-                process, actor + ActorDatabaseEntryOffset),
+            RuntimeType = ReadInt(
+                process, actor + ActorRuntimeTypeOffset),
             Faction = ReadInt(process, actor + ActorFactionOffset),
             WorldX = worldX,
             WorldY = worldY,
             Direction = ReadInt(
                 process, actor + ActorFacingDirectionOffset),
             Dead = ReadInt(process, actor + ActorDeadOffset),
+            TargetStatus = ReadInt(
+                process, actor + ActorTargetStatusOffset),
             GoalKind = ReadInt(process, actor + ActorGoalKindOffset),
             GoalX = ReadInt(process, actor + ActorGoalXOffset),
             GoalY = ReadInt(process, actor + ActorGoalYOffset),
+            InterestAddress = (long)(uint)ReadInt(
+                process, actor + ActorInterestAddressOffset),
             CommandVariant = ReadInt(
                 process, actor + ActorCommandVariantOffset),
             CommandPending = ReadInt(
                 process, actor + ActorCommandPendingOffset),
+            SelectedForCommand = ReadInt(
+                process, actor + ActorSelectedForCommandOffset),
+            CurrentHitPoints = ReadInt(
+                process, actor + ActorCurrentHitPointsOffset),
+            SearchOrReturnActive = ReadInt(
+                process, actor + ActorSearchOrReturnActiveOffset),
             MovementActive = ReadInt(
                 process, actor + ActorMovementActiveOffset),
             MovementPathState = ReadInt(
                 process, actor + ActorMovementPathStateOffset),
             MovementMode = ReadInt(
                 process, actor + ActorMovementModeOffset),
+            DefaultAttackType = ReadInt(
+                process, actor + ActorDefaultAttackTypeOffset),
+            TargetAddress = (long)(uint)ReadInt(
+                process, actor + ActorTargetAddressOffset),
             ResolvedGoalX = ReadInt(
                 process, actor + ActorResolvedGoalXOffset),
             ResolvedGoalY = ReadInt(
                 process, actor + ActorResolvedGoalYOffset),
+            SearchDelayLimit = ReadInt(
+                process, actor + ActorSearchDelayLimitOffset),
+            SearchDelayCounter = ReadInt(
+                process, actor + ActorSearchDelayCounterOffset),
+            ContactState = ReadInt(
+                process, actor + ActorContactStateOffset),
+            TargetLost = ReadInt(
+                process, actor + ActorTargetLostOffset),
+            ReactionState = ReadInt(
+                process, actor + ActorReactionStateOffset),
             PathOverrideActive = ReadInt(
                 process, actor + ActorPathOverrideActiveOffset)
         };
@@ -1635,6 +1909,7 @@ internal static class ModRegressionProbe
         int segmentObservationMilliseconds,
         List<ParityCheckpoint> parityCheckpoints,
         Stopwatch runClock,
+        bool allowContactInterruption,
         out string evidence)
     {
         if (targetCellX < 0 || targetCellY < 0)
@@ -1713,14 +1988,32 @@ internal static class ModRegressionProbe
         int targetWorldY = checked(targetCellY * 16 + 8);
         int targetScreenX = targetWorldX - cameraX;
         int targetScreenY = targetWorldY - cameraY;
+        bool outboundCameraPanned = false;
         if (targetScreenX < 8 || targetScreenX >= screenWidth - 8 ||
             targetScreenY < 8 || targetScreenY >= screenHeight - 96)
         {
-            evidence =
-                "movement target is outside the visible map viewport; " +
-                "camera=(" + cameraX + "," + cameraY + "); target_screen=(" +
-                targetScreenX + "," + targetScreenY + ")";
-            return false;
+            outboundCameraPanned = PanReplayCameraToWorldPoint(
+                process,
+                imageBase,
+                window,
+                targetWorldX,
+                targetWorldY,
+                screenWidth,
+                screenHeight,
+                5000,
+                out cameraX,
+                out cameraY);
+            targetScreenX = targetWorldX - cameraX;
+            targetScreenY = targetWorldY - cameraY;
+            if (!outboundCameraPanned)
+            {
+                evidence =
+                    "movement target is outside the visible map viewport; " +
+                    "camera=(" + cameraX + "," + cameraY +
+                    "); target_screen=(" + targetScreenX + "," +
+                    targetScreenY + "); process-local edge pan failed";
+                return false;
+            }
         }
 
         int cursorX;
@@ -1776,11 +2069,34 @@ internal static class ModRegressionProbe
             process, imageBase + EngineAddresses.CameraY);
         int returnScreenX = returnWorldX - cameraX;
         int returnScreenY = returnWorldY - cameraY;
+        bool returnCameraPanned = false;
         bool returnTargetVisible =
             returnScreenX >= 8 &&
             returnScreenX < screenWidth - 8 &&
             returnScreenY >= 8 &&
             returnScreenY < screenHeight - 96;
+        if (!returnTargetVisible)
+        {
+            returnCameraPanned = PanReplayCameraToWorldPoint(
+                process,
+                imageBase,
+                window,
+                returnWorldX,
+                returnWorldY,
+                screenWidth,
+                screenHeight,
+                5000,
+                out cameraX,
+                out cameraY);
+            returnScreenX = returnWorldX - cameraX;
+            returnScreenY = returnWorldY - cameraY;
+            returnTargetVisible =
+                returnCameraPanned &&
+                returnScreenX >= 8 &&
+                returnScreenX < screenWidth - 8 &&
+                returnScreenY >= 8 &&
+                returnScreenY < screenHeight - 96;
+        }
         int returnCursorX = int.MinValue;
         int returnCursorY = int.MinValue;
         bool returnCursorReached =
@@ -1838,6 +2154,7 @@ internal static class ModRegressionProbe
         evidence =
             "target_cell=(" + targetCellX + "," + targetCellY + ")" +
             "; target_screen=(" + targetScreenX + "," + targetScreenY + ")" +
+            "; outbound_camera_panned=" + outboundCameraPanned +
             "; cursor=(" + cursorX + "," + cursorY + ")" +
             "; selection_sent=" + selectionSent +
             "; selection_actor_bytes_changed=" +
@@ -1862,6 +2179,7 @@ internal static class ModRegressionProbe
             returnScreenX + "," + returnScreenY + ")" +
             "; return_target_cell=(" +
             returnCellX + "," + returnCellY + ")" +
+            "; return_camera_panned=" + returnCameraPanned +
             "; return_cursor=(" +
             returnCursorX + "," + returnCursorY + ")" +
             "; return_click_sent=" + returnClickSent +
@@ -1897,12 +2215,130 @@ internal static class ModRegressionProbe
             after.ResolvedGoalX + "," +
             after.ResolvedGoalY + "," +
             after.PathOverrideActive + "); dead=" + after.Dead;
-        return selectionSent && clickSent && cursorReached &&
+        bool commandDelivery =
+            selectionSent && clickSent && cursorReached &&
             returnTargetVisible && returnClickSent &&
-            returnCursorReached && alive && directionValid &&
+            returnCursorReached && directionValid &&
             firstGoalAccepted && returnGoalAccepted &&
-            goalReplaced && firstMoved && returnMoved &&
+            goalReplaced && firstMoved &&
             firstFacingAligned && returnFacingAligned && turned;
+        if (allowContactInterruption)
+            return commandDelivery;
+        return commandDelivery && alive && returnMoved;
+    }
+
+    private static bool PanReplayCameraToWorldPoint(
+        IntPtr process,
+        long imageBase,
+        IntPtr window,
+        int worldX,
+        int worldY,
+        int screenWidth,
+        int screenHeight,
+        int milliseconds,
+        out int cameraX,
+        out int cameraY)
+    {
+        cameraX = ReadInt(
+            process, imageBase + EngineAddresses.CameraX);
+        cameraY = ReadInt(
+            process, imageBase + EngineAddresses.CameraY);
+        int mapBottom = Math.Max(24, screenHeight - 96);
+        if (worldX >= 0 && worldX <= UInt16.MaxValue &&
+            worldY >= 0 && worldY <= UInt16.MaxValue)
+        {
+            SendReplay(
+                window,
+                ReplayCameraCenter,
+                PackDelta((short)worldX, (short)worldY));
+            int centeredCameraX = cameraX;
+            int centeredCameraY = cameraY;
+            bool replayCentered = WaitUntil(
+                    delegate()
+                    {
+                        centeredCameraX = ReadInt(
+                            process,
+                            imageBase + EngineAddresses.CameraX);
+                        centeredCameraY = ReadInt(
+                            process,
+                            imageBase + EngineAddresses.CameraY);
+                        int candidateX = worldX - centeredCameraX;
+                        int candidateY = worldY - centeredCameraY;
+                        return candidateX >= 8 &&
+                            candidateX < screenWidth - 8 &&
+                            candidateY >= 8 &&
+                            candidateY < mapBottom;
+                    },
+                    TimeSpan.FromSeconds(1));
+            if (replayCentered)
+            {
+                cameraX = centeredCameraX;
+                cameraY = centeredCameraY;
+                return true;
+            }
+        }
+        Stopwatch clock = Stopwatch.StartNew();
+        while (clock.ElapsedMilliseconds < milliseconds)
+        {
+            cameraX = ReadInt(
+                process, imageBase + EngineAddresses.CameraX);
+            cameraY = ReadInt(
+                process, imageBase + EngineAddresses.CameraY);
+            if (cameraX == int.MinValue || cameraY == int.MinValue)
+                return false;
+            int screenX = worldX - cameraX;
+            int screenY = worldY - cameraY;
+            if (screenX >= 8 && screenX < screenWidth - 8 &&
+                screenY >= 8 && screenY < mapBottom)
+                return true;
+
+            int edgeX = screenX < 8
+                ? 1
+                : screenX >= screenWidth - 8
+                    ? screenWidth - 2
+                    : Math.Max(16, Math.Min(screenWidth - 17, screenX));
+            int edgeY = screenY < 8
+                ? 1
+                : screenY >= mapBottom
+                    ? mapBottom - 2
+                    : Math.Max(16, Math.Min(mapBottom - 17, screenY));
+            int actualX;
+            int actualY;
+            if (!MoveReplayCursor(
+                    process,
+                    imageBase,
+                    window,
+                    edgeX,
+                    edgeY,
+                    out actualX,
+                    out actualY))
+                return false;
+            int horizontalPanKey = screenX < 8
+                ? DikLeft
+                : screenX >= screenWidth - 8 ? DikRight : -1;
+            int verticalPanKey = screenY < 8
+                ? DikUp
+                : screenY >= mapBottom ? DikDown : -1;
+            if (horizontalPanKey >= 0)
+                SendReplay(window, ReplayKeyDown, horizontalPanKey);
+            if (verticalPanKey >= 0)
+                SendReplay(window, ReplayKeyDown, verticalPanKey);
+            Thread.Sleep(120);
+            if (horizontalPanKey >= 0)
+                SendReplay(window, ReplayKeyUp, horizontalPanKey);
+            if (verticalPanKey >= 0)
+                SendReplay(window, ReplayKeyUp, verticalPanKey);
+        }
+        cameraX = ReadInt(
+            process, imageBase + EngineAddresses.CameraX);
+        cameraY = ReadInt(
+            process, imageBase + EngineAddresses.CameraY);
+        int finalScreenX = worldX - cameraX;
+        int finalScreenY = worldY - cameraY;
+        return finalScreenX >= 8 &&
+            finalScreenX < screenWidth - 8 &&
+            finalScreenY >= 8 &&
+            finalScreenY < mapBottom;
     }
 
     private static bool WaitForPlayerGoal(
@@ -2520,7 +2956,7 @@ internal static class ModRegressionProbe
             snapshot.SceneIndex = index;
             if (snapshot.Faction < 1 || snapshot.Faction > 3)
                 continue;
-            if (snapshot.DatabaseEntry < 0 ||
+            if (snapshot.RuntimeType < 0 ||
                 snapshot.Direction < 0 ||
                 snapshot.Direction > 8 ||
                 snapshot.WorldX < -4096 ||
@@ -2545,6 +2981,70 @@ internal static class ModRegressionProbe
             checkpoints[checkpoints.Count - 1];
         foreach (Point position in positions)
             checkpoint.ObservedPositions.Add(position);
+    }
+
+    private static int RuntimeIndexForAddress(
+        IEnumerable<ActorSnapshot> actors,
+        long address)
+    {
+        if (address == 0 || actors == null)
+            return -1;
+        ActorSnapshot match = actors.FirstOrDefault(
+            delegate(ActorSnapshot candidate)
+            {
+                return candidate.Address == address;
+            });
+        return match == null ? -1 : match.SceneIndex;
+    }
+
+    private static bool HasResolvedPlayerContact(
+        IEnumerable<ParityCheckpoint> checkpoints,
+        Dictionary<int, RuntimeActorIdentity> actorIdentities)
+    {
+        if (checkpoints == null || actorIdentities == null)
+            return false;
+        foreach (ParityCheckpoint checkpoint in checkpoints)
+        {
+            var playerAddresses = new HashSet<long>(
+                checkpoint.Actors.Where(
+                    delegate(ActorSnapshot actor)
+                    {
+                        RuntimeActorIdentity identity;
+                        return actorIdentities.TryGetValue(
+                                   actor.SceneIndex, out identity) &&
+                               identity.VwfFactionId == 3;
+                    }).Select(
+                    delegate(ActorSnapshot actor)
+                    {
+                        return actor.Address;
+                    }));
+            if (playerAddresses.Count == 0)
+                continue;
+            foreach (ActorSnapshot actor in checkpoint.Actors)
+            {
+                RuntimeActorIdentity identity;
+                if (!actorIdentities.TryGetValue(
+                        actor.SceneIndex, out identity) ||
+                    identity.VwfFactionId != 1)
+                    continue;
+                if (playerAddresses.Contains(actor.InterestAddress) ||
+                    playerAddresses.Contains(actor.TargetAddress))
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    private static int ResolvedSceneForRuntimeIndex(
+        Dictionary<int, RuntimeActorIdentity> actorIdentities,
+        int runtimeIndex)
+    {
+        RuntimeActorIdentity identity;
+        return runtimeIndex >= 0 &&
+               actorIdentities != null &&
+               actorIdentities.TryGetValue(runtimeIndex, out identity)
+            ? identity.SceneIndex
+            : -1;
     }
 
     private static void WorldSizeForSelector(
@@ -2592,7 +3092,8 @@ internal static class ModRegressionProbe
         List<ParityCheckpoint> checkpoints,
         string scenarioOverride,
         Dictionary<int, RuntimeActorIdentity> actorIdentities,
-        bool resolvedEnemyScope)
+        bool resolvedEnemyScope,
+        bool resolvedActorScope)
     {
         if (checkpoints == null || checkpoints.Count == 0)
             return;
@@ -2646,13 +3147,19 @@ internal static class ModRegressionProbe
             "\"coordinate_space\":\"legacy-world-pixels\"," +
             "\"description\":\"{1}\"}},\n",
             scenarioId,
-            Escape(resolvedEnemyScope
-                ? "Read-only enemy patrol observation with audited " +
-                  "runtime-to-VWF identities; no global cursor or focus API."
-                : "Window-local selection and movement observation; " +
-                  "no global cursor or focus API; cells " +
-                  movementCellX + "," + movementCellY + " -> " +
-                  returnCellX + "," + returnCellY + "."));
+            Escape(
+                resolvedActorScope
+                    ? "Natural player movement into enemy contact with " +
+                      "audited runtime-to-VWF identities; no global " +
+                      "cursor or focus API."
+                    : resolvedEnemyScope
+                        ? "Read-only enemy patrol observation with audited " +
+                          "runtime-to-VWF identities; no global cursor or " +
+                          "focus API."
+                        : "Window-local selection and movement observation; " +
+                          "no global cursor or focus API; cells " +
+                          movementCellX + "," + movementCellY + " -> " +
+                          returnCellX + "," + returnCellY + "."));
         json.Append(
             "  \"metadata\": {" +
             "\"producer\":\"ModRegressionProbe\"," +
@@ -2666,7 +3173,21 @@ internal static class ModRegressionProbe
             ParityCheckpoint checkpoint =
                 checkpoints[checkpointIndex];
             List<ActorSnapshot> outputActors;
-            if (resolvedEnemyScope)
+            if (resolvedActorScope)
+            {
+                outputActors = checkpoint.Actors.Where(
+                    delegate(ActorSnapshot actor)
+                    {
+                        return actorIdentities.ContainsKey(
+                            actor.SceneIndex);
+                    }).OrderBy(
+                    delegate(ActorSnapshot actor)
+                    {
+                        return actorIdentities[
+                            actor.SceneIndex].SceneIndex;
+                    }).ToList();
+            }
+            else if (resolvedEnemyScope)
             {
                 outputActors = checkpoint.Actors.Where(
                     delegate(ActorSnapshot actor)
@@ -2741,7 +3262,7 @@ internal static class ModRegressionProbe
                     ? identity.DatabaseEntryId
                     : selectorLevel == 1 && actor.Faction == 3
                         ? 924
-                        : Math.Max(actor.DatabaseEntry, 0);
+                        : Math.Max(actor.RuntimeType, 0);
                 int traceFaction = hasIdentity
                     ? identity.VwfFactionId
                     : actor.Faction;
@@ -2751,11 +3272,25 @@ internal static class ModRegressionProbe
                 int targetY = actor.GoalKind == 1
                     ? actor.GoalY
                     : actor.WorldY;
-                string role = traceFaction == 3
-                    ? "player"
-                    : traceFaction == 2
-                        ? "escort"
-                        : "enemy";
+                string role = resolvedActorScope
+                    ? traceSceneIndex == 1436
+                        ? "player"
+                        : traceFaction == 1
+                            ? "enemy"
+                            : "escort"
+                    : traceFaction == 3
+                        ? "player"
+                        : traceFaction == 2
+                            ? "escort"
+                            : "enemy";
+                int interestRuntimeIndex = RuntimeIndexForAddress(
+                    checkpoint.Actors, actor.InterestAddress);
+                int targetRuntimeIndex = RuntimeIndexForAddress(
+                    checkpoint.Actors, actor.TargetAddress);
+                int interestSceneIndex = ResolvedSceneForRuntimeIndex(
+                    actorIdentities, interestRuntimeIndex);
+                int targetSceneIndex = ResolvedSceneForRuntimeIndex(
+                    actorIdentities, targetRuntimeIndex);
                 json.AppendFormat(
                     CultureInfo.InvariantCulture,
                     "        {{\"actor_id\":\"scene:{0}\"," +
@@ -2767,6 +3302,8 @@ internal static class ModRegressionProbe
                     "\"target_position\":[{7},{8}]," +
                     "\"facing_direction\":{9}," +
                     "\"alive\":{10}," +
+                    "\"hit_points\":{{\"current\":{35}," +
+                    "\"maximum\":{36}}}," +
                     "\"native\":{{\"goal_kind\":{11}," +
                     "\"command_variant\":{12}," +
                     "\"command_pending\":{13}," +
@@ -2777,7 +3314,21 @@ internal static class ModRegressionProbe
                     "\"resolved_goal_y\":{18}," +
                     "\"path_override_active\":{19}," +
                     "\"runtime_index\":{20}," +
-                    "\"runtime_type\":{21}}}}}{22}\n",
+                    "\"runtime_type\":{21}," +
+                    "\"target_status\":{22}," +
+                    "\"selected_for_command\":{23}," +
+                    "\"search_or_return_active\":{24}," +
+                    "\"search_delay_limit\":{25}," +
+                    "\"search_delay_counter\":{26}," +
+                    "\"contact_state\":{27}," +
+                    "\"target_lost\":{28}," +
+                    "\"reaction_state\":{29}," +
+                    "\"current_hit_points\":{35}," +
+                    "\"default_attack_type\":{37}," +
+                    "\"interest_runtime_index\":{30}," +
+                    "\"interest_scene_index\":{31}," +
+                    "\"target_runtime_index\":{32}," +
+                    "\"target_scene_index\":{33}}}}}{34}\n",
                     traceSceneIndex,
                     role,
                     traceDatabaseEntry,
@@ -2801,10 +3352,27 @@ internal static class ModRegressionProbe
                     actor.ResolvedGoalY,
                     actor.PathOverrideActive,
                     actor.SceneIndex,
-                    actor.DatabaseEntry,
+                    actor.RuntimeType,
+                    actor.TargetStatus,
+                    actor.SelectedForCommand,
+                    actor.SearchOrReturnActive,
+                    actor.SearchDelayLimit,
+                    actor.SearchDelayCounter,
+                    actor.ContactState,
+                    actor.TargetLost,
+                    actor.ReactionState,
+                    interestRuntimeIndex,
+                    interestSceneIndex,
+                    targetRuntimeIndex,
+                    targetSceneIndex,
                     actorIndex + 1 == outputActors.Count
                         ? ""
-                        : ",");
+                        : ",",
+                    actor.CurrentHitPoints,
+                    hasIdentity
+                        ? identity.AuthoredHitPoints
+                        : actor.CurrentHitPoints,
+                    actor.DefaultAttackType);
             }
             json.Append("      ],\n");
             json.AppendFormat(

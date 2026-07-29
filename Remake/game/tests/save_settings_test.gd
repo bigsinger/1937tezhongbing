@@ -9,6 +9,7 @@ const GAME_INPUT_BINDINGS: Script = preload("res://scripts/game_input_bindings.g
 const SAVE_SLOT_SELECTOR: Script = preload("res://scripts/save_slot_selector.gd")
 const FIELD_PICKUP: Script = preload("res://scripts/field_pickup.gd")
 const ENEMY_UNIT: Script = preload("res://scripts/enemy_unit.gd")
+const AMBIENT_UNIT: Script = preload("res://scripts/ambient_unit.gd")
 const MISSION_STATE: Script = preload("res://scripts/mission_state.gd")
 const MISSION_PICKUP: Script = preload("res://scripts/mission_pickup.gd")
 const SQUAD_UNIT: Script = preload("res://scripts/squad_unit.gd")
@@ -84,6 +85,7 @@ class MockGame:
 	var selected_units: Array[Node2D] = []
 	var enemies: Array[Node2D] = []
 	var escorts: Array[Node2D] = []
+	var ambient_units: Array[Node2D] = []
 	var field_pickups: Array[Node2D] = []
 	var explosive_props: Array[Node2D] = []
 	var mission_pickups: Array[Node2D] = []
@@ -144,6 +146,7 @@ func _test_settings_defaults_and_round_trip(failures: Array[String]) -> void:
 	_expect(settings.display_settings()["mode"] == "fullscreen", "default display is fullscreen", failures)
 	_expect(settings.display_settings()["resolution_policy"] == "desktop", "fullscreen follows desktop resolution", failures)
 	_expect(settings.hint_enabled("controls"), "control hints default on", failures)
+	_expect(settings.difficulty_mode() == "original", "MOD parity is the default difficulty", failures)
 
 	settings.set_audio_volume("master", 0.35)
 	settings.set_audio_volume("sfx", 0.55)
@@ -153,6 +156,7 @@ func _test_settings_defaults_and_round_trip(failures: Array[String]) -> void:
 	settings.set_hint_enabled("interactions", false)
 	settings.set_interface_enabled("subtitles", false)
 	settings.set_interface_enabled("edge_scroll", false)
+	settings.set_difficulty_mode("hard")
 	_expect(bool(settings.save_to_disk(path)["ok"]), "first settings write succeeds", failures)
 	settings.set_audio_volume("master", 0.75)
 	settings.set_display_mode("borderless")
@@ -166,6 +170,7 @@ func _test_settings_defaults_and_round_trip(failures: Array[String]) -> void:
 	_expect(not loaded.hint_enabled("interactions"), "hint choice persists", failures)
 	_expect(not loaded.interface_enabled("subtitles"), "subtitle choice persists", failures)
 	_expect(not loaded.interface_enabled("edge_scroll"), "edge-scroll choice persists", failures)
+	_expect(loaded.difficulty_mode() == "hard", "difficulty choice persists", failures)
 
 	_write_text(path, "{broken json")
 	var recovered = GAME_SETTINGS.new()
@@ -182,10 +187,11 @@ func _test_settings_migration_and_validation(failures: Array[String]) -> void:
 	var migrated = GAME_SETTINGS.new()
 	var result: Dictionary = migrated.load_from_disk(legacy_path)
 	_expect(bool(result["ok"]), "legacy settings shape is loadable", failures)
-	_expect(int(migrated.values["schema_version"]) == 2, "legacy settings migrate to current schema", failures)
+	_expect(int(migrated.values["schema_version"]) == 3, "legacy settings migrate to current schema", failures)
 	_expect(is_equal_approx(migrated.audio_volume("master"), 0.42), "legacy volume migrates", failures)
 	_expect(migrated.display_settings()["mode"] == "windowed", "legacy fullscreen flag migrates", failures)
 	_expect(not migrated.hint_enabled("objectives"), "legacy hint flag migrates", failures)
+	_expect(migrated.difficulty_mode() == "original", "legacy settings migrate to original parity", failures)
 
 	var malformed_path := test_root + "/normalized-settings.json"
 	_write_json(
@@ -207,6 +213,24 @@ func _test_settings_migration_and_validation(failures: Array[String]) -> void:
 	_expect(int(normalized.display_settings()["window_height"]) == 4320, "window height is bounded", failures)
 	_expect(normalized.hint_enabled("controls"), "wrong hint type falls back", failures)
 	_expect(normalized.interface_enabled("subtitles"), "wrong interface section type falls back", failures)
+	_expect(normalized.difficulty_mode() == "original", "missing gameplay settings use original parity", failures)
+
+	var schema_two_path := test_root + "/schema-two-settings.json"
+	_write_json(
+		schema_two_path,
+		{
+			"schema_version": 2,
+			"audio": {},
+			"display": {},
+			"hints": {},
+			"interface": {},
+			"controls": {},
+		},
+	)
+	var schema_two = GAME_SETTINGS.new()
+	_expect(bool(schema_two.load_from_disk(schema_two_path)["ok"]), "schema-2 settings remain loadable", failures)
+	_expect(schema_two.difficulty_mode() == "original", "schema-2 settings gain original difficulty", failures)
+	_expect(not schema_two.set_difficulty_mode("impossible"), "unknown difficulty is rejected", failures)
 
 	var future_path := test_root + "/future-settings.json"
 	_write_json(future_path, {"schema_version": 99, "audio": {}})
@@ -666,6 +690,17 @@ func _test_mid_mission_capture_and_apply(failures: Array[String]) -> void:
 		failures,
 	)
 	_expect(
+		(session["ambient"] as Array).size() == 1
+		and int((session["ambient"] as Array)[0]["scene_index"]) == 300
+		and int(
+			((session["ambient"] as Array)[0]["ambient"] as Dictionary)[
+				"patrol_index"
+			]
+		) == 1,
+		"live ambient actors and their patrol phase are captured",
+		failures,
+	)
+	_expect(
 		not bool((session["world"] as Dictionary)["victory_presentation_completed"]),
 		"an interrupted victory presentation remains distinguishable in the snapshot",
 		failures,
@@ -714,6 +749,21 @@ func _test_mid_mission_capture_and_apply(failures: Array[String]) -> void:
 			and bool(target_game.enemies[0].patrol_path_in_flight)
 		),
 		"enemy patrol endpoint hold and active-leg state survive a mid-mission save",
+		failures,
+	)
+	_expect(
+		target_game.ambient_units.size() == 1
+		and target_game.ambient_units[0].position.is_equal_approx(
+			Vector2(222.0, 333.0)
+		)
+		and int(target_game.ambient_units[0].faction_id) == 2
+		and int(target_game.ambient_units[0].patrol_index) == 1
+		and is_equal_approx(
+			float(target_game.ambient_units[0].patrol_wait_remaining),
+			0.75,
+		)
+		and bool(target_game.ambient_units[0].patrol_path_in_flight),
+		"ambient position, faction, and patrol state survive a mid-mission save",
 		failures,
 	)
 	_expect(target_unit.ammo_item_count(43) == 2, "integer-key deployable inventory restores", failures)
@@ -986,6 +1036,31 @@ func _make_mock_game(populated: bool) -> MockGame:
 	)
 	game.enemies.append(enemy)
 	game.add_child(enemy)
+	var ambient = AMBIENT_UNIT.new()
+	ambient.configure_ambient(
+		{
+			"display_name": "d鸡",
+			"scene_index": 300,
+			"x": 240,
+			"y": 936,
+			"reference_x": 251,
+			"reference_y": 933,
+			"direction_index": 1,
+			"faction_id": 2,
+			"current_hit_points": 8,
+			"database_header_values": [0, 1, 33, 2, 32],
+			"patrol_waypoints": [{"x": 7, "y": 58}, {"x": 4, "y": 60}],
+			"patrol_current_waypoint_index": 0,
+			"patrol_enabled": true,
+		},
+		null,
+		empty_groups,
+		empty_groups,
+		empty_groups,
+		game.dynamic_occupancy,
+	)
+	game.ambient_units.append(ambient)
+	game.add_child(ambient)
 	if populated:
 		unit.position = Vector2(321.0, 654.0)
 		unit.selected = true
@@ -994,6 +1069,10 @@ func _make_mock_game(populated: bool) -> MockGame:
 		enemy.behavior_state = ENEMY_UNIT.BehaviorState.CHASE
 		enemy.patrol_wait_remaining = 1.25
 		enemy.patrol_path_in_flight = true
+		ambient.position = Vector2(222.0, 333.0)
+		ambient.patrol_index = 1
+		ambient.patrol_wait_remaining = 0.75
+		ambient.patrol_path_in_flight = true
 		unit.current_hit_points = 6
 		unit.add_ammo_item(36, 3)
 		unit.add_ammo_item(43, 2)

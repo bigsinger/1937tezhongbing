@@ -3,6 +3,7 @@ extends Node2D
 const SQUAD_UNIT = preload("res://scripts/squad_unit.gd")
 const ENEMY_UNIT = preload("res://scripts/enemy_unit.gd")
 const ESCORT_UNIT = preload("res://scripts/escort_unit.gd")
+const AMBIENT_UNIT = preload("res://scripts/ambient_unit.gd")
 const MISSION_PICKUP = preload("res://scripts/mission_pickup.gd")
 const SIMULATION_SCRIPT: Script = preload("res://scripts/simulation.gd")
 const LEVEL_VIEW: Script = preload("res://scripts/level_view.gd")
@@ -166,6 +167,7 @@ class LegacyDeploymentTarget:
 var units: Array[SQUAD_UNIT] = []
 var enemies: Array[ENEMY_UNIT] = []
 var escorts: Array[ESCORT_UNIT] = []
+var ambient_units: Array[AMBIENT_UNIT] = []
 var mission_pickups: Array[MISSION_PICKUP] = []
 var selected_units: Array[SQUAD_UNIT] = []
 var status_label: Label
@@ -203,6 +205,7 @@ var imported_entity_count := 0
 var current_level_index := 0
 var playable_entities: Dictionary = {}
 var enemy_entities: Array[Dictionary] = []
+var ambient_entities: Array[Dictionary] = []
 var imported_texture_cache: Dictionary = {}
 var imported_animation_cache: Dictionary = {}
 var inventory_icon_cache: Dictionary = {}
@@ -237,6 +240,7 @@ var buried_enemy_scene_indices: Dictionary = {}
 var field_inventory: Dictionary = {}
 var runtime_settings: Dictionary = {
 	"fullscreen": false,
+	"difficulty_mode": "original",
 	"subtitles": true,
 	"show_briefings": true,
 	"edge_scroll": true,
@@ -411,6 +415,7 @@ func load_imported_level(level_id: String = LEVEL_VIEW.DEFAULT_LEVEL_ID) -> bool
 	remove_imported_node("ImportedEntities")
 	playable_entities.clear()
 	enemy_entities.clear()
+	ambient_entities.clear()
 	imported_texture_cache.clear()
 	imported_animation_cache.clear()
 	world_entities_by_scene.clear()
@@ -557,6 +562,15 @@ func spawn_imported_entities() -> int:
 			enemy_entities.append(entity)
 			spawned += 1
 			continue
+		if (
+			str(entity.get("category_name", "")) == "角色"
+			and int(entity.get("faction_id", entity.get("team_id", 0))) in [2, 3]
+		):
+			# Neutral animals, vehicles and non-objective civilians are live
+			# RuntimeActor objects in the MOD, not baked scenery sprites.
+			ambient_entities.append(entity)
+			spawned += 1
+			continue
 		var texture := load_entity_texture(entity)
 		if texture == null:
 			continue
@@ -694,11 +708,14 @@ func spawn_squad() -> void:
 		enemy.queue_free()
 	for escort: ESCORT_UNIT in escorts:
 		escort.queue_free()
+	for ambient: AMBIENT_UNIT in ambient_units:
+		ambient.queue_free()
 	for pickup: MISSION_PICKUP in mission_pickups:
 		pickup.queue_free()
 	units.clear()
 	enemies.clear()
 	escorts.clear()
+	ambient_units.clear()
 	mission_pickups.clear()
 	selected_units.clear()
 	dynamic_occupancy = null
@@ -791,6 +808,7 @@ func spawn_squad() -> void:
 		units.append(unit)
 	_grant_editorial_type_11_loadout()
 	_spawn_escorts()
+	_spawn_ambient_units()
 	_spawn_enemies()
 	if dynamic_occupancy != null:
 		dynamic_occupancy.finalize_registration()
@@ -804,6 +822,8 @@ func spawn_squad() -> void:
 	var projectile_combatants: Array[Node2D] = target_nodes.duplicate()
 	for enemy: ENEMY_UNIT in enemies:
 		projectile_combatants.append(enemy)
+	for ambient: AMBIENT_UNIT in ambient_units:
+		projectile_combatants.append(ambient)
 	for prop: Node2D in explosive_props:
 		if is_instance_valid(prop):
 			projectile_combatants.append(prop)
@@ -834,6 +854,15 @@ func _spawn_escorts() -> void:
 			movement_groups = load_entity_action_groups(entity, "run")
 		var idle_groups := load_entity_action_groups(entity, "stand")
 		var death_groups := load_entity_action_groups(entity, "death")
+		var escort_weapon: Dictionary = COMBAT_PROFILES.weapon_profile_for_attack_type(
+			int(entity.get("default_attack_type", 0))
+		)
+		var attack_groups: Array[Dictionary] = []
+		if not escort_weapon.is_empty():
+			attack_groups = load_entity_action_groups(
+				entity,
+				str(escort_weapon.get("action_key", "")),
+			)
 		var escort: ESCORT_UNIT = ESCORT_UNIT.new()
 		add_child(escort)
 		escort.configure_escort(
@@ -843,6 +872,7 @@ func _spawn_escorts() -> void:
 			idle_groups,
 			death_groups,
 			dynamic_occupancy,
+			attack_groups,
 		)
 		escort.rescued.connect(_on_escort_rescued)
 		_connect_combatant(escort)
@@ -882,6 +912,32 @@ func _spawn_enemies() -> void:
 		)
 		_connect_combatant(enemy)
 		enemies.append(enemy)
+
+
+func _spawn_ambient_units() -> void:
+	if dynamic_occupancy == null:
+		return
+	for entity: Dictionary in ambient_entities:
+		var texture := load_entity_texture(entity)
+		if texture == null:
+			continue
+		var movement_groups := load_entity_action_groups(entity, "walk")
+		if movement_groups.is_empty():
+			movement_groups = load_entity_action_groups(entity, "run")
+		var idle_groups := load_entity_action_groups(entity, "stand")
+		var death_groups := load_entity_action_groups(entity, "death")
+		var ambient: AMBIENT_UNIT = AMBIENT_UNIT.new()
+		add_child(ambient)
+		ambient.configure_ambient(
+			entity,
+			texture,
+			movement_groups,
+			idle_groups,
+			death_groups,
+			dynamic_occupancy,
+		)
+		_connect_combatant(ambient)
+		ambient_units.append(ambient)
 
 
 func _process(delta: float) -> void:
@@ -1645,6 +1701,8 @@ func force_target_at_world_point(world_point: Vector2) -> Node2D:
 			candidates.append(unit)
 	for escort: ESCORT_UNIT in escorts:
 		candidates.append(escort)
+	for ambient: AMBIENT_UNIT in ambient_units:
+		candidates.append(ambient)
 	for enemy: ENEMY_UNIT in enemies:
 		candidates.append(enemy)
 	for prop: Node2D in explosive_props:
@@ -1896,6 +1954,8 @@ func _on_world_explosion_requested(
 		candidates.append(unit)
 	for escort: ESCORT_UNIT in escorts:
 		candidates.append(escort)
+	for ambient: AMBIENT_UNIT in ambient_units:
+		candidates.append(ambient)
 	for enemy: ENEMY_UNIT in enemies:
 		candidates.append(enemy)
 	for prop: Node2D in explosive_props:
@@ -2006,6 +2066,13 @@ func _queue_or_broadcast_alert(
 			source, target, world_position, alert_radius
 		)
 		return recipients.size()
+	# In the stable original m000 contact capture, scene 1598 fires twice while
+	# adjacent scene 1433 keeps its patrol goal and both native target pointers
+	# remain null.  Therefore an enemy-originated attack sound is not a direct
+	# ally-alert channel in original-parity mode.  Editorial cooperation modes
+	# may still opt into delayed shared alerts through the coordinator above.
+	if source is ENEMY_UNIT:
+		return 0
 	var alerted_count := 0
 	for enemy: ENEMY_UNIT in enemies:
 		if (
@@ -2014,6 +2081,8 @@ func _queue_or_broadcast_alert(
 			or enemy.position.distance_to(world_position) > alert_radius
 		):
 			continue
+		# A player-originated shot exposes that player directly because the
+		# audible source and hostile target are identical.
 		if enemy.receive_alert(target, world_position):
 			alerted_count += 1
 	return alerted_count
@@ -2279,14 +2348,30 @@ func _configure_mission_direction() -> void:
 	var direction_media: Node = media_director
 	if DisplayServer.get_name() == "headless" or _is_runtime_probe():
 		direction_media = null
+	# Runtime probes always exercise the stable MOD contract, independently of
+	# a developer's persisted local settings.  The shipped default is likewise
+	# original parity; easy/normal/hard remain opt-in editorial modes.
+	var difficulty_mode := (
+		"original"
+		if _is_runtime_probe()
+		else str(runtime_settings.get("difficulty_mode", "original"))
+	)
+	if difficulty_mode not in ["original", "easy", "normal", "hard"]:
+		difficulty_mode = "original"
 	if not mission_direction_runtime.configure_for_mission(
 		mission_id,
 		direction_media,
-		"normal",
+		difficulty_mode,
 	):
 		push_warning("十二关导演数据未启用：%s" % mission_direction_runtime.last_error)
 		mission_direction_runtime.free()
 		mission_direction_runtime = null
+		return
+	# The coordinator implements labelled remake-editorial cooperation,
+	# reinforcement and attacker caps.  It must not alter the reference
+	# original mode; EnemyUnit's recovered autonomous perception/alert path
+	# remains active when the coordinator is absent.
+	if difficulty_mode == "original":
 		return
 	mission_ai_coordinator = MISSION_AI_COORDINATOR_SCRIPT.new()
 	mission_ai_coordinator.name = "MissionAiCoordinator"
@@ -2464,6 +2549,9 @@ func _direction_live_actor_for_scene(scene_index: int) -> Node2D:
 	for escort: ESCORT_UNIT in escorts:
 		if is_instance_valid(escort) and escort.scene_index == scene_index:
 			return escort
+	for ambient: AMBIENT_UNIT in ambient_units:
+		if is_instance_valid(ambient) and ambient.scene_index == scene_index:
+			return ambient
 	return null
 
 
@@ -2525,6 +2613,7 @@ func _initialize_persistence() -> void:
 		"subtitles": bool(game_settings.interface_enabled("subtitles")),
 		"show_briefings": bool(game_settings.interface_enabled("show_briefings")),
 		"edge_scroll": bool(game_settings.interface_enabled("edge_scroll")),
+		"difficulty_mode": str(game_settings.difficulty_mode()),
 		"master_volume": float(game_settings.audio_volume("master")),
 		"music_volume": float(game_settings.audio_volume("music")),
 		"sfx_volume": float(game_settings.audio_volume("sfx")),
@@ -2579,6 +2668,7 @@ func _quit_game() -> void:
 
 
 func _on_shell_settings_changed(new_settings: Dictionary) -> void:
+	var previous_difficulty := str(runtime_settings.get("difficulty_mode", "original"))
 	var merged_settings := runtime_settings.duplicate(true)
 	merged_settings.merge(new_settings, true)
 	var fullscreen := bool(merged_settings.get("fullscreen", true))
@@ -2620,10 +2710,16 @@ func _on_shell_settings_changed(new_settings: Dictionary) -> void:
 		game_settings.set_interface_enabled(
 			"edge_scroll", bool(runtime_settings.get("edge_scroll", true))
 		)
+		game_settings.set_difficulty_mode(
+			str(runtime_settings.get("difficulty_mode", "original"))
+		)
 		settings_save_result = game_settings.save_to_disk()
 	_apply_runtime_settings(runtime_settings)
 	if bool(settings_save_result.get("ok", false)):
-		update_status("设置已应用并保存")
+		if str(runtime_settings.get("difficulty_mode", "original")) != previous_difficulty:
+			update_status("难度已保存，将在重新开始、下一关或读取存档时生效")
+		else:
+			update_status("设置已应用并保存")
 	else:
 		var failure_message := "设置已应用，但保存失败：%s" % str(
 			settings_save_result.get("message", "未知错误")
@@ -2846,6 +2942,13 @@ func _tactical_actor_markers() -> Array[Dictionary]:
 				"position": escort.position,
 				"color": Color(0.88, 0.82, 0.35) if not escort.rescued_state else Color(0.36, 0.82, 0.78),
 				"radius": 4.0,
+			})
+	for ambient: AMBIENT_UNIT in ambient_units:
+		if ambient.is_alive:
+			markers.append({
+				"position": ambient.position,
+				"color": Color(0.72, 0.70, 0.56),
+				"radius": 2.5,
 			})
 	for enemy: ENEMY_UNIT in enemies:
 		if enemy.is_alive:
@@ -3146,6 +3249,23 @@ func _load_game(slot_id: String = "") -> bool:
 	var saved_direction_state: Variant = (
 		(session.get("world", {}) as Dictionary).get("mission_direction", {})
 	)
+	# A save owns the difficulty under which its actors and director state were
+	# created.  Adopt it before rebuilding the level so restore_state never
+	# silently rejects a valid save or changes combat balance mid-session.
+	if saved_direction_state is Dictionary:
+		var saved_mode := str(
+			(saved_direction_state as Dictionary).get(
+				"difficulty_mode",
+				runtime_settings.get("difficulty_mode", "original"),
+			)
+		)
+		if saved_mode in ["original", "easy", "normal", "hard"]:
+			runtime_settings["difficulty_mode"] = saved_mode
+			if game_settings != null:
+				game_settings.set_difficulty_mode(saved_mode)
+				game_settings.save_to_disk()
+			if game_shell != null:
+				game_shell.set_settings(runtime_settings)
 	switch_level(level_index, false, false)
 	var applied: Dictionary = GAME_SESSION_STATE_SCRIPT.apply_after_level_loaded(self, session)
 	if not bool(applied.get("ok", false)):

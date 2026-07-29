@@ -328,11 +328,26 @@ func _run() -> void:
 	await process_frame
 
 	var normal_profile: Dictionary = runtime.call("difficulty_profile")
+	var original_profile: Dictionary = DIRECTION_DATA_SCRIPT.difficulty_for_mode(
+		(runtime.get("mission_plan") as Dictionary).get("difficulty", {}) as Dictionary, "original"
+	)
 	var easy_profile: Dictionary = DIRECTION_DATA_SCRIPT.difficulty_for_mode(
 		(runtime.get("mission_plan") as Dictionary).get("difficulty", {}) as Dictionary, "easy"
 	)
 	var hard_profile: Dictionary = DIRECTION_DATA_SCRIPT.difficulty_for_mode(
 		(runtime.get("mission_plan") as Dictionary).get("difficulty", {}) as Dictionary, "hard"
+	)
+	expect(
+		float(original_profile["enemy_health_multiplier"]) == 1.0
+		and float(original_profile["enemy_damage_multiplier"]) == 1.0
+		and float(original_profile["reaction_time_multiplier"]) == 1.0
+		and float(original_profile["patrol_speed_multiplier"]) == 1.0
+		and float(original_profile["sense_radius_multiplier"]) == 1.0
+		and float(original_profile["aim_error_multiplier"]) == 0.0
+		and int(original_profile["reinforcement_budget"]) == 0
+		and bool(original_profile["original_parity"]),
+		"original mode is a neutral, non-editorial MOD parity profile",
+		failures,
 	)
 	expect(
 		float(easy_profile["enemy_damage_multiplier"])

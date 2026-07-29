@@ -78,7 +78,9 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 54 个已一对一解析，8 个脚本编队对象保留 unresolved。字段语义必须保持：
 `RuntimeActorV1 +0x064` 是对应 VWF
 `database_header_values[2]` 的运行时类型，不是 DBL id；实际 DBL id 是
-`database_entry_id`。46 名已解析敌军已用于 m000 巡逻差分门禁。
+`database_entry_id`。`+0x1C0` 已由 54 个身份与自然接敌扣血序列证明为
+当前生命值，`+0x20C` 与所有已解析 VWF 对象精确对应，证明为默认攻击类型。
+46 名已解析敌军已用于 m000 巡逻差分门禁。
 
 不要直接编辑这些文件；`Test-SdkSingleSource.ps1` 会验证它们与两个 JSON
 机器源一致。
@@ -103,9 +105,10 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 地址文档，而是 MOD 增强层的公共底座。
 
 `RuntimeActorV1` 现已固定角色世界坐标、导航网格缓存、地面命令、
-寻路状态、解析后目标和八方向朝向字段；地址表同时收录地面命令分派点及
-原版的移动重置/命令清理函数。兼容层只在签名完全匹配时修复导航缓存，
-随后仍由原版 A*、动作状态机和序列帧系统完成寻路与朝向更新。
+寻路状态、当前生命、默认攻击类型、接敌/丢失状态、解析后目标和八方向
+朝向字段；地址表同时收录地面命令分派点及原版的移动重置/命令清理函数。
+兼容层只在签名完全匹配时修复导航缓存，随后仍由原版 A*、动作状态机和
+序列帧系统完成寻路与朝向更新。
 
 任务定义、事件、原子状态和原生插件开发详见
 [`docs/任务Sidecar与原生插件开发指南.md`](docs/任务Sidecar与原生插件开发指南.md)。

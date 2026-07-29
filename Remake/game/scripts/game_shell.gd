@@ -22,6 +22,7 @@ const GAME_INPUT_BINDINGS: Script = preload("res://scripts/game_input_bindings.g
 const ORIGINAL_INVENTORY_POPUP_SIZE := Vector2(276.0, 421.0)
 const ORIGINAL_BOTTOM_HUD_HEIGHT := 62.0
 const TACTICAL_MAP_PANEL_CHROME := Vector2(44.0, 77.0)
+const DIFFICULTY_MODES: Array[String] = ["original", "easy", "normal", "hard"]
 
 enum OverlayMode { NONE, PAUSE_MENU, TACTICAL_MAP, INVENTORY, FAILURE, SLOT_SELECTOR, SETTINGS, HELP }
 
@@ -40,6 +41,7 @@ var _next_level_button: Button
 var _save_button: Button
 var _load_button: Button
 var _restart_button: Button
+var _difficulty_option: OptionButton
 var _fullscreen_toggle: CheckButton
 var _subtitles_toggle: CheckButton
 var _briefings_toggle: CheckButton
@@ -90,6 +92,9 @@ func set_settings(new_settings: Dictionary) -> void:
 	var resolution_policy := str(new_settings.get("resolution_policy", "desktop"))
 	if resolution_policy not in ["desktop", "custom"]:
 		resolution_policy = "desktop"
+	var difficulty_mode := str(new_settings.get("difficulty_mode", "original"))
+	if difficulty_mode not in DIFFICULTY_MODES:
+		difficulty_mode = "original"
 	settings = {
 		"fullscreen": display_mode != "windowed",
 		"display_mode": display_mode,
@@ -101,6 +106,7 @@ func set_settings(new_settings: Dictionary) -> void:
 		"subtitles": bool(new_settings.get("subtitles", true)),
 		"show_briefings": bool(new_settings.get("show_briefings", true)),
 		"edge_scroll": bool(new_settings.get("edge_scroll", true)),
+		"difficulty_mode": difficulty_mode,
 		"master_volume": clampf(float(new_settings.get("master_volume", 0.8)), 0.0, 1.0),
 		"music_volume": clampf(float(new_settings.get("music_volume", 0.8)), 0.0, 1.0),
 		"sfx_volume": clampf(float(new_settings.get("sfx_volume", 0.9)), 0.0, 1.0),
@@ -114,6 +120,7 @@ func set_settings(new_settings: Dictionary) -> void:
 	_subtitles_toggle.button_pressed = bool(settings["subtitles"])
 	_briefings_toggle.button_pressed = bool(settings["show_briefings"])
 	_edge_scroll_toggle.button_pressed = bool(settings["edge_scroll"])
+	_select_difficulty_mode(str(settings["difficulty_mode"]))
 	_muted_toggle.button_pressed = bool(settings["muted"])
 	for channel: String in ["master", "music", "sfx", "voice"]:
 		if _audio_sliders.has(channel):
@@ -588,6 +595,7 @@ func _on_setting_changed(_value: Variant = null) -> void:
 		"subtitles": _subtitles_toggle.button_pressed,
 		"show_briefings": _briefings_toggle.button_pressed,
 		"edge_scroll": _edge_scroll_toggle.button_pressed,
+		"difficulty_mode": _selected_difficulty_mode(),
 		"master_volume": _audio_slider_value("master", 0.8),
 		"music_volume": _audio_slider_value("music", 0.8),
 		"sfx_volume": _audio_slider_value("sfx", 0.9),
@@ -602,6 +610,25 @@ func _audio_slider_value(channel: String, fallback: float) -> float:
 	if not _audio_sliders.has(channel):
 		return fallback
 	return clampf(float((_audio_sliders[channel] as HSlider).value), 0.0, 1.0)
+
+
+func _selected_difficulty_mode() -> String:
+	if _difficulty_option == null or _difficulty_option.selected < 0:
+		return str(settings.get("difficulty_mode", "original"))
+	var metadata: Variant = _difficulty_option.get_item_metadata(_difficulty_option.selected)
+	var mode := str(metadata)
+	return mode if mode in DIFFICULTY_MODES else "original"
+
+
+func _select_difficulty_mode(mode: String) -> void:
+	if _difficulty_option == null:
+		return
+	var normalized := mode if mode in DIFFICULTY_MODES else "original"
+	for index: int in range(_difficulty_option.item_count):
+		if str(_difficulty_option.get_item_metadata(index)) == normalized:
+			_difficulty_option.select(index)
+			return
+	_difficulty_option.select(0)
 
 
 func _update_volume_labels() -> void:
@@ -653,7 +680,7 @@ func _build_interface() -> void:
 func _build_menu_panel() -> void:
 	_menu_panel = PanelContainer.new()
 	_menu_panel.name = "GameMenuPanel"
-	_center_control(_menu_panel, Vector2(560.0, 590.0))
+	_center_control(_menu_panel, Vector2(590.0, 650.0))
 	_menu_panel.add_theme_stylebox_override("panel", _panel_style(Color(0.09, 0.115, 0.09, 0.98)))
 	_root.add_child(_menu_panel)
 
@@ -686,6 +713,33 @@ func _build_menu_panel() -> void:
 	settings_title.text = "显示与辅助设置"
 	settings_title.add_theme_font_size_override("font_size", 18)
 	content.add_child(settings_title)
+
+	var difficulty_row := HBoxContainer.new()
+	var difficulty_label := Label.new()
+	difficulty_label.text = "游戏难度"
+	difficulty_label.custom_minimum_size.x = 115.0
+	difficulty_row.add_child(difficulty_label)
+	_difficulty_option = OptionButton.new()
+	_difficulty_option.name = "DifficultyMode"
+	_difficulty_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var difficulty_labels := {
+		"original": "原版复刻（MOD 行为基准）",
+		"easy": "轻松（重制调校）",
+		"normal": "标准（重制调校）",
+		"hard": "困难（重制调校）",
+	}
+	for mode: String in DIFFICULTY_MODES:
+		_difficulty_option.add_item(str(difficulty_labels[mode]))
+		_difficulty_option.set_item_metadata(_difficulty_option.item_count - 1, mode)
+	_difficulty_option.item_selected.connect(_on_setting_changed)
+	difficulty_row.add_child(_difficulty_option)
+	content.add_child(difficulty_row)
+	var difficulty_hint := Label.new()
+	difficulty_hint.text = "难度变更会保存，并在重新开始、下一关或读取对应存档时生效"
+	difficulty_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	difficulty_hint.add_theme_font_size_override("font_size", 13)
+	difficulty_hint.add_theme_color_override("font_color", Color(0.75, 0.77, 0.66))
+	content.add_child(difficulty_hint)
 
 	_fullscreen_toggle = CheckButton.new()
 	_fullscreen_toggle.text = "全屏（使用当前桌面分辨率）"

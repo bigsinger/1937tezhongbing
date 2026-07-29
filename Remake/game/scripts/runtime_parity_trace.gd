@@ -94,6 +94,7 @@ func _capture_main_actors(main: Node) -> Array[Dictionary]:
 	for role_and_field: Array in [
 		["player", "units"],
 		["escort", "escorts"],
+		["escort", "ambient_units"],
 		["enemy", "enemies"],
 	]:
 		var role: String = str(role_and_field[0])
@@ -131,6 +132,22 @@ func _capture_actor(
 	if entities is Dictionary:
 		source_entity = (entities as Dictionary).get(scene_index, {}) as Dictionary
 	var target: Vector2 = _read_property(actor, "target_position", actor.position) as Vector2
+	var current_target: Variant = _read_property(actor, "current_target", null)
+	var current_target_scene := -1
+	if current_target is Node2D and is_instance_valid(current_target):
+		current_target_scene = int(_read_property(current_target, "scene_index", -1))
+	var behavior_state := int(_read_property(actor, "behavior_state", -1))
+	var has_live_target := current_target_scene >= 0
+	var movement_path: Variant = _read_property(actor, "movement_path", PackedVector2Array())
+	var movement_path_index := int(_read_property(actor, "movement_path_index", 0))
+	var movement_path_size := (
+		(movement_path as PackedVector2Array).size()
+		if movement_path is PackedVector2Array
+		else 0
+	)
+	var movement_active := movement_path_index < movement_path_size
+	var goal_kind := 2 if has_live_target else (1 if movement_active else 0)
+	var captured_weapon := _capture_weapon(actor)
 	var record := {
 		"actor_id": "scene:%d" % scene_index,
 		"role": role,
@@ -148,12 +165,29 @@ func _capture_actor(
 			"current": int(_read_property(actor, "current_hit_points", 0)),
 			"maximum": int(_read_property(actor, "maximum_hit_points", 0)),
 		},
-		"weapon": _capture_weapon(actor),
+		"weapon": captured_weapon,
 		"native": {
+			"goal_kind": goal_kind,
 			"animation_group_index": int(_read_property(actor, "animation_group_index", -1)),
 			"animation_frame_index": int(_read_property(actor, "animation_frame_index", 0)),
 			"combat_action": int(_read_property(actor, "combat_action", 0)),
-			"movement_path_index": int(_read_property(actor, "movement_path_index", 0)),
+			"movement_path_index": movement_path_index,
+			"movement_active": 1 if movement_active else 0,
+			"target_status": 0,
+			"selected_for_command": 1 if selected else 0,
+			"search_or_return_active": 1 if behavior_state == 3 else 0,
+			"contact_state": 1 if has_live_target and behavior_state in [1, 2] else 0,
+			"target_lost": 0 if has_live_target else 1,
+			"reaction_state": maxi(behavior_state, 0),
+			"current_hit_points": int(_read_property(actor, "current_hit_points", 0)),
+			"default_attack_type": int(captured_weapon.get("attack_type", 0)),
+			"damage_event_count": int(_read_property(actor, "damage_event_count", 0)),
+			"damage_taken_total": int(_read_property(actor, "damage_taken_total", 0)),
+			"last_damage_attacker_scene_index": int(
+				_read_property(actor, "last_damage_attacker_scene_index", -1)
+			),
+			"interest_scene_index": current_target_scene,
+			"target_scene_index": current_target_scene,
 		},
 	}
 	if actor.has_method("inventory_snapshot"):
@@ -161,7 +195,11 @@ func _capture_actor(
 		if inventory is Dictionary:
 			record["inventory"] = _json_safe(inventory)
 	if role == "enemy":
-		record["ai_state"] = int(_read_property(actor, "behavior_state", 0))
+		record["ai_state"] = behavior_state
+		(record["native"] as Dictionary)["patrol_wait_remaining_ms"] = (
+			maxf(float(_read_property(actor, "patrol_wait_remaining", 0.0)), 0.0)
+			* 1000.0
+		)
 	return record
 
 

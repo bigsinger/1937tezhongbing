@@ -1,6 +1,10 @@
 class_name EscortUnit
 extends "res://scripts/squad_unit.gd"
 
+const IMPORTED_SPRITE_ANIMATION: Script = preload(
+	"res://scripts/imported_sprite_animation.gd"
+)
+const COMBAT_PROFILES: Script = preload("res://scripts/combat_profiles.gd")
 const FOLLOW_REPATH_SECONDS := 0.50
 const FOLLOW_START_DISTANCE := 88.0
 const FOLLOW_STOP_DISTANCE := 52.0
@@ -19,6 +23,7 @@ func configure_escort(
 	new_idle_groups: Array[Dictionary],
 	new_death_groups: Array[Dictionary],
 	new_dynamic_occupancy: RefCounted,
+	new_attack_groups: Array[Dictionary] = [],
 ) -> void:
 	configure(
 		str(entity.get("display_name", "escort")),
@@ -38,14 +43,22 @@ func configure_escort(
 		),
 	)
 	move_speed = 118.0
+	var weapon_profile: Dictionary = COMBAT_PROFILES.weapon_profile_for_attack_type(
+		int(entity.get("default_attack_type", 0))
+	)
 	configure_combat(
-		2,
+		int(entity.get("faction_id", entity.get("team_id", 2))),
 		maxi(int(entity.get("current_hit_points", 8)), 1),
-		{},
-		[],
+		weapon_profile,
+		new_attack_groups,
 		new_death_groups,
 		false,
 	)
+	var direction_index := clampi(int(entity.get("direction_index", 1)), 1, 8)
+	set_animation_group(
+		IMPORTED_SPRITE_ANIMATION.legacy_group_index_for_direction(direction_index)
+	)
+	apply_idle_frame()
 	rescued_state = false
 	follow_target = null
 	follow_repath_elapsed = FOLLOW_REPATH_SECONDS

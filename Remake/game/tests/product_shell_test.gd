@@ -30,6 +30,7 @@ func _run() -> void:
 		"subtitles": false,
 		"show_briefings": false,
 		"edge_scroll": false,
+		"difficulty_mode": "hard",
 		"master_volume": 0.35,
 		"music_volume": 0.25,
 		"sfx_volume": 0.55,
@@ -48,6 +49,7 @@ func _run() -> void:
 		and not bool(settings["subtitles"])
 		and not bool(settings["show_briefings"])
 		and not bool(settings["edge_scroll"])
+		and str(settings["difficulty_mode"]) == "hard"
 		and is_equal_approx(float(settings["master_volume"]), 0.35)
 		and is_equal_approx(float(settings["music_volume"]), 0.25)
 		and is_equal_approx(float(settings["sfx_volume"]), 0.55)
@@ -64,6 +66,7 @@ func _run() -> void:
 		and int(updated_settings["window_width"]) == 1600
 		and int(updated_settings["window_height"]) == 900
 		and not bool(updated_settings["vsync"])
+		and str(updated_settings["difficulty_mode"]) == "hard"
 		and is_equal_approx(float(updated_settings["music_volume"]), 0.30),
 		"editing an unrelated slider preserves borderless and muted settings",
 		failures,
@@ -84,8 +87,10 @@ func _run() -> void:
 		shell.overlay_mode == GAME_SHELL_SCRIPT.OverlayMode.SETTINGS
 		and shell._audio_sliders.size() == 4
 		and shell._muted_toggle.button_pressed
+		and shell._difficulty_option != null
+		and shell._selected_difficulty_mode() == "hard"
 		and shell._control_buttons.size() == GAME_INPUT_BINDINGS.action_ids().size(),
-		"settings expose mute, four audio channels, and every remappable command",
+		"settings expose difficulty, mute, four audio channels, and every remappable command",
 		failures,
 	)
 	shell._on_rebind_pressed("minimap")
@@ -512,6 +517,7 @@ func _run() -> void:
 		"music_volume": 0.8,
 		"sfx_volume": 0.9,
 		"voice_volume": 1.0,
+		"difficulty_mode": "original",
 		"controls": GAME_INPUT_BINDINGS.default_bindings(),
 	}
 	main._on_shell_settings_changed({"music_volume": 0.55})
@@ -525,6 +531,7 @@ func _run() -> void:
 		and int(main_settings["window_height"]) == 900
 		and not bool(main_settings["vsync"])
 		and is_equal_approx(float(main_settings["music_volume"]), 0.55)
+		and str(main_settings["difficulty_mode"]) == "original"
 		and master_bus >= 0
 		and AudioServer.is_bus_mute(master_bus),
 		"Main applies mute while preserving hidden display settings during unrelated edits",

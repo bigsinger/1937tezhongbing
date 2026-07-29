@@ -70,6 +70,13 @@ foreach ($identity in $resolved) {
             "Runtime type was incorrectly used as a DBL id at runtime index " +
             "$($identity.runtime_index).")
     }
+    if ([int]$identity.authored_hit_points -le 0 -or
+        [int]$identity.authored_attack_type -lt 0 -or
+        [int]$identity.authored_attack_type -gt 11) {
+        throw (
+            "Resolved combat identity is invalid at runtime index " +
+            "$($identity.runtime_index).")
+    }
 }
 $expectedMethods = [ordered]@{
     unique_runtime_type_and_exact_patrol_goal = 45
@@ -123,7 +130,11 @@ if (-not [string]::IsNullOrWhiteSpace($LevelManifest)) {
         if ([int]$entity.database_entry_id -ne
             [int]$identity.database_entry_id -or
             [int]$entity.database_header_values[2] -ne
-            [int]$identity.runtime_type) {
+            [int]$identity.runtime_type -or
+            [int]$entity.current_hit_points -ne
+            [int]$identity.authored_hit_points -or
+            [int]$entity.default_attack_type -ne
+            [int]$identity.authored_attack_type) {
             throw (
                 "Resolved identity fields disagree with VWF scene " +
                 "$($identity.scene_index).")

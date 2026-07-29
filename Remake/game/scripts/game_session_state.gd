@@ -37,8 +37,12 @@ static func capture(game: Node) -> Dictionary:
 			"y": camera_node.position.y,
 			"zoom": camera_node.zoom.x,
 		}
-	for group_name: String in ["units", "enemies", "escorts"]:
-		var output_name := "squad" if group_name == "units" else group_name
+	for group_name: String in ["units", "enemies", "escorts", "ambient_units"]:
+		var output_name := (
+			"squad"
+			if group_name == "units"
+			else "ambient" if group_name == "ambient_units" else group_name
+		)
 		var actors: Array = _array_property(game, group_name)
 		var records: Array = []
 		for actor_value: Variant in actors:
@@ -58,6 +62,7 @@ static func apply_after_level_loaded(game: Node, session: Dictionary) -> Diction
 		"units": session.get("squad", []),
 		"enemies": session.get("enemies", []),
 		"escorts": session.get("escorts", []),
+		"ambient_units": session.get("ambient", []),
 	}
 	for group_name: String in records_by_group:
 		_restore_actor_group(
@@ -165,6 +170,13 @@ static func _capture_actor(actor: Node2D, group_name: String) -> Dictionary:
 				else -1
 			),
 			"follow_display_name": _actor_display_name(follow_target),
+		}
+	elif group_name == "ambient_units":
+		record["ambient"] = {
+			"patrol_index": int(actor.get("patrol_index")),
+			"patrol_enabled": bool(actor.get("patrol_enabled")),
+			"patrol_wait_remaining": float(actor.get("patrol_wait_remaining")),
+			"patrol_path_in_flight": bool(actor.get("patrol_path_in_flight")),
 		}
 	return record
 
@@ -466,6 +478,18 @@ static func _restore_actor(game: Node, actor: Node2D, record: Dictionary, group_
 			if follow == null:
 				follow = _first_living_actor(_array_property(game, "units"))
 			actor.set("follow_target", follow)
+	elif group_name == "ambient_units" and record.get("ambient") is Dictionary:
+		var ambient := record["ambient"] as Dictionary
+		actor.set("patrol_index", int(ambient.get("patrol_index", 0)))
+		actor.set("patrol_enabled", bool(ambient.get("patrol_enabled", true)))
+		actor.set(
+			"patrol_wait_remaining",
+			maxf(float(ambient.get("patrol_wait_remaining", 0.0)), 0.0),
+		)
+		actor.set(
+			"patrol_path_in_flight",
+			bool(ambient.get("patrol_path_in_flight", false)),
+		)
 	actor.set("z_index", WORLD_DEPTH.normal_z(actor.position.y, 1))
 	actor.queue_redraw()
 
@@ -883,7 +907,9 @@ static func _sync_projectile_combatants(game: Node) -> void:
 	if not projectile_world is Node or not projectile_world.has_method("set_combatants"):
 		return
 	var combatants: Array[Node2D] = []
-	for group_name: String in ["units", "enemies", "escorts", "explosive_props"]:
+	for group_name: String in [
+		"units", "enemies", "escorts", "ambient_units", "explosive_props"
+	]:
 		for actor_value: Variant in _array_property(game, group_name):
 			if actor_value is Node2D and is_instance_valid(actor_value):
 				combatants.append(actor_value as Node2D)
@@ -905,7 +931,7 @@ static func _restore_camera(game: Node, camera_data: Dictionary) -> void:
 static func _find_actor_by_scene(game: Node, scene_index: int) -> Node2D:
 	if scene_index < 0:
 		return null
-	for group_name: String in ["units", "enemies", "escorts"]:
+	for group_name: String in ["units", "enemies", "escorts", "ambient_units"]:
 		for actor_value: Variant in _array_property(game, group_name):
 			if actor_value is Node2D and is_instance_valid(actor_value) and int((actor_value as Node2D).get("scene_index")) == scene_index:
 				return actor_value as Node2D
@@ -916,7 +942,7 @@ static func _find_actor_by_identity(game: Node, scene_index: int, display_name: 
 	var actor := _find_actor_by_scene(game, scene_index)
 	if actor != null or display_name.is_empty():
 		return actor
-	for group_name: String in ["units", "enemies", "escorts"]:
+	for group_name: String in ["units", "enemies", "escorts", "ambient_units"]:
 		for actor_value: Variant in _array_property(game, group_name):
 			if (
 				actor_value is Node2D

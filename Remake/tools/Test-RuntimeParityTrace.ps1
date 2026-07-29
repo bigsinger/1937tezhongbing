@@ -8,12 +8,16 @@ $schemaPath = Join-Path $repositoryRoot `
     'SDK\schemas\runtime-parity-trace-v1.schema.json'
 $compareScript = Join-Path $PSScriptRoot `
     'Compare-RuntimeParityTrace.ps1'
+$contactCompareScript = Join-Path $PSScriptRoot `
+    'Compare-NaturalContactParity.ps1'
 $baselinePath = Join-Path $remakeRoot `
     'validation\baselines\mod\m000-basic-movement-v1.json'
 $obstacleBaselinePath = Join-Path $remakeRoot `
     'validation\baselines\mod\m000-obstacle-route-v1.json'
 $patrolBaselinePath = Join-Path $remakeRoot `
     'validation\baselines\mod\m000-enemy-patrol-v1.json'
+$contactBaselinePath = Join-Path $remakeRoot `
+    'validation\baselines\mod\m000-natural-contact-v1.json'
 
 $schema = Get-Content -LiteralPath $schemaPath -Raw -Encoding UTF8 |
     ConvertFrom-Json
@@ -62,6 +66,54 @@ if ($patrolBaseline.runtime -ne 'mod' -or
     @($patrolBaseline.checkpoints[0].actors.scene_index |
         Select-Object -Unique).Count -ne 46) {
     throw 'The checked-in m000 enemy-patrol baseline is invalid.'
+}
+$contactBaseline = Get-Content -LiteralPath $contactBaselinePath `
+    -Raw -Encoding UTF8 | ConvertFrom-Json
+$contactCheckpointIds = @(
+    'contact_ready',
+    'player_selected',
+    'move_outbound_commanded',
+    'move_outbound_observed',
+    'move_return_commanded',
+    'move_return_observed',
+    'contact_settled'
+)
+$contactFinalActor = @(
+    $contactBaseline.checkpoints[-1].actors |
+        Where-Object { [int]$_.scene_index -eq 1598 }
+)[0]
+$contactPlayerHitPointSequence = @(
+    $contactBaseline.checkpoints |
+        ForEach-Object {
+            [int](@(
+                $_.actors |
+                    Where-Object { [int]$_.scene_index -eq 1436 }
+            )[0].hit_points.current)
+        }
+)
+if ($contactBaseline.runtime -ne 'mod' -or
+    $contactBaseline.scenario.id -ne 'm000-natural-contact-v1' -or
+    @($contactBaseline.checkpoints).Count -ne 7 -or
+    (Compare-Object `
+        $contactCheckpointIds `
+        @($contactBaseline.checkpoints.id)).Count -ne 0 -or
+    @($contactBaseline.checkpoints |
+        Where-Object { @($_.actors).Count -ne 54 }).Count -ne 0 -or
+    $null -eq $contactFinalActor -or
+    [int]$contactFinalActor.native.contact_state -ne 1 -or
+    [int]$contactFinalActor.native.target_lost -ne 0 -or
+    [int]$contactFinalActor.native.interest_scene_index -ne 1436 -or
+    [int]$contactFinalActor.native.target_scene_index -ne 1436 -or
+    [int]$contactFinalActor.hit_points.current -ne 8 -or
+    [int]$contactFinalActor.hit_points.maximum -ne 8 -or
+    [int]$contactFinalActor.native.default_attack_type -ne 2 -or
+    ($contactPlayerHitPointSequence -join ',') -ne '8,8,8,8,8,6,4' -or
+    @($contactBaseline.checkpoints[0].actors |
+        Where-Object {
+            $null -eq $_.hit_points -or
+            $null -eq $_.native.default_attack_type
+        }).Count -ne 0) {
+    throw 'The checked-in m000 natural-contact baseline is invalid.'
 }
 
 $temporaryBase = if (Test-Path -LiteralPath 'E:\1937') {
@@ -189,7 +241,8 @@ try {
     foreach ($checkedBaseline in @(
         $baselinePath,
         $obstacleBaselinePath,
-        $patrolBaselinePath
+        $patrolBaselinePath,
+        $contactBaselinePath
     )) {
         $baselineSelf = & $compareScript `
             -ReferenceTrace $checkedBaseline `
@@ -197,6 +250,16 @@ try {
         if (-not [bool]$baselineSelf.passed) {
             throw "The checked-in MOD trace is not self-consistent: $checkedBaseline"
         }
+    }
+    $contactSelf = & $contactCompareScript `
+        -ReferenceTrace $contactBaselinePath `
+        -CandidateTrace $contactBaselinePath
+    if (-not [bool]$contactSelf.passed -or
+        [int]$contactSelf.audited_actor_count -ne 54 -or
+        @($contactSelf.required_contact_scenes) -notcontains 1598 -or
+        (@($contactSelf.player_hit_point_sequence.reference) -join ',') -ne
+            '8,8,8,8,8,6,4') {
+        throw 'The checked-in natural-contact baseline is not self-consistent.'
     }
 
     $movementMismatchPath = Join-Path $root 'movement-mismatch.json'
@@ -229,6 +292,50 @@ try {
         @($negative.mismatches.path) -notcontains
         'actors.scene:1436.facing_direction') {
         throw 'Runtime trace comparator did not identify semantic divergence.'
+    }
+
+    $contactMismatchPath = Join-Path $root 'contact-mismatch.json'
+    $contactMismatch = Get-Content -LiteralPath $contactBaselinePath `
+        -Raw -Encoding UTF8 | ConvertFrom-Json
+    $contactMismatchActor = @(
+        $contactMismatch.checkpoints[-1].actors |
+            Where-Object { [int]$_.scene_index -eq 1598 }
+    )[0]
+    $contactMismatchActor.native.contact_state = 0
+    $contactMismatchActor.native.target_lost = 1
+    $contactMismatchActor.native.interest_scene_index = -1
+    $contactMismatchActor.native.target_scene_index = -1
+    $contactMismatch | ConvertTo-Json -Depth 40 |
+        Set-Content -LiteralPath $contactMismatchPath -Encoding UTF8
+    $contactNegative = & $contactCompareScript `
+        -ReferenceTrace $contactBaselinePath `
+        -CandidateTrace $contactMismatchPath `
+        -AllowMismatch
+    if ([bool]$contactNegative.passed -or
+        @($contactNegative.mismatches.path) -notcontains
+        'contact_settled.live_contact_scenes') {
+        throw 'Natural-contact target loss was not detected.'
+    }
+
+    $damageMismatchPath = Join-Path $root 'contact-damage-mismatch.json'
+    $damageMismatch = Get-Content -LiteralPath $contactBaselinePath `
+        -Raw -Encoding UTF8 | ConvertFrom-Json
+    $damageMismatchPlayer = @(
+        $damageMismatch.checkpoints[-1].actors |
+            Where-Object { [int]$_.scene_index -eq 1436 }
+    )[0]
+    $damageMismatchPlayer.hit_points.current = 6
+    $damageMismatchPlayer.native.current_hit_points = 6
+    $damageMismatch | ConvertTo-Json -Depth 40 |
+        Set-Content -LiteralPath $damageMismatchPath -Encoding UTF8
+    $damageNegative = & $contactCompareScript `
+        -ReferenceTrace $contactBaselinePath `
+        -CandidateTrace $damageMismatchPath `
+        -AllowMismatch
+    if ([bool]$damageNegative.passed -or
+        @($damageNegative.mismatches.path) -notcontains
+        'checkpoints.contact_settled.player.hit_points') {
+        throw 'Natural-contact damage-sequence divergence was not detected.'
     }
 }
 finally {

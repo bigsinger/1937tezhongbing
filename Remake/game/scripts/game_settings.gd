@@ -4,13 +4,14 @@ extends RefCounted
 const ATOMIC_JSON_STORE: Script = preload("res://scripts/atomic_json_store.gd")
 const GAME_INPUT_BINDINGS: Script = preload("res://scripts/game_input_bindings.gd")
 
-const SCHEMA_VERSION := 2
+const SCHEMA_VERSION := 3
 const DEFAULT_PATH := "user://settings.json"
 const DISPLAY_MODES: Array[String] = ["windowed", "fullscreen", "borderless"]
 const RESOLUTION_POLICIES: Array[String] = ["desktop", "custom"]
 const AUDIO_CHANNELS: Array[String] = ["master", "music", "sfx", "voice"]
 const HINT_KEYS: Array[String] = ["controls", "objectives", "interactions"]
 const INTERFACE_KEYS: Array[String] = ["subtitles", "show_briefings", "edge_scroll"]
+const DIFFICULTY_MODES: Array[String] = ["original", "easy", "normal", "hard"]
 
 var values: Dictionary = default_document()
 var last_result: Dictionary = {}
@@ -44,6 +45,11 @@ static func default_document() -> Dictionary:
 			"subtitles": true,
 			"show_briefings": true,
 			"edge_scroll": true,
+		},
+		"gameplay": {
+			# "original" is the auditable MOD/reference contract.  The other
+			# modes are explicitly optional Remake balancing profiles.
+			"difficulty_mode": "original",
 		},
 		"controls": GAME_INPUT_BINDINGS.default_bindings(),
 	}
@@ -154,6 +160,18 @@ func interface_enabled(interface_key: String) -> bool:
 	return bool((values["interface"] as Dictionary).get(interface_key, false))
 
 
+func set_difficulty_mode(mode: String) -> bool:
+	if not mode in DIFFICULTY_MODES:
+		return false
+	(values["gameplay"] as Dictionary)["difficulty_mode"] = mode
+	return true
+
+
+func difficulty_mode() -> String:
+	var mode := str((values["gameplay"] as Dictionary).get("difficulty_mode", "original"))
+	return mode if mode in DIFFICULTY_MODES else "original"
+
+
 func controls_snapshot() -> Dictionary:
 	return (values.get("controls", {}) as Dictionary).duplicate(true)
 
@@ -250,7 +268,7 @@ func _is_loadable_document(value: Variant) -> bool:
 		)
 	if not _is_number(document["schema_version"]):
 		return false
-	return int(document["schema_version"]) in [0, 1, SCHEMA_VERSION]
+	return int(document["schema_version"]) in [0, 1, 2, SCHEMA_VERSION]
 
 
 func _normalize_document(document: Dictionary) -> Dictionary:
@@ -297,6 +315,15 @@ func _normalize_document(document: Dictionary) -> Dictionary:
 		interface[interface_key] = _normalized_bool(
 			raw_interface.get(interface_key), bool(interface[interface_key])
 		)
+	var raw_gameplay_value: Variant = document.get("gameplay", {})
+	var raw_gameplay: Dictionary = (
+		raw_gameplay_value as Dictionary if raw_gameplay_value is Dictionary else {}
+	)
+	var gameplay := defaults["gameplay"] as Dictionary
+	var difficulty_mode := str(raw_gameplay.get("difficulty_mode", gameplay["difficulty_mode"]))
+	gameplay["difficulty_mode"] = (
+		difficulty_mode if difficulty_mode in DIFFICULTY_MODES else gameplay["difficulty_mode"]
+	)
 	defaults["controls"] = GAME_INPUT_BINDINGS.normalize_bindings(document.get("controls", {}))
 	return defaults
 

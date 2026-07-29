@@ -21,6 +21,8 @@
                                                "runtime_type":  "RuntimeActorV1 +0x064; historical SDK field name database_entry; this is a runtime type and never a DBL id",
                                                "vwf_runtime_type":  "entity.database_header_values[2]",
                                                "vwf_database_entry_id":  "entity.database_entry_id; the actual DBL resource identity",
+                                               "runtime_current_hit_points":  "RuntimeActorV1 +0x1C0; exact m000 correlation with entity.current_hit_points across all 54 resolved actors",
+                                               "runtime_default_attack_type":  "RuntimeActorV1 +0x20C; exact m000 correlation with entity.default_attack_type across all 54 resolved actors",
                                                "patrol_world_coordinate":  "[waypoint.x * 32 + 16, waypoint.y * 16 + 8]",
                                                "runtime_index":  "capture-local actor-array index; never treated as a VWF scene index"
                                            }
@@ -62,6 +64,8 @@
                            "database_entry_id":  925,
                            "display_name":  "三等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -97,6 +101,8 @@
                            "database_entry_id":  925,
                            "display_name":  "三等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -132,6 +138,8 @@
                            "database_entry_id":  925,
                            "display_name":  "三等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -167,6 +175,8 @@
                            "database_entry_id":  912,
                            "display_name":  "二等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -202,6 +212,8 @@
                            "database_entry_id":  912,
                            "display_name":  "二等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -237,6 +249,8 @@
                            "database_entry_id":  925,
                            "display_name":  "三等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -272,6 +286,8 @@
                            "database_entry_id":  912,
                            "display_name":  "二等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -307,6 +323,8 @@
                            "database_entry_id":  925,
                            "display_name":  "三等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -342,6 +360,8 @@
                            "database_entry_id":  912,
                            "display_name":  "二等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -377,6 +397,8 @@
                            "database_entry_id":  925,
                            "display_name":  "三等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -412,6 +434,8 @@
                            "database_entry_id":  923,
                            "display_name":  "彭鑫",
                            "vwf_faction_id":  3,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  1,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -447,6 +471,8 @@
                            "database_entry_id":  917,
                            "display_name":  "老罗叔",
                            "vwf_faction_id":  2,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  1,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -482,6 +508,8 @@
                            "database_entry_id":  912,
                            "display_name":  "二等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -517,6 +545,8 @@
                            "database_entry_id":  912,
                            "display_name":  "二等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -552,6 +582,8 @@
                            "database_entry_id":  934,
                            "display_name":  "一等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  3,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -587,6 +619,8 @@
                            "database_entry_id":  912,
                            "display_name":  "二等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -622,6 +656,8 @@
                            "database_entry_id":  912,
                            "display_name":  "二等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -657,6 +693,8 @@
                            "database_entry_id":  912,
                            "display_name":  "二等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -692,6 +730,8 @@
                            "database_entry_id":  924,
                            "display_name":  "强子",
                            "vwf_faction_id":  3,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  4,
                            "method":  "unique_runtime_type_and_exact_reference_position",
                            "confidence":  "exact",
                            "evidence":  {
@@ -728,6 +768,8 @@
                            "database_entry_id":  925,
                            "display_name":  "三等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -763,6 +805,8 @@
                            "database_entry_id":  925,
                            "display_name":  "三等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -798,6 +842,8 @@
                            "database_entry_id":  912,
                            "display_name":  "二等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -833,6 +879,8 @@
                            "database_entry_id":  912,
                            "display_name":  "二等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -868,6 +916,8 @@
                            "database_entry_id":  925,
                            "display_name":  "三等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -903,6 +953,8 @@
                            "database_entry_id":  912,
                            "display_name":  "二等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -938,6 +990,8 @@
                            "database_entry_id":  934,
                            "display_name":  "一等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  3,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -973,6 +1027,8 @@
                            "database_entry_id":  912,
                            "display_name":  "二等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -1008,6 +1064,8 @@
                            "database_entry_id":  912,
                            "display_name":  "二等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -1043,6 +1101,8 @@
                            "database_entry_id":  912,
                            "display_name":  "二等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -1078,6 +1138,8 @@
                            "database_entry_id":  912,
                            "display_name":  "二等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -1113,6 +1175,8 @@
                            "database_entry_id":  925,
                            "display_name":  "三等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -1148,6 +1212,8 @@
                            "database_entry_id":  912,
                            "display_name":  "二等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -1183,6 +1249,8 @@
                            "database_entry_id":  912,
                            "display_name":  "二等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -1218,6 +1286,8 @@
                            "database_entry_id":  925,
                            "display_name":  "三等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -1253,6 +1323,8 @@
                            "database_entry_id":  925,
                            "display_name":  "三等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -1288,6 +1360,8 @@
                            "database_entry_id":  912,
                            "display_name":  "二等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -1323,6 +1397,8 @@
                            "database_entry_id":  912,
                            "display_name":  "二等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -1358,6 +1434,8 @@
                            "database_entry_id":  912,
                            "display_name":  "二等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -1393,6 +1471,8 @@
                            "database_entry_id":  925,
                            "display_name":  "三等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -1428,6 +1508,8 @@
                            "database_entry_id":  915,
                            "display_name":  "龟田",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  16,
+                           "authored_attack_type":  1,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -1675,6 +1757,8 @@
                            "database_entry_id":  896,
                            "display_name":  "j卡车a",
                            "vwf_faction_id":  2,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  0,
                            "method":  "unique_runtime_type_and_exact_reference_position",
                            "confidence":  "exact",
                            "evidence":  {
@@ -1711,6 +1795,8 @@
                            "database_entry_id":  896,
                            "display_name":  "j卡车a",
                            "vwf_faction_id":  2,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  0,
                            "method":  "unique_runtime_type_and_exact_reference_position",
                            "confidence":  "exact",
                            "evidence":  {
@@ -1747,6 +1833,8 @@
                            "database_entry_id":  896,
                            "display_name":  "j卡车a",
                            "vwf_faction_id":  2,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  0,
                            "method":  "unique_runtime_type_and_exact_reference_position",
                            "confidence":  "exact",
                            "evidence":  {
@@ -1783,6 +1871,8 @@
                            "database_entry_id":  912,
                            "display_name":  "二等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -1818,6 +1908,8 @@
                            "database_entry_id":  925,
                            "display_name":  "三等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "isolated_nearest_reference_after_exact_matches",
                            "confidence":  "high",
                            "evidence":  {
@@ -1849,6 +1941,8 @@
                            "database_entry_id":  925,
                            "display_name":  "三等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -1884,6 +1978,8 @@
                            "database_entry_id":  909,
                            "display_name":  "半蹲机枪兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  3,
                            "method":  "unique_runtime_type_and_exact_reference_position",
                            "confidence":  "exact",
                            "evidence":  {
@@ -1920,6 +2016,8 @@
                            "database_entry_id":  912,
                            "display_name":  "二等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -1955,6 +2053,8 @@
                            "database_entry_id":  912,
                            "display_name":  "二等兵",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -1990,6 +2090,8 @@
                            "database_entry_id":  1007,
                            "display_name":  "d军犬",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  4,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -2025,6 +2127,8 @@
                            "database_entry_id":  915,
                            "display_name":  "龟田",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  16,
+                           "authored_attack_type":  1,
                            "method":  "residual_unique_runtime_type",
                            "confidence":  "high",
                            "evidence":  {
@@ -2055,6 +2159,8 @@
                            "database_entry_id":  926,
                            "display_name":  "山本",
                            "vwf_faction_id":  1,
+                           "authored_hit_points":  16,
+                           "authored_attack_type":  1,
                            "method":  "unique_runtime_type_and_exact_patrol_goal",
                            "confidence":  "exact",
                            "evidence":  {
@@ -2302,6 +2408,8 @@
                            "database_entry_id":  888,
                            "display_name":  "d鸡",
                            "vwf_faction_id":  2,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  0,
                            "method":  "bounded_unambiguous_reference_drift",
                            "confidence":  "high",
                            "evidence":  {
@@ -2333,6 +2441,8 @@
                            "database_entry_id":  888,
                            "display_name":  "d鸡",
                            "vwf_faction_id":  2,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  0,
                            "method":  "bounded_unambiguous_reference_drift",
                            "confidence":  "high",
                            "evidence":  {

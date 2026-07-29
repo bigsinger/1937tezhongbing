@@ -10,16 +10,22 @@ const SEARCH_TIMEOUT_SECONDS := 2.50
 const PATROL_PATH_RETRY_MIN_SECONDS := 0.75
 const PATROL_PATH_RETRY_STEP_SECONDS := 0.05
 ## Stable-MOD differential capture recovers a 134 px/s uninterrupted patrol
-## displacement in m000. Its verified mission profile applies 0.90, so this
-## source speed yields the original interval without hiding the profile in the
-## movement integrator.
-const STABLE_MOD_BASE_PATROL_SPEED := 134.0 / 0.90
+## displacement in m000.  Original-parity mode applies no editorial mission
+## multiplier, so the recovered value is the runtime source of truth.
+const STABLE_MOD_BASE_PATROL_SPEED := 134.0
 ## Entry/steady MOD snapshots are five seconds apart. Across 25 guards that
 ## reverse a recovered waypoint in that window, the median residual endpoint
-## hold is about 1.9 seconds after subtracting travel at 134 px/s.
-const STABLE_MOD_PATROL_WAYPOINT_HOLD_SECONDS := 1.9
-const ATTACK_RECHECK_MIN_SECONDS := 20.0 * BASE_SPRITE_TICK_SECONDS
-const ATTACK_RECHECK_MAX_SECONDS := 39.0 * BASE_SPRITE_TICK_SECONDS
+## hold is about 2.1 seconds after subtracting travel at 134 px/s.  The
+## frame-bound remainder aligns the second audited one-second interval with
+## the stable process capture instead of letting three guards depart early.
+const STABLE_MOD_PATROL_WAYPOINT_HOLD_SECONDS := 2.1
+## The executable's 20..39 reaction-counter range is independent of the 85 ms
+## sprite frame clock.  The identity-resolved m000 trace places two scene-1598
+## rifle hits in consecutive checkpoints one second apart; a 30 Hz reaction
+## counter plus the recovered two-frame attack action reproduces that bound.
+const ORIGINAL_ATTACK_REACTION_TICK_SECONDS := 1.0 / 30.0
+const ATTACK_RECHECK_MIN_SECONDS := 20.0 * ORIGINAL_ATTACK_REACTION_TICK_SECONDS
+const ATTACK_RECHECK_MAX_SECONDS := 39.0 * ORIGINAL_ATTACK_REACTION_TICK_SECONDS
 ## Editorial accuracy model. The original executable's exact miss formula has
 ## not been recovered; this bounded base chance makes the authored per-level
 ## aim-error curve affect real hit resolution without pretending otherwise.
@@ -51,7 +57,10 @@ var patrol_path_retry_seconds := PATROL_PATH_RETRY_MIN_SECONDS
 var special_control_lock_count := 0
 var tactical_ranges_visible := false
 var mission_ai_coordinator: Node
-var editorial_aim_error_multiplier := 1.0
+## No miss dispersion is applied until an explicitly editorial difficulty
+## profile configures it.  Original-parity mode therefore uses the recovered
+## hit/damage path without a remake-only random miss layer.
+var editorial_aim_error_multiplier := 0.0
 var editorial_reaction_multiplier := 1.0
 var editorial_regroup_seconds := 0.0
 var editorial_regroup_multiplier := 1.0
@@ -328,10 +337,13 @@ func _update_detection() -> void:
 		last_known_target_position = nearest_visible.position
 		search_elapsed = 0.0
 		if not already_tracking:
-			attack_recheck_elapsed = 0.0
-		behavior_state = (
-			BehaviorState.ATTACK if _can_attack_current_target() else BehaviorState.CHASE
-		)
+			# The original actor's reaction counter runs while the guard patrols.
+			# Do not discard that accumulated time at first visual contact: a
+			# ready guard can commit the first shot immediately, as observed in
+			# the stable m000 natural-contact trace.
+			behavior_state = (
+				BehaviorState.ATTACK if _can_attack_current_target() else BehaviorState.CHASE
+			)
 	elif current_target != null and behavior_state in [BehaviorState.CHASE, BehaviorState.ATTACK]:
 		behavior_state = BehaviorState.SEARCH
 		search_elapsed = 0.0
@@ -519,7 +531,7 @@ func _deterministic_attack_interval() -> float:
 	var tick_offset := posmod(scene_index * 17 + attack_count * 13, 20)
 	return (
 		float(20 + tick_offset)
-		* BASE_SPRITE_TICK_SECONDS
+		* ORIGINAL_ATTACK_REACTION_TICK_SECONDS
 		* editorial_reaction_multiplier
 		* editorial_posture_reaction_multiplier
 	)
@@ -623,10 +635,11 @@ func _draw_ellipse_outline(radii: Vector2, color: Color, width: float) -> void:
 	draw_polyline(points, color, width, true)
 
 func _draw_visibility_fan(radii: Vector2, ratio: float, outline: Color) -> void:
-	# animation_group_index is generated directly from the last movement/attack
-	# vector. It is therefore the visual direction that the player sees.
-	var octant := posmod(animation_group_index - 5, 8)
-	var center: float = rad_to_deg(float(octant) * PI / 4.0)
+	# The fan is parameterized in the executable's logical isometric angle.
+	# Scaling x/y by the recovered ellipse radii projects it to screen pixels.
+	var center: float = TACTICAL_SENSES.original_direction_center_degrees(
+		original_direction_index
+	)
 	var half_angle: float = TACTICAL_SENSES.original_direction_half_angle_degrees(original_direction_index)
 	if center < 0.0 or half_angle <= 0.0:
 		return

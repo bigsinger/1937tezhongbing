@@ -2,7 +2,7 @@ class_name TacticalSenses
 extends RefCounted
 
 const ORIGINAL_DIRECTION_CENTERS: Array[float] = [
-	45.0, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0, 0.0,
+	270.0, 315.0, 0.0, 45.0, 90.0, 135.0, 180.0, 225.0,
 ]
 const ORIGINAL_DIRECTION_HALF_ANGLES: Array[float] = [
 	30.0, 45.0, 60.0, 45.0, 30.0, 45.0, 60.0, 45.0,
@@ -92,15 +92,33 @@ static func is_within_original_directional_field(
 	observer_position: Vector2,
 	target_position: Vector2,
 	direction_index: int,
+	horizontal_radius: float = 1.0,
+	vertical_radius: float = 1.0,
 ) -> bool:
 	var center := original_direction_center_degrees(direction_index)
 	var half_angle := original_direction_half_angle_degrees(direction_index)
 	var delta := target_position - observer_position
-	if center < 0.0 or half_angle < 0.0:
+	if (
+		center < 0.0
+		or half_angle < 0.0
+		or horizontal_radius <= 0.0
+		or vertical_radius <= 0.0
+	):
 		return false
 	if delta.is_zero_approx():
 		return true
-	var bearing := fposmod(rad_to_deg(atan2(delta.y, delta.x)), 360.0)
+	# The executable scans in logical isometric coordinates. World pixels use
+	# 32x16 cells, so comparing a raw screen-space angle rotates/skews several
+	# original directions. Normalize by the recovered sight ellipse before
+	# applying the original per-direction logical centre and half-angle.
+	var logical_delta := Vector2(
+		delta.x / horizontal_radius,
+		delta.y / vertical_radius,
+	)
+	var bearing := fposmod(
+		rad_to_deg(atan2(logical_delta.y, logical_delta.x)),
+		360.0,
+	)
 	var difference := absf(fposmod(bearing - center + 180.0, 360.0) - 180.0)
 	return difference <= half_angle
 
@@ -121,7 +139,11 @@ static func original_visibility_band(
 	if (
 		not bool(sense_profile.get("omnidirectional", false))
 		and not is_within_original_directional_field(
-			observer_position, target_position, direction_index
+			observer_position,
+			target_position,
+			direction_index,
+			horizontal_radius,
+			vertical_radius,
 		)
 	):
 		return 0

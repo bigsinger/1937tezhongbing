@@ -11,7 +11,9 @@ namespace m1937::sdk {
 #pragma pack(push, 1)
 struct RuntimeActorV1 final {
     std::byte unknown_000[100];
-    std::int32_t database_entry_id;       // +0x064
+    // Matches VWF database_header_values[2]. This is a runtime actor type,
+    // not the authored DBL database_entry_id.
+    std::int32_t runtime_type;            // +0x064
     std::byte unknown_068[12];
     std::int32_t faction_id;              // +0x074
     std::byte unknown_078[96];
@@ -35,14 +37,17 @@ struct RuntimeActorV1 final {
     std::int32_t command_variant;           // +0x1A4
     std::int32_t command_pending;           // +0x1A8
     std::int32_t selected_for_command;      // +0x1AC
-    std::byte unknown_1b0[36];
+    std::byte unknown_1b0[16];
+    std::int32_t current_hit_points;        // +0x1C0
+    std::byte unknown_1c4[16];
     std::int32_t search_or_return_active;   // +0x1D4
     std::int32_t movement_active;           // +0x1D8
     std::byte unknown_1dc[32];
     std::int32_t movement_path_state;       // +0x1FC
     std::byte unknown_200[8];
     std::int32_t movement_mode;             // +0x208
-    std::byte unknown_20c[8];
+    std::int32_t default_attack_type;        // +0x20C
+    std::byte unknown_210[4];
     std::uint32_t target_actor_address;     // +0x214
     std::int32_t resolved_goal_x;           // +0x218
     std::byte unknown_21c[4];
@@ -89,7 +94,7 @@ struct RuntimeViewportControllerV1 final {
 };
 #pragma pack(pop)
 
-static_assert(offsetof(RuntimeActorV1, database_entry_id) == 0x064);
+static_assert(offsetof(RuntimeActorV1, runtime_type) == 0x064);
 static_assert(offsetof(RuntimeActorV1, faction_id) == 0x074);
 static_assert(offsetof(RuntimeActorV1, world_x) == 0x0D8);
 static_assert(offsetof(RuntimeActorV1, world_height) == 0x0DC);
@@ -106,10 +111,12 @@ static_assert(offsetof(RuntimeActorV1, interest_actor_address) == 0x1A0);
 static_assert(offsetof(RuntimeActorV1, command_variant) == 0x1A4);
 static_assert(offsetof(RuntimeActorV1, command_pending) == 0x1A8);
 static_assert(offsetof(RuntimeActorV1, selected_for_command) == 0x1AC);
+static_assert(offsetof(RuntimeActorV1, current_hit_points) == 0x1C0);
 static_assert(offsetof(RuntimeActorV1, search_or_return_active) == 0x1D4);
 static_assert(offsetof(RuntimeActorV1, movement_active) == 0x1D8);
 static_assert(offsetof(RuntimeActorV1, movement_path_state) == 0x1FC);
 static_assert(offsetof(RuntimeActorV1, movement_mode) == 0x208);
+static_assert(offsetof(RuntimeActorV1, default_attack_type) == 0x20C);
 static_assert(offsetof(RuntimeActorV1, target_actor_address) == 0x214);
 static_assert(offsetof(RuntimeActorV1, resolved_goal_x) == 0x218);
 static_assert(offsetof(RuntimeActorV1, resolved_goal_y) == 0x220);

@@ -392,6 +392,23 @@ static func _validate_ai_directive(
 
 static func difficulty_for_mode(profile: Dictionary, mode: String) -> Dictionary:
 	var result := profile.duplicate(true) as Dictionary
+	if mode == "original":
+		# The per-level profiles are explicitly remake_editorial.  Original
+		# parity must not silently inherit those health, damage, movement,
+		# perception or accuracy changes.  Keep the profile's provenance and
+		# presentation metadata, but return neutral gameplay scalars.  A zero
+		# aim-error multiplier disables the remake-only deterministic miss model.
+		result["enemy_health_multiplier"] = 1.0
+		result["enemy_damage_multiplier"] = 1.0
+		result["reaction_time_multiplier"] = 1.0
+		result["aim_error_multiplier"] = 0.0
+		result["patrol_speed_multiplier"] = 1.0
+		result["sense_radius_multiplier"] = 1.0
+		result["shared_alert_radius_multiplier"] = 1.0
+		result["reinforcement_budget"] = 0
+		result["difficulty_mode"] = mode
+		result["original_parity"] = true
+		return result
 	var factor := 1.0
 	match mode:
 		"easy":
@@ -402,6 +419,7 @@ static func difficulty_for_mode(profile: Dictionary, mode: String) -> Dictionary
 			factor = 1.0
 		_:
 			return {}
+	result["original_parity"] = false
 	result["enemy_health_multiplier"] = float(profile.get("enemy_health_multiplier", 1.0)) * factor
 	result["enemy_damage_multiplier"] = float(profile.get("enemy_damage_multiplier", 1.0)) * factor
 	result["patrol_speed_multiplier"] = float(profile.get("patrol_speed_multiplier", 1.0)) * lerpf(1.0, factor, 0.45)

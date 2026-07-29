@@ -32,6 +32,7 @@ static func empty_session(level_id: String = "m000") -> Dictionary:
 		"squad": [],
 		"enemies": [],
 		"escorts": [],
+		"ambient": [],
 		"world": {
 			"snapshot_presence": {
 				"field_pickups": true,
@@ -277,6 +278,7 @@ func _is_valid_session(session: Dictionary) -> bool:
 		or not session.get("squad") is Array
 		or not session.get("enemies") is Array
 		or not session.get("escorts") is Array
+		or (session.has("ambient") and not session.get("ambient") is Array)
 		or not session.get("world") is Dictionary
 	):
 		return false
@@ -308,8 +310,8 @@ func _is_valid_session(session: Dictionary) -> bool:
 			return false
 	if not world.get("field_inventory") is Dictionary:
 		return false
-	for group_name: String in ["squad", "enemies", "escorts"]:
-		for actor: Variant in session[group_name] as Array:
+	for group_name: String in ["squad", "enemies", "escorts", "ambient"]:
+		for actor: Variant in session.get(group_name, []) as Array:
 			if not actor is Dictionary:
 				return false
 	return _is_json_safe(session)
@@ -320,7 +322,7 @@ func _normalize_session(session: Dictionary) -> Dictionary:
 	normalized["elapsed_seconds"] = maxf(float(session.get("elapsed_seconds", 0.0)), 0.0)
 	normalized["camera"] = (session.get("camera", normalized["camera"]) as Dictionary).duplicate(true)
 	normalized["mission"] = (session.get("mission", normalized["mission"]) as Dictionary).duplicate(true)
-	for group_name: String in ["squad", "enemies", "escorts"]:
+	for group_name: String in ["squad", "enemies", "escorts", "ambient"]:
 		normalized[group_name] = (session.get(group_name, []) as Array).duplicate(true)
 	var normalized_world := (normalized["world"] as Dictionary).duplicate(true)
 	var source_world: Variant = session.get("world", {})

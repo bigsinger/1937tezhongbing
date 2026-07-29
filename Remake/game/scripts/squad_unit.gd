@@ -48,6 +48,9 @@ var is_alive := true
 var faction_id := 3
 var current_hit_points := 8
 var maximum_hit_points := 8
+var damage_event_count := 0
+var damage_taken_total := 0
+var last_damage_attacker_scene_index := -1
 var scene_index := -1
 var dynamic_occupancy: RefCounted
 var dynamic_registered := false
@@ -131,6 +134,9 @@ func configure(
 	attack_groups_by_action.clear()
 	inventory_weapon_order.clear()
 	is_alive = true
+	damage_event_count = 0
+	damage_taken_total = 0
+	last_damage_attacker_scene_index = -1
 	if (
 		dynamic_occupancy != null
 		and scene_index >= 0
@@ -537,13 +543,23 @@ func take_damage(amount: int, attacker: Node2D = null) -> int:
 		return 0
 	var applied := mini(amount, current_hit_points)
 	current_hit_points -= applied
+	damage_event_count += 1
+	damage_taken_total += applied
+	last_damage_attacker_scene_index = (
+		int(attacker.get("scene_index"))
+		if attacker != null and is_instance_valid(attacker)
+		else -1
+	)
 	damage_received.emit(self, attacker, applied, current_hit_points)
 	_on_damage_taken(attacker)
 	if current_hit_points <= 0:
 		_die(attacker)
 	else:
 		_interrupt_combat_action()
-		cancel_path()
+		# A non-lethal hit interrupts the current combat animation, but the
+		# original actor keeps its issued movement goal.  The stable MOD contact
+		# sample continues from 8 -> 6 -> 4 HP all the way to the commanded
+		# destination; clearing the path here made a wounded player freeze.
 		hurt_remaining = HURT_REACTION_SECONDS
 	queue_redraw()
 	return applied

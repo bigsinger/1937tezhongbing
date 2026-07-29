@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <dinput.h>
 #include <mmsystem.h>
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -67,6 +68,7 @@ enum WindowReplayCommand : WPARAM {
     replay_menu_command = 6,
     replay_clear = 7,
     replay_ai_alert = 8,
+    replay_camera_center = 9,
 };
 
 struct DiagnosticEntry {
@@ -2462,7 +2464,7 @@ int __fastcall EnhancedAlertPropagation(
         if (!candidate || candidate == source ||
             !IsReadableRange(candidate, sizeof(*candidate)) ||
             candidate->faction_id != 1 ||
-            candidate->database_entry_id == 91 ||
+            candidate->runtime_type == 91 ||
             candidate->dead_or_disabled != 0 ||
             (candidate->contact_state == 1 &&
              candidate->target_lost != 1)) {
@@ -3251,6 +3253,60 @@ void HandleWindowReplayMessage(const MSG &message) {
         RecordDiagnostic(
             "replay_ai_alert",
             raised ? "raised" : "unavailable",
+            "isolated_probe_only");
+        break;
+    }
+    case replay_camera_center: {
+        // Isolated regression probes need to click faithful world coordinates
+        // that may begin outside the current 1024x768 viewport. The command is
+        // unavailable unless the opt-in window replay channel is enabled, and
+        // it changes only this test process' original viewport controller.
+        auto **controller_slot =
+            reinterpret_cast<m1937::sdk::RuntimeViewportControllerV1 **>(
+                g_executable_base +
+                m1937::sdk::rva::viewport_controller);
+        auto *controller =
+            IsReadableRange(controller_slot, sizeof(*controller_slot))
+                ? *controller_slot
+                : nullptr;
+        bool centered = false;
+        if (controller &&
+            IsReadableRange(controller, sizeof(*controller)) &&
+            controller->viewport_width > 0 &&
+            controller->viewport_height > 0 &&
+            controller->world_width >= controller->viewport_width &&
+            controller->world_height >= controller->viewport_height) {
+            const int world_x =
+                static_cast<unsigned short>(LOWORD(message.lParam));
+            const int world_y =
+                static_cast<unsigned short>(HIWORD(message.lParam));
+            const int camera_left = std::clamp(
+                world_x - controller->viewport_width / 2,
+                0,
+                controller->world_width - controller->viewport_width);
+            const int camera_top = std::clamp(
+                world_y - controller->viewport_height / 2,
+                0,
+                controller->world_height - controller->viewport_height);
+            controller->camera_left = camera_left;
+            controller->camera_top = camera_top;
+            controller->camera_right =
+                camera_left + controller->viewport_width;
+            controller->camera_bottom =
+                camera_top + controller->viewport_height;
+            controller->input_camera_left = camera_left;
+            controller->input_camera_top = camera_top;
+            *reinterpret_cast<int *>(
+                g_executable_base + m1937::sdk::rva::camera_x) =
+                camera_left;
+            *reinterpret_cast<int *>(
+                g_executable_base + m1937::sdk::rva::camera_y) =
+                camera_top;
+            centered = true;
+        }
+        RecordDiagnostic(
+            "replay_camera",
+            centered ? "centered" : "unavailable",
             "isolated_probe_only");
         break;
     }

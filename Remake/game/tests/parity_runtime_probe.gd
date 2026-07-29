@@ -57,7 +57,11 @@ func _run_probe() -> void:
 	var scenario_description := (
 		"Observe the audited m000 enemy patrol roster in two one-second intervals."
 		if scenario_id == "m000-enemy-patrol-v1"
-		else "Select 强子, issue two original-coordinate move orders, and observe facing/path replacement."
+		else (
+			"Move 强子 into natural enemy contact and observe audited AI target-state transitions."
+			if scenario_id == "m000-natural-contact-v1"
+			else "Select 强子, issue two original-coordinate move orders, and observe facing/path replacement."
+		)
 	)
 	trace.configure(
 		"remake",
@@ -72,6 +76,16 @@ func _run_probe() -> void:
 			main,
 			trace,
 			started,
+			observation_seconds,
+		)
+		return
+	if scenario_id == "m000-natural-contact-v1":
+		await _run_natural_contact_probe(
+			main,
+			trace,
+			started,
+			outbound_target,
+			return_target,
 			observation_seconds,
 		)
 		return
@@ -235,6 +249,131 @@ func _run_enemy_patrol_probe(
 	quit(1)
 
 
+func _run_natural_contact_probe(
+	main: Node,
+	trace: RefCounted,
+	started: int,
+	outbound_target: Vector2,
+	return_target: Vector2,
+	observation_seconds: float,
+) -> void:
+	# Match the stable MOD probe's gameplay-resume and spawn-safety phase.
+	await create_timer(9.2).timeout
+	var primary = _primary_unit(main)
+	trace.call(
+		"capture_main",
+		"contact_ready",
+		main,
+		_elapsed_ms(started),
+		{
+			"scope": "audited_m000_resolved_actor_identities",
+			"ambient_entity_count": (main.get("ambient_entities") as Array).size(),
+			"ambient_unit_count": (main.get("ambient_units") as Array).size(),
+			"outbound_navigation": _navigation_target_tags(
+				main, primary, outbound_target
+			) if primary != null else {},
+			"return_navigation": _navigation_target_tags(
+				main, primary, return_target
+			) if primary != null else {},
+		},
+	)
+	_expect(primary != null, "m000 primary DBL 924 actor exists")
+	if primary != null:
+		main.select_only(primary)
+		trace.call(
+			"capture_main",
+			"player_selected",
+			main,
+			_elapsed_ms(started),
+		)
+		main.issue_formation_move(outbound_target)
+		_expect(
+			primary.target_position.distance_to(outbound_target) <= 1.0,
+			"natural-contact outbound target is accepted",
+		)
+		trace.call(
+			"capture_main",
+			"move_outbound_commanded",
+			main,
+			_elapsed_ms(started),
+			_movement_tags(primary, main),
+		)
+		await create_timer(observation_seconds).timeout
+		trace.call(
+			"capture_main",
+			"move_outbound_observed",
+			main,
+			_elapsed_ms(started),
+			_movement_tags(primary, main),
+		)
+		main.issue_formation_move(return_target)
+		_expect(
+			primary.target_position.distance_to(return_target) <= 1.0,
+			"natural-contact replacement target is accepted",
+		)
+		trace.call(
+			"capture_main",
+			"move_return_commanded",
+			main,
+			_elapsed_ms(started),
+			_movement_tags(primary, main),
+		)
+		await create_timer(observation_seconds).timeout
+		trace.call(
+			"capture_main",
+			"move_return_observed",
+			main,
+			_elapsed_ms(started),
+			_movement_tags(primary, main),
+		)
+		await create_timer(1.0).timeout
+		trace.call(
+			"capture_main",
+			"contact_settled",
+			main,
+			_elapsed_ms(started),
+			{"scope": "audited_m000_resolved_actor_identities"},
+		)
+		var contacts := 0
+		for enemy: Node2D in main.enemies:
+			if (
+				enemy.get("current_target") == primary
+				and int(enemy.get("behavior_state")) in [1, 2]
+			):
+				contacts += 1
+		_expect(
+			contacts > 0,
+			"natural movement produces at least one live enemy contact",
+		)
+	var trace_path := ""
+	if not output_directory.is_empty():
+		trace_path = output_directory.path_join(
+			"remake-m000-natural-contact-v1.json"
+		)
+		_expect(
+			trace.call("write_to_file", trace_path) == OK,
+			"Remake natural-contact parity trace writes",
+		)
+	var trace_document: Dictionary = trace.get("document") as Dictionary
+	print(
+		"PARITY_RUNTIME_PROBE_RESULT %s"
+		% JSON.stringify(
+			{
+				"trace": trace_path,
+				"checkpoints": (trace_document.get("checkpoints", []) as Array).size(),
+				"failures": failures,
+			}
+		)
+	)
+	main.queue_free()
+	if failures.is_empty():
+		quit(0)
+		return
+	for failure: String in failures:
+		push_error(failure)
+	quit(1)
+
+
 func _primary_unit(main: Node) -> Node2D:
 	var entities: Dictionary = main.world_entities_by_scene
 	for unit: Node2D in main.units:
@@ -349,6 +488,43 @@ func _movement_tags(unit: Node2D, main: Node) -> Dictionary:
 		"path": points,
 		"raw_layer3_path": raw_points,
 		"nearby_runtime_owners": nearby_owners,
+	}
+
+
+func _navigation_target_tags(main: Node, unit: Node2D, target: Vector2) -> Dictionary:
+	if (
+		main == null
+		or main.get("navigation_grid") == null
+		or main.get("dynamic_occupancy") == null
+		or unit == null
+	):
+		return {}
+	var navigation: RefCounted = main.get("navigation_grid")
+	var occupancy: RefCounted = main.get("dynamic_occupancy")
+	var target_cell: Vector2i = navigation.call("world_to_cell", target)
+	var movement_owner := -1
+	if occupancy.has_method("runtime_movement_owner"):
+		movement_owner = int(occupancy.call("runtime_movement_owner", target_cell))
+	var goal_owner := -1
+	var goal_owners: Dictionary = occupancy.get("goal_owners") as Dictionary
+	if goal_owners.has(target_cell):
+		goal_owner = int(goal_owners[target_cell])
+	var source_movement := -1
+	var source_sight := -1
+	if navigation.has_method("source_value"):
+		source_movement = int(navigation.call("source_value", 3, target_cell))
+		source_sight = int(navigation.call("source_value", 2, target_cell))
+	var actor_cell := Vector2i(-1, -1)
+	if occupancy.has_method("actor_cell"):
+		actor_cell = occupancy.call("actor_cell", int(unit.get("scene_index")))
+	return {
+		"requested_world": [target.x, target.y],
+		"target_cell": [target_cell.x, target_cell.y],
+		"source_movement": source_movement,
+		"source_sight": source_sight,
+		"runtime_movement_owner": movement_owner,
+		"goal_owner": goal_owner,
+		"actor_cell": [actor_cell.x, actor_cell.y],
 	}
 
 

@@ -41,7 +41,7 @@ func configure_for_mission(
 	catalog_path: String = CATALOG_PATH,
 ) -> bool:
 	_reset()
-	if new_difficulty_mode not in ["easy", "normal", "hard"]:
+	if new_difficulty_mode not in ["original", "easy", "normal", "hard"]:
 		return _reject("unknown difficulty mode: %s" % new_difficulty_mode)
 	mission_plan = DATA_SCRIPT.load_mission_plan(new_mission_id, catalog_path)
 	if mission_plan.is_empty():

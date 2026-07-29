@@ -11,7 +11,7 @@
       "requires_line_of_sight": true,
       "crawling_hidden_in_far_band": true,
       "scan_step_degrees": 3.0,
-      "original_direction_centers_degrees": [45, 90, 135, 180, 225, 270, 315, 0],
+      "original_direction_centers_degrees": [270, 315, 0, 45, 90, 135, 180, 225],
       "original_direction_half_angles_degrees": [30, 45, 60, 45, 30, 45, 60, 45]
     },
     "guard_dog_special": {

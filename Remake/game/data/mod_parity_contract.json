@@ -25,7 +25,7 @@
     {
       "id": "actors_and_animation",
       "status": "partial",
-      "evidence": ["980 sprites", "2775 groups", "11898 frames", "20 actions x 9 directions"],
+      "evidence": ["980 sprites", "2775 groups", "11898 frames", "20 actions x 9 directions", "m000 resolved runtime identity set includes 46 enemies, 2 mission escorts, 3 stationary trucks, 2 moving chickens, and the player"],
       "gaps": ["non-lethal hurt sequence", "special transitions", "per-actor anchor verification"]
     },
     {
@@ -43,7 +43,7 @@
     {
       "id": "weapons_ammo_and_combat",
       "status": "partial",
-      "evidence": ["attack types 1-11", "ammo/reload", "hit-frame damage", "projectiles and explosions"],
+      "evidence": ["attack types 1-11", "ammo/reload", "hit-frame damage", "projectiles and explosions", "m000 natural-contact differential with exact 54-actor HP/attack-type state, player 8-to-6-to-4 damage sequence, and scene 1598 as both damage sources"],
       "gaps": ["original magazine/reserve values", "damage and timing table", "type 8/10/11 exact parameters"]
     },
     {
@@ -55,7 +55,7 @@
     {
       "id": "vision_hearing_and_ai",
       "status": "partial",
-      "evidence": ["directional near/far perception", "L2 occlusion", "recovered 640-pixel ordinary-enemy hearing radius", "event-driven noise investigation without omniscient live-target tracking", "alert sharing and last-known search"],
+      "evidence": ["directional near/far perception", "L2 occlusion", "recovered 640-pixel ordinary-enemy hearing radius", "event-driven noise investigation without omniscient live-target tracking", "alert sharing and last-known search", "m000 natural-contact MOD/Remake differential gate with exact scene 1598 to scene 1436 live-target identity and at most one checkpoint onset drift"],
       "gaps": ["special-actor hearing overrides", "corpse discovery cascade", "original search/return timing and cooperation rules"]
     },
     {
@@ -96,7 +96,7 @@
     }
   ],
   "levels": [
-    {"id": "m000", "number": 1, "title": "营救行动", "status": "partial", "gaps": ["combat/inventory/mission differential traces", "exact scripted patrol phases for unresolved formations", "door/foreground obstacle-path parity", "save/reload at each objective"]},
+    {"id": "m000", "number": 1, "title": "营救行动", "status": "partial", "gaps": ["ammo/inventory/mission differential traces", "exact scripted and ambient patrol phases for unresolved formations", "door/foreground obstacle-path parity", "save/reload at each objective"]},
     {"id": "m001", "number": 2, "title": "奇袭火车站", "status": "partial", "gaps": ["victory/failure traces", "uniform and train interaction parity", "difficulty calibration"]},
     {"id": "m002", "number": 3, "title": "劫狱", "status": "partial", "gaps": ["victory/failure traces", "prison interaction parity", "difficulty calibration"]},
     {"id": "m003", "number": 4, "title": "铁路桥", "status": "partial", "gaps": ["victory/failure traces", "bridge explosion parity", "difficulty calibration"]},

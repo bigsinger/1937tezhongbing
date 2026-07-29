@@ -12,6 +12,8 @@ const TACTICAL_SENSES: Script = preload("res://scripts/tactical_senses.gd")
 const DYNAMIC_OCCUPANCY_GRID: Script = preload("res://scripts/dynamic_occupancy_grid.gd")
 const SQUAD_UNIT_SCRIPT: Script = preload("res://scripts/squad_unit.gd")
 const ENEMY_UNIT_SCRIPT: Script = preload("res://scripts/enemy_unit.gd")
+const ESCORT_UNIT_SCRIPT: Script = preload("res://scripts/escort_unit.gd")
+const AMBIENT_UNIT_SCRIPT: Script = preload("res://scripts/ambient_unit.gd")
 const MAIN_SCENE: PackedScene = preload("res://scenes/main.tscn")
 
 var check_count: int = 0
@@ -659,6 +661,84 @@ func _init() -> void:
 	)
 	silent_target.free()
 	enemy_fixture.free()
+	var directional_animation_groups: Array[Dictionary] = []
+	for unused_direction in range(8):
+		directional_animation_groups.append(
+			{
+				"frames": [] as Array[Texture2D],
+				"anchor": Vector2.ZERO,
+				"frame_hold_ticks": 1,
+			}
+		)
+	var escort_fixture = ESCORT_UNIT_SCRIPT.new()
+	escort_fixture.configure_escort(
+		{
+			"scene_index": 1427,
+			"display_name": "彭鑫",
+			"x": 4000,
+			"y": 1000,
+			"reference_x": 4176,
+			"reference_y": 1128,
+			"faction_id": 3,
+			"direction_index": 2,
+			"current_hit_points": 8,
+		},
+		null,
+		directional_animation_groups,
+		directional_animation_groups,
+		empty_animation_groups,
+		null,
+	)
+	expect(
+		(
+			escort_fixture.position == Vector2(4176, 1128)
+			and escort_fixture.faction_id == 3
+			and escort_fixture.animation_group_index
+			== IMPORTED_SPRITE_ANIMATION.legacy_group_index_for_direction(2)
+		),
+		"escort runtime preserves the stable MOD reference spawn, faction, and authored facing",
+		failures,
+	)
+	escort_fixture.free()
+	var ambient_fixture = AMBIENT_UNIT_SCRIPT.new()
+	ambient_fixture.configure_ambient(
+		{
+			"scene_index": 1621,
+			"display_name": "d鸡",
+			"x": 368,
+			"y": 984,
+			"reference_x": 379,
+			"reference_y": 981,
+			"faction_id": 2,
+			"direction_index": 1,
+			"current_hit_points": 8,
+			"database_header_values": [0, 1, 33, 2, 32],
+			"patrol_waypoints": [{"x": 11, "y": 61}, {"x": 8, "y": 55}],
+			"patrol_current_waypoint_index": 1,
+			"patrol_enabled": true,
+		},
+		null,
+		directional_animation_groups,
+		directional_animation_groups,
+		empty_animation_groups,
+		null,
+	)
+	expect(
+		(
+			ambient_fixture.position == Vector2(379, 981)
+			and ambient_fixture.faction_id == 2
+			and is_equal_approx(ambient_fixture.move_speed, 32.0)
+			and ambient_fixture.patrol_enabled
+			and ambient_fixture.patrol_index == 1
+			and ambient_fixture.patrol_waypoints
+			== PackedVector2Array([Vector2(368, 984), Vector2(272, 888)])
+			and ambient_fixture.animation_group_index
+			== IMPORTED_SPRITE_ANIMATION.legacy_group_index_for_direction(1)
+		),
+		"ambient runtime preserves original identity, spawn, faction, speed, patrol, and facing",
+		failures,
+	)
+	ambient_fixture.free()
 	expect(
 		(
 			TACTICAL_SENSES.is_within_isometric_ellipse(
@@ -689,24 +769,30 @@ func _init() -> void:
 	)
 	expect(
 		(
-			TACTICAL_SENSES.original_direction_center_degrees(1) == 45.0
+			TACTICAL_SENSES.original_direction_center_degrees(1) == 270.0
 			and TACTICAL_SENSES.original_direction_half_angle_degrees(1) == 30.0
-			and TACTICAL_SENSES.original_direction_center_degrees(7) == 315.0
+			and TACTICAL_SENSES.original_direction_center_degrees(7) == 180.0
 			and TACTICAL_SENSES.original_direction_half_angle_degrees(7) == 60.0
+			and TACTICAL_SENSES.is_within_original_directional_field(
+				Vector2.ZERO, Vector2(-70, 54), 6, 640.0, 320.0
+			)
+			and not TACTICAL_SENSES.is_within_original_directional_field(
+				Vector2.ZERO, Vector2(306, 201), 8, 640.0, 320.0
+			)
 		),
-		"all original direction indices use recovered projected scan geometry",
+		"original directions use recovered N/NE/E/SE/S/SW/W/NW isometric scan geometry",
 		failures,
 	)
 	expect(
 		(
 			TACTICAL_SENSES.original_visibility_band(
-				Vector2.ZERO, Vector2(100, 100), 1, enemy_sense
+				Vector2.ZERO, Vector2(100, 100), 4, enemy_sense
 			) == 1
 			and TACTICAL_SENSES.original_visibility_band(
-				Vector2.ZERO, Vector2(500, 0), 8, enemy_sense
+				Vector2.ZERO, Vector2(500, 0), 3, enemy_sense
 			) == 2
 			and TACTICAL_SENSES.original_visibility_band(
-				Vector2.ZERO, Vector2(500, 0), 8, enemy_sense, true
+				Vector2.ZERO, Vector2(500, 0), 3, enemy_sense, true
 			) == 0
 		),
 		"ordinary enemy vision preserves direction, near/far bands, and crawl concealment",
