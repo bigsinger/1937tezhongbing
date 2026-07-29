@@ -1,0 +1,3387 @@
+﻿{
+    "schema_version":  1,
+    "catalog_id":  "mod-m005-runtime-actors-v1",
+    "content_profile":  "repository-mod-12-level-20260729",
+    "level":  {
+                  "id":  "m005",
+                  "selector_level":  6,
+                  "engine_mission":  6
+              },
+    "provenance":  {
+                       "runtime_snapshot":  {
+                                                "capture_id":  "m005-inventory-entry-20260730",
+                                                "sha256":  "D7F0CA67913E1B35D66BE40688D9ADCAB282DD081FF9B9C8AF9AE2293B35DC68",
+                                                "observation_point":  "gameplay entry after briefing; read-only RuntimeActorV1 snapshots"
+                                            },
+                       "level_manifest":  {
+                                              "level_id":  "m005",
+                                              "sha256":  "2E678A972EDDC8694317B85F09D2590C72EEA74DD88A5EA41F1B33324AA2826C"
+                                          },
+                       "field_semantics":  {
+                                               "runtime_type":  "RuntimeActorV1 +0x064; historical SDK field name database_entry; this is a runtime type and never a DBL id",
+                                               "vwf_runtime_type":  "entity.database_header_values[2]",
+                                               "vwf_database_entry_id":  "entity.database_entry_id; the actual DBL resource identity",
+                                               "runtime_current_hit_points":  "RuntimeActorV1 +0x1C0; exact m000 correlation with entity.current_hit_points across all 54 resolved actors",
+                                               "runtime_default_attack_type":  "RuntimeActorV1 +0x20C; exact m000 correlation with entity.default_attack_type across all 54 resolved actors",
+                                               "patrol_world_coordinate":  "[waypoint.x * 32 + 16, waypoint.y * 16 + 8]",
+                                               "runtime_index":  "capture-local actor-array index; never treated as a VWF scene index"
+                                           }
+                   },
+    "summary":  {
+                    "runtime_object_count":  122,
+                    "runtime_dynamic_actor_count":  92,
+                    "vwf_dynamic_actor_count":  92,
+                    "resolved_count":  92,
+                    "unresolved_count":  0,
+                    "method_counts":  {
+                                          "bounded_unambiguous_reference_drift":  20,
+                                          "unique_runtime_type_and_exact_reference_position":  19,
+                                          "unique_runtime_type_and_exact_patrol_goal":  53
+                                      }
+                },
+    "identities":  [
+                       {
+                           "runtime_index":  0,
+                           "runtime_type":  6,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1182,
+                                                             1983
+                                                         ],
+                                            "facing_direction":  8,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         1124,
+                                                         1954
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  549,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "bounded_unambiguous_reference_drift",
+                           "confidence":  "high",
+                           "evidence":  {
+                                            "reference_distance":  2.236,
+                                            "runner_up_distance":  82.735,
+                                            "maximum_distance":  64,
+                                            "minimum_runner_up_gap":  32
+                                        }
+                       },
+                       {
+                           "runtime_index":  1,
+                           "runtime_type":  6,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1060,
+                                                             1922
+                                                         ],
+                                            "facing_direction":  8,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         994,
+                                                         1889
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  550,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "bounded_unambiguous_reference_drift",
+                           "confidence":  "high",
+                           "evidence":  {
+                                            "reference_distance":  2.236,
+                                            "runner_up_distance":  53.666,
+                                            "maximum_distance":  64,
+                                            "minimum_runner_up_gap":  32
+                                        }
+                       },
+                       {
+                           "runtime_index":  2,
+                           "runtime_type":  6,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1106,
+                                                             1945
+                                                         ],
+                                            "facing_direction":  8,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         1168,
+                                                         1896
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  551,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "bounded_unambiguous_reference_drift",
+                           "confidence":  "high",
+                           "evidence":  {
+                                            "reference_distance":  2.236,
+                                            "runner_up_distance":  49.193,
+                                            "maximum_distance":  64,
+                                            "minimum_runner_up_gap":  32
+                                        }
+                       },
+                       {
+                           "runtime_index":  3,
+                           "runtime_type":  6,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             2768,
+                                                             1355
+                                                         ],
+                                            "facing_direction":  5,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         2256,
+                                                         1704
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  552,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  6,
+                                            "patrol_goal":  [
+                                                                2256,
+                                                                1704
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  4,
+                           "runtime_type":  6,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             2832,
+                                                             1384
+                                                         ],
+                                            "facing_direction":  8,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         2800,
+                                                         1368
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  553,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_reference_position",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  6,
+                                            "position":  [
+                                                             2832,
+                                                             1384
+                                                         ],
+                                            "reference_position":  [
+                                                                       2832,
+                                                                       1384
+                                                                   ]
+                                        }
+                       },
+                       {
+                           "runtime_index":  5,
+                           "runtime_type":  6,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             2800,
+                                                             1368
+                                                         ],
+                                            "facing_direction":  8,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         2768,
+                                                         1355
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  554,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_reference_position",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  6,
+                                            "position":  [
+                                                             2800,
+                                                             1368
+                                                         ],
+                                            "reference_position":  [
+                                                                       2800,
+                                                                       1368
+                                                                   ]
+                                        }
+                       },
+                       {
+                           "runtime_index":  6,
+                           "runtime_type":  6,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             3156,
+                                                             1402
+                                                         ],
+                                            "facing_direction":  8,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         3152,
+                                                         1400
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  555,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  6,
+                                            "patrol_goal":  [
+                                                                3152,
+                                                                1400
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  7,
+                           "runtime_type":  6,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1552,
+                                                             2085
+                                                         ],
+                                            "facing_direction":  1,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         2192,
+                                                         1672
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  556,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  6,
+                                            "patrol_goal":  [
+                                                                2192,
+                                                                1672
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  8,
+                           "runtime_type":  6,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1616,
+                                                             2120
+                                                         ],
+                                            "facing_direction":  8,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         1584,
+                                                         2104
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  557,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_reference_position",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  6,
+                                            "position":  [
+                                                             1616,
+                                                             2120
+                                                         ],
+                                            "reference_position":  [
+                                                                       1616,
+                                                                       2120
+                                                                   ]
+                                        }
+                       },
+                       {
+                           "runtime_index":  9,
+                           "runtime_type":  6,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1584,
+                                                             2104
+                                                         ],
+                                            "facing_direction":  8,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         1552,
+                                                         2085
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  558,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_reference_position",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  6,
+                                            "position":  [
+                                                             1584,
+                                                             2104
+                                                         ],
+                                            "reference_position":  [
+                                                                       1584,
+                                                                       2104
+                                                                   ]
+                                        }
+                       },
+                       {
+                           "runtime_index":  10,
+                           "runtime_type":  6,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             3228,
+                                                             1762
+                                                         ],
+                                            "facing_direction":  2,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         3376,
+                                                         1688
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  559,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  6,
+                                            "patrol_goal":  [
+                                                                3376,
+                                                                1688
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  11,
+                           "runtime_type":  5,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             2577,
+                                                             2100
+                                                         ],
+                                            "facing_direction":  4,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         2576,
+                                                         2104
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  560,
+                           "database_entry_id":  925,
+                           "display_name":  "三等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  5,
+                                            "patrol_goal":  [
+                                                                2576,
+                                                                2104
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  12,
+                           "runtime_type":  6,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1870,
+                                                             2535
+                                                         ],
+                                            "facing_direction":  8,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         1808,
+                                                         2504
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  561,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  6,
+                                            "patrol_goal":  [
+                                                                1808,
+                                                                2504
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  13,
+                           "runtime_type":  6,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1066,
+                                                             2437
+                                                         ],
+                                            "facing_direction":  8,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         752,
+                                                         2280
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  562,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  6,
+                                            "patrol_goal":  [
+                                                                752,
+                                                                2280
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  14,
+                           "runtime_type":  6,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             618,
+                                                             2949
+                                                         ],
+                                            "facing_direction":  4,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         668,
+                                                         2974
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  563,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "bounded_unambiguous_reference_drift",
+                           "confidence":  "high",
+                           "evidence":  {
+                                            "reference_distance":  2.236,
+                                            "runner_up_distance":  100.623,
+                                            "maximum_distance":  64,
+                                            "minimum_runner_up_gap":  32
+                                        }
+                       },
+                       {
+                           "runtime_index":  15,
+                           "runtime_type":  6,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             406,
+                                                             2836
+                                                         ],
+                                            "facing_direction":  4,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         474,
+                                                         2877
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  564,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "bounded_unambiguous_reference_drift",
+                           "confidence":  "high",
+                           "evidence":  {
+                                            "reference_distance":  2.236,
+                                            "runner_up_distance":  139.671,
+                                            "maximum_distance":  64,
+                                            "minimum_runner_up_gap":  32
+                                        }
+                       },
+                       {
+                           "runtime_index":  16,
+                           "runtime_type":  6,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             530,
+                                                             2905
+                                                         ],
+                                            "facing_direction":  4,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         556,
+                                                         2918
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  565,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "bounded_unambiguous_reference_drift",
+                           "confidence":  "high",
+                           "evidence":  {
+                                            "reference_distance":  2.236,
+                                            "runner_up_distance":  96.151,
+                                            "maximum_distance":  64,
+                                            "minimum_runner_up_gap":  32
+                                        }
+                       },
+                       {
+                           "runtime_index":  17,
+                           "runtime_type":  12,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             726,
+                                                             3003
+                                                         ],
+                                            "facing_direction":  4,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         848,
+                                                         3064
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  566,
+                           "database_entry_id":  915,
+                           "display_name":  "龟田",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  16,
+                           "authored_attack_type":  1,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  12,
+                                            "patrol_goal":  [
+                                                                848,
+                                                                3064
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  18,
+                           "runtime_type":  5,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             721,
+                                                             2836
+                                                         ],
+                                            "facing_direction":  6,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         720,
+                                                         2840
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  567,
+                           "database_entry_id":  925,
+                           "display_name":  "三等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  5,
+                                            "patrol_goal":  [
+                                                                720,
+                                                                2840
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  19,
+                           "runtime_type":  6,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1418,
+                                                             3096
+                                                         ],
+                                            "facing_direction":  7,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         880,
+                                                         3048
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  568,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  6,
+                                            "patrol_goal":  [
+                                                                880,
+                                                                3048
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  20,
+                           "runtime_type":  5,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             3313,
+                                                             2468
+                                                         ],
+                                            "facing_direction":  6,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         3312,
+                                                         2472
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  569,
+                           "database_entry_id":  925,
+                           "display_name":  "三等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  5,
+                                            "patrol_goal":  [
+                                                                3312,
+                                                                2472
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  21,
+                           "runtime_type":  6,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             3280,
+                                                             2555
+                                                         ],
+                                            "facing_direction":  5,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         2768,
+                                                         2856
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  570,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  6,
+                                            "patrol_goal":  [
+                                                                2768,
+                                                                2856
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  22,
+                           "runtime_type":  6,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             2902,
+                                                             3048
+                                                         ],
+                                            "facing_direction":  3,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         3216,
+                                                         3144
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  571,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  6,
+                                            "patrol_goal":  [
+                                                                3216,
+                                                                3144
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  23,
+                           "runtime_type":  6,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             2620,
+                                                             2338
+                                                         ],
+                                            "facing_direction":  2,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         2674,
+                                                         2311
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  572,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "bounded_unambiguous_reference_drift",
+                           "confidence":  "high",
+                           "evidence":  {
+                                            "reference_distance":  2.236,
+                                            "runner_up_distance":  383.082,
+                                            "maximum_distance":  64,
+                                            "minimum_runner_up_gap":  32
+                                        }
+                       },
+                       {
+                           "runtime_index":  24,
+                           "runtime_type":  6,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             2068,
+                                                             2614
+                                                         ],
+                                            "facing_direction":  2,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         2124,
+                                                         2586
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  573,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "bounded_unambiguous_reference_drift",
+                           "confidence":  "high",
+                           "evidence":  {
+                                            "reference_distance":  2.236,
+                                            "runner_up_distance":  234.776,
+                                            "maximum_distance":  64,
+                                            "minimum_runner_up_gap":  32
+                                        }
+                       },
+                       {
+                           "runtime_index":  25,
+                           "runtime_type":  6,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             2286,
+                                                             2521
+                                                         ],
+                                            "facing_direction":  2,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         2560,
+                                                         2368
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  574,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "bounded_unambiguous_reference_drift",
+                           "confidence":  "high",
+                           "evidence":  {
+                                            "reference_distance":  2.236,
+                                            "runner_up_distance":  239.24,
+                                            "maximum_distance":  64,
+                                            "minimum_runner_up_gap":  32
+                                        }
+                       },
+                       {
+                           "runtime_index":  26,
+                           "runtime_type":  12,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             2800,
+                                                             2251
+                                                         ],
+                                            "facing_direction":  5,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         3376,
+                                                         2552
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  575,
+                           "database_entry_id":  915,
+                           "display_name":  "龟田",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  16,
+                           "authored_attack_type":  1,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  12,
+                                            "patrol_goal":  [
+                                                                3376,
+                                                                2552
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  27,
+                           "runtime_type":  1,
+                           "runtime_faction_id":  3,
+                           "observed":  {
+                                            "position":  [
+                                                             3697,
+                                                             403
+                                                         ],
+                                            "facing_direction":  5,
+                                            "goal_kind":  0,
+                                            "goal":  [
+                                                         0,
+                                                         0
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  576,
+                           "database_entry_id":  924,
+                           "display_name":  "强子",
+                           "vwf_faction_id":  3,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  4,
+                           "method":  "unique_runtime_type_and_exact_reference_position",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  1,
+                                            "position":  [
+                                                             3697,
+                                                             403
+                                                         ],
+                                            "reference_position":  [
+                                                                       3697,
+                                                                       403
+                                                                   ]
+                                        }
+                       },
+                       {
+                           "runtime_index":  28,
+                           "runtime_type":  23,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1738,
+                                                             1195
+                                                         ],
+                                            "facing_direction":  6,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         1424,
+                                                         1352
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  577,
+                           "database_entry_id":  913,
+                           "display_name":  "二狗",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  23,
+                                            "patrol_goal":  [
+                                                                1424,
+                                                                1352
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  29,
+                           "runtime_type":  23,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1366,
+                                                             1067
+                                                         ],
+                                            "facing_direction":  4,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         1488,
+                                                         1128
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  578,
+                           "database_entry_id":  913,
+                           "display_name":  "二狗",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  23,
+                                            "patrol_goal":  [
+                                                                1488,
+                                                                1128
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  30,
+                           "runtime_type":  23,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             70,
+                                                             1203
+                                                         ],
+                                            "facing_direction":  8,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         48,
+                                                         1192
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  579,
+                           "database_entry_id":  913,
+                           "display_name":  "二狗",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  23,
+                                            "patrol_goal":  [
+                                                                48,
+                                                                1192
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  31,
+                           "runtime_type":  23,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             756,
+                                                             810
+                                                         ],
+                                            "facing_direction":  4,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         784,
+                                                         824
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  582,
+                           "database_entry_id":  913,
+                           "display_name":  "二狗",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  23,
+                                            "patrol_goal":  [
+                                                                784,
+                                                                824
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  32,
+                           "runtime_type":  23,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             2032,
+                                                             1045
+                                                         ],
+                                            "facing_direction":  1,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         2416,
+                                                         824
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  583,
+                           "database_entry_id":  913,
+                           "display_name":  "二狗",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  23,
+                                            "patrol_goal":  [
+                                                                2416,
+                                                                824
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  33,
+                           "runtime_type":  23,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1711,
+                                                             852
+                                                         ],
+                                            "facing_direction":  6,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         1712,
+                                                         856
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  584,
+                           "database_entry_id":  913,
+                           "display_name":  "二狗",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  23,
+                                            "patrol_goal":  [
+                                                                1712,
+                                                                856
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  34,
+                           "runtime_type":  23,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             3087,
+                                                             980
+                                                         ],
+                                            "facing_direction":  6,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         3088,
+                                                         984
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  585,
+                           "database_entry_id":  913,
+                           "display_name":  "二狗",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  23,
+                                            "patrol_goal":  [
+                                                                3088,
+                                                                984
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  35,
+                           "runtime_type":  23,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             3316,
+                                                             1030
+                                                         ],
+                                            "facing_direction":  6,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         3184,
+                                                         1096
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  586,
+                           "database_entry_id":  913,
+                           "display_name":  "二狗",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  23,
+                                            "patrol_goal":  [
+                                                                3184,
+                                                                1096
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  36,
+                           "runtime_type":  23,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             2500,
+                                                             1374
+                                                         ],
+                                            "facing_direction":  6,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         2352,
+                                                         1448
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  587,
+                           "database_entry_id":  913,
+                           "display_name":  "二狗",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  23,
+                                            "patrol_goal":  [
+                                                                2352,
+                                                                1448
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  37,
+                           "runtime_type":  23,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             2864,
+                                                             1176
+                                                         ],
+                                            "facing_direction":  6,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         2736,
+                                                         1240
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  588,
+                           "database_entry_id":  913,
+                           "display_name":  "二狗",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  23,
+                                            "patrol_goal":  [
+                                                                2736,
+                                                                1240
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  38,
+                           "runtime_type":  23,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             134,
+                                                             1693
+                                                         ],
+                                            "facing_direction":  2,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         432,
+                                                         1544
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  589,
+                           "database_entry_id":  913,
+                           "display_name":  "二狗",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  23,
+                                            "patrol_goal":  [
+                                                                432,
+                                                                1544
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  63,
+                           "runtime_type":  23,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             976,
+                                                             493
+                                                         ],
+                                            "facing_direction":  5,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         976,
+                                                         552
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  637,
+                           "database_entry_id":  913,
+                           "display_name":  "二狗",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "bounded_unambiguous_reference_drift",
+                           "confidence":  "high",
+                           "evidence":  {
+                                            "reference_distance":  1,
+                                            "runner_up_distance":  null,
+                                            "maximum_distance":  64,
+                                            "minimum_runner_up_gap":  32
+                                        }
+                       },
+                       {
+                           "runtime_index":  64,
+                           "runtime_type":  23,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1046,
+                                                             587
+                                                         ],
+                                            "facing_direction":  4,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         1520,
+                                                         824
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  638,
+                           "database_entry_id":  913,
+                           "display_name":  "二狗",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  23,
+                                            "patrol_goal":  [
+                                                                1520,
+                                                                824
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  65,
+                           "runtime_type":  23,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1008,
+                                                             568
+                                                         ],
+                                            "facing_direction":  4,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         1046,
+                                                         587
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  639,
+                           "database_entry_id":  913,
+                           "display_name":  "二狗",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_reference_position",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  23,
+                                            "position":  [
+                                                             1008,
+                                                             568
+                                                         ],
+                                            "reference_position":  [
+                                                                       1008,
+                                                                       568
+                                                                   ]
+                                        }
+                       },
+                       {
+                           "runtime_index":  66,
+                           "runtime_type":  23,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             976,
+                                                             552
+                                                         ],
+                                            "facing_direction":  4,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         1008,
+                                                         568
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  640,
+                           "database_entry_id":  913,
+                           "display_name":  "二狗",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_reference_position",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  23,
+                                            "position":  [
+                                                             976,
+                                                             552
+                                                         ],
+                                            "reference_position":  [
+                                                                       976,
+                                                                       552
+                                                                   ]
+                                        }
+                       },
+                       {
+                           "runtime_index":  67,
+                           "runtime_type":  23,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             286,
+                                                             1385
+                                                         ],
+                                            "facing_direction":  2,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         464,
+                                                         1464
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  641,
+                           "database_entry_id":  913,
+                           "display_name":  "二狗",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  23,
+                                            "patrol_goal":  [
+                                                                464,
+                                                                1464
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  68,
+                           "runtime_type":  7,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             160,
+                                                             1248
+                                                         ],
+                                            "facing_direction":  8,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         84,
+                                                         1210
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  642,
+                           "database_entry_id":  916,
+                           "display_name":  "烂脚七",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  1,
+                           "method":  "bounded_unambiguous_reference_drift",
+                           "confidence":  "high",
+                           "evidence":  {
+                                            "reference_distance":  2.236,
+                                            "runner_up_distance":  85.586,
+                                            "maximum_distance":  64,
+                                            "minimum_runner_up_gap":  32
+                                        }
+                       },
+                       {
+                           "runtime_index":  69,
+                           "runtime_type":  7,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             172,
+                                                             1334
+                                                         ],
+                                            "facing_direction":  4,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         196,
+                                                         1346
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  643,
+                           "database_entry_id":  916,
+                           "display_name":  "烂脚七",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  1,
+                           "method":  "bounded_unambiguous_reference_drift",
+                           "confidence":  "high",
+                           "evidence":  {
+                                            "reference_distance":  2.236,
+                                            "runner_up_distance":  85.586,
+                                            "maximum_distance":  64,
+                                            "minimum_runner_up_gap":  32
+                                        }
+                       },
+                       {
+                           "runtime_index":  70,
+                           "runtime_type":  23,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             630,
+                                                             859
+                                                         ],
+                                            "facing_direction":  4,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         208,
+                                                         1304
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  644,
+                           "database_entry_id":  913,
+                           "display_name":  "二狗",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  23,
+                                            "patrol_goal":  [
+                                                                208,
+                                                                1304
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  71,
+                           "runtime_type":  7,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             592,
+                                                             872
+                                                         ],
+                                            "facing_direction":  2,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         630,
+                                                         859
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  645,
+                           "database_entry_id":  916,
+                           "display_name":  "烂脚七",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  1,
+                           "method":  "unique_runtime_type_and_exact_reference_position",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  7,
+                                            "position":  [
+                                                             592,
+                                                             872
+                                                         ],
+                                            "reference_position":  [
+                                                                       592,
+                                                                       872
+                                                                   ]
+                                        }
+                       },
+                       {
+                           "runtime_index":  72,
+                           "runtime_type":  7,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             624,
+                                                             872
+                                                         ],
+                                            "facing_direction":  2,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         630,
+                                                         859
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  646,
+                           "database_entry_id":  916,
+                           "display_name":  "烂脚七",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  1,
+                           "method":  "unique_runtime_type_and_exact_reference_position",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  7,
+                                            "position":  [
+                                                             624,
+                                                             872
+                                                         ],
+                                            "reference_position":  [
+                                                                       624,
+                                                                       872
+                                                                   ]
+                                        }
+                       },
+                       {
+                           "runtime_index":  73,
+                           "runtime_type":  7,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             530,
+                                                             872
+                                                         ],
+                                            "facing_direction":  3,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         624,
+                                                         856
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  647,
+                           "database_entry_id":  916,
+                           "display_name":  "烂脚七",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  1,
+                           "method":  "bounded_unambiguous_reference_drift",
+                           "confidence":  "high",
+                           "evidence":  {
+                                            "reference_distance":  2,
+                                            "runner_up_distance":  526.833,
+                                            "maximum_distance":  64,
+                                            "minimum_runner_up_gap":  32
+                                        }
+                       },
+                       {
+                           "runtime_index":  74,
+                           "runtime_type":  12,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             982,
+                                                             1883
+                                                         ],
+                                            "facing_direction":  8,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         944,
+                                                         1864
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  648,
+                           "database_entry_id":  915,
+                           "display_name":  "龟田",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  16,
+                           "authored_attack_type":  1,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  12,
+                                            "patrol_goal":  [
+                                                                944,
+                                                                1864
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  75,
+                           "runtime_type":  23,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1744,
+                                                             1048
+                                                         ],
+                                            "facing_direction":  4,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         1776,
+                                                         1064
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  649,
+                           "database_entry_id":  913,
+                           "display_name":  "二狗",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_reference_position",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  23,
+                                            "position":  [
+                                                             1744,
+                                                             1048
+                                                         ],
+                                            "reference_position":  [
+                                                                       1744,
+                                                                       1048
+                                                                   ]
+                                        }
+                       },
+                       {
+                           "runtime_index":  76,
+                           "runtime_type":  23,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1834,
+                                                             1099
+                                                         ],
+                                            "facing_direction":  6,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         1744,
+                                                         1144
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  650,
+                           "database_entry_id":  913,
+                           "display_name":  "二狗",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  23,
+                                            "patrol_goal":  [
+                                                                1744,
+                                                                1144
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  77,
+                           "runtime_type":  23,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1808,
+                                                             1080
+                                                         ],
+                                            "facing_direction":  4,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         1834,
+                                                         1099
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  651,
+                           "database_entry_id":  913,
+                           "display_name":  "二狗",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_reference_position",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  23,
+                                            "position":  [
+                                                             1808,
+                                                             1080
+                                                         ],
+                                            "reference_position":  [
+                                                                       1808,
+                                                                       1080
+                                                                   ]
+                                        }
+                       },
+                       {
+                           "runtime_index":  78,
+                           "runtime_type":  23,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1776,
+                                                             1064
+                                                         ],
+                                            "facing_direction":  4,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         1808,
+                                                         1080
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  652,
+                           "database_entry_id":  913,
+                           "display_name":  "二狗",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_reference_position",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  23,
+                                            "position":  [
+                                                             1776,
+                                                             1064
+                                                         ],
+                                            "reference_position":  [
+                                                                       1776,
+                                                                       1064
+                                                                   ]
+                                        }
+                       },
+                       {
+                           "runtime_index":  79,
+                           "runtime_type":  7,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1622,
+                                                             971
+                                                         ],
+                                            "facing_direction":  4,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         1840,
+                                                         1096
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  653,
+                           "database_entry_id":  916,
+                           "display_name":  "烂脚七",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  1,
+                           "method":  "bounded_unambiguous_reference_drift",
+                           "confidence":  "high",
+                           "evidence":  {
+                                            "reference_distance":  2.236,
+                                            "runner_up_distance":  79.12,
+                                            "maximum_distance":  64,
+                                            "minimum_runner_up_gap":  32
+                                        }
+                       },
+                       {
+                           "runtime_index":  80,
+                           "runtime_type":  7,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1500,
+                                                             926
+                                                         ],
+                                            "facing_direction":  4,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         1536,
+                                                         944
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  654,
+                           "database_entry_id":  916,
+                           "display_name":  "烂脚七",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  1,
+                           "method":  "bounded_unambiguous_reference_drift",
+                           "confidence":  "high",
+                           "evidence":  {
+                                            "reference_distance":  2.236,
+                                            "runner_up_distance":  51.43,
+                                            "maximum_distance":  64,
+                                            "minimum_runner_up_gap":  32
+                                        }
+                       },
+                       {
+                           "runtime_index":  81,
+                           "runtime_type":  7,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1548,
+                                                             950
+                                                         ],
+                                            "facing_direction":  4,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         1596,
+                                                         968
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  655,
+                           "database_entry_id":  916,
+                           "display_name":  "烂脚七",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  1,
+                           "method":  "bounded_unambiguous_reference_drift",
+                           "confidence":  "high",
+                           "evidence":  {
+                                            "reference_distance":  2.236,
+                                            "runner_up_distance":  55.902,
+                                            "maximum_distance":  64,
+                                            "minimum_runner_up_gap":  32
+                                        }
+                       },
+                       {
+                           "runtime_index":  82,
+                           "runtime_type":  14,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             2766,
+                                                             871
+                                                         ],
+                                            "facing_direction":  4,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         3312,
+                                                         1128
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  656,
+                           "database_entry_id":  921,
+                           "display_name":  "摩托兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  3,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  14,
+                                            "patrol_goal":  [
+                                                                3312,
+                                                                1128
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  83,
+                           "runtime_type":  10,
+                           "runtime_faction_id":  3,
+                           "observed":  {
+                                            "position":  [
+                                                             3665,
+                                                             437
+                                                         ],
+                                            "facing_direction":  3,
+                                            "goal_kind":  0,
+                                            "goal":  [
+                                                         0,
+                                                         0
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  657,
+                           "database_entry_id":  914,
+                           "display_name":  "古明",
+                           "vwf_faction_id":  3,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  4,
+                           "method":  "unique_runtime_type_and_exact_reference_position",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  10,
+                                            "position":  [
+                                                             3665,
+                                                             437
+                                                         ],
+                                            "reference_position":  [
+                                                                       3665,
+                                                                       437
+                                                                   ]
+                                        }
+                       },
+                       {
+                           "runtime_index":  84,
+                           "runtime_type":  2,
+                           "runtime_faction_id":  3,
+                           "observed":  {
+                                            "position":  [
+                                                             50,
+                                                             3142
+                                                         ],
+                                            "facing_direction":  5,
+                                            "goal_kind":  0,
+                                            "goal":  [
+                                                         0,
+                                                         0
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  663,
+                           "database_entry_id":  918,
+                           "display_name":  "老赵",
+                           "vwf_faction_id":  3,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  4,
+                           "method":  "unique_runtime_type_and_exact_reference_position",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  2,
+                                            "position":  [
+                                                             50,
+                                                             3142
+                                                         ],
+                                            "reference_position":  [
+                                                                       50,
+                                                                       3142
+                                                                   ]
+                                        }
+                       },
+                       {
+                           "runtime_index":  89,
+                           "runtime_type":  21,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1588,
+                                                             2858
+                                                         ],
+                                            "facing_direction":  4,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         1680,
+                                                         2904
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  670,
+                           "database_entry_id":  922,
+                           "display_name":  "胖翻译",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  1,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  21,
+                                            "patrol_goal":  [
+                                                                1680,
+                                                                2904
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  90,
+                           "runtime_type":  14,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             2708,
+                                                             842
+                                                         ],
+                                            "facing_direction":  4,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         2736,
+                                                         856
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  671,
+                           "database_entry_id":  921,
+                           "display_name":  "摩托兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  3,
+                           "method":  "bounded_unambiguous_reference_drift",
+                           "confidence":  "high",
+                           "evidence":  {
+                                            "reference_distance":  6.708,
+                                            "runner_up_distance":  null,
+                                            "maximum_distance":  64,
+                                            "minimum_runner_up_gap":  32
+                                        }
+                       },
+                       {
+                           "runtime_index":  93,
+                           "runtime_type":  5,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1713,
+                                                             3044
+                                                         ],
+                                            "facing_direction":  3,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         1712,
+                                                         3048
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  706,
+                           "database_entry_id":  925,
+                           "display_name":  "三等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  5,
+                                            "patrol_goal":  [
+                                                                1712,
+                                                                3048
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  94,
+                           "runtime_type":  5,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1809,
+                                                             3108
+                                                         ],
+                                            "facing_direction":  7,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         1808,
+                                                         3112
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  707,
+                           "database_entry_id":  925,
+                           "display_name":  "三等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  5,
+                                            "patrol_goal":  [
+                                                                1808,
+                                                                3112
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  95,
+                           "runtime_type":  5,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1809,
+                                                             3140
+                                                         ],
+                                            "facing_direction":  7,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         1808,
+                                                         3144
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  708,
+                           "database_entry_id":  925,
+                           "display_name":  "三等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  5,
+                                            "patrol_goal":  [
+                                                                1808,
+                                                                3144
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  96,
+                           "runtime_type":  5,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1681,
+                                                             3060
+                                                         ],
+                                            "facing_direction":  3,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         1680,
+                                                         3064
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  709,
+                           "database_entry_id":  925,
+                           "display_name":  "三等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  5,
+                                            "patrol_goal":  [
+                                                                1680,
+                                                                3064
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  97,
+                           "runtime_type":  6,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1746,
+                                                             3029
+                                                         ],
+                                            "facing_direction":  3,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         1744,
+                                                         3032
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  710,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  6,
+                                            "patrol_goal":  [
+                                                                1744,
+                                                                3032
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  98,
+                           "runtime_type":  6,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1778,
+                                                             3013
+                                                         ],
+                                            "facing_direction":  3,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         1776,
+                                                         3016
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  711,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  6,
+                                            "patrol_goal":  [
+                                                                1776,
+                                                                3016
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  99,
+                           "runtime_type":  6,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1810,
+                                                             3061
+                                                         ],
+                                            "facing_direction":  7,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         1808,
+                                                         3064
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  712,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  6,
+                                            "patrol_goal":  [
+                                                                1808,
+                                                                3064
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  100,
+                           "runtime_type":  6,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             1874,
+                                                             3029
+                                                         ],
+                                            "facing_direction":  7,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         1872,
+                                                         3032
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  713,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  6,
+                                            "patrol_goal":  [
+                                                                1872,
+                                                                3032
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  101,
+                           "runtime_type":  29,
+                           "runtime_faction_id":  2,
+                           "observed":  {
+                                            "position":  [
+                                                             3408,
+                                                             2554
+                                                         ],
+                                            "facing_direction":  5,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         2800,
+                                                         2936
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  716,
+                           "database_entry_id":  932,
+                           "display_name":  "推车人",
+                           "vwf_faction_id":  2,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  0,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  29,
+                                            "patrol_goal":  [
+                                                                2800,
+                                                                2936
+                                                            ],
+                                            "runtime_faction_id":  2,
+                                            "vwf_faction_id":  2,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  102,
+                           "runtime_type":  29,
+                           "runtime_faction_id":  2,
+                           "observed":  {
+                                            "position":  [
+                                                             3196,
+                                                             2456
+                                                         ],
+                                            "facing_direction":  3,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         3402,
+                                                         2549
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  717,
+                           "database_entry_id":  932,
+                           "display_name":  "推车人",
+                           "vwf_faction_id":  2,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  0,
+                           "method":  "bounded_unambiguous_reference_drift",
+                           "confidence":  "high",
+                           "evidence":  {
+                                            "reference_distance":  2,
+                                            "runner_up_distance":  null,
+                                            "maximum_distance":  64,
+                                            "minimum_runner_up_gap":  32
+                                        }
+                       },
+                       {
+                           "runtime_index":  103,
+                           "runtime_type":  7,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             561,
+                                                             1156
+                                                         ],
+                                            "facing_direction":  1,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         560,
+                                                         1160
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  724,
+                           "database_entry_id":  916,
+                           "display_name":  "烂脚七",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  1,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  7,
+                                            "patrol_goal":  [
+                                                                560,
+                                                                1160
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  104,
+                           "runtime_type":  7,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             497,
+                                                             1124
+                                                         ],
+                                            "facing_direction":  8,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         496,
+                                                         1128
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  725,
+                           "database_entry_id":  916,
+                           "display_name":  "烂脚七",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  1,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  7,
+                                            "patrol_goal":  [
+                                                                496,
+                                                                1128
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  105,
+                           "runtime_type":  7,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             529,
+                                                             1140
+                                                         ],
+                                            "facing_direction":  6,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         528,
+                                                         1144
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  726,
+                           "database_entry_id":  916,
+                           "display_name":  "烂脚七",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  1,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  7,
+                                            "patrol_goal":  [
+                                                                528,
+                                                                1144
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  106,
+                           "runtime_type":  7,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             465,
+                                                             1108
+                                                         ],
+                                            "facing_direction":  8,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         464,
+                                                         1112
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  727,
+                           "database_entry_id":  916,
+                           "display_name":  "烂脚七",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  1,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  7,
+                                            "patrol_goal":  [
+                                                                464,
+                                                                1112
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  107,
+                           "runtime_type":  23,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             335,
+                                                             1156
+                                                         ],
+                                            "facing_direction":  4,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         336,
+                                                         1160
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  728,
+                           "database_entry_id":  913,
+                           "display_name":  "二狗",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  23,
+                                            "patrol_goal":  [
+                                                                336,
+                                                                1160
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  108,
+                           "runtime_type":  23,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             431,
+                                                             1108
+                                                         ],
+                                            "facing_direction":  2,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         432,
+                                                         1112
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  729,
+                           "database_entry_id":  913,
+                           "display_name":  "二狗",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  23,
+                                            "patrol_goal":  [
+                                                                432,
+                                                                1112
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  109,
+                           "runtime_type":  23,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             399,
+                                                             1124
+                                                         ],
+                                            "facing_direction":  5,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         400,
+                                                         1128
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  730,
+                           "database_entry_id":  913,
+                           "display_name":  "二狗",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  23,
+                                            "patrol_goal":  [
+                                                                400,
+                                                                1128
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  110,
+                           "runtime_type":  23,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             367,
+                                                             1140
+                                                         ],
+                                            "facing_direction":  7,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         368,
+                                                         1144
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  731,
+                           "database_entry_id":  913,
+                           "display_name":  "二狗",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  23,
+                                            "patrol_goal":  [
+                                                                368,
+                                                                1144
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  111,
+                           "runtime_type":  12,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             464,
+                                                             1237
+                                                         ],
+                                            "facing_direction":  4,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         464,
+                                                         1240
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  732,
+                           "database_entry_id":  915,
+                           "display_name":  "龟田",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  16,
+                           "authored_attack_type":  1,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  12,
+                                            "patrol_goal":  [
+                                                                464,
+                                                                1240
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  112,
+                           "runtime_type":  12,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             528,
+                                                             1205
+                                                         ],
+                                            "facing_direction":  7,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         528,
+                                                         1208
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  733,
+                           "database_entry_id":  915,
+                           "display_name":  "龟田",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  16,
+                           "authored_attack_type":  1,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  12,
+                                            "patrol_goal":  [
+                                                                528,
+                                                                1208
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  113,
+                           "runtime_type":  12,
+                           "runtime_faction_id":  1,
+                           "observed":  {
+                                            "position":  [
+                                                             496,
+                                                             1221
+                                                         ],
+                                            "facing_direction":  1,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         496,
+                                                         1224
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  734,
+                           "database_entry_id":  915,
+                           "display_name":  "龟田",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  16,
+                           "authored_attack_type":  1,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  12,
+                                            "patrol_goal":  [
+                                                                496,
+                                                                1224
+                                                            ],
+                                            "runtime_faction_id":  1,
+                                            "vwf_faction_id":  1,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  114,
+                           "runtime_type":  24,
+                           "runtime_faction_id":  2,
+                           "observed":  {
+                                            "position":  [
+                                                             433,
+                                                             1171
+                                                         ],
+                                            "facing_direction":  5,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         432,
+                                                         1176
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  736,
+                           "database_entry_id":  908,
+                           "display_name":  "阿全",
+                           "vwf_faction_id":  2,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  0,
+                           "method":  "unique_runtime_type_and_exact_patrol_goal",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  24,
+                                            "patrol_goal":  [
+                                                                432,
+                                                                1176
+                                                            ],
+                                            "runtime_faction_id":  2,
+                                            "vwf_faction_id":  2,
+                                            "faction_consistent":  true
+                                        }
+                       },
+                       {
+                           "runtime_index":  115,
+                           "runtime_type":  25,
+                           "runtime_faction_id":  2,
+                           "observed":  {
+                                            "position":  [
+                                                             3024,
+                                                             2021
+                                                         ],
+                                            "facing_direction":  4,
+                                            "goal_kind":  0,
+                                            "goal":  [
+                                                         0,
+                                                         0
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  737,
+                           "database_entry_id":  907,
+                           "display_name":  "阿莲",
+                           "vwf_faction_id":  2,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  0,
+                           "method":  "unique_runtime_type_and_exact_reference_position",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  25,
+                                            "position":  [
+                                                             3024,
+                                                             2021
+                                                         ],
+                                            "reference_position":  [
+                                                                       3024,
+                                                                       2021
+                                                                   ]
+                                        }
+                       },
+                       {
+                           "runtime_index":  116,
+                           "runtime_type":  25,
+                           "runtime_faction_id":  2,
+                           "observed":  {
+                                            "position":  [
+                                                             1296,
+                                                             2581
+                                                         ],
+                                            "facing_direction":  1,
+                                            "goal_kind":  0,
+                                            "goal":  [
+                                                         0,
+                                                         0
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  738,
+                           "database_entry_id":  907,
+                           "display_name":  "阿莲",
+                           "vwf_faction_id":  2,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  0,
+                           "method":  "unique_runtime_type_and_exact_reference_position",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  25,
+                                            "position":  [
+                                                             1296,
+                                                             2581
+                                                         ],
+                                            "reference_position":  [
+                                                                       1296,
+                                                                       2581
+                                                                   ]
+                                        }
+                       },
+                       {
+                           "runtime_index":  117,
+                           "runtime_type":  25,
+                           "runtime_faction_id":  2,
+                           "observed":  {
+                                            "position":  [
+                                                             1776,
+                                                             2616
+                                                         ],
+                                            "facing_direction":  5,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         1872,
+                                                         2688
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  739,
+                           "database_entry_id":  907,
+                           "display_name":  "阿莲",
+                           "vwf_faction_id":  2,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  0,
+                           "method":  "bounded_unambiguous_reference_drift",
+                           "confidence":  "high",
+                           "evidence":  {
+                                            "reference_distance":  3,
+                                            "runner_up_distance":  null,
+                                            "maximum_distance":  64,
+                                            "minimum_runner_up_gap":  32
+                                        }
+                       },
+                       {
+                           "runtime_index":  118,
+                           "runtime_type":  20,
+                           "runtime_faction_id":  2,
+                           "observed":  {
+                                            "position":  [
+                                                             2257,
+                                                             1542
+                                                         ],
+                                            "facing_direction":  7,
+                                            "goal_kind":  0,
+                                            "goal":  [
+                                                         0,
+                                                         0
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  740,
+                           "database_entry_id":  919,
+                           "display_name":  "李大爷",
+                           "vwf_faction_id":  2,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  0,
+                           "method":  "unique_runtime_type_and_exact_reference_position",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  20,
+                                            "position":  [
+                                                             2257,
+                                                             1542
+                                                         ],
+                                            "reference_position":  [
+                                                                       2257,
+                                                                       1542
+                                                                   ]
+                                        }
+                       },
+                       {
+                           "runtime_index":  119,
+                           "runtime_type":  16,
+                           "runtime_faction_id":  2,
+                           "observed":  {
+                                            "position":  [
+                                                             1841,
+                                                             1701
+                                                         ],
+                                            "facing_direction":  6,
+                                            "goal_kind":  0,
+                                            "goal":  [
+                                                         0,
+                                                         0
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  741,
+                           "database_entry_id":  920,
+                           "display_name":  "刘掌柜",
+                           "vwf_faction_id":  2,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  0,
+                           "method":  "unique_runtime_type_and_exact_reference_position",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  16,
+                                            "position":  [
+                                                             1841,
+                                                             1701
+                                                         ],
+                                            "reference_position":  [
+                                                                       1841,
+                                                                       1701
+                                                                   ]
+                                        }
+                       },
+                       {
+                           "runtime_index":  120,
+                           "runtime_type":  18,
+                           "runtime_faction_id":  2,
+                           "observed":  {
+                                            "position":  [
+                                                             497,
+                                                             1508
+                                                         ],
+                                            "facing_direction":  5,
+                                            "goal_kind":  0,
+                                            "goal":  [
+                                                         0,
+                                                         0
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  742,
+                           "database_entry_id":  928,
+                           "display_name":  "孙小姐",
+                           "vwf_faction_id":  2,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  1,
+                           "method":  "unique_runtime_type_and_exact_reference_position",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  18,
+                                            "position":  [
+                                                             497,
+                                                             1508
+                                                         ],
+                                            "reference_position":  [
+                                                                       497,
+                                                                       1508
+                                                                   ]
+                                        }
+                       },
+                       {
+                           "runtime_index":  121,
+                           "runtime_type":  27,
+                           "runtime_faction_id":  2,
+                           "observed":  {
+                                            "position":  [
+                                                             1136,
+                                                             691
+                                                         ],
+                                            "facing_direction":  1,
+                                            "goal_kind":  1,
+                                            "goal":  [
+                                                         1303,
+                                                         606
+                                                     ]
+                                        },
+                           "status":  "resolved",
+                           "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
+                           "scene_index":  743,
+                           "database_entry_id":  935,
+                           "display_name":  "张大娘",
+                           "vwf_faction_id":  2,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  0,
+                           "method":  "bounded_unambiguous_reference_drift",
+                           "confidence":  "high",
+                           "evidence":  {
+                                            "reference_distance":  1,
+                                            "runner_up_distance":  null,
+                                            "maximum_distance":  64,
+                                            "minimum_runner_up_gap":  32
+                                        }
+                       }
+                   ]
+}

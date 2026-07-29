@@ -27,6 +27,8 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 & (Join-Path $PSScriptRoot 'Test-ModParityContract.ps1')
+& (Join-Path $PSScriptRoot 'Test-OriginalInitialWeaponInventory.ps1')
+& (Join-Path $PSScriptRoot 'Test-OriginalRuntimeActorCatalog.ps1')
 if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
     & (Join-Path $PSScriptRoot 'Test-ModRuntimeIdentityCatalog.ps1') `
         -LevelManifest $realAssetManifest
@@ -110,6 +112,11 @@ if ($LASTEXITCODE -ne 0) {
 & $GodotExecutable --headless --path $game --script 'res://tests/projectile_inventory_test.gd'
 if ($LASTEXITCODE -ne 0) {
     throw "Godot projectile and inventory tests failed with exit code $LASTEXITCODE."
+}
+
+& $GodotExecutable --headless --path $game --script 'res://tests/original_inventory_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot original inventory parity tests failed with exit code $LASTEXITCODE."
 }
 
 & $GodotExecutable --headless --path $game --script 'res://tests/world_interactables_test.gd'
@@ -263,6 +270,12 @@ if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
     & $GodotExecutable --headless --path $game --script 'res://tests/real_assets_test.gd'
     if ($LASTEXITCODE -ne 0) {
         throw "Godot real imported-asset tests failed with exit code $LASTEXITCODE."
+    }
+
+    & $GodotExecutable --headless --path $game `
+        --script 'res://tests/real_original_inventory_test.gd'
+    if ($LASTEXITCODE -ne 0) {
+        throw "Godot real 12-level original inventory tests failed with exit code $LASTEXITCODE."
     }
 
     & $GodotExecutable --headless --path $game `

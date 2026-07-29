@@ -52,7 +52,11 @@ struct RuntimeActorV1 final {
     std::int32_t resolved_goal_x;           // +0x218
     std::byte unknown_21c[4];
     std::int32_t resolved_goal_y;           // +0x220
-    std::byte unknown_224[36];
+    std::byte unknown_224[8];
+    // Points to RuntimeInventoryContainerV1. This is the same container
+    // searched by sub_452E40 and rendered by the original inventory HUD.
+    std::uint32_t inventory_address;         // +0x22C
+    std::byte unknown_230[24];
     std::int32_t search_delay_limit;        // +0x248
     std::int32_t search_delay_counter;      // +0x24C
     std::int32_t contact_state;             // +0x250
@@ -61,6 +65,13 @@ struct RuntimeActorV1 final {
     std::int32_t reaction_state;            // +0x25C
     std::byte unknown_260[48];
     std::int32_t path_override_active;       // +0x290
+};
+
+struct RuntimeInventoryContainerV1 final {
+    std::uint32_t item_ids_address;          // +0x00
+    std::uint32_t quantities_address;        // +0x04
+    std::uint32_t quantity_modes_address;    // +0x08
+    std::int32_t item_count;                 // +0x0C
 };
 
 struct RuntimeWorldV1 final {
@@ -120,12 +131,18 @@ static_assert(offsetof(RuntimeActorV1, default_attack_type) == 0x20C);
 static_assert(offsetof(RuntimeActorV1, target_actor_address) == 0x214);
 static_assert(offsetof(RuntimeActorV1, resolved_goal_x) == 0x218);
 static_assert(offsetof(RuntimeActorV1, resolved_goal_y) == 0x220);
+static_assert(offsetof(RuntimeActorV1, inventory_address) == 0x22C);
 static_assert(offsetof(RuntimeActorV1, search_delay_limit) == 0x248);
 static_assert(offsetof(RuntimeActorV1, contact_state) == 0x250);
 static_assert(offsetof(RuntimeActorV1, target_lost) == 0x254);
 static_assert(offsetof(RuntimeActorV1, reaction_state) == 0x25C);
 static_assert(offsetof(RuntimeActorV1, path_override_active) == 0x290);
 static_assert(sizeof(RuntimeActorV1) == 0x294);
+static_assert(offsetof(RuntimeInventoryContainerV1, item_ids_address) == 0x00);
+static_assert(offsetof(RuntimeInventoryContainerV1, quantities_address) == 0x04);
+static_assert(offsetof(RuntimeInventoryContainerV1, quantity_modes_address) == 0x08);
+static_assert(offsetof(RuntimeInventoryContainerV1, item_count) == 0x0C);
+static_assert(sizeof(RuntimeInventoryContainerV1) == 0x10);
 static_assert(offsetof(RuntimeWorldV1, actor_array_address) == 0x18);
 static_assert(offsetof(RuntimeWorldV1, actor_count) == 0x3C);
 static_assert(offsetof(RuntimeViewportControllerV1, viewport_width) == 0x28);

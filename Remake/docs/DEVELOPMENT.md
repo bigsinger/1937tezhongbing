@@ -99,18 +99,21 @@ Godot 端的责任分工为：
 - `tactical_senses.gd`：原版等距椭圆、八方向扫描、近远识别区、军犬特殊感知、L2 遮挡和武器射程；
 - `enemy_unit.gd`：巡逻、发现、追击、攻击态和最后位置搜索；
 - `combat_profiles.gd` 与 `game/data/combat_profiles.json`：版本化、可校验的原版感知/武器参数。
-- `combat_inventory.gd`：玩家多武器、弹匣、备弹、装填和状态快照；
+- `combat_inventory.gd`：原版 mode 0/1/2 直接数量、多武器、旧档迁移和状态快照；
+- `original_initial_weapon_inventory.gd`：按关卡和 scene ID 读取 27 名角色的精确开局武器；
+- `original_runtime_actor_catalog.gd`：读取 762 个运行时角色身份及阵营覆盖；
 - `projectile_world.gd` / `combat_projectile.gd`：type 6/7/9 世界飞行、段碰撞、落地和椭圆爆炸；
 - `legacy_special_world_object.gd` / `legacy_ai_control_effect.gd`：type 8/10 世界对象与 type 11 状态的建立、推进、释放和快照；
 - `world_depth.gd`：地面、正常深度、固定前景和顶层四渲染队列；
 - `imported_level_data.gd`：读取并校验 `database_header_values`，不能再次在导入链中丢弃 DBL `header[0]`；
 - `world_pickup_catalog.gd`、`field_pickup.gd`、`land_mine.gd`、`explosive_prop.gd`：真实场景拾取、地雷和油桶。
 
-`combat_profiles.json` 当前的普通敌人/军犬感知、11 类攻击距离、普通伤害、连发次数、弹药物品 ID、每次消耗和末帧提交语义来自 `M1937.exe` 字段级逆向，不能随意当作手感参数改写。每个新战斗字段都必须标记 `recovered`、`recovered_with_unresolved_override` 或 `unresolved_remake_default`。当前弹匣容量、初始备弹、装填/恢复秒数，投射物速度/弧高/碰撞半径，手榴弹、地雷、油桶和拾取效果参数均是重制默认；听觉遮挡、尸体发现和更高层走廊会车尚未完成。
+`combat_profiles.json` 当前的普通敌人/军犬感知、11 类攻击距离、普通伤害、连发次数、弹药物品 ID、每次消耗和末帧提交语义来自 `M1937.exe` 字段级逆向，不能随意当作手感参数改写。每个新战斗字段都必须标记 `recovered`、`recovered_with_unresolved_override` 或 `unresolved_remake_default`。原版已确认不存在弹匣/备弹/装填抽象；正式关卡必须使用 `original_initial_weapon_inventory.json` 的直接数量和模式，profile 中旧字段只供 schema 1 迁移及合成测试兼容。投射物速度/弧高/碰撞半径，手榴弹、地雷、油桶和拾取效果参数仍是重制默认；听觉遮挡、尸体发现和更高层走廊会车尚未完成。
 
 type 8/10/11 已由专用运行时接管：type 8 创建 actor 84 / GFL 470、消费物品 43，并由存活 faction 1 进入 32×16 椭圆触发；type 10 创建 actor 85 / GFL 900、消费物品 45，在第 100 个 world tick 爆炸；type 11 不直接结算伤害、不消费物品 99，重复施加刷新状态，超时/死亡/切关释放。活跃对象与状态均进入 `GameSessionState`。最终伤害、爆炸几何、type 11 精确语义和 180 tick 时长仍是 `unresolved_remake_default`，修改时不得把它们伪标为原版数值。详见 [原版行为取证摘要](ORIGINAL_BEHAVIOR_FORENSICS.md)。
 
-m011 为可试玩性以 `remake_editorial` bridge 把项目 99 与 type 11 动作配给首名存活队员（当前为老赵）；原版项目 99 的取得脚本和原持有者仍未知。不要把这段发放逻辑改标为 `recovered`。
+m011 不再编辑性发放项目 99。原版项目 99 的取得脚本和持有者仍未知；在恢复
+证据前，不得把它加入任何正式关卡开局配置。
 
 导航/感知修改的合成测试至少应覆盖：绕墙、对角禁止穿墙、多格足印、障碍目标的附近落点、L2/L3 分离、scene 忽略/清除、视锥前后边界、射程和视线组合，以及 `M37NAV1` 截断/错版本拒绝。具有本地资产时，`Verify` 还会逐关校验十二份导航文件，并以 m004 的 98 个动态角色执行高密度寻路压力回归；固定 120 个物理帧内必须有敌人实际移动，A* 请求量必须处于 20—500 次且总寻路耗时不超过 2 秒，以防“AI 未运行”的假通过、退化巡逻点或拥挤重规划重新形成请求风暴。
 

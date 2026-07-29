@@ -25,7 +25,7 @@
     {
       "id": "actors_and_animation",
       "status": "partial",
-      "evidence": ["980 sprites", "2775 groups", "11898 frames", "20 actions x 9 directions", "m000 resolved runtime identity set includes 46 enemies, 2 mission escorts, 3 stationary trucks, 2 moving chickens, and the player"],
+      "evidence": ["980 sprites", "2775 groups", "11898 frames", "20 actions x 9 directions", "762 resolved runtime-to-VWF actor identities across m000-m011", "5 verified live-faction overrides"],
       "gaps": ["non-lethal hurt sequence", "special transitions", "per-actor anchor verification"]
     },
     {
@@ -37,14 +37,14 @@
     {
       "id": "inventory_items_and_world_pickups",
       "status": "partial",
-      "evidence": ["five-column inventory", "real map pickups", "drop/lure interaction"],
-      "gaps": ["all initial inventories", "all pickup quantities", "all usable item effects and ownership rules"]
+      "evidence": ["five-column inventory", "real map pickups", "drop/lure interaction", "27 exact player identities and 83 ordered initial weapon-container entries across all 12 levels"],
+      "gaps": ["actor+552 item-container initial contents", "all pickup quantities", "all usable item effects and ownership rules"]
     },
     {
       "id": "weapons_ammo_and_combat",
       "status": "partial",
-      "evidence": ["attack types 1-11", "ammo/reload", "hit-frame damage", "projectiles and explosions", "m000 natural-contact differential with exact 54-actor HP/attack-type state, player 8-to-6-to-4 damage sequence, and scene 1598 as both damage sources"],
-      "gaps": ["original magazine/reserve values", "damage and timing table", "type 8/10/11 exact parameters"]
+      "evidence": ["attack types 1-11", "recovered item ids 36-45 and 99", "recovered direct-count modes 0/1/2 and proof that the original has no magazine/reload abstraction", "12-level initial weapon baseline and runtime gate", "hit-frame damage", "projectiles and explosions", "m000 natural-contact differential with exact 54-actor HP/attack-type state, player 8-to-6-to-4 damage sequence, and scene 1598 as both damage sources"],
+      "gaps": ["post-pickup and post-attack inventory differential traces", "damage and timing table", "type 8/10/11 exact parameters"]
     },
     {
       "id": "navigation_routes_and_doors",
@@ -96,7 +96,7 @@
     }
   ],
   "levels": [
-    {"id": "m000", "number": 1, "title": "营救行动", "status": "partial", "gaps": ["ammo/inventory/mission differential traces", "exact scripted and ambient patrol phases for unresolved formations", "door/foreground obstacle-path parity", "save/reload at each objective"]},
+    {"id": "m000", "number": 1, "title": "营救行动", "status": "partial", "gaps": ["post-attack inventory and mission differential traces", "exact scripted and ambient patrol phases for unresolved formations", "door/foreground obstacle-path parity", "save/reload at each objective"]},
     {"id": "m001", "number": 2, "title": "奇袭火车站", "status": "partial", "gaps": ["victory/failure traces", "uniform and train interaction parity", "difficulty calibration"]},
     {"id": "m002", "number": 3, "title": "劫狱", "status": "partial", "gaps": ["victory/failure traces", "prison interaction parity", "difficulty calibration"]},
     {"id": "m003", "number": 4, "title": "铁路桥", "status": "partial", "gaps": ["victory/failure traces", "bridge explosion parity", "difficulty calibration"]},

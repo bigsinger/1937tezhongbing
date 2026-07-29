@@ -15,6 +15,12 @@ const MISSION_RUNTIME_SCRIPT: Script = preload("res://scripts/mission_runtime.gd
 const MISSION_DIRECTION_RUNTIME_SCRIPT: Script = preload("res://scripts/mission_direction_runtime.gd")
 const MISSION_AI_COORDINATOR_SCRIPT: Script = preload("res://scripts/mission_ai_coordinator.gd")
 const COMBAT_PROFILES: Script = preload("res://scripts/combat_profiles.gd")
+const ORIGINAL_INITIAL_WEAPON_INVENTORY: Script = preload(
+	"res://scripts/original_initial_weapon_inventory.gd"
+)
+const ORIGINAL_RUNTIME_ACTOR_CATALOG: Script = preload(
+	"res://scripts/original_runtime_actor_catalog.gd"
+)
 const TACTICAL_SENSES: Script = preload("res://scripts/tactical_senses.gd")
 const PROJECTILE_WORLD_SCRIPT: Script = preload("res://scripts/projectile_world.gd")
 const MEDIA_DIRECTOR_SCRIPT: Script = preload("res://scripts/media_director.gd")
@@ -518,6 +524,9 @@ func spawn_imported_entities() -> int:
 	add_child(container)
 	var spawned := 0
 	var entities: Array = imported_level["entities"] as Array
+	var level_id := str(
+		current_mission.get("id", FORMAL_LEVEL_IDS[current_level_index])
+	)
 	for entity_value: Variant in entities:
 		var entity := entity_value as Dictionary
 		var scene_index := int(entity["scene_index"])
@@ -526,10 +535,30 @@ func spawn_imported_entities() -> int:
 		if _is_rescue_bound_scene(scene_index):
 			spawned += 1
 			continue
-		if is_playable_name(display_name):
-			if not playable_entities.has(display_name):
-				playable_entities[display_name] = entity
+		var original_player_loadout: Dictionary = (
+			ORIGINAL_INITIAL_WEAPON_INVENTORY.loadout_for_scene(
+				level_id,
+				scene_index,
+			)
+		)
+		if not original_player_loadout.is_empty():
+			playable_entities[display_name] = entity
 			continue
+		var authored_faction_id := int(
+			entity.get("faction_id", entity.get("team_id", 0))
+		)
+		var runtime_faction_id: int = (
+			ORIGINAL_RUNTIME_ACTOR_CATALOG.runtime_faction_id(
+				level_id,
+				scene_index,
+				authored_faction_id,
+			)
+		)
+		var runtime_entity := entity
+		if runtime_faction_id != authored_faction_id:
+			runtime_entity = entity.duplicate(true)
+			runtime_entity["faction_id"] = runtime_faction_id
+			runtime_entity["runtime_faction_override"] = true
 		var database_entry_id := int(entity.get("database_entry_id", 0))
 		var interactable_profile: Dictionary = (
 			WORLD_PICKUP_CATALOG.profile_for_database_entry_id(database_entry_id)
@@ -556,19 +585,19 @@ func spawn_imported_entities() -> int:
 					continue
 				prop.free()
 		if (
-			int(entity.get("faction_id", entity.get("team_id", 0))) == 1
+			runtime_faction_id == 1
 			or _is_mission_combat_target_scene(scene_index)
 		):
-			enemy_entities.append(entity)
+			enemy_entities.append(runtime_entity)
 			spawned += 1
 			continue
 		if (
 			str(entity.get("category_name", "")) == "角色"
-			and int(entity.get("faction_id", entity.get("team_id", 0))) in [2, 3]
+			and runtime_faction_id in [2, 3]
 		):
 			# Neutral animals, vehicles and non-objective civilians are live
 			# RuntimeActor objects in the MOD, not baked scenery sprites.
-			ambient_entities.append(entity)
+			ambient_entities.append(runtime_entity)
 			spawned += 1
 			continue
 		var texture := load_entity_texture(entity)
@@ -778,6 +807,16 @@ func spawn_squad() -> void:
 		)
 		unit.configure_movement_modes(run_groups, walk_groups, crawl_groups)
 		var attack_type := playable_initial_attack_type(entity, name)
+		var level_id := str(
+			current_mission.get("id", FORMAL_LEVEL_IDS[current_level_index])
+		)
+		var original_loadout: Dictionary = (
+			ORIGINAL_INITIAL_WEAPON_INVENTORY.loadout_for_actor(
+				level_id,
+				scene_index,
+				name,
+			)
+		)
 		var weapon_profile: Dictionary = COMBAT_PROFILES.weapon_profile_for_attack_type(
 			attack_type
 		)
@@ -795,18 +834,56 @@ func spawn_squad() -> void:
 			attack_groups,
 			death_groups,
 			false,
+			original_loadout.is_empty(),
 		)
-		# The common field loadout exposes knife, pistol and rifle. When a real
-		# VWF actor is present, its authored default_attack_type stays active.
-		for initial_attack_type: int in [4, 1, 2]:
-			if initial_attack_type == attack_type:
-				continue
-			var initial_profile: Dictionary = COMBAT_PROFILES.weapon_profile_for_attack_type(initial_attack_type)
-			if not initial_profile.is_empty():
-				unit.register_inventory_weapon(initial_profile, [], true, false)
+		if not original_loadout.is_empty():
+			for item_value: Variant in original_loadout.get("items", []):
+				if not item_value is Dictionary:
+					continue
+				var item := item_value as Dictionary
+				var initial_attack_type: int = (
+					ORIGINAL_INITIAL_WEAPON_INVENTORY.attack_type_for_item_id(
+						int(item.get("item_id", 0))
+					)
+				)
+				var initial_profile: Dictionary = (
+					COMBAT_PROFILES.weapon_profile_for_attack_type(
+						initial_attack_type
+					)
+				)
+				if initial_profile.is_empty():
+					continue
+				unit.register_original_inventory_weapon(
+					initial_profile,
+					_attack_groups_for_unit(
+						unit,
+						str(initial_profile.get("action_key", "")),
+					),
+					int(item.get("quantity", 0)),
+					int(item.get("quantity_mode", -1)),
+					initial_attack_type == attack_type,
+				)
+			unit.equip_attack_type(attack_type)
+		else:
+			# Synthetic/no-asset scenes retain a compact compatibility loadout.
+			# Every imported MOD level is required to resolve the exact catalog.
+			for initial_attack_type: int in [4, 1, 2]:
+				if initial_attack_type == attack_type:
+					continue
+				var initial_profile: Dictionary = (
+					COMBAT_PROFILES.weapon_profile_for_attack_type(
+						initial_attack_type
+					)
+				)
+				if not initial_profile.is_empty():
+					unit.register_inventory_weapon(
+						initial_profile,
+						[],
+						true,
+						false,
+					)
 		_connect_combatant(unit)
 		units.append(unit)
-	_grant_editorial_type_11_loadout()
 	_spawn_escorts()
 	_spawn_ambient_units()
 	_spawn_enemies()
@@ -1435,11 +1512,21 @@ func _mouse_world_position() -> Vector2:
 
 func _reload_selected_units() -> void:
 	var reload_count := 0
+	var original_count := 0
 	for unit: SQUAD_UNIT in selected_units:
 		_cancel_legacy_deployment_for_unit(unit)
+		if (
+			unit.combat_inventory != null
+			and unit.combat_inventory.original_parity_enabled()
+		):
+			original_count += 1
+			continue
 		if unit.request_reload():
 			reload_count += 1
-	update_status("%d 名队员开始换弹" % reload_count)
+	if original_count > 0 and reload_count == 0:
+		update_status("原版武器直接消耗栏内数量，无需换弹")
+	else:
+		update_status("%d 名队员开始换弹" % reload_count)
 
 
 func clear_selection() -> void:
@@ -2191,7 +2278,13 @@ func _on_damage_received(
 
 func _on_ammo_changed(unit: Node2D, magazine: int, reserve: int) -> void:
 	if selected_units.has(unit):
-		update_status("%s 弹药：%d / %d" % [unit.display_name, magazine, reserve])
+		if (
+			unit.combat_inventory != null
+			and unit.combat_inventory.original_parity_enabled()
+		):
+			update_status("%s 当前武器数量：%d" % [unit.display_name, magazine])
+		else:
+			update_status("%s 弹药：%d / %d" % [unit.display_name, magazine, reserve])
 		_refresh_inventory_ui()
 
 
@@ -2205,7 +2298,19 @@ func _refresh_inventory_ui() -> void:
 		var attack_type := int(unit.weapon_profile.get("attack_type", 0))
 		var weapon_name := str(WEAPON_NAMES.get(attack_type, "徒手"))
 		var ammo_text := "无限/近战"
-		if int(unit.weapon_profile.get("magazine_capacity", 0)) > 0:
+		if (
+			unit.combat_inventory != null
+			and unit.combat_inventory.original_parity_enabled()
+		):
+			var active_state: Dictionary = unit.combat_inventory.weapon_state(
+				unit.combat_inventory.active_weapon_key()
+			)
+			ammo_text = (
+				"耐久"
+				if int(active_state.get("quantity_mode", -1)) == 1
+				else str(int(active_state.get("quantity", 0)))
+			)
+		elif int(unit.weapon_profile.get("magazine_capacity", 0)) > 0:
 			ammo_text = "%d / %d" % [unit.magazine_ammo, unit.reserve_ammo]
 		var deployable_text := ""
 		var mine_count := unit.ammo_item_count(43)
@@ -2892,11 +2997,21 @@ func _on_inventory_cycle_requested(direction: int) -> void:
 
 func _on_inventory_reload_requested() -> void:
 	var reload_count := 0
+	var original_count := 0
 	for unit: SQUAD_UNIT in selected_units:
 		_cancel_legacy_deployment_for_unit(unit)
+		if (
+			unit.combat_inventory != null
+			and unit.combat_inventory.original_parity_enabled()
+		):
+			original_count += 1
+			continue
 		if unit.request_reload():
 			reload_count += 1
-	update_status("%d 名队员开始换弹" % reload_count)
+	if original_count > 0 and reload_count == 0:
+		update_status("原版武器直接消耗栏内数量，无需换弹")
+	else:
+		update_status("%d 名队员开始换弹" % reload_count)
 	if game_shell != null:
 		game_shell.update_inventory(_inventory_grid_model())
 
@@ -2996,8 +3111,6 @@ func _inventory_grid_model() -> Dictionary:
 	if selected_units.size() > 1:
 		actor_name = "已选 %d 人" % selected_units.size()
 	var weapon_slots: Array[Dictionary] = []
-	var ammunition_slots: Array[Dictionary] = []
-	var active_item_slots: Array[Dictionary] = []
 	var mission_item_slots: Array[Dictionary] = []
 	if actor != null and actor.combat_inventory != null:
 		var active_key := str(actor.combat_inventory.active_weapon_key())
@@ -3006,53 +3119,39 @@ func _inventory_grid_model() -> Dictionary:
 			var profile := state.get("profile", {}) as Dictionary
 			var attack_type := int(profile.get("attack_type", 0))
 			var label := str(WEAPON_NAMES.get(attack_type, action_key))
+			var is_original := bool(state.get("original_parity", false))
+			var quantity_mode := int(state.get("quantity_mode", -1))
+			var quantity := (
+				int(state.get("quantity", 0))
+				if is_original
+				else int(state.get("magazine", 0))
+					+ int(state.get("reserve", 0))
+			)
+			var description := ""
+			if is_original:
+				description = (
+					"%s：原版耐久武器，普通攻击不消耗"
+					% label
+					if quantity_mode == 1
+					else "%s：剩余 %d" % [label, quantity]
+				)
+			else:
+				description = "%s：弹匣 %d，备用 %d" % [
+					label,
+					int(state.get("magazine", 0)),
+					int(state.get("reserve", 0)),
+				]
 			weapon_slots.append({
 				"kind": "weapon",
 				"action_key": action_key,
 				"attack_type": attack_type,
 				"label": label,
 				"short_label": label.left(3),
-				"quantity": int(state.get("magazine", 0)) + int(state.get("reserve", 0)),
+				"quantity": 0 if is_original and quantity_mode == 1 else quantity,
 				"active": action_key == active_key,
 				"enabled": actor.is_alive,
 				"icon": _inventory_icon_for(action_key, 0, ""),
-				"description": "%s：弹匣 %d，备用 %d" % [
-					label,
-					int(state.get("magazine", 0)),
-					int(state.get("reserve", 0)),
-				],
-			})
-		for item_id: int in [36, 37, 38, 39, 40, 41, 42]:
-			var quantity := actor.ammo_item_count(item_id)
-			if quantity <= 0:
-				continue
-			var label := str(INVENTORY_ITEM_NAMES.get(item_id, "物品%d" % item_id))
-			ammunition_slots.append({
-				"kind": "ammunition",
-				"item_id": item_id,
-				"label": label,
-				"short_label": label.left(3),
-				"quantity": quantity,
-				"enabled": false,
-				"icon": _inventory_icon_for("", item_id, ""),
-				"description": "%s × %d（由对应武器自动使用）" % [label, quantity],
-			})
-		var active_types := {43: 8, 44: 9, 45: 10, 99: 11}
-		for item_id: int in active_types:
-			var quantity := actor.ammo_item_count(item_id)
-			if quantity <= 0:
-				continue
-			var label := str(INVENTORY_ITEM_NAMES.get(item_id, "物品%d" % item_id))
-			active_item_slots.append({
-				"kind": "active_item",
-				"item_id": item_id,
-				"attack_type": int(active_types[item_id]),
-				"label": label,
-				"short_label": label.left(3),
-				"quantity": quantity,
-				"enabled": actor.is_alive,
-				"icon": _inventory_icon_for("", item_id, ""),
-				"description": "%s × %d；点击后进入使用模式" % [label, quantity],
+				"description": description,
 			})
 	for raw_key: Variant in field_inventory.keys():
 		var quantity := int(field_inventory[raw_key])
@@ -3074,8 +3173,6 @@ func _inventory_grid_model() -> Dictionary:
 		"actor_name": actor_name,
 		"groups": [
 			{"title": "武器", "mode": "weapons", "slots": weapon_slots},
-			{"title": "弹药", "mode": "items", "slots": ammunition_slots},
-			{"title": "主动物品", "mode": "items", "slots": active_item_slots},
 			{"title": "任务物资", "mode": "items", "slots": mission_item_slots},
 		],
 	}
@@ -3156,18 +3253,16 @@ func _inventory_bbcode() -> String:
 				var profile := weapon_state.get("profile", {}) as Dictionary
 				var weapon_name := str(WEAPON_NAMES.get(int(profile.get("attack_type", 0)), action_key))
 				var ammunition := ""
-				if int(weapon_state.get("magazine_capacity", 0)) > 0:
+				if bool(weapon_state.get("original_parity", false)):
+					if int(weapon_state.get("quantity_mode", -1)) != 1:
+						ammunition = " × %d" % int(
+							weapon_state.get("quantity", 0)
+						)
+				elif int(weapon_state.get("magazine_capacity", 0)) > 0:
 					ammunition = " %d/%d" % [int(weapon_state.get("magazine", 0)), int(weapon_state.get("reserve", 0))]
 				weapon_parts.append(weapon_name + ammunition)
 			if not weapon_parts.is_empty():
 				lines.append("　武器：" + "　｜　".join(weapon_parts))
-		var item_parts := PackedStringArray()
-		for raw_item_id: Variant in INVENTORY_ITEM_NAMES.keys():
-			var item_id := int(raw_item_id)
-			var count := unit.ammo_item_count(item_id)
-			if count > 0:
-				item_parts.append("%s × %d" % [str(INVENTORY_ITEM_NAMES[item_id]), count])
-		lines.append("　物品：%s" % ("无" if item_parts.is_empty() else "　｜　".join(item_parts)))
 		lines.append("")
 	var shared_parts := PackedStringArray()
 	for raw_key: Variant in field_inventory.keys():
@@ -3175,7 +3270,7 @@ func _inventory_bbcode() -> String:
 		if quantity > 0:
 			shared_parts.append("%s × %d" % [str(raw_key), quantity])
 	lines.append("[color=#9fd6a0][b]小队任务物资：[/b][/color]%s" % ("无" if shared_parts.is_empty() else "　｜　".join(shared_parts)))
-	lines.append("[color=#aeb7a8]提示：先在地图上选中队员，再在本界面切换武器或换弹；数字键 1–8 与 Tab 仍可快速操作。[/color]")
+	lines.append("[color=#aeb7a8]提示：W 查看并切换原版武器；数量就是剩余可用次数，耐久武器不消耗。[/color]")
 	return "\n".join(lines)
 
 
@@ -3271,8 +3366,6 @@ func _load_game(slot_id: String = "") -> bool:
 	if not bool(applied.get("ok", false)):
 		_show_load_feedback("读取失败：无法恢复关卡状态")
 		return false
-	if level_id == "m011":
-		_grant_editorial_type_11_loadout()
 	if (
 		not saved_direction_state is Dictionary
 		or (saved_direction_state as Dictionary).is_empty()
@@ -3740,35 +3833,6 @@ func _ensure_special_inventory_action(collector: SQUAD_UNIT, attack_type: int) -
 		false,
 		false,
 	)
-
-
-func _grant_editorial_type_11_loadout() -> bool:
-	# The original target flag (+656) and reusable item id 99 are recovered,
-	# but its acquisition script/owning actor is not. M011 therefore exposes a
-	# clearly labelled remake bridge so the full reversible lifecycle is playable.
-	if str(current_mission.get("id", "")) != "m011" or units.is_empty():
-		return false
-	var profile: Dictionary = COMBAT_PROFILES.weapon_profile_for_attack_type(11)
-	var action_key := str(profile.get("action_key", ""))
-	var recipient: SQUAD_UNIT = null
-	var first_living: SQUAD_UNIT = null
-	for unit: SQUAD_UNIT in units:
-		if not unit.is_alive:
-			continue
-		if first_living == null:
-			first_living = unit
-		if unit.has_inventory_weapon(action_key) or unit.ammo_item_count(99) > 0:
-			recipient = unit
-			break
-	if recipient == null:
-		recipient = first_living
-	if recipient == null:
-		return false
-	if not _ensure_special_inventory_action(recipient, 11):
-		return false
-	if recipient.ammo_item_count(99) <= 0:
-		recipient.add_ammo_item(99, 1)
-	return recipient.ammo_item_count(99) > 0
 
 
 func _attack_groups_for_unit(unit: SQUAD_UNIT, action_key: String) -> Array[Dictionary]:

@@ -71,6 +71,7 @@ internal static class ModRegressionProbe
     private const int ActorTargetAddressOffset = 0x214;
     private const int ActorResolvedGoalXOffset = 0x218;
     private const int ActorResolvedGoalYOffset = 0x220;
+    private const int ActorInventoryAddressOffset = 0x22C;
     private const int ActorSearchDelayLimitOffset = 0x248;
     private const int ActorSearchDelayCounterOffset = 0x24C;
     private const int ActorContactStateOffset = 0x250;
@@ -278,6 +279,7 @@ internal static class ModRegressionProbe
                 "[SECONDS] [MOVEMENT_CELL_X MOVEMENT_CELL_Y " +
                 "[RETURN_CELL_X RETURN_CELL_Y]] " +
                 "[--briefing-only] [--movement-only] " +
+                "[--inventory-only] " +
                 "[--identity-catalog=PATH --parity-patrol-only | " +
                 "--parity-contact-only --parity-scenario=ID " +
                 "--patrol-observation-ms=MS " +
@@ -301,6 +303,12 @@ internal static class ModRegressionProbe
         {
             return argument.Equals(
                 "--movement-only",
+                StringComparison.OrdinalIgnoreCase);
+        });
+        bool inventoryOnly = args.Any(delegate(string argument)
+        {
+            return argument.Equals(
+                "--inventory-only",
                 StringComparison.OrdinalIgnoreCase);
         });
         int movementCellX;
@@ -372,6 +380,13 @@ internal static class ModRegressionProbe
             throw new InvalidOperationException(
                 "Patrol-only and contact-only parity scenarios are " +
                 "mutually exclusive.");
+        }
+        if (inventoryOnly &&
+            (briefingOnly || parityPatrolOnly || parityContactOnly))
+        {
+            throw new InvalidOperationException(
+                "Inventory-only cannot be combined with briefing-only " +
+                "or parity movement scenarios.");
         }
         int patrolObservationMilliseconds = 1000;
         string patrolObservationValue = ArgumentValue(
@@ -741,6 +756,13 @@ internal static class ModRegressionProbe
                         Path.Combine(
                             outputDirectory,
                             "actor-layout-entry.csv"));
+                    WriteActorInventorySnapshot(
+                        process,
+                        imageBase,
+                        actorIdentities,
+                        Path.Combine(
+                            outputDirectory,
+                            "actor-inventory-entry.csv"));
                 }
                 Thread.Sleep(5000);
                 WriteActorStateSnapshot(
@@ -766,6 +788,16 @@ internal static class ModRegressionProbe
                 }
                 ActorSnapshot spawnEnd =
                     FindPlayerActor(process, imageBase);
+                if (actorLayoutDump)
+                {
+                    WriteActorInventorySnapshot(
+                        process,
+                        imageBase,
+                        actorIdentities,
+                        Path.Combine(
+                            outputDirectory,
+                            "actor-inventory-steady.csv"));
+                }
                 bool spawnSafe =
                     spawnStart != null && spawnEnd != null &&
                     spawnStart.Dead == 0 && spawnEnd.Dead == 0;
@@ -778,6 +810,76 @@ internal static class ModRegressionProbe
                           spawnStart.WorldY + "); end=(" +
                           spawnEnd.WorldX + "," + spawnEnd.WorldY +
                           "); dead=" + spawnEnd.Dead);
+                if (inventoryOnly)
+                {
+                    int inventoryAddressValue = spawnEnd == null
+                        ? 0
+                        : ReadInt(
+                            process,
+                            spawnEnd.Address +
+                            ActorInventoryAddressOffset);
+                    long inventoryAddress =
+                        (long)(uint)inventoryAddressValue;
+                    int inventoryCount = inventoryAddressValue > 0
+                        ? ReadInt(
+                            process,
+                            inventoryAddress + 0x0C)
+                        : int.MinValue;
+                    int selectedActionId = ReadInt(
+                        process,
+                        imageBase + EngineAddresses.CurrentActionId);
+                    bool inventoryReadable =
+                        inventoryAddressValue > 0 &&
+                        inventoryCount >= 0 &&
+                        inventoryCount <= 256 &&
+                        File.Exists(Path.Combine(
+                            outputDirectory,
+                            "actor-inventory-entry.csv")) &&
+                        File.Exists(Path.Combine(
+                            outputDirectory,
+                            "actor-inventory-steady.csv"));
+                    AddStage(
+                        stages, game, process, imageBase, clock,
+                        "player_inventory_snapshot",
+                        inventoryReadable,
+                        "container=0x" +
+                        inventoryAddress.ToString(
+                            "X8",
+                            CultureInfo.InvariantCulture) +
+                        "; item_count=" + inventoryCount +
+                        "; selected_action_id=" +
+                        selectedActionId);
+                    samplerStop = true;
+                    sampler.Join(1500);
+                    bool inventoryCursorClipSafe;
+                    lock (perf)
+                        inventoryCursorClipSafe = perf.All(
+                            delegate(PerfSample sample)
+                            {
+                                return !sample.CursorClipRestricted;
+                            });
+                    bool inventoryProcessResponsive = stages.All(
+                        delegate(Stage stage)
+                        {
+                            return stage.ProcessResponding;
+                        });
+                    exitCode =
+                        missionStarted &&
+                        spawnSafe &&
+                        inventoryReadable &&
+                        inventoryProcessResponsive &&
+                        inventoryCursorClipSafe ? 0 : 1;
+                    WriteArtifacts(
+                        outputDirectory,
+                        selectorLevel,
+                        route.EngineMission,
+                        stages,
+                        perf,
+                        transitionsLogged: false,
+                        replayConsumed: true,
+                        passed: exitCode == 0);
+                    return exitCode;
+                }
                 if (parityContactOnly)
                 {
                     CaptureParityCheckpoint(
@@ -1767,6 +1869,182 @@ internal static class ModRegressionProbe
         }
         File.WriteAllText(
             path, text.ToString(), new UTF8Encoding(false));
+    }
+
+    private static void WriteActorInventorySnapshot(
+        IntPtr process,
+        long imageBase,
+        Dictionary<int, RuntimeActorIdentity> actorIdentities,
+        string path)
+    {
+        int worldValue = ReadInt(
+            process, imageBase + EngineAddresses.WorldRoot);
+        if (worldValue == 0 || worldValue == int.MinValue)
+            return;
+        long world = (long)(uint)worldValue;
+        int actorArrayValue = ReadInt(process, world + 0x18);
+        int actorCount = ReadInt(process, world + 0x3C);
+        if (actorArrayValue == 0 ||
+            actorArrayValue == int.MinValue ||
+            actorCount <= 0 ||
+            actorCount > 4096)
+            return;
+
+        int selectedActionId = ReadInt(
+            process, imageBase + EngineAddresses.CurrentActionId);
+        long actorArray = (long)(uint)actorArrayValue;
+        var text = new StringBuilder();
+        text.AppendLine(
+            "runtime_index,scene_index,database_entry_id,faction," +
+            "default_attack_type,selected_action_id,actor_address," +
+            "container_address,item_count,inventory_index,item_id," +
+            "quantity,quantity_mode");
+
+        for (int runtimeIndex = 0;
+             runtimeIndex < actorCount;
+             ++runtimeIndex)
+        {
+            int actorValue = ReadInt(
+                process, actorArray + runtimeIndex * 4L);
+            if (actorValue == 0 || actorValue == int.MinValue)
+                continue;
+            long actorAddress = (long)(uint)actorValue;
+            int faction = ReadInt(
+                process, actorAddress + ActorFactionOffset);
+            int defaultAttackType = ReadInt(
+                process, actorAddress + ActorDefaultAttackTypeOffset);
+            int containerValue = ReadInt(
+                process, actorAddress + ActorInventoryAddressOffset);
+            if (containerValue == int.MinValue)
+                continue;
+            long containerAddress = (long)(uint)containerValue;
+            int itemCount = containerAddress == 0
+                ? 0
+                : ReadInt(process, containerAddress + 0x0C);
+            int itemIdsValue = containerAddress == 0
+                ? 0
+                : ReadInt(process, containerAddress + 0x00);
+            int quantitiesValue = containerAddress == 0
+                ? 0
+                : ReadInt(process, containerAddress + 0x04);
+            int quantityModesValue = containerAddress == 0
+                ? 0
+                : ReadInt(process, containerAddress + 0x08);
+            bool validContainer =
+                containerAddress != 0 &&
+                itemCount >= 0 &&
+                itemCount <= 256 &&
+                (itemCount == 0 ||
+                 (itemIdsValue > 0 &&
+                  quantitiesValue > 0 &&
+                  quantityModesValue > 0));
+            if (!validContainer)
+                continue;
+
+            RuntimeActorIdentity identity = null;
+            bool resolved =
+                actorIdentities != null &&
+                actorIdentities.TryGetValue(
+                    runtimeIndex, out identity);
+            int sceneIndex = resolved ? identity.SceneIndex : -1;
+            int databaseEntryId =
+                resolved ? identity.DatabaseEntryId : -1;
+            if (itemCount == 0)
+            {
+                AppendInventoryRow(
+                    text,
+                    runtimeIndex,
+                    sceneIndex,
+                    databaseEntryId,
+                    faction,
+                    defaultAttackType,
+                    selectedActionId,
+                    actorAddress,
+                    containerAddress,
+                    itemCount,
+                    -1,
+                    0,
+                    0,
+                    0);
+                continue;
+            }
+
+            long itemIdsAddress = (long)(uint)itemIdsValue;
+            long quantitiesAddress = (long)(uint)quantitiesValue;
+            long quantityModesAddress =
+                (long)(uint)quantityModesValue;
+            for (int inventoryIndex = 0;
+                 inventoryIndex < itemCount;
+                 ++inventoryIndex)
+            {
+                int itemId = ReadInt(
+                    process,
+                    itemIdsAddress + inventoryIndex * 4L);
+                int quantity = ReadInt(
+                    process,
+                    quantitiesAddress + inventoryIndex * 4L);
+                int quantityMode = ReadInt(
+                    process,
+                    quantityModesAddress + inventoryIndex * 4L);
+                if (itemId == int.MinValue ||
+                    quantity == int.MinValue ||
+                    quantityMode == int.MinValue)
+                    continue;
+                AppendInventoryRow(
+                    text,
+                    runtimeIndex,
+                    sceneIndex,
+                    databaseEntryId,
+                    faction,
+                    defaultAttackType,
+                    selectedActionId,
+                    actorAddress,
+                    containerAddress,
+                    itemCount,
+                    inventoryIndex,
+                    itemId,
+                    quantity,
+                    quantityMode);
+            }
+        }
+
+        File.WriteAllText(
+            path, text.ToString(), new UTF8Encoding(false));
+    }
+
+    private static void AppendInventoryRow(
+        StringBuilder text,
+        int runtimeIndex,
+        int sceneIndex,
+        int databaseEntryId,
+        int faction,
+        int defaultAttackType,
+        int selectedActionId,
+        long actorAddress,
+        long containerAddress,
+        int itemCount,
+        int inventoryIndex,
+        int itemId,
+        int quantity,
+        int quantityMode)
+    {
+        text.AppendFormat(
+            CultureInfo.InvariantCulture,
+            "{0},{1},{2},{3},{4},{5},0x{6:X8},0x{7:X8}," +
+            "{8},{9},{10},{11},{12}\r\n",
+            runtimeIndex,
+            sceneIndex,
+            databaseEntryId,
+            faction,
+            defaultAttackType,
+            selectedActionId,
+            actorAddress,
+            containerAddress,
+            itemCount,
+            inventoryIndex,
+            itemId,
+            quantity,
+            quantityMode);
     }
 
     private static ActorSnapshot FindPlayerActor(

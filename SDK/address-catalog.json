@@ -52,6 +52,7 @@
     {"name": "BriefingAdvance", "rva": "0x000E6EA9", "kind": "byte_global", "confidence": "runtime_verified"},
     {"name": "CursorY", "rva": "0x000E6FAC", "kind": "int32_global", "confidence": "runtime_verified"},
     {"name": "MouseLeftReleased", "rva": "0x000E6FB0", "kind": "int32_global", "confidence": "runtime_verified"},
+    {"name": "CurrentActionId", "rva": "0x000E7048", "kind": "int32_global", "confidence": "decompiled"},
     {"name": "CurrentMission", "rva": "0x000E7060", "kind": "int32_global", "confidence": "runtime_verified"},
     {"name": "SelectedSaveSlot", "rva": "0x000E705C", "kind": "int32_global", "confidence": "decompiled"},
     {"name": "WorldRoot", "rva": "0x000E700C", "kind": "pointer_global", "confidence": "decompiled"},

@@ -55,6 +55,7 @@ namespace Mission1937.SDK.Generated
         public const long BriefingAdvance = 0x000E6EA9L;
         public const long CursorY = 0x000E6FACL;
         public const long MouseLeftReleased = 0x000E6FB0L;
+        public const long CurrentActionId = 0x000E7048L;
         public const long CurrentMission = 0x000E7060L;
         public const long SelectedSaveSlot = 0x000E705CL;
         public const long WorldRoot = 0x000E700CL;

@@ -106,7 +106,8 @@ direction_index = serial_id % 9
 
 类型 6、7、9 在攻击末帧发出世界投射物请求，分别进入飞镖、弹弓和手榴弹的飞行/爆炸链路。type 8/10 在同一末帧协议上创建专用世界对象，type 11 创建可释放的 AI 控制状态；三者均能跨存读档恢复。因此“全部序列帧已处理”描述的是数据管线能力，“特殊对象生命周期已接线”也不等于原受伤动作、全部过渡或尚未恢复的爆炸/状态数值已经定案。
 
-m011 以明确标注的 `remake_editorial` bridge 把项目 99 和 type 11 动作配给首名存活队员（当前为老赵），以便在当前内容中试玩该生命周期；原版取得脚本和原持有者仍未知。
+正式十二关不会编辑性发放项目 99；type 11 生命周期保留独立测试，只有恢复出的
+原版取得事件才能把它加入关卡武器栏。
 
 ## 4. 任务数据与运行时状态
 
@@ -151,7 +152,7 @@ Godot 从 `res://../LocalAssets/converted/` 读取本地数据：
 
 当前可控队员使用关卡中对应角色的坐标和已转换动画。玩家、faction 1 敌人和任务护送角色都注册进同一个 `DynamicOccupancyGrid`：源 L2/L3 只读，以源 `ReferenceX/Y` 的八连通分量恢复足印，运行时单独维护角色足印、目标预留、密集移动段检查和第三方视线遮挡。未营救护送角色保持 faction 2 中立，敌人不会提前攻击；营救后切换到 faction 3 并跟随队员。L3 A* 禁止斜穿贴角障碍；敌人读取原巡逻点、方向、感知类型、生命和默认武器，执行巡逻、发现、追击、攻击、实际伤害、基础警报和最后位置搜索。退化巡逻点和拥挤重规划使用确定性错峰退避，避免 A* 重算风暴。
 
-`ImportedLevelData` 保留并校验转换结果中的 `database_header_values`；`WorldDepth` 据 DBL `header[0]` 把地面/固定背景、正常深度、固定前景和顶层映射到四个互不重叠的 z 区间。m000 真实资源回归已确认 22 个 DBL 336/337 庄稼底图在 queue 1，70 个 DBL 335 稻谷在 queue 0；因此前者固定在人物后，后者才参与人物基线排序。玩家单位各自持有 `CombatInventory`，`InventoryGridView` 以右侧 276×421 五列方格呈现武器/物品；`ProjectileWorld` 负责 type 6/7/9 的世界飞行与命中，`LegacySpecialWorldObject` 和 `LegacyAiControlEffect` 负责 type 8/10/11；`FieldPickup` 从真实 DBL 拾取实体生成，`LandMine` 和 `ExplosiveProp` 通过统一椭圆爆炸请求支持地雷、油桶和连锁伤害。世界命令不绘制黄色目标线。
+`ImportedLevelData` 保留并校验转换结果中的 `database_header_values`；`WorldDepth` 据 DBL `header[0]` 把地面/固定背景、正常深度、固定前景和顶层映射到四个互不重叠的 z 区间。m000 真实资源回归已确认 22 个 DBL 336/337 庄稼底图在 queue 1，70 个 DBL 335 稻谷在 queue 0；因此前者固定在人物后，后者才参与人物基线排序。玩家身份不再只按姓名猜测，而由 `original_initial_weapon_inventory.json` 的 level + scene ID 确定；`original_runtime_actor_catalog.json` 还固化 762 个已解析运行时角色及 5 个 VWF/运行时阵营差异。玩家单位各自持有原版直接数量语义的 `CombatInventory`，`InventoryGridView` 以右侧 276×421 五列方格呈现武器/物品；`ProjectileWorld` 负责 type 6/7/9 的世界飞行与命中，`LegacySpecialWorldObject` 和 `LegacyAiControlEffect` 负责 type 8/10/11；`FieldPickup` 从真实 DBL 拾取实体生成，`LandMine` 和 `ExplosiveProp` 通过统一椭圆爆炸请求支持地雷、油桶和连锁伤害。世界命令不绘制黄色目标线。
 
 `GameShell` 管理暂停菜单、十槽选择器、按键重映射、四通道音量、失败灰化和五列背包。世界左键提交选择/移动/攻击/使用，左 `Ctrl` 或 `↑` 按住时进入强制目标；世界右键只拖框，菜单右键松开返回。右下角地图属于独立 HUD，不暂停 SceneTree；它优先显示原版逐关静态目标图，并增加实时敌我/任务点、镜头框和点击卷屏。`MediaDirector` 在切关时显示原简报图；音乐/环境声和影片音轨进入 `Music`，对白进入 `Voice`，攻击、命中、警报、角色、死亡和 UI WAV 进入 `Sfx`，媒体 `Esc` 在松开时关闭/跳过。导演节拍/教程/持久事件和 AI 姿态/增援预算、已掩埋敌人的 scene 索引及特殊对象等可变状态均随 `GameSessionState` 保存恢复。仍未完成的是通用中立角色行为、听觉遮挡/完整尸体发现、原版 S/B 命令细节、经证据核对的逐关演出和长时间实机验收。
 

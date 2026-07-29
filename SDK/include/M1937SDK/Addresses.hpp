@@ -58,6 +58,7 @@ inline constexpr std::uintptr_t cursor_x = 0x000E6EA0;
 inline constexpr std::uintptr_t briefing_advance = 0x000E6EA9;
 inline constexpr std::uintptr_t cursor_y = 0x000E6FAC;
 inline constexpr std::uintptr_t mouse_left_released = 0x000E6FB0;
+inline constexpr std::uintptr_t current_action_id = 0x000E7048;
 inline constexpr std::uintptr_t current_mission = 0x000E7060;
 inline constexpr std::uintptr_t selected_save_slot = 0x000E705C;
 inline constexpr std::uintptr_t world_root = 0x000E700C;

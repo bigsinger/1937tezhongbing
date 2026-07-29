@@ -128,7 +128,7 @@ func _test_inventory_and_pickup(failures: Array[String]) -> void:
 	_expect(pickup.collect_into(inventory) == 5, "ammo pickup transfers into inventory", failures)
 	_expect(inventory.ammo_item_count(37) == 30, "pickup increments the matching ammo item", failures)
 	_expect(pickup.collect_into(inventory) == 0, "ammo pickup cannot be collected twice", failures)
-	_expect(int(inventory.full_snapshot().get("schema_version", 0)) == 1, "inventory snapshot is versioned", failures)
+	_expect(int(inventory.full_snapshot().get("schema_version", 0)) == 2, "inventory snapshot is versioned", failures)
 	pickup.free()
 
 

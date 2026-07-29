@@ -32,3 +32,10 @@ moving/stationary counts, and all 46 identities are strict gates.
 
 Run `Remake/tools/Run-RuntimeProbe.ps1` to generate the matching Remake trace
 and `comparison.json` / `comparison.md`.
+
+`initial-weapon-inventory-v1.json` is a gameplay-entry baseline for all twelve
+levels. It contains 27 exact player identities and 83 ordered weapon-container
+entries. Every level records SHA-256 provenance for both entry and steady
+read-only snapshots plus its runtime identity catalog. Product data in
+`game/data/original_initial_weapon_inventory.json` must remain semantically
+identical and is checked on every build.

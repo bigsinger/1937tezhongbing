@@ -393,38 +393,6 @@ func _test_main_inventory_and_explosion_integration(failures: Array[String]) -> 
 		"explosives pickup keeps task inventory and exposes the recovered type-10 action",
 		failures,
 	)
-	main.current_mission = {"id": "m011"}
-	_expect(
-		main._grant_editorial_type_11_loadout()
-		and collector.has_inventory_weapon("special_attack")
-		and collector.ammo_item_count(99) == 1,
-		"m011 exposes the labelled reusable item-99 bridge for the type-11 lifecycle",
-		failures,
-	)
-	var bridge_bystander = SQUAD_UNIT_SCRIPT.new()
-	bridge_bystander.configure(
-		"bridge bystander",
-		Color.WHITE,
-		Vector2(10.0, 0.0),
-		null,
-		empty_groups,
-		empty_groups,
-		-1,
-		clear_sight,
-	)
-	bridge_bystander.configure_combat(3, 8, {}, empty_groups, empty_groups, true)
-	arena.add_child(bridge_bystander)
-	main.units.push_front(bridge_bystander)
-	_expect(
-		main._grant_editorial_type_11_loadout()
-		and collector.ammo_item_count(99) == 1
-		and not bridge_bystander.has_inventory_weapon("special_attack")
-		and bridge_bystander.ammo_item_count(99) == 0,
-		"reapplying the m011 compatibility bridge reuses the saved holder without duplicating item 99",
-		failures,
-	)
-	main.units.erase(bridge_bystander)
-	bridge_bystander.queue_free()
 	var friendly_target = SQUAD_UNIT_SCRIPT.new()
 	friendly_target.configure(
 		"friendly target",

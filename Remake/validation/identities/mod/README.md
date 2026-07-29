@@ -15,9 +15,14 @@ Important field distinction:
 - A runtime array index is scoped to the recorded capture and supported
   content profile. It is never used as a VWF scene index.
 
-`m000-runtime-actors-v1.json` resolves only identities supported by
-one-to-one evidence. The two scripted four-soldier formations remain explicit
-as eight unresolved records instead of receiving guessed scene ids. The
-generator is `Remake/tools/Build-ModRuntimeIdentityCatalog.ps1`; the checked-in
-catalog is validated without original assets in CI and is additionally checked
-against the locally imported VWF manifest when that manifest is available.
+The directory now contains `m000` through `m011`. `m000` retains its conservative
+first catalog: the two scripted four-soldier formations remain explicit as
+eight unresolved records instead of receiving guessed scene ids. The later
+levels were captured with the same process-local, read-only method. Together
+they provide 762 resolved identities and ten unresolved actors.
+
+The generator is `Remake/tools/Build-ModRuntimeIdentityCatalog.ps1`.
+`Build-OriginalRuntimeActorCatalog.ps1` derives the smaller product catalog
+`game/data/original_runtime_actor_catalog.json`, including five verified live
+faction overrides. Source hashes and totals are checked in CI, and m000 is
+additionally checked against the locally imported VWF manifest when available.

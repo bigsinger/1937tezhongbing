@@ -1,0 +1,947 @@
+{
+    "schema_version":  1,
+    "baseline_id":  "mod-original-initial-weapon-inventory-v1",
+    "content_profile":  "repository-mod-12-level-20260729",
+    "observation_point":  "gameplay entry after the original briefing",
+    "attack_type_to_item_id":  {
+                                   "1":  36,
+                                   "2":  37,
+                                   "3":  38,
+                                   "4":  39,
+                                   "5":  40,
+                                   "6":  41,
+                                   "7":  42,
+                                   "8":  43,
+                                   "9":  44,
+                                   "10":  45,
+                                   "11":  99
+                               },
+    "quantity_modes":  {
+                           "36":  2,
+                           "37":  2,
+                           "38":  2,
+                           "39":  1,
+                           "40":  1,
+                           "41":  0,
+                           "42":  1,
+                           "43":  0,
+                           "44":  0,
+                           "45":  0,
+                           "99":  1
+                       },
+    "semantics":  {
+                      "runtime_actor_inventory_offset":  "0x22C",
+                      "container_layout":  {
+                                               "item_ids_address":  "0x00",
+                                               "quantities_address":  "0x04",
+                                               "quantity_modes_address":  "0x08",
+                                               "item_count":  "0x0C",
+                                               "size":  "0x10"
+                                           },
+                      "attack_consumption":  {
+                                                 "mode_0":  "decrement and remove at zero",
+                                                 "mode_1":  "durable for normal attacks",
+                                                 "mode_2":  "decrement and retain the owned firearm at zero",
+                                                 "magazines":  "not present in the original runtime",
+                                                 "reload":  "not present in the original runtime"
+                                             }
+                  },
+    "summary":  {
+                    "level_count":  12,
+                    "player_count":  27,
+                    "inventory_entry_count":  83
+                },
+    "provenance":  {
+                       "capture_method":  "process-local read-only RuntimeActorV1 inventory snapshots",
+                       "actor_identity_method":  "exact runtime actor to VWF scene correlation",
+                       "levels":  {
+                                      "m000":  {
+                                                   "entry_snapshot_sha256":  "983B26679E6B5343E0FEDC3690ED3BA1BC9895280D626FF26032DB654890B1B8",
+                                                   "steady_snapshot_sha256":  "983B26679E6B5343E0FEDC3690ED3BA1BC9895280D626FF26032DB654890B1B8",
+                                                   "identity_catalog_sha256":  "0F2FC432A66F74BE625833D79979E7EB52C30889EEA3B43AC33C710CBF29FD78",
+                                                   "player_count":  1
+                                               },
+                                      "m001":  {
+                                                   "entry_snapshot_sha256":  "C61463C03FA2CCD0F4407FCC38FBC3EF1B4DAC3A52DABF7F8F4C57F34132AD20",
+                                                   "steady_snapshot_sha256":  "C61463C03FA2CCD0F4407FCC38FBC3EF1B4DAC3A52DABF7F8F4C57F34132AD20",
+                                                   "identity_catalog_sha256":  "17A018A58CD80E42D89015EB40FE864EB8E8C5A89CB66A9E17E9BB4434AC67D0",
+                                                   "player_count":  3
+                                               },
+                                      "m002":  {
+                                                   "entry_snapshot_sha256":  "7B7B2D299A5D243097F5DA918526446D31C07DD4979C72D0DA1B5EACB1C2D987",
+                                                   "steady_snapshot_sha256":  "7B7B2D299A5D243097F5DA918526446D31C07DD4979C72D0DA1B5EACB1C2D987",
+                                                   "identity_catalog_sha256":  "7D1652F317DC741CFEB9ADE9C17E0060C413D67A2D96270737D71C155FDBA836",
+                                                   "player_count":  1
+                                               },
+                                      "m003":  {
+                                                   "entry_snapshot_sha256":  "F720DD98E2CD34BD593BCADFF46A5C62B6AF5EC052100FCC5FF43DFE8AC3CA33",
+                                                   "steady_snapshot_sha256":  "F720DD98E2CD34BD593BCADFF46A5C62B6AF5EC052100FCC5FF43DFE8AC3CA33",
+                                                   "identity_catalog_sha256":  "DC3675635FF0AB24F159A6B6664492E4F3C358CD394FA428B0D243A7A929A988",
+                                                   "player_count":  4
+                                               },
+                                      "m004":  {
+                                                   "entry_snapshot_sha256":  "98798882BF647CFDDECD3B96B4673DF1DA2CB3BF1A2D9915F9E4C625542E8DE7",
+                                                   "steady_snapshot_sha256":  "98798882BF647CFDDECD3B96B4673DF1DA2CB3BF1A2D9915F9E4C625542E8DE7",
+                                                   "identity_catalog_sha256":  "062121926FF6BF396BB47CDE6095CD48F39CE6A82EECEDC8B98CE2CAE7E9069D",
+                                                   "player_count":  1
+                                               },
+                                      "m005":  {
+                                                   "entry_snapshot_sha256":  "286ADE01D7430C6E91696004F266B30D696FF6586659F03EE2809B1185E358E0",
+                                                   "steady_snapshot_sha256":  "286ADE01D7430C6E91696004F266B30D696FF6586659F03EE2809B1185E358E0",
+                                                   "identity_catalog_sha256":  "B56A028E72B3839F523ECC560F8AF0AC3210BA634EDE9B80503C01209BD92AE9",
+                                                   "player_count":  3
+                                               },
+                                      "m006":  {
+                                                   "entry_snapshot_sha256":  "20A01A50DEC216CE406911ABB7D1951B1E4082D9D15139171545B14286F70B93",
+                                                   "steady_snapshot_sha256":  "20A01A50DEC216CE406911ABB7D1951B1E4082D9D15139171545B14286F70B93",
+                                                   "identity_catalog_sha256":  "C26EAA33C4A4FA3A098AE7C1D5BB844CFA3C48447FC319C300C0BF6B0A4BA293",
+                                                   "player_count":  1
+                                               },
+                                      "m007":  {
+                                                   "entry_snapshot_sha256":  "8927D325DCFDDA66B363584D8B44AB6D2C75F9382F4E1B1B6CC91042E3585A36",
+                                                   "steady_snapshot_sha256":  "8927D325DCFDDA66B363584D8B44AB6D2C75F9382F4E1B1B6CC91042E3585A36",
+                                                   "identity_catalog_sha256":  "FBB395AA515587E70C22FEF3FA522AA4E44BAB64906BE14CB80B84802DC7DED7",
+                                                   "player_count":  3
+                                               },
+                                      "m008":  {
+                                                   "entry_snapshot_sha256":  "DFCA39692592282A5FBA21B09844CD58B3A9A79EB09D2D7C18DD23FA4BB5BE28",
+                                                   "steady_snapshot_sha256":  "DFCA39692592282A5FBA21B09844CD58B3A9A79EB09D2D7C18DD23FA4BB5BE28",
+                                                   "identity_catalog_sha256":  "479D9455B8FAD3DFDC0140AB3C9654B41A9C11B8992AC7D0699D32A55C9500C9",
+                                                   "player_count":  2
+                                               },
+                                      "m009":  {
+                                                   "entry_snapshot_sha256":  "06D49769231BF9AF3C9F619AB4FC481A3C36B5CAF4ECB80C003250FBFB401826",
+                                                   "steady_snapshot_sha256":  "06D49769231BF9AF3C9F619AB4FC481A3C36B5CAF4ECB80C003250FBFB401826",
+                                                   "identity_catalog_sha256":  "DDD3895914B9705DEBA663541FDA741AAB16BEC1663C302DE6C9F070602AF1C6",
+                                                   "player_count":  2
+                                               },
+                                      "m010":  {
+                                                   "entry_snapshot_sha256":  "E389356A7F0B8FCF11D2D9C8342794EE8E87B46EDD580DA7F5AB7E35FDA215EE",
+                                                   "steady_snapshot_sha256":  "E389356A7F0B8FCF11D2D9C8342794EE8E87B46EDD580DA7F5AB7E35FDA215EE",
+                                                   "identity_catalog_sha256":  "DDABE5F374D4A9E3AFA8314C4E5D8E047E9FBB50C29A7933F94EF29A86D7C9A4",
+                                                   "player_count":  4
+                                               },
+                                      "m011":  {
+                                                   "entry_snapshot_sha256":  "895D2FA2717D82E7DC66D2BC05F9F73FE9CC4C9C92D0F92F7811A5A3D2D0634F",
+                                                   "steady_snapshot_sha256":  "895D2FA2717D82E7DC66D2BC05F9F73FE9CC4C9C92D0F92F7811A5A3D2D0634F",
+                                                   "identity_catalog_sha256":  "E579F68F38DAA95866F44085FAE8A103B3567621C87516F5EBC2450E51B2C9D6",
+                                                   "player_count":  2
+                                               }
+                                  }
+                   },
+    "levels":  {
+                   "m000":  {
+                                "selector_level":  1,
+                                "engine_mission":  1,
+                                "players":  [
+                                                {
+                                                    "runtime_index":  18,
+                                                    "scene_index":  1436,
+                                                    "database_entry_id":  924,
+                                                    "display_name":  "强子",
+                                                    "default_attack_type":  4,
+                                                    "items":  [
+                                                                  {
+                                                                      "inventory_index":  0,
+                                                                      "item_id":  39,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  1,
+                                                                      "item_id":  36,
+                                                                      "quantity":  7,
+                                                                      "quantity_mode":  2
+                                                                  }
+                                                              ]
+                                                }
+                                            ]
+                            },
+                   "m001":  {
+                                "selector_level":  2,
+                                "engine_mission":  2,
+                                "players":  [
+                                                {
+                                                    "runtime_index":  0,
+                                                    "scene_index":  1993,
+                                                    "database_entry_id":  924,
+                                                    "display_name":  "强子",
+                                                    "default_attack_type":  4,
+                                                    "items":  [
+                                                                  {
+                                                                      "inventory_index":  0,
+                                                                      "item_id":  39,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  1,
+                                                                      "item_id":  44,
+                                                                      "quantity":  3,
+                                                                      "quantity_mode":  0
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  2,
+                                                                      "item_id":  36,
+                                                                      "quantity":  50,
+                                                                      "quantity_mode":  2
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  3,
+                                                                      "item_id":  37,
+                                                                      "quantity":  20,
+                                                                      "quantity_mode":  2
+                                                                  }
+                                                              ]
+                                                },
+                                                {
+                                                    "runtime_index":  1,
+                                                    "scene_index":  1994,
+                                                    "database_entry_id":  914,
+                                                    "display_name":  "古明",
+                                                    "default_attack_type":  1,
+                                                    "items":  [
+                                                                  {
+                                                                      "inventory_index":  0,
+                                                                      "item_id":  36,
+                                                                      "quantity":  30,
+                                                                      "quantity_mode":  2
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  1,
+                                                                      "item_id":  39,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  }
+                                                              ]
+                                                },
+                                                {
+                                                    "runtime_index":  38,
+                                                    "scene_index":  2280,
+                                                    "database_entry_id":  918,
+                                                    "display_name":  "老赵",
+                                                    "default_attack_type":  4,
+                                                    "items":  [
+                                                                  {
+                                                                      "inventory_index":  0,
+                                                                      "item_id":  39,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  1,
+                                                                      "item_id":  43,
+                                                                      "quantity":  2,
+                                                                      "quantity_mode":  0
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  2,
+                                                                      "item_id":  36,
+                                                                      "quantity":  50,
+                                                                      "quantity_mode":  2
+                                                                  }
+                                                              ]
+                                                }
+                                            ]
+                            },
+                   "m002":  {
+                                "selector_level":  3,
+                                "engine_mission":  3,
+                                "players":  [
+                                                {
+                                                    "runtime_index":  75,
+                                                    "scene_index":  886,
+                                                    "database_entry_id":  918,
+                                                    "display_name":  "老赵",
+                                                    "default_attack_type":  4,
+                                                    "items":  [
+                                                                  {
+                                                                      "inventory_index":  0,
+                                                                      "item_id":  39,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  1,
+                                                                      "item_id":  36,
+                                                                      "quantity":  21,
+                                                                      "quantity_mode":  2
+                                                                  }
+                                                              ]
+                                                }
+                                            ]
+                            },
+                   "m003":  {
+                                "selector_level":  4,
+                                "engine_mission":  4,
+                                "players":  [
+                                                {
+                                                    "runtime_index":  39,
+                                                    "scene_index":  1148,
+                                                    "database_entry_id":  914,
+                                                    "display_name":  "古明",
+                                                    "default_attack_type":  4,
+                                                    "items":  [
+                                                                  {
+                                                                      "inventory_index":  0,
+                                                                      "item_id":  39,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  1,
+                                                                      "item_id":  36,
+                                                                      "quantity":  15,
+                                                                      "quantity_mode":  2
+                                                                  }
+                                                              ]
+                                                },
+                                                {
+                                                    "runtime_index":  40,
+                                                    "scene_index":  1149,
+                                                    "database_entry_id":  910,
+                                                    "display_name":  "大牛",
+                                                    "default_attack_type":  4,
+                                                    "items":  [
+                                                                  {
+                                                                      "inventory_index":  0,
+                                                                      "item_id":  39,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  1,
+                                                                      "item_id":  40,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  2,
+                                                                      "item_id":  41,
+                                                                      "quantity":  5,
+                                                                      "quantity_mode":  0
+                                                                  }
+                                                              ]
+                                                },
+                                                {
+                                                    "runtime_index":  41,
+                                                    "scene_index":  1150,
+                                                    "database_entry_id":  918,
+                                                    "display_name":  "老赵",
+                                                    "default_attack_type":  4,
+                                                    "items":  [
+                                                                  {
+                                                                      "inventory_index":  0,
+                                                                      "item_id":  39,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  1,
+                                                                      "item_id":  43,
+                                                                      "quantity":  2,
+                                                                      "quantity_mode":  0
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  2,
+                                                                      "item_id":  45,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  0
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  3,
+                                                                      "item_id":  36,
+                                                                      "quantity":  30,
+                                                                      "quantity_mode":  2
+                                                                  }
+                                                              ]
+                                                },
+                                                {
+                                                    "runtime_index":  76,
+                                                    "scene_index":  1206,
+                                                    "database_entry_id":  924,
+                                                    "display_name":  "强子",
+                                                    "default_attack_type":  4,
+                                                    "items":  [
+                                                                  {
+                                                                      "inventory_index":  0,
+                                                                      "item_id":  39,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  1,
+                                                                      "item_id":  36,
+                                                                      "quantity":  40,
+                                                                      "quantity_mode":  2
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  2,
+                                                                      "item_id":  37,
+                                                                      "quantity":  5,
+                                                                      "quantity_mode":  2
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  3,
+                                                                      "item_id":  44,
+                                                                      "quantity":  2,
+                                                                      "quantity_mode":  0
+                                                                  }
+                                                              ]
+                                                }
+                                            ]
+                            },
+                   "m004":  {
+                                "selector_level":  5,
+                                "engine_mission":  5,
+                                "players":  [
+                                                {
+                                                    "runtime_index":  85,
+                                                    "scene_index":  2629,
+                                                    "database_entry_id":  910,
+                                                    "display_name":  "大牛",
+                                                    "default_attack_type":  4,
+                                                    "items":  [
+                                                                  {
+                                                                      "inventory_index":  0,
+                                                                      "item_id":  39,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  1,
+                                                                      "item_id":  40,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  2,
+                                                                      "item_id":  41,
+                                                                      "quantity":  20,
+                                                                      "quantity_mode":  0
+                                                                  }
+                                                              ]
+                                                }
+                                            ]
+                            },
+                   "m005":  {
+                                "selector_level":  6,
+                                "engine_mission":  6,
+                                "players":  [
+                                                {
+                                                    "runtime_index":  27,
+                                                    "scene_index":  576,
+                                                    "database_entry_id":  924,
+                                                    "display_name":  "强子",
+                                                    "default_attack_type":  4,
+                                                    "items":  [
+                                                                  {
+                                                                      "inventory_index":  0,
+                                                                      "item_id":  39,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  1,
+                                                                      "item_id":  37,
+                                                                      "quantity":  5,
+                                                                      "quantity_mode":  2
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  2,
+                                                                      "item_id":  44,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  0
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  3,
+                                                                      "item_id":  38,
+                                                                      "quantity":  5,
+                                                                      "quantity_mode":  2
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  4,
+                                                                      "item_id":  36,
+                                                                      "quantity":  10,
+                                                                      "quantity_mode":  2
+                                                                  }
+                                                              ]
+                                                },
+                                                {
+                                                    "runtime_index":  83,
+                                                    "scene_index":  657,
+                                                    "database_entry_id":  914,
+                                                    "display_name":  "古明",
+                                                    "default_attack_type":  4,
+                                                    "items":  [
+                                                                  {
+                                                                      "inventory_index":  0,
+                                                                      "item_id":  39,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  1,
+                                                                      "item_id":  36,
+                                                                      "quantity":  10,
+                                                                      "quantity_mode":  2
+                                                                  }
+                                                              ]
+                                                },
+                                                {
+                                                    "runtime_index":  84,
+                                                    "scene_index":  663,
+                                                    "database_entry_id":  918,
+                                                    "display_name":  "老赵",
+                                                    "default_attack_type":  4,
+                                                    "items":  [
+                                                                  {
+                                                                      "inventory_index":  0,
+                                                                      "item_id":  39,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  1,
+                                                                      "item_id":  36,
+                                                                      "quantity":  10,
+                                                                      "quantity_mode":  2
+                                                                  }
+                                                              ]
+                                                }
+                                            ]
+                            },
+                   "m006":  {
+                                "selector_level":  7,
+                                "engine_mission":  7,
+                                "players":  [
+                                                {
+                                                    "runtime_index":  65,
+                                                    "scene_index":  1458,
+                                                    "database_entry_id":  924,
+                                                    "display_name":  "强子",
+                                                    "default_attack_type":  4,
+                                                    "items":  [
+                                                                  {
+                                                                      "inventory_index":  0,
+                                                                      "item_id":  39,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  1,
+                                                                      "item_id":  36,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  2
+                                                                  }
+                                                              ]
+                                                }
+                                            ]
+                            },
+                   "m007":  {
+                                "selector_level":  8,
+                                "engine_mission":  8,
+                                "players":  [
+                                                {
+                                                    "runtime_index":  52,
+                                                    "scene_index":  2325,
+                                                    "database_entry_id":  918,
+                                                    "display_name":  "老赵",
+                                                    "default_attack_type":  4,
+                                                    "items":  [
+                                                                  {
+                                                                      "inventory_index":  0,
+                                                                      "item_id":  39,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  1,
+                                                                      "item_id":  36,
+                                                                      "quantity":  15,
+                                                                      "quantity_mode":  2
+                                                                  }
+                                                              ]
+                                                },
+                                                {
+                                                    "runtime_index":  98,
+                                                    "scene_index":  2373,
+                                                    "database_entry_id":  924,
+                                                    "display_name":  "强子",
+                                                    "default_attack_type":  4,
+                                                    "items":  [
+                                                                  {
+                                                                      "inventory_index":  0,
+                                                                      "item_id":  39,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  1,
+                                                                      "item_id":  36,
+                                                                      "quantity":  15,
+                                                                      "quantity_mode":  2
+                                                                  }
+                                                              ]
+                                                },
+                                                {
+                                                    "runtime_index":  105,
+                                                    "scene_index":  2389,
+                                                    "database_entry_id":  914,
+                                                    "display_name":  "古明",
+                                                    "default_attack_type":  4,
+                                                    "items":  [
+                                                                  {
+                                                                      "inventory_index":  0,
+                                                                      "item_id":  39,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  1,
+                                                                      "item_id":  36,
+                                                                      "quantity":  10,
+                                                                      "quantity_mode":  2
+                                                                  }
+                                                              ]
+                                                }
+                                            ]
+                            },
+                   "m008":  {
+                                "selector_level":  9,
+                                "engine_mission":  9,
+                                "players":  [
+                                                {
+                                                    "runtime_index":  26,
+                                                    "scene_index":  751,
+                                                    "database_entry_id":  910,
+                                                    "display_name":  "大牛",
+                                                    "default_attack_type":  4,
+                                                    "items":  [
+                                                                  {
+                                                                      "inventory_index":  0,
+                                                                      "item_id":  39,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  1,
+                                                                      "item_id":  40,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  2,
+                                                                      "item_id":  41,
+                                                                      "quantity":  10,
+                                                                      "quantity_mode":  0
+                                                                  }
+                                                              ]
+                                                },
+                                                {
+                                                    "runtime_index":  28,
+                                                    "scene_index":  753,
+                                                    "database_entry_id":  918,
+                                                    "display_name":  "老赵",
+                                                    "default_attack_type":  4,
+                                                    "items":  [
+                                                                  {
+                                                                      "inventory_index":  0,
+                                                                      "item_id":  39,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  1,
+                                                                      "item_id":  36,
+                                                                      "quantity":  30,
+                                                                      "quantity_mode":  2
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  2,
+                                                                      "item_id":  43,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  0
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  3,
+                                                                      "item_id":  45,
+                                                                      "quantity":  2,
+                                                                      "quantity_mode":  0
+                                                                  }
+                                                              ]
+                                                }
+                                            ]
+                            },
+                   "m009":  {
+                                "selector_level":  10,
+                                "engine_mission":  10,
+                                "players":  [
+                                                {
+                                                    "runtime_index":  129,
+                                                    "scene_index":  1695,
+                                                    "database_entry_id":  924,
+                                                    "display_name":  "强子",
+                                                    "default_attack_type":  4,
+                                                    "items":  [
+                                                                  {
+                                                                      "inventory_index":  0,
+                                                                      "item_id":  39,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  1,
+                                                                      "item_id":  36,
+                                                                      "quantity":  40,
+                                                                      "quantity_mode":  2
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  2,
+                                                                      "item_id":  37,
+                                                                      "quantity":  5,
+                                                                      "quantity_mode":  2
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  3,
+                                                                      "item_id":  38,
+                                                                      "quantity":  5,
+                                                                      "quantity_mode":  2
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  4,
+                                                                      "item_id":  44,
+                                                                      "quantity":  2,
+                                                                      "quantity_mode":  0
+                                                                  }
+                                                              ]
+                                                },
+                                                {
+                                                    "runtime_index":  131,
+                                                    "scene_index":  1709,
+                                                    "database_entry_id":  918,
+                                                    "display_name":  "老赵",
+                                                    "default_attack_type":  4,
+                                                    "items":  [
+                                                                  {
+                                                                      "inventory_index":  0,
+                                                                      "item_id":  39,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  1,
+                                                                      "item_id":  36,
+                                                                      "quantity":  40,
+                                                                      "quantity_mode":  2
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  2,
+                                                                      "item_id":  45,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  0
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  3,
+                                                                      "item_id":  43,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  0
+                                                                  }
+                                                              ]
+                                                }
+                                            ]
+                            },
+                   "m010":  {
+                                "selector_level":  11,
+                                "engine_mission":  11,
+                                "players":  [
+                                                {
+                                                    "runtime_index":  99,
+                                                    "scene_index":  1589,
+                                                    "database_entry_id":  924,
+                                                    "display_name":  "强子",
+                                                    "default_attack_type":  4,
+                                                    "items":  [
+                                                                  {
+                                                                      "inventory_index":  0,
+                                                                      "item_id":  39,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  1,
+                                                                      "item_id":  36,
+                                                                      "quantity":  60,
+                                                                      "quantity_mode":  2
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  2,
+                                                                      "item_id":  37,
+                                                                      "quantity":  20,
+                                                                      "quantity_mode":  2
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  3,
+                                                                      "item_id":  38,
+                                                                      "quantity":  10,
+                                                                      "quantity_mode":  2
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  4,
+                                                                      "item_id":  44,
+                                                                      "quantity":  3,
+                                                                      "quantity_mode":  0
+                                                                  }
+                                                              ]
+                                                },
+                                                {
+                                                    "runtime_index":  100,
+                                                    "scene_index":  1590,
+                                                    "database_entry_id":  918,
+                                                    "display_name":  "老赵",
+                                                    "default_attack_type":  4,
+                                                    "items":  [
+                                                                  {
+                                                                      "inventory_index":  0,
+                                                                      "item_id":  39,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  1,
+                                                                      "item_id":  36,
+                                                                      "quantity":  40,
+                                                                      "quantity_mode":  2
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  2,
+                                                                      "item_id":  43,
+                                                                      "quantity":  3,
+                                                                      "quantity_mode":  0
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  3,
+                                                                      "item_id":  45,
+                                                                      "quantity":  3,
+                                                                      "quantity_mode":  0
+                                                                  }
+                                                              ]
+                                                },
+                                                {
+                                                    "runtime_index":  101,
+                                                    "scene_index":  1591,
+                                                    "database_entry_id":  910,
+                                                    "display_name":  "大牛",
+                                                    "default_attack_type":  4,
+                                                    "items":  [
+                                                                  {
+                                                                      "inventory_index":  0,
+                                                                      "item_id":  39,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  1,
+                                                                      "item_id":  40,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  2,
+                                                                      "item_id":  41,
+                                                                      "quantity":  20,
+                                                                      "quantity_mode":  0
+                                                                  }
+                                                              ]
+                                                },
+                                                {
+                                                    "runtime_index":  102,
+                                                    "scene_index":  1592,
+                                                    "database_entry_id":  914,
+                                                    "display_name":  "古明",
+                                                    "default_attack_type":  4,
+                                                    "items":  [
+                                                                  {
+                                                                      "inventory_index":  0,
+                                                                      "item_id":  39,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  1,
+                                                                      "item_id":  36,
+                                                                      "quantity":  20,
+                                                                      "quantity_mode":  2
+                                                                  }
+                                                              ]
+                                                }
+                                            ]
+                            },
+                   "m011":  {
+                                "selector_level":  12,
+                                "engine_mission":  12,
+                                "players":  [
+                                                {
+                                                    "runtime_index":  62,
+                                                    "scene_index":  1175,
+                                                    "database_entry_id":  924,
+                                                    "display_name":  "强子",
+                                                    "default_attack_type":  1,
+                                                    "items":  [
+                                                                  {
+                                                                      "inventory_index":  0,
+                                                                      "item_id":  36,
+                                                                      "quantity":  30,
+                                                                      "quantity_mode":  2
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  1,
+                                                                      "item_id":  37,
+                                                                      "quantity":  20,
+                                                                      "quantity_mode":  2
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  2,
+                                                                      "item_id":  39,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  3,
+                                                                      "item_id":  44,
+                                                                      "quantity":  2,
+                                                                      "quantity_mode":  0
+                                                                  }
+                                                              ]
+                                                },
+                                                {
+                                                    "runtime_index":  63,
+                                                    "scene_index":  1176,
+                                                    "database_entry_id":  918,
+                                                    "display_name":  "老赵",
+                                                    "default_attack_type":  4,
+                                                    "items":  [
+                                                                  {
+                                                                      "inventory_index":  0,
+                                                                      "item_id":  39,
+                                                                      "quantity":  1,
+                                                                      "quantity_mode":  1
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  1,
+                                                                      "item_id":  36,
+                                                                      "quantity":  31,
+                                                                      "quantity_mode":  2
+                                                                  },
+                                                                  {
+                                                                      "inventory_index":  2,
+                                                                      "item_id":  43,
+                                                                      "quantity":  2,
+                                                                      "quantity_mode":  0
+                                                                  }
+                                                              ]
+                                                }
+                                            ]
+                            }
+               }
+}

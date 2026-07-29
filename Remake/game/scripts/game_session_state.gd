@@ -555,27 +555,20 @@ static func _restore_inventory(game: Node, actor: Node2D, record: Dictionary) ->
 	if snapshot.is_empty():
 		return
 	var inventory = COMBAT_INVENTORY.new()
-	var raw_items: Variant = snapshot.get("items", {})
-	if raw_items is Dictionary:
-		var items: Dictionary = {}
-		for item_key: Variant in (raw_items as Dictionary).keys():
-			items[int(str(item_key))] = maxi(int((raw_items as Dictionary)[item_key]), 0)
-		inventory.set("_items", items)
-	var weapons: Dictionary = _string_dictionary(snapshot.get("weapons", {}))
-	inventory.set("_weapons", weapons)
-	var active_key := str(snapshot.get("active_action_key", ""))
-	inventory.set("_active_action_key", active_key)
+	if not inventory.restore_snapshot(snapshot):
+		return
 	actor.set("combat_inventory", inventory)
+	var known_keys: Array[String] = inventory.known_weapon_keys()
 	var order: Array[String] = []
 	var raw_order: Variant = record.get("inventory_weapon_order", [])
 	if raw_order is Array:
 		for action_value: Variant in raw_order as Array:
 			var action_key := str(action_value)
-			if weapons.has(action_key) and not order.has(action_key):
+			if known_keys.has(action_key) and not order.has(action_key):
 				order.append(action_key)
-	for action_key: Variant in weapons.keys():
-		if not order.has(str(action_key)):
-			order.append(str(action_key))
+	for action_key: String in known_keys:
+		if not order.has(action_key):
+			order.append(action_key)
 	actor.set("inventory_weapon_order", order)
 	var groups_by_action: Dictionary = {}
 	for action_key: String in order:
@@ -585,8 +578,9 @@ static func _restore_inventory(game: Node, actor: Node2D, record: Dictionary) ->
 			else []
 		)
 	actor.set("attack_groups_by_action", groups_by_action)
-	if weapons.has(active_key):
-		var active_state := weapons[active_key] as Dictionary
+	var active_key := str(inventory.active_weapon_key())
+	var active_state: Dictionary = inventory.weapon_state(active_key)
+	if not active_state.is_empty():
 		actor.set("weapon_profile", (active_state.get("profile", {}) as Dictionary).duplicate(true))
 		actor.set("attack_groups", groups_by_action.get(active_key, []))
 	actor.call("_sync_ammo_from_inventory", false)

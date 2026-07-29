@@ -224,6 +224,7 @@ func configure_combat(
 	new_attack_groups: Array[Dictionary] = [],
 	new_death_groups: Array[Dictionary] = [],
 	use_infinite_ammo: bool = false,
+	initialize_profile_inventory: bool = true,
 ) -> void:
 	faction_id = new_faction_id
 	maximum_hit_points = maxi(hit_points, 1)
@@ -243,6 +244,7 @@ func configure_combat(
 	var ammo_item_id := int(weapon_profile.get("ammo_item_id", 0))
 	if (
 		not infinite_ammo
+		and initialize_profile_inventory
 		and not action_key.is_empty()
 		and COMBAT_INVENTORY_SCRIPT.supports_ammo_item(ammo_item_id)
 	):
@@ -300,6 +302,37 @@ func register_inventory_weapon(
 	return true
 
 
+func register_original_inventory_weapon(
+	new_weapon_profile: Dictionary,
+	new_attack_groups: Array[Dictionary],
+	quantity: int,
+	quantity_mode: int,
+	equip_now: bool = false,
+) -> bool:
+	if infinite_ammo or new_weapon_profile.is_empty():
+		return false
+	var action_key := str(new_weapon_profile.get("action_key", ""))
+	if action_key.is_empty():
+		return false
+	if combat_inventory == null:
+		combat_inventory = COMBAT_INVENTORY_SCRIPT.new()
+	if not combat_inventory.register_original_weapon(
+		action_key,
+		new_weapon_profile,
+		quantity,
+		quantity_mode,
+		equip_now,
+	):
+		return false
+	if not inventory_weapon_order.has(action_key):
+		inventory_weapon_order.append(action_key)
+	attack_groups_by_action[action_key] = new_attack_groups
+	if equip_now:
+		return equip_inventory_weapon(action_key)
+	_sync_ammo_from_inventory(false)
+	return true
+
+
 func equip_inventory_weapon(action_key: String) -> bool:
 	if (
 		combat_inventory == null
@@ -319,18 +352,24 @@ func equip_inventory_weapon(action_key: String) -> bool:
 func equip_attack_type(attack_type: int) -> bool:
 	if combat_inventory == null:
 		return false
-	for action_key: String in inventory_weapon_order:
+	for action_key: String in combat_inventory.registered_weapon_keys():
 		if int(combat_inventory.weapon_profile(action_key).get("attack_type", 0)) == attack_type:
 			return equip_inventory_weapon(action_key)
 	return false
 
 
 func cycle_inventory_weapon(direction: int = 1) -> bool:
-	if combat_inventory == null or inventory_weapon_order.size() < 2:
+	if combat_inventory == null:
 		return false
-	var current_index := inventory_weapon_order.find(combat_inventory.active_weapon_key())
-	var next_index := posmod(current_index + (1 if direction >= 0 else -1), inventory_weapon_order.size())
-	return equip_inventory_weapon(inventory_weapon_order[next_index])
+	var available: Array[String] = combat_inventory.registered_weapon_keys()
+	if available.size() < 2:
+		return false
+	var current_index := available.find(combat_inventory.active_weapon_key())
+	var next_index := posmod(
+		current_index + (1 if direction >= 0 else -1),
+		available.size(),
+	)
+	return equip_inventory_weapon(available[next_index])
 
 
 func add_ammo_item(item_id: int, quantity: int) -> int:
@@ -369,9 +408,12 @@ func preferred_finite_ammo_item_id() -> int:
 	)
 	if int(active_state.get("magazine_capacity", 0)) > 0:
 		return int(active_state.get("ammo_item_id", 0))
-	for action_key: String in inventory_weapon_order:
+	for action_key: String in combat_inventory.registered_weapon_keys():
 		var state: Dictionary = combat_inventory.weapon_state(action_key)
-		if int(state.get("magazine_capacity", 0)) > 0:
+		if (
+			bool(state.get("original_parity", false))
+			and int(state.get("quantity_mode", -1)) in [0, 2]
+		) or int(state.get("magazine_capacity", 0)) > 0:
 			return int(state.get("ammo_item_id", 0))
 	return 0
 
@@ -528,12 +570,18 @@ func try_start_attack(target: Node2D, force_target: bool = false) -> bool:
 	if attack_groups.is_empty():
 		_resolve_pending_hit()
 		combat_action = CombatAction.NONE
+		_sync_equipped_weapon_after_consumption()
 		apply_idle_frame()
 	return true
 
 
 func request_reload() -> bool:
 	if not is_alive or combat_action != CombatAction.NONE or hurt_remaining > 0.0:
+		return false
+	if (
+		combat_inventory != null
+		and combat_inventory.original_parity_enabled()
+	):
 		return false
 	return _start_reload()
 
@@ -715,6 +763,7 @@ func _advance_combat_action(delta: float) -> void:
 		action_finished = true
 		if combat_action == CombatAction.ATTACK:
 			combat_action = CombatAction.NONE
+			_sync_equipped_weapon_after_consumption()
 		return
 	var group := groups[clampi(animation_group_index, 0, 7)]
 	var frame_seconds := animation_frame_seconds(group)
@@ -726,6 +775,7 @@ func _advance_combat_action(delta: float) -> void:
 			if combat_action == CombatAction.ATTACK:
 				combat_action = CombatAction.NONE
 				pending_hit_target = null
+				_sync_equipped_weapon_after_consumption()
 				apply_idle_frame()
 			return
 		action_frame_index += 1
@@ -791,6 +841,8 @@ func _resolve_pending_hit() -> void:
 func _start_reload() -> bool:
 	var magazine_capacity := maxi(int(weapon_profile.get("magazine_capacity", 0)), 0)
 	if combat_inventory != null:
+		if combat_inventory.original_parity_enabled():
+			return false
 		var state: Dictionary = combat_inventory.weapon_state(
 			combat_inventory.active_weapon_key()
 		)
@@ -836,6 +888,25 @@ func _sync_ammo_from_inventory(emit_change: bool) -> void:
 	reserve_ammo = int(state.get("reserve", 0))
 	if emit_change:
 		ammo_changed.emit(self, magazine_ammo, reserve_ammo)
+
+
+func _sync_equipped_weapon_after_consumption() -> void:
+	if combat_inventory == null:
+		return
+	var active_key := str(combat_inventory.active_weapon_key())
+	if active_key.is_empty():
+		weapon_profile = {}
+		attack_groups = []
+		magazine_ammo = 0
+		reserve_ammo = 0
+		ammo_changed.emit(self, 0, 0)
+		return
+	var active_profile: Dictionary = combat_inventory.active_weapon_profile()
+	if active_profile.is_empty():
+		return
+	weapon_profile = active_profile
+	attack_groups = attack_groups_by_action.get(active_key, []) as Array[Dictionary]
+	_sync_ammo_from_inventory(true)
 
 
 func _interrupt_combat_action() -> void:
