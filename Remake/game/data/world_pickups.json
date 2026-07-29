@@ -1,7 +1,7 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "entity_count": 11,
-  "source_status": "Entity IDs and Chinese display names are recovered from the converted original DBL/VWF data. Pickup effects are inferred from those names. All quantities, interaction ranges, hit points, timing, damage and explosion geometry below are explicit playable remake defaults until their original semantics are recovered.",
+  "source_status": "World-pickup item IDs are recovered from DBL sprite header[2]. Original sub_45AE10 recovers the destination container and quantity mode, while sub_453F70 proves a one-item grant. Only interaction ranges and the gasoline-barrel/mine timing and blast geometry remain explicit remake defaults.",
   "entities": {
     "982": {
       "database_entry_id": 982,
@@ -10,17 +10,20 @@
       "behavior": "field_pickup",
       "interaction_radius": 36.0,
       "grant": {
-        "kind": "weapon",
-        "action_key": "machine_gun_attack",
-        "quantity": 1
+        "kind": "original_inventory_item",
+        "item_id": 38,
+        "container": "weapon",
+        "quantity": 1,
+        "quantity_mode": 2
       },
       "source_status": {
         "identity": "recovered_converted_database",
-        "behavior": "inferred_from_recovered_display_name",
-        "grant_kind": "inferred_from_recovered_display_name",
-        "action_key": "inferred_from_recovered_display_name",
+        "behavior": "recovered_original_pickup_flow",
+        "item_id": "recovered_dbl_header_2",
+        "container": "recovered_sub_45AE10",
+        "quantity_mode": "recovered_sub_45AE10",
         "interaction_radius": "unresolved_remake_default",
-        "grant_quantity": "unresolved_remake_default"
+        "grant_quantity": "recovered_sub_453F70"
       }
     },
     "983": {
@@ -30,15 +33,20 @@
       "behavior": "field_pickup",
       "interaction_radius": 36.0,
       "grant": {
-        "kind": "active_weapon_ammunition",
-        "quantity": 24
+        "kind": "original_inventory_item",
+        "item_id": 46,
+        "container": "backpack",
+        "quantity": 1,
+        "quantity_mode": 0
       },
       "source_status": {
         "identity": "recovered_converted_database",
-        "behavior": "inferred_from_recovered_display_name",
-        "grant_kind": "inferred_from_recovered_display_name",
+        "behavior": "recovered_original_pickup_flow",
+        "item_id": "recovered_dbl_header_2",
+        "container": "recovered_sub_45AE10",
+        "quantity_mode": "recovered_sub_45AE10",
         "interaction_radius": "unresolved_remake_default",
-        "grant_quantity": "unresolved_remake_default"
+        "grant_quantity": "recovered_sub_453F70"
       }
     },
     "984": {
@@ -48,19 +56,20 @@
       "behavior": "field_pickup",
       "interaction_radius": 36.0,
       "grant": {
-        "kind": "deployable",
-        "deployable_key": "land_mine",
+        "kind": "original_inventory_item",
         "item_id": 43,
-        "quantity": 1
+        "container": "weapon",
+        "quantity": 1,
+        "quantity_mode": 0
       },
       "source_status": {
         "identity": "recovered_converted_database",
-        "behavior": "inferred_from_recovered_display_name",
-        "grant_kind": "inferred_from_recovered_display_name",
-        "deployable_key": "inferred_from_recovered_display_name",
-        "item_id": "recovered_attack_item_mapping",
+        "behavior": "recovered_original_pickup_flow",
+        "item_id": "recovered_dbl_header_2",
+        "container": "recovered_sub_45AE10",
+        "quantity_mode": "recovered_sub_45AE10",
         "interaction_radius": "unresolved_remake_default",
-        "grant_quantity": "unresolved_remake_default"
+        "grant_quantity": "recovered_sub_453F70"
       }
     },
     "986": {
@@ -70,19 +79,20 @@
       "behavior": "field_pickup",
       "interaction_radius": 36.0,
       "grant": {
-        "kind": "ammunition",
-        "action_key": "grenade_attack",
+        "kind": "original_inventory_item",
         "item_id": 44,
-        "quantity": 3
+        "container": "weapon",
+        "quantity": 1,
+        "quantity_mode": 0
       },
       "source_status": {
         "identity": "recovered_converted_database",
-        "behavior": "inferred_from_recovered_display_name",
-        "grant_kind": "inferred_from_recovered_display_name",
-        "action_key": "inferred_from_recovered_display_name",
-        "item_id": "recovered_attack_item_mapping",
+        "behavior": "recovered_original_pickup_flow",
+        "item_id": "recovered_dbl_header_2",
+        "container": "recovered_sub_45AE10",
+        "quantity_mode": "recovered_sub_45AE10",
         "interaction_radius": "unresolved_remake_default",
-        "grant_quantity": "unresolved_remake_default"
+        "grant_quantity": "recovered_sub_453F70"
       }
     },
     "987": {
@@ -92,17 +102,20 @@
       "behavior": "field_pickup",
       "interaction_radius": 36.0,
       "grant": {
-        "kind": "weapon",
-        "action_key": "pistol_attack",
-        "quantity": 1
+        "kind": "original_inventory_item",
+        "item_id": 36,
+        "container": "weapon",
+        "quantity": 1,
+        "quantity_mode": 2
       },
       "source_status": {
         "identity": "recovered_converted_database",
-        "behavior": "inferred_from_recovered_display_name",
-        "grant_kind": "inferred_from_recovered_display_name",
-        "action_key": "inferred_from_recovered_display_name",
+        "behavior": "recovered_original_pickup_flow",
+        "item_id": "recovered_dbl_header_2",
+        "container": "recovered_sub_45AE10",
+        "quantity_mode": "recovered_sub_45AE10",
         "interaction_radius": "unresolved_remake_default",
-        "grant_quantity": "unresolved_remake_default"
+        "grant_quantity": "recovered_sub_453F70"
       }
     },
     "988": {
@@ -112,19 +125,20 @@
       "behavior": "field_pickup",
       "interaction_radius": 36.0,
       "grant": {
-        "kind": "ammunition",
-        "action_key": "dart_attack",
+        "kind": "original_inventory_item",
         "item_id": 41,
-        "quantity": 8
+        "container": "weapon",
+        "quantity": 1,
+        "quantity_mode": 0
       },
       "source_status": {
         "identity": "recovered_converted_database",
-        "behavior": "inferred_from_recovered_display_name",
-        "grant_kind": "inferred_from_recovered_display_name",
-        "action_key": "inferred_from_recovered_display_name",
-        "item_id": "recovered_attack_item_mapping",
+        "behavior": "recovered_original_pickup_flow",
+        "item_id": "recovered_dbl_header_2",
+        "container": "recovered_sub_45AE10",
+        "quantity_mode": "recovered_sub_45AE10",
         "interaction_radius": "unresolved_remake_default",
-        "grant_quantity": "unresolved_remake_default"
+        "grant_quantity": "recovered_sub_453F70"
       }
     },
     "990": {
@@ -134,17 +148,20 @@
       "behavior": "field_pickup",
       "interaction_radius": 36.0,
       "grant": {
-        "kind": "mission_item",
-        "item_key": "uniform",
-        "quantity": 1
+        "kind": "original_inventory_item",
+        "item_id": 54,
+        "container": "backpack",
+        "quantity": 1,
+        "quantity_mode": 0
       },
       "source_status": {
         "identity": "recovered_converted_database",
-        "behavior": "inferred_from_recovered_display_name",
-        "grant_kind": "inferred_from_recovered_display_name",
-        "item_key": "inferred_from_recovered_display_name",
+        "behavior": "recovered_original_pickup_flow",
+        "item_id": "recovered_dbl_header_2",
+        "container": "recovered_sub_45AE10",
+        "quantity_mode": "recovered_sub_45AE10",
         "interaction_radius": "unresolved_remake_default",
-        "grant_quantity": "unresolved_remake_default"
+        "grant_quantity": "recovered_sub_453F70"
       }
     },
     "993": {
@@ -154,17 +171,20 @@
       "behavior": "field_pickup",
       "interaction_radius": 36.0,
       "grant": {
-        "kind": "healing",
+        "kind": "original_inventory_item",
+        "item_id": 51,
+        "container": "backpack",
         "quantity": 1,
-        "healing_hit_points": 8
+        "quantity_mode": 0
       },
       "source_status": {
         "identity": "recovered_converted_database",
-        "behavior": "inferred_from_recovered_display_name",
-        "grant_kind": "inferred_from_recovered_display_name",
+        "behavior": "recovered_original_pickup_flow",
+        "item_id": "recovered_dbl_header_2",
+        "container": "recovered_sub_45AE10",
+        "quantity_mode": "recovered_sub_45AE10",
         "interaction_radius": "unresolved_remake_default",
-        "grant_quantity": "unresolved_remake_default",
-        "healing_hit_points": "unresolved_remake_default"
+        "grant_quantity": "recovered_sub_453F70"
       }
     },
     "998": {
@@ -174,17 +194,20 @@
       "behavior": "field_pickup",
       "interaction_radius": 36.0,
       "grant": {
-        "kind": "mission_item",
-        "item_key": "explosives",
-        "quantity": 1
+        "kind": "original_inventory_item",
+        "item_id": 45,
+        "container": "weapon",
+        "quantity": 1,
+        "quantity_mode": 0
       },
       "source_status": {
         "identity": "recovered_converted_database",
-        "behavior": "inferred_from_recovered_display_name",
-        "grant_kind": "inferred_from_recovered_display_name",
-        "item_key": "inferred_from_recovered_display_name",
+        "behavior": "recovered_original_pickup_flow",
+        "item_id": "recovered_dbl_header_2",
+        "container": "recovered_sub_45AE10",
+        "quantity_mode": "recovered_sub_45AE10",
         "interaction_radius": "unresolved_remake_default",
-        "grant_quantity": "unresolved_remake_default"
+        "grant_quantity": "recovered_sub_453F70"
       }
     },
     "999": {
@@ -194,17 +217,20 @@
       "behavior": "field_pickup",
       "interaction_radius": 36.0,
       "grant": {
-        "kind": "healing",
+        "kind": "original_inventory_item",
+        "item_id": 47,
+        "container": "backpack",
         "quantity": 1,
-        "healing_hit_points": 16
+        "quantity_mode": 0
       },
       "source_status": {
         "identity": "recovered_converted_database",
-        "behavior": "inferred_from_recovered_display_name",
-        "grant_kind": "inferred_from_recovered_display_name",
+        "behavior": "recovered_original_pickup_flow",
+        "item_id": "recovered_dbl_header_2",
+        "container": "recovered_sub_45AE10",
+        "quantity_mode": "recovered_sub_45AE10",
         "interaction_radius": "unresolved_remake_default",
-        "grant_quantity": "unresolved_remake_default",
-        "healing_hit_points": "unresolved_remake_default"
+        "grant_quantity": "recovered_sub_453F70"
       }
     },
     "1003": {
@@ -212,6 +238,7 @@
       "key": "explosive_gasoline_barrel",
       "original_display_name": "可爆炸汽油桶",
       "behavior": "explosive_prop",
+      "runtime_item_id": 53,
       "hit_points": 8,
       "blast_damage": 16,
       "blast_horizontal_radius": 128.0,
@@ -219,6 +246,7 @@
       "destroyed_visual_seconds": 0.12,
       "source_status": {
         "identity": "recovered_converted_database",
+        "runtime_item_id": "recovered_dbl_header_2",
         "behavior": "inferred_from_recovered_display_name",
         "hit_points": "unresolved_remake_default",
         "blast_damage": "unresolved_remake_default",

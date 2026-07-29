@@ -215,6 +215,49 @@ int main(int argc, char** argv) {
                 m1937::sdk::find_mission_route(16) == nullptr,
             "mission route lookup accepted an invalid level", checks);
 
+        using m1937::sdk::InventoryContainerKind;
+        require(
+            m1937::sdk::original_world_pickups.size() == 10,
+            "original world pickup table size mismatch", checks);
+        const auto* rifle_ammunition =
+            m1937::sdk::find_original_world_pickup(982);
+        const auto* medicine =
+            m1937::sdk::find_original_world_pickup(983);
+        const auto* explosives =
+            m1937::sdk::find_original_world_pickup(998);
+        require(
+            rifle_ammunition &&
+                rifle_ammunition->item_id == 38 &&
+                rifle_ammunition->container ==
+                    InventoryContainerKind::weapon &&
+                rifle_ammunition->quantity == 1 &&
+                rifle_ammunition->quantity_mode == 2,
+            "DBL 982 pickup semantics mismatch", checks);
+        require(
+            medicine &&
+                medicine->item_id == 46 &&
+                medicine->container ==
+                    InventoryContainerKind::backpack &&
+                medicine->quantity == 1 &&
+                medicine->quantity_mode == 0,
+            "DBL 983 pickup semantics mismatch", checks);
+        require(
+            explosives &&
+                explosives->item_id == 45 &&
+                explosives->container ==
+                    InventoryContainerKind::weapon &&
+                explosives->quantity == 1 &&
+                explosives->quantity_mode == 0,
+            "DBL 998 pickup semantics mismatch", checks);
+        require(
+            m1937::sdk::find_original_world_pickup(-1) == nullptr &&
+                m1937::sdk::find_original_world_pickup(1003) == nullptr,
+            "world pickup lookup accepted a non-pickup DBL entry", checks);
+        require(
+            m1937::sdk::gasoline_barrel_database_entry_id == 1003 &&
+                m1937::sdk::gasoline_barrel_item_id == 53,
+            "gasoline barrel identity mismatch", checks);
+
         using namespace m1937::sdk::enemy_ai;
         const auto novice = tuning_for(0, 0);
         const auto veteran = tuning_for(3, 3);

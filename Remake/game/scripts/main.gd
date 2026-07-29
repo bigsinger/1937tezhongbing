@@ -1919,8 +1919,9 @@ func _on_legacy_special_action_requested(
 	if evidence_profile.is_empty():
 		return
 	if LEGACY_SPECIAL_ACTION_PROFILES.is_world_object_attack(attack_type):
-		if attack_type == 10 and int(field_inventory.get("explosives", 0)) > 0:
-			field_inventory["explosives"] = int(field_inventory["explosives"]) - 1
+		# SquadUnit consumes the actor's item-45 entry at the recovered hit
+		# frame before emitting this request. A second shared-inventory decrement
+		# here used to charge the same placement twice.
 		_spawn_legacy_special_world_object(
 			evidence_profile,
 			target.global_position,
@@ -4181,95 +4182,36 @@ func _collect_original_inventory_pickup(
 
 func _collector_can_use_field_pickup(collector: SQUAD_UNIT, pickup: Node2D) -> bool:
 	var grant: Dictionary = pickup.get("grant") as Dictionary
-	if str(grant.get("kind", "")) == "healing":
-		return collector.current_hit_points < collector.maximum_hit_points
-	if str(grant.get("kind", "")) == "active_weapon_ammunition":
-		return collector.preferred_finite_ammo_item_id() > 0
-	return true
+	return (
+		collector != null
+		and str(grant.get("kind", ""))
+			== WORLD_PICKUP_CATALOG.ORIGINAL_INVENTORY_GRANT_KIND
+	)
 
 
 func _apply_field_pickup(payload: Dictionary, collector: SQUAD_UNIT) -> void:
 	_cancel_legacy_deployment_for_unit(collector)
 	var grant := payload.get("grant", {}) as Dictionary
-	var grant_kind := str(grant.get("kind", ""))
-	var quantity := maxi(int(grant.get("quantity", 1)), 1)
-	var description := str(payload.get("original_display_name", "物品"))
-	match grant_kind:
-		"weapon":
-			var action_key := str(grant.get("action_key", ""))
-			var profile: Dictionary = COMBAT_PROFILES.weapon_profile(action_key)
-			if profile.is_empty():
-				return
-			if collector.has_inventory_weapon(action_key):
-				collector.add_ammo_item(
-					int(profile.get("ammo_item_id", 0)),
-					maxi(int(profile.get("starting_reserve_ammo", 0)), 1),
-				)
-				collector.equip_inventory_weapon(action_key)
-			else:
-				collector.register_inventory_weapon(
-					profile,
-					_attack_groups_for_unit(collector, action_key),
-					true,
-					true,
-				)
-		"ammunition":
-			var action_key := str(grant.get("action_key", ""))
-			var profile: Dictionary = COMBAT_PROFILES.weapon_profile(action_key)
-			if not profile.is_empty() and not collector.has_inventory_weapon(action_key):
-				collector.register_inventory_weapon(
-					profile,
-					_attack_groups_for_unit(collector, action_key),
-					false,
-					true,
-				)
-			collector.add_ammo_item(int(grant.get("item_id", 0)), quantity)
-		"active_weapon_ammunition":
-			collector.add_ammo_item(collector.preferred_finite_ammo_item_id(), quantity)
-		"deployable":
-			var item_id := int(grant.get("item_id", 43))
-			collector.add_ammo_item(item_id, quantity)
-			if item_id == 43:
-				_ensure_special_inventory_action(collector, 8)
-		"mission_item":
-			var item_key := str(grant.get("item_key", ""))
-			field_inventory[item_key] = int(field_inventory.get(item_key, 0)) + quantity
-			if item_key == "explosives":
-				collector.add_ammo_item(45, quantity)
-				_ensure_special_inventory_action(collector, 10)
-			if item_key == "uniform":
-				var source_scene_index := int(payload.get("scene_index", -1))
-				_publish_mission_event(
-					"item_acquired",
-					{
-						"item_name": "日军军服",
-						"source_scene_index": source_scene_index,
-					},
-				)
-				_mark_field_pickup_binding_activated(source_scene_index)
-		"healing":
-			var healed := collector.heal(int(grant.get("healing_hit_points", 0)))
-			description += "（恢复 %d 点生命）" % healed
-		_:
-			return
-	_play_media_audio("ui_confirm")
-	update_status("%s 拾取 %s" % [collector.display_name, description])
-	_refresh_inventory_ui()
-
-
-func _ensure_special_inventory_action(collector: SQUAD_UNIT, attack_type: int) -> bool:
-	var profile: Dictionary = COMBAT_PROFILES.weapon_profile_for_attack_type(attack_type)
-	if profile.is_empty():
-		return false
-	var action_key := str(profile.get("action_key", ""))
-	if collector.has_inventory_weapon(action_key):
-		return true
-	return collector.register_inventory_weapon(
-		profile,
-		_attack_groups_for_unit(collector, action_key),
-		false,
-		false,
+	if (
+		str(grant.get("kind", ""))
+		!= WORLD_PICKUP_CATALOG.ORIGINAL_INVENTORY_GRANT_KIND
+	):
+		return
+	var item_id := int(grant.get("item_id", 0))
+	var exact_payload := payload.duplicate(true)
+	exact_payload["original_inventory_kind"] = str(grant.get("container", ""))
+	exact_payload["item_id"] = item_id
+	exact_payload["quantity"] = int(grant.get("quantity", 1))
+	exact_payload["quantity_mode"] = int(grant.get("quantity_mode", -1))
+	exact_payload["item_name"] = (
+		ORIGINAL_INITIAL_ITEM_INVENTORY.item_display_name(item_id)
 	)
+	if not _collect_original_inventory_pickup(exact_payload, collector):
+		return
+	# A DBL pickup can also be a mission scene binding (notably m001's
+	# uniform). The inventory event was already published above; only suppress
+	# the now-consumed world binding so it cannot reappear as a ghost target.
+	_mark_field_pickup_binding_activated(int(payload.get("scene_index", -1)))
 
 
 func _attack_groups_for_unit(unit: SQUAD_UNIT, action_key: String) -> Array[Dictionary]:
@@ -4309,14 +4251,16 @@ func _activate_bound_scene(binding_kind: String, scene_index: int) -> bool:
 			return true
 		var charge_policy := _current_charge_policy()
 		var charge_mode := str(charge_policy.get("mode", "preplanted"))
-		var inventory_item_key := str(
-			charge_policy.get("inventory_item_key", "explosives")
-		)
 		var quantity_per_target := maxi(
 			int(charge_policy.get("quantity_per_target", 1)), 1
 		)
 		if charge_mode == "inventory_required":
-			if int(field_inventory.get(inventory_item_key, 0)) < quantity_per_target:
+			var inventory_item_id := _charge_policy_item_id(charge_policy)
+			if (
+				inventory_item_id <= 0
+				or _actor_item_quantity_across_squad(inventory_item_id)
+					< quantity_per_target
+			):
 				update_status("该任务点需要 %d 个炸药" % quantity_per_target)
 				return false
 		elif charge_mode != "preplanted":
@@ -4336,11 +4280,17 @@ func _activate_bound_scene(binding_kind: String, scene_index: int) -> bool:
 			activated_mission_scenes.erase(scene_index)
 			return false
 		if charge_mode == "inventory_required":
-			field_inventory[inventory_item_key] = (
-				int(field_inventory.get(inventory_item_key, 0)) - quantity_per_target
-			)
-			if inventory_item_key == "explosives":
-				_consume_actor_item_across_squad(45, quantity_per_target)
+			var inventory_item_id := _charge_policy_item_id(charge_policy)
+			if (
+				_consume_actor_item_across_squad(
+					inventory_item_id,
+					quantity_per_target,
+				)
+				!= quantity_per_target
+			):
+				# The preflight count and consumption occur synchronously, so
+				# this is an invariant guard rather than a recoverable branch.
+				push_error("Actor inventory changed while activating charge scene %d" % scene_index)
 		_play_media_audio("explosion")
 		_refresh_inventory_ui()
 		_report_direction_action("place_charge")
@@ -4388,6 +4338,94 @@ func _consume_actor_item_across_squad(item_id: int, quantity: int) -> int:
 		consumed += removed
 		remaining -= removed
 	return consumed
+
+
+func _actor_item_quantity_across_squad(item_id: int) -> int:
+	var quantity := 0
+	for unit: SQUAD_UNIT in units:
+		if is_instance_valid(unit):
+			quantity += unit.ammo_item_count(item_id)
+	return quantity
+
+
+func _charge_policy_item_id(charge_policy: Dictionary) -> int:
+	var explicit_item_id := int(charge_policy.get("inventory_item_id", 0))
+	if explicit_item_id > 0:
+		return explicit_item_id
+	match str(charge_policy.get("inventory_item_key", "explosives")):
+		"explosives":
+			return 45
+	return 0
+
+
+func _migrate_legacy_field_inventory() -> void:
+	# Early Remake saves mirrored DBL 998/990 pickups into a shared dictionary
+	# as well as the actor containers. Collapse that duplicate representation
+	# after actor snapshots have been restored. If a very early save contains
+	# only the shared entry, preserve it by granting it to the selected actor.
+	_migrate_legacy_weapon_field_item("explosives", 45)
+	_migrate_legacy_backpack_field_item("uniform", 54)
+
+
+func _migrate_legacy_weapon_field_item(item_key: String, item_id: int) -> void:
+	var legacy_quantity := maxi(int(field_inventory.get(item_key, 0)), 0)
+	if legacy_quantity <= 0:
+		return
+	if _actor_item_quantity_across_squad(item_id) > 0:
+		field_inventory.erase(item_key)
+		return
+	var actor := _preferred_inventory_migration_actor()
+	if actor == null:
+		return
+	var attack_type: int = (
+		ORIGINAL_INITIAL_WEAPON_INVENTORY.attack_type_for_item_id(item_id)
+	)
+	var profile: Dictionary = COMBAT_PROFILES.weapon_profile_for_attack_type(
+		attack_type
+	)
+	var action_key := str(profile.get("action_key", ""))
+	var accepted := false
+	if not profile.is_empty() and not action_key.is_empty():
+		accepted = actor.register_original_inventory_weapon(
+			profile,
+			_attack_groups_for_unit(actor, action_key),
+			legacy_quantity,
+			ORIGINAL_INITIAL_WEAPON_INVENTORY.quantity_mode_for_item_id(item_id),
+			false,
+		)
+	if accepted:
+		field_inventory.erase(item_key)
+
+
+func _migrate_legacy_backpack_field_item(item_key: String, item_id: int) -> void:
+	var legacy_quantity := maxi(int(field_inventory.get(item_key, 0)), 0)
+	if legacy_quantity <= 0:
+		return
+	for unit: SQUAD_UNIT in units:
+		if (
+			is_instance_valid(unit)
+			and unit.backpack_inventory != null
+			and unit.backpack_inventory.item_count(item_id) > 0
+		):
+			field_inventory.erase(item_key)
+			return
+	var actor := _preferred_inventory_migration_actor()
+	if (
+		actor != null
+		and actor.add_backpack_item(item_id, legacy_quantity, 0)
+			== legacy_quantity
+	):
+		field_inventory.erase(item_key)
+
+
+func _preferred_inventory_migration_actor() -> SQUAD_UNIT:
+	for unit: SQUAD_UNIT in selected_units:
+		if is_instance_valid(unit) and unit.is_alive:
+			return unit
+	for unit: SQUAD_UNIT in units:
+		if is_instance_valid(unit) and unit.is_alive:
+			return unit
+	return null
 
 
 func _current_charge_policy() -> Dictionary:

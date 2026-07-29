@@ -22,6 +22,26 @@ internal static class VwfSceneListSyntheticTests
         Equal<uint?>(108u, database.Entries[1].FactionId, "DBL sprite faction h8", ref checks);
         Equal<uint?>(108u, database.Entries[1].TeamId, "DBL sprite team h8 alias", ref checks);
         Equal<uint?>(112u, database.Entries[1].SpecialSensor, "DBL sprite special sensor h12", ref checks);
+        Equal(
+            102,
+            OriginalWorldPickupEvidence.RuntimeItemId(database.Entries[1]),
+            "DBL sprite runtime item header h2",
+            ref checks);
+        Equal(
+            new OriginalInventoryDestination("weapon", 2),
+            OriginalWorldPickupEvidence.ClassifyItem(38),
+            "original firearm container routing",
+            ref checks);
+        Equal(
+            new OriginalInventoryDestination("weapon", 0),
+            OriginalWorldPickupEvidence.ClassifyItem(45),
+            "original explosive container routing",
+            ref checks);
+        Equal(
+            new OriginalInventoryDestination("backpack", 0),
+            OriginalWorldPickupEvidence.ClassifyItem(46),
+            "original backpack container routing",
+            ref checks);
         Equal(0, database.Entries[0].HeaderValues.Count, "DBL tile group has no sprite header", ref checks);
         Equal(1, database.TileGroupMap.Count, "DBL tile-group map count", ref checks);
         Equal(0, database.ResolveTileGroupMapId(1)?.Id, "DBL one-based tile-group map ID", ref checks);

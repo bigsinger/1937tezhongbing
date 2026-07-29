@@ -52,3 +52,12 @@ mode semantics, death-drop behavior, raw snapshot hashes, and canonical
 identity hashes. Product data in
 `game/data/original_initial_item_inventory.json` is cross-checked on every
 build.
+
+`world-pickups-v1.json` is generated directly from the hash-locked
+`1937Database.dbl` by `Build-ModWorldPickupBaseline.ps1`. DBL sprite
+`header[2]` supplies the runtime item ID; the recovered `sub_45AE10` branch
+classifies the actor-local weapon/backpack container and quantity mode; the
+`sub_453F70` caller fixes the pickup grant at one item. It covers ten field
+pickups plus the non-pickable gasoline barrel's runtime item 53.
+`Test-OriginalWorldPickups.ps1` cross-checks this baseline against product data
+and also verifies the materialized MOD DBL hash when it is available.

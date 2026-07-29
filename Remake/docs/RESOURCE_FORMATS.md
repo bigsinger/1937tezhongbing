@@ -378,6 +378,13 @@ point_count * { uint32 waypoint_grid_x, uint32 waypoint_grid_y }
 
 DBL sprite 的 `header[0]` 还是运行时绘制队列的权威字段：1 为地面/固定背景，0 为与人物一起按 Y/基线排序的正常深度，2 为固定前景，3 为顶层。ResourceTool 将每个实体对应值写入 `level.json.database_header_values`；Godot 的 `ImportedLevelData` 现在保留并校验该数组，不再在解析时丢弃。m000 真实资产回归明确核对 22 个 DBL 336/337 庄稼底图为 queue 1、70 个 DBL 335 稻谷为 queue 0，因此田地底片不会覆盖人物，而独立稻谷仍能按前后关系遮挡。
 
+对场景拾取精灵，`header[2]` 是原运行时物品 ID。ResourceTool 的
+`world-pickup-baseline` 命令直接读取稳定 MOD 的 DBL，再按已恢复的
+`sub_45AE10` 分支输出角色武器/背包容器和 mode，并按 `sub_453F70`
+固定每次拾取数量为 1。当前基线覆盖 DBL 982/983/984/986/987/988/
+990/993/998/999 和场景爆炸物 1003；持续验证会拒绝产品数据中任何
+“立即治疗、猜测备弹或共享任务库存”的旧语义。
+
 ## 十二关地形合成
 
 `TerrainRasterizer` 使用 DBL 的 45 项 tile-group 顺序解析 VWF 第一平面，从对应 TLG 图集复制 32×16 tile。`m000` 的 155×140 网格生成 4960×2240 RGBA PNG；其余十一关按各自网格尺寸使用同一算法。group 0 按原程序行为保持透明，不会因为低 16 位恰好为 1—6 而误画地形。

@@ -106,6 +106,12 @@ func _draw() -> void:
 
 func _fallback_color_for_grant() -> Color:
 	match String(grant.get("kind", "")):
+		"original_inventory_item":
+			return (
+				Color(0.83, 0.64, 0.20)
+				if String(grant.get("container", "")) == "weapon"
+				else Color(0.35, 0.65, 0.88)
+			)
 		"weapon", "ammunition", "active_weapon_ammunition":
 			return Color(0.83, 0.64, 0.20)
 		"healing":

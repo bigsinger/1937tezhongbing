@@ -97,15 +97,19 @@
   原版掉落，不再额外复制第二份文件袋；
 - 角色背包、伪装状态和尚未拾取的地面物品全部随局内存档恢复。
 
-正式关卡仍暂时保留少量旧 `field_inventory`，仅用于尚未完成差分恢复的
-编辑性爆破闭环。它不会再冒充角色原版背包，后续应逐项用地图拾取和任务
-脚本证据替换。
+正式关卡的 DBL 990 军服和 DBL 998 炸药已经分别写入拾取角色的
+`+0x228` / `+0x22C` 容器，不再生成共享 `field_inventory`。读取早期
+Remake 存档时会在角色快照恢复后折叠旧共享副本：角色容器已有同物品则
+删除重复项；只有共享项的旧档会把它迁入当前选中或首名存活角色。
 
 ## 验证
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File `
   .\Remake\tools\Test-OriginalInitialItemInventory.ps1
+
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  .\Remake\tools\Test-OriginalWorldPickups.ps1
 
 D:\Godot\Godot_v4.7.1-stable_win64_console.exe --headless `
   --path .\Remake\game `

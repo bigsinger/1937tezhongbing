@@ -143,6 +143,7 @@ func _run_tests() -> void:
 	_test_special_world_deployment_product_entry(failures)
 	_test_mission_charge_policy_catalog(failures)
 	_test_charge_policy_activation_and_uniform_ghost(failures)
+	_test_legacy_field_inventory_migration(failures)
 	await _test_real_charge_policy_evidence(failures)
 	if failures.is_empty():
 		print("World interactable tests passed (%d checks)." % check_count)
@@ -173,6 +174,37 @@ func _test_catalog(failures: Array[String]) -> void:
 	_expect(WORLD_PICKUP_CATALOG.is_field_pickup(999), "medical kit entity is a field pickup", failures)
 	_expect(WORLD_PICKUP_CATALOG.is_explosive_prop(1003), "gasoline barrel is an explosive prop", failures)
 	_expect(not WORLD_PICKUP_CATALOG.supports_database_entry_id(1002), "unlisted scenery is not intercepted", failures)
+	var expected_grants := {
+		982: [38, "weapon", 2],
+		983: [46, "backpack", 0],
+		984: [43, "weapon", 0],
+		986: [44, "weapon", 0],
+		987: [36, "weapon", 2],
+		988: [41, "weapon", 0],
+		990: [54, "backpack", 0],
+		993: [51, "backpack", 0],
+		998: [45, "weapon", 0],
+		999: [47, "backpack", 0],
+	}
+	for database_entry_id: int in expected_grants:
+		var profile: Dictionary = (
+			WORLD_PICKUP_CATALOG.profile_for_database_entry_id(
+				database_entry_id
+			)
+		)
+		var grant := profile.get("grant", {}) as Dictionary
+		var expected := expected_grants[database_entry_id] as Array
+		_expect(
+			str(grant.get("kind", ""))
+				== WORLD_PICKUP_CATALOG.ORIGINAL_INVENTORY_GRANT_KIND
+			and int(grant.get("item_id", 0)) == int(expected[0])
+			and str(grant.get("container", "")) == str(expected[1])
+			and int(grant.get("quantity", 0)) == 1
+			and int(grant.get("quantity_mode", -1)) == int(expected[2]),
+			"DBL %d preserves its recovered original item/container grant"
+				% database_entry_id,
+			failures,
+		)
 	var mine_profile: Dictionary = WORLD_PICKUP_CATALOG.deployable_profile("land_mine")
 	_expect(not mine_profile.is_empty(), "land-mine runtime profile resolves", failures)
 	_expect(int(mine_profile.get("ammo_item_id", 0)) == 43, "land mine uses recovered item 43 mapping", failures)
@@ -198,7 +230,7 @@ func _test_catalog(failures: Array[String]) -> void:
 	invalid_sources.erase("grant_quantity")
 	_expect(
 		not WORLD_PICKUP_CATALOG.is_valid_catalog(invalid_catalog),
-		"catalog rejects an unlabelled default quantity",
+		"catalog rejects pickup quantities without recovered source evidence",
 		failures,
 	)
 
@@ -223,7 +255,13 @@ func _test_field_pickup_without_original_assets(failures: Array[String]) -> void
 	pickup.collected.connect(sink.on_collected)
 	var payload: Dictionary = pickup.collect(collector)
 	_expect(not payload.is_empty(), "nearby collector receives pickup payload", failures)
-	_expect(String((payload["grant"] as Dictionary).get("action_key", "")) == "machine_gun_attack", "weapon grant remains data-driven", failures)
+	_expect(
+		int((payload["grant"] as Dictionary).get("item_id", 0)) == 38
+		and str((payload["grant"] as Dictionary).get("container", ""))
+			== "weapon",
+		"weapon grant retains the recovered item/container identity",
+		failures,
+	)
 	_expect(int(payload.get("database_entry_id", 0)) == 982, "collection payload retains original database ID", failures)
 	_expect(sink.collection_count == 1 and sink.last_collection == payload, "pickup emits one complete collection event", failures)
 	_expect(pickup.collect(collector).is_empty(), "field pickup cannot be collected twice", failures)
@@ -328,47 +366,62 @@ func _test_main_inventory_and_explosion_integration(failures: Array[String]) -> 
 		false,
 	)
 	arena.add_child(collector)
+	_expect(
+		collector.register_original_inventory_weapon(
+			COMBAT_PROFILES.weapon_profile("pistol_attack"),
+			empty_groups,
+			4,
+			2,
+			true,
+		),
+		"integration collector starts with an original direct-count pistol",
+		failures,
+	)
 	var main = MAIN_SCRIPT.new()
 	main.units.append(collector)
+	var machine_gun_profile: Dictionary = (
+		WORLD_PICKUP_CATALOG.profile_for_database_entry_id(982)
+	)
 	main._apply_field_pickup(
 		{
 			"original_display_name": "可拾取机枪",
 			"scene_index": 1,
-			"grant": {"kind": "weapon", "action_key": "machine_gun_attack", "quantity": 1},
+			"grant": machine_gun_profile["grant"],
 		},
 		collector,
 	)
 	_expect(
 		collector.has_inventory_weapon("machine_gun_attack")
-		and int(collector.weapon_profile.get("attack_type", 0)) == 3
-		and collector.magazine_ammo == 30,
-		"main converts a machine-gun entity payload into an equipped backpack weapon",
+		and collector.ammo_item_count(38) == 1
+		and collector.combat_inventory.active_weapon_key() == "pistol_attack",
+		"machine-gun pickup grants exactly one item 38 without forcing equip",
 		failures,
+	)
+	var grenade_profile: Dictionary = (
+		WORLD_PICKUP_CATALOG.profile_for_database_entry_id(986)
 	)
 	main._apply_field_pickup(
 		{
 			"original_display_name": "可拾取手榴弹",
 			"scene_index": 2,
-			"grant": {
-				"kind": "ammunition",
-				"action_key": "grenade_attack",
-				"item_id": 44,
-				"quantity": 3,
-			},
+			"grant": grenade_profile["grant"],
 		},
 		collector,
 	)
 	_expect(
 		collector.has_inventory_weapon("grenade_attack")
-		and collector.ammo_item_count(44) == 3,
-		"main unlocks the grenade action and stores item-44 ammunition",
+		and collector.ammo_item_count(44) == 1,
+		"grenade pickup grants the recovered one item 44",
 		failures,
+	)
+	var mine_pickup_profile: Dictionary = (
+		WORLD_PICKUP_CATALOG.profile_for_database_entry_id(984)
 	)
 	main._apply_field_pickup(
 		{
 			"original_display_name": "可拾取地雷",
 			"scene_index": 3,
-			"grant": {"kind": "deployable", "item_id": 43, "quantity": 1},
+			"grant": mine_pickup_profile["grant"],
 		},
 		collector,
 	)
@@ -378,19 +431,26 @@ func _test_main_inventory_and_explosion_integration(failures: Array[String]) -> 
 		"mine pickup stores item 43 and exposes the recovered type-8 action",
 		failures,
 	)
+	var explosives_profile: Dictionary = (
+		WORLD_PICKUP_CATALOG.profile_for_database_entry_id(998)
+	)
 	main._apply_field_pickup(
 		{
 			"original_display_name": "放在地上的炸药",
 			"scene_index": 5,
-			"grant": {"kind": "mission_item", "item_key": "explosives", "quantity": 1},
+			"grant": explosives_profile["grant"],
 		},
 		collector,
 	)
 	_expect(
-		int(main.field_inventory.get("explosives", 0)) == 1
-		and collector.ammo_item_count(45) == 1
+		collector.ammo_item_count(45) == 1
 		and collector.has_inventory_weapon("active_action_alt"),
-		"explosives pickup keeps task inventory and exposes the recovered type-10 action",
+		"explosives pickup grants actor item 45 without a duplicate shared entry",
+		failures,
+	)
+	_expect(
+		main.field_inventory.is_empty(),
+		"exact world pickups do not create shared compatibility inventory",
 		failures,
 	)
 	var friendly_target = SQUAD_UNIT_SCRIPT.new()
@@ -416,17 +476,41 @@ func _test_main_inventory_and_explosion_integration(failures: Array[String]) -> 
 	)
 	collector.clear_combat_target()
 	collector.current_hit_points = 4
+	var herb_profile: Dictionary = (
+		WORLD_PICKUP_CATALOG.profile_for_database_entry_id(993)
+	)
 	main._apply_field_pickup(
 		{
 			"original_display_name": "放在地上的草药",
 			"scene_index": 4,
-			"grant": {"kind": "healing", "quantity": 1, "healing_hit_points": 8},
+			"grant": herb_profile["grant"],
 		},
 		collector,
 	)
 	_expect(
-		collector.current_hit_points == 12,
-		"main applies the explicit remake-default healing payload",
+		collector.current_hit_points == 4
+		and collector.backpack_inventory != null
+		and collector.backpack_inventory.item_count(51) == 1,
+		"herb pickup stores one item 51 and does not heal until player use",
+		failures,
+	)
+	for pickup_id: int in [983, 999]:
+		var pickup_profile: Dictionary = (
+			WORLD_PICKUP_CATALOG.profile_for_database_entry_id(pickup_id)
+		)
+		main._apply_field_pickup(
+			{
+				"original_display_name": pickup_profile["original_display_name"],
+				"scene_index": pickup_id,
+				"grant": pickup_profile["grant"],
+			},
+			collector,
+		)
+	_expect(
+		collector.backpack_inventory.item_count(46) == 1
+		and collector.backpack_inventory.item_count(47) == 1
+		and collector.current_hit_points == 4,
+		"ammo box and medkit remain one-use backpack items after collection",
 		failures,
 	)
 
@@ -620,6 +704,7 @@ func _test_mission_charge_policy_catalog(failures: Array[String]) -> void:
 		)
 		_expect(
 			str(policy.get("mode", "")) == str(expected_values[0])
+			and int(policy.get("inventory_item_id", 0)) == 45
 			and int(policy.get("map_pickup_count", -1)) == int(expected_values[1])
 			and int(policy.get("target_count", -1)) == int(expected_values[2]),
 			"%s charge policy preserves its evidence counts and mode" % mission_id,
@@ -658,14 +743,32 @@ func _test_charge_policy_activation_and_uniform_ghost(failures: Array[String]) -
 	var main = MAIN_SCRIPT.new()
 	var runtime := MockMissionRuntime.new()
 	main.mission_runtime = runtime
+	var charge_actor = SQUAD_UNIT_SCRIPT.new()
+	charge_actor.display_name = "爆破手"
+	main.add_child(charge_actor)
+	main.units.append(charge_actor)
+	var empty_groups: Array[Dictionary] = []
+	_expect(
+		charge_actor.register_original_inventory_weapon(
+			COMBAT_PROFILES.weapon_profile_for_attack_type(10),
+			empty_groups,
+			2,
+			0,
+			false,
+		),
+		"charge test actor owns two recovered item-45 entries",
+		failures,
+	)
 	main.current_mission = {
 		"scene_bindings": {"explosion": [42]},
 		"charge_policy": {
 			"mode": "inventory_required",
 			"inventory_item_key": "explosives",
+			"inventory_item_id": 45,
 			"quantity_per_target": 1,
 		},
 	}
+	charge_actor.remove_ammo_item(45, 2)
 	_expect(
 		not main._activate_bound_scene("explosion", 42)
 		and runtime.publish_count == 0
@@ -673,19 +776,19 @@ func _test_charge_policy_activation_and_uniform_ghost(failures: Array[String]) -
 		"inventory-required charge cannot activate for free",
 		failures,
 	)
-	main.field_inventory["explosives"] = 2
+	charge_actor.add_ammo_item(45, 2)
 	_expect(
 		main._activate_bound_scene("explosion", 42)
 		and runtime.publish_count == 1
-		and int(main.field_inventory["explosives"]) == 1
+		and charge_actor.ammo_item_count(45) == 1
 		and main.activated_mission_scenes.has(42),
-		"accepted inventory-required charge consumes exactly one item after publish",
+		"accepted inventory-required charge consumes one actor item after publish",
 		failures,
 	)
 	_expect(
 		main._activate_bound_scene("explosion", 42)
 		and runtime.publish_count == 1
-		and int(main.field_inventory["explosives"]) == 1,
+		and charge_actor.ammo_item_count(45) == 1,
 		"repeated activation is idempotent and never double-consumes",
 		failures,
 	)
@@ -695,24 +798,23 @@ func _test_charge_policy_activation_and_uniform_ghost(failures: Array[String]) -
 		"charge_policy": {
 			"mode": "preplanted",
 			"inventory_item_key": "explosives",
+			"inventory_item_id": 45,
 			"quantity_per_target": 1,
 		},
 	}
-	main.field_inventory["explosives"] = 5
 	_expect(
 		main._activate_bound_scene("explosion", 43)
 		and runtime.publish_count == 2
-		and int(main.field_inventory["explosives"]) == 5,
-		"preplanted charge succeeds without touching backpack explosives",
+		and charge_actor.ammo_item_count(45) == 1,
+		"preplanted charge succeeds without touching actor item 45",
 		failures,
 	)
 
 	main.current_mission = {"scene_bindings": {"explosion": [44]}}
-	main.field_inventory.erase("explosives")
 	_expect(
 		main._activate_bound_scene("explosion", 44)
 		and runtime.publish_count == 3
-		and not main.field_inventory.has("explosives"),
+		and charge_actor.ammo_item_count(45) == 1,
 		"omitted optional policy defaults to explicit non-consuming preplanted behavior",
 		failures,
 	)
@@ -722,16 +824,16 @@ func _test_charge_policy_activation_and_uniform_ghost(failures: Array[String]) -
 		"charge_policy": {
 			"mode": "inventory_required",
 			"inventory_item_key": "explosives",
+			"inventory_item_id": 45,
 			"quantity_per_target": 1,
 		},
 	}
-	main.field_inventory["explosives"] = 1
 	runtime.reject_next = true
 	_expect(
 		not main._activate_bound_scene("explosion", 45)
-		and int(main.field_inventory["explosives"]) == 1
+		and charge_actor.ammo_item_count(45) == 1
 		and not main.activated_mission_scenes.has(45),
-		"rejected mission event never consumes required inventory",
+		"rejected mission event never consumes the actor's required item",
 		failures,
 	)
 
@@ -741,20 +843,26 @@ func _test_charge_policy_activation_and_uniform_ghost(failures: Array[String]) -
 	}
 	var collector = SQUAD_UNIT_SCRIPT.new()
 	collector.display_name = "古明"
+	main.add_child(collector)
 	var publish_before_uniform := runtime.publish_count
+	var uniform_profile: Dictionary = (
+		WORLD_PICKUP_CATALOG.profile_for_database_entry_id(990)
+	)
 	main._apply_field_pickup(
 		{
 			"original_display_name": "放在地上的军服箱子",
 			"scene_index": 2099,
-			"grant": {"kind": "mission_item", "item_key": "uniform", "quantity": 1},
+			"grant": uniform_profile["grant"],
 		},
 		collector,
 	)
 	_expect(
 		main.activated_mission_scenes.has(2099)
-		and int(main.field_inventory.get("uniform", 0)) == 1
+		and collector.backpack_inventory != null
+		and collector.backpack_inventory.item_count(54) == 1
+		and main.field_inventory.is_empty()
 		and runtime.publish_count == publish_before_uniform + 1,
-		"m001 field uniform pickup activates scene 2099 exactly once",
+		"m001 uniform enters actor backpack and activates scene 2099 once",
 		failures,
 	)
 	_expect(
@@ -763,10 +871,55 @@ func _test_charge_policy_activation_and_uniform_ghost(failures: Array[String]) -
 		"m001 scene 2099 cannot reappear as a ghost mission interaction",
 		failures,
 	)
-	collector.free()
-	runtime.free()
 	main.mission_runtime = null
 	main.free()
+	runtime.free()
+
+
+func _test_legacy_field_inventory_migration(failures: Array[String]) -> void:
+	var duplicate_main = MAIN_SCRIPT.new()
+	var duplicate_actor = SQUAD_UNIT_SCRIPT.new()
+	duplicate_actor.display_name = "旧档角色"
+	duplicate_main.add_child(duplicate_actor)
+	duplicate_main.units.append(duplicate_actor)
+	duplicate_main.selected_units.append(duplicate_actor)
+	var empty_groups: Array[Dictionary] = []
+	duplicate_actor.register_original_inventory_weapon(
+		COMBAT_PROFILES.weapon_profile_for_attack_type(10),
+		empty_groups,
+		2,
+		0,
+		false,
+	)
+	duplicate_actor.add_backpack_item(54, 1, 0)
+	duplicate_main.field_inventory = {"explosives": 2, "uniform": 1}
+	duplicate_main._migrate_legacy_field_inventory()
+	_expect(
+		duplicate_main.field_inventory.is_empty()
+		and duplicate_actor.ammo_item_count(45) == 2
+		and duplicate_actor.backpack_inventory.item_count(54) == 1,
+		"legacy shared duplicates collapse without doubling actor inventory",
+		failures,
+	)
+	duplicate_main.free()
+
+	var shared_only_main = MAIN_SCRIPT.new()
+	var shared_only_actor = SQUAD_UNIT_SCRIPT.new()
+	shared_only_actor.display_name = "更早旧档角色"
+	shared_only_main.add_child(shared_only_actor)
+	shared_only_main.units.append(shared_only_actor)
+	shared_only_main.selected_units.append(shared_only_actor)
+	shared_only_main.field_inventory = {"explosives": 2, "uniform": 1}
+	shared_only_main._migrate_legacy_field_inventory()
+	_expect(
+		shared_only_main.field_inventory.is_empty()
+		and shared_only_actor.ammo_item_count(45) == 2
+		and shared_only_actor.backpack_inventory != null
+		and shared_only_actor.backpack_inventory.item_count(54) == 1,
+		"shared-only early saves migrate into the selected actor's exact containers",
+		failures,
+	)
+	shared_only_main.free()
 
 
 func _test_real_charge_policy_evidence(failures: Array[String]) -> void:
@@ -847,9 +1000,11 @@ func _test_real_charge_policy_evidence(failures: Array[String]) -> void:
 		await process_frame
 		_expect(
 			real_main.field_pickups.size() == field_count_before - 1
-			and int(real_main.field_inventory.get("uniform", 0)) == 1
+			and collector.backpack_inventory != null
+			and collector.backpack_inventory.item_count(54) >= 1
+			and not real_main.field_inventory.has("uniform")
 			and real_main.activated_mission_scenes.has(2099),
-			"m001 real E interaction consumes scene 2099 and suppresses its ghost binding",
+			"m001 real E interaction stores item 54 and suppresses its ghost binding",
 			failures,
 		)
 	# The real media fixture may have started a short UI/voice WAV during the E

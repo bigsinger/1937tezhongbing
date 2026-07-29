@@ -109,6 +109,10 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 朝向字段，以及 `+0x228` 物品容器、`+0x22C` 武器容器两个独立指针。
 `RuntimeInventoryContainerV1`
 固定项目 ID、数量、数量模式三数组和项目数的四字段 `0x10` 布局；
+`Inventory.hpp` 进一步把 `sub_45AE10` 的完整容器分派表，以及十类真实
+DBL 世界拾取物的 item ID、单次数量、目标容器和 mode 固化为 `constexpr`
+接口。该表来自原程序指令与 `1937Database.dbl`，不是按物品名称猜测；
+DBL 1003/物品 53 仍明确归入可受伤汽油桶生命周期，不会误作拾取物。
 `CurrentActionId` 也进入单一地址目录。地址表同时收录地面命令分派点及
 原版的移动重置/命令清理函数。
 兼容层只在签名完全匹配时修复导航缓存，随后仍由原版 A*、动作状态机和

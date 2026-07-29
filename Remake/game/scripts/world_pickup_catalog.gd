@@ -1,20 +1,28 @@
 class_name WorldPickupCatalog
 extends RefCounted
 
-const SCHEMA_VERSION := 1
+const SCHEMA_VERSION := 2
 const CATALOG_PATH := "res://data/world_pickups.json"
 const EXPECTED_ENTITY_IDS := [982, 983, 984, 986, 987, 988, 990, 993, 998, 999, 1003]
 const PICKUP_BEHAVIOR := "field_pickup"
 const EXPLOSIVE_BEHAVIOR := "explosive_prop"
-const VALID_GRANT_KINDS := {
-	"weapon": true,
-	"ammunition": true,
-	"active_weapon_ammunition": true,
-	"deployable": true,
-	"mission_item": true,
-	"healing": true,
+const ORIGINAL_INVENTORY_GRANT_KIND := "original_inventory_item"
+const EXPECTED_PICKUP_GRANTS := {
+	982: {"item_id": 38, "container": "weapon", "quantity_mode": 2},
+	983: {"item_id": 46, "container": "backpack", "quantity_mode": 0},
+	984: {"item_id": 43, "container": "weapon", "quantity_mode": 0},
+	986: {"item_id": 44, "container": "weapon", "quantity_mode": 0},
+	987: {"item_id": 36, "container": "weapon", "quantity_mode": 2},
+	988: {"item_id": 41, "container": "weapon", "quantity_mode": 0},
+	990: {"item_id": 54, "container": "backpack", "quantity_mode": 0},
+	993: {"item_id": 51, "container": "backpack", "quantity_mode": 0},
+	998: {"item_id": 45, "container": "weapon", "quantity_mode": 0},
+	999: {"item_id": 47, "container": "backpack", "quantity_mode": 0},
 }
 const DEFAULT_STATUS := "unresolved_remake_default"
+const RECOVERED_ITEM_STATUS := "recovered_dbl_header_2"
+const RECOVERED_CONTAINER_STATUS := "recovered_sub_45AE10"
+const RECOVERED_QUANTITY_STATUS := "recovered_sub_453F70"
 
 static var _catalog_cache: Dictionary = {}
 
@@ -129,45 +137,36 @@ static func _is_valid_pickup_profile(profile: Dictionary, source: Dictionary) ->
 		return false
 	if String(source.get("interaction_radius", "")) != DEFAULT_STATUS:
 		return false
+	var database_entry_id := int(profile.get("database_entry_id", 0))
+	var expected_value: Variant = EXPECTED_PICKUP_GRANTS.get(database_entry_id)
+	if not expected_value is Dictionary:
+		return false
+	var expected := expected_value as Dictionary
 	var grant_value: Variant = profile.get("grant")
 	if not grant_value is Dictionary:
 		return false
 	var grant := grant_value as Dictionary
-	var grant_kind := String(grant.get("kind", ""))
-	if not VALID_GRANT_KINDS.has(grant_kind):
-		return false
-	if int(grant.get("quantity", 0)) <= 0:
-		return false
-	if String(source.get("grant_kind", "")).is_empty():
-		return false
-	if String(source.get("grant_quantity", "")) != DEFAULT_STATUS:
-		return false
-	match grant_kind:
-		"weapon":
-			return not String(grant.get("action_key", "")).is_empty()
-		"ammunition":
-			return (
-				int(grant.get("item_id", 0)) > 0
-				and not String(grant.get("action_key", "")).is_empty()
-			)
-		"active_weapon_ammunition":
-			return true
-		"deployable":
-			return (
-				int(grant.get("item_id", 0)) > 0
-				and not String(grant.get("deployable_key", "")).is_empty()
-			)
-		"mission_item":
-			return not String(grant.get("item_key", "")).is_empty()
-		"healing":
-			return (
-				int(grant.get("healing_hit_points", 0)) > 0
-				and String(source.get("healing_hit_points", "")) == DEFAULT_STATUS
-			)
-	return false
+	return (
+		String(grant.get("kind", "")) == ORIGINAL_INVENTORY_GRANT_KIND
+		and int(grant.get("item_id", 0)) == int(expected["item_id"])
+		and String(grant.get("container", "")) == String(expected["container"])
+		and int(grant.get("quantity", 0)) == 1
+		and int(grant.get("quantity_mode", -1))
+			== int(expected["quantity_mode"])
+		and String(source.get("item_id", "")) == RECOVERED_ITEM_STATUS
+		and String(source.get("container", "")) == RECOVERED_CONTAINER_STATUS
+		and String(source.get("quantity_mode", "")) == RECOVERED_CONTAINER_STATUS
+		and String(source.get("grant_quantity", ""))
+			== RECOVERED_QUANTITY_STATUS
+	)
 
 
 static func _is_valid_explosive_profile(profile: Dictionary, source: Dictionary) -> bool:
+	if (
+		int(profile.get("runtime_item_id", 0)) != 53
+		or String(source.get("runtime_item_id", "")) != RECOVERED_ITEM_STATUS
+	):
+		return false
 	var positive_fields := [
 		"hit_points",
 		"blast_damage",

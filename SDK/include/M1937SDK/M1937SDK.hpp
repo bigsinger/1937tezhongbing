@@ -2,6 +2,7 @@
 
 #include "Addresses.hpp"
 #include "EnemyAI.hpp"
+#include "Inventory.hpp"
 #include "MissionRoutes.hpp"
 #include "Module.hpp"
 #include "Patch.hpp"

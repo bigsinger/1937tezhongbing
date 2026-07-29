@@ -616,6 +616,8 @@ static func _restore_world(game: Node, world: Dictionary, warnings: Array[String
 		activated[int(value)] = true
 	game.set("activated_mission_scenes", activated)
 	game.set("field_inventory", _string_dictionary(world.get("field_inventory", {})))
+	if game.has_method("_migrate_legacy_field_inventory"):
+		game.call("_migrate_legacy_field_inventory")
 	var split_ordered_names: Dictionary = {}
 	var raw_split_ordered_names: Variant = world.get("m010_split_ordered_names", {})
 	if raw_split_ordered_names is Dictionary:

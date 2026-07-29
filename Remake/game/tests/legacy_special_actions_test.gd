@@ -496,7 +496,6 @@ func _test_main_special_action_lifecycle_without_assets(failures: Array[String])
 	game.add_child(enemy)
 	game.enemies.append(enemy)
 
-	game.field_inventory["explosives"] = 1
 	game.call(
 		"_on_legacy_special_action_requested",
 		attacker,
@@ -520,8 +519,9 @@ func _test_main_special_action_lifecycle_without_assets(failures: Array[String])
 	)
 	var timed_object: Node2D = game.legacy_special_world_objects[-1]
 	_expect(
-		int(game.field_inventory.get("explosives", 0)) == 0,
-		"Main keeps shared mission explosives synchronized when type 10 consumes item 45",
+		int(timed_object.get("attack_type")) == 10
+		and game.field_inventory.is_empty(),
+		"Main spawns type 10 after the actor hit frame without a second shared-inventory charge",
 		failures,
 	)
 	timed_object.call("advance_world_ticks", 99)

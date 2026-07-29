@@ -113,7 +113,7 @@ Godot 端的责任分工为：
 - `imported_level_data.gd`：读取并校验 `database_header_values`，不能再次在导入链中丢弃 DBL `header[0]`；
 - `world_pickup_catalog.gd`、`field_pickup.gd`、`land_mine.gd`、`explosive_prop.gd`：真实场景拾取、地雷和油桶。
 
-`combat_profiles.json` 当前的普通敌人/军犬感知、11 类攻击距离、普通伤害、连发次数、弹药物品 ID、每次消耗和末帧提交语义来自 `M1937.exe` 字段级逆向，不能随意当作手感参数改写。每个新战斗字段都必须标记 `recovered`、`recovered_with_unresolved_override` 或 `unresolved_remake_default`。原版已确认不存在弹匣/备弹/装填抽象；正式关卡必须使用 `original_initial_weapon_inventory.json` 的直接数量和模式，profile 中旧字段只供 schema 1 迁移及合成测试兼容。投射物速度/弧高/碰撞半径，手榴弹、地雷、油桶和拾取效果参数仍是重制默认；听觉遮挡、尸体发现和更高层走廊会车尚未完成。
+`combat_profiles.json` 当前的普通敌人/军犬感知、11 类攻击距离、普通伤害、连发次数、弹药物品 ID、每次消耗和末帧提交语义来自 `M1937.exe` 字段级逆向，不能随意当作手感参数改写。每个新战斗字段都必须标记 `recovered`、`recovered_with_unresolved_override` 或 `unresolved_remake_default`。原版已确认不存在弹匣/备弹/装填抽象；正式关卡必须使用 `original_initial_weapon_inventory.json` 的直接数量和模式，profile 中旧字段只供 schema 1 迁移及合成测试兼容。十类场景拾取的 DBL `header[2]` 物品 ID、`sub_45AE10` 容器/mode 和 `sub_453F70` 单件数量已经恢复；仍为重制默认的是交互半径、投射物速度/弧高/碰撞半径及手榴弹、地雷、油桶的爆炸参数。听觉遮挡、尸体发现和更高层走廊会车尚未完成。
 
 type 8/10/11 已由专用运行时接管：type 8 创建 actor 84 / GFL 470、消费物品 43，并由存活 faction 1 进入 32×16 椭圆触发；type 10 创建 actor 85 / GFL 900、消费物品 45，在第 100 个 world tick 爆炸；type 11 不直接结算伤害、不消费物品 99，重复施加刷新状态，超时/死亡/切关释放。活跃对象与状态均进入 `GameSessionState`。最终伤害、爆炸几何、type 11 精确语义和 180 tick 时长仍是 `unresolved_remake_default`，修改时不得把它们伪标为原版数值。详见 [原版行为取证摘要](ORIGINAL_BEHAVIOR_FORENSICS.md)。
 
@@ -155,7 +155,7 @@ serial_id = action_index * 9 + direction_index
 
 世界系统不得直接调用 `MissionState.record_event()`；必须通过 `MissionRuntime.publish_world_event()`。运行时会确认 scene 同时属于已加载关卡和当前任务 `scene_bindings`，并拒绝缺失或未绑定引用。救援、拾取、任务角色击毙、剧情锚点、爆破/占点、清敌、撤离、限时和角色损失已经接线；持久事实会去重并在前置依赖完成后重放，出口则保持瞬时区域判定。`mission_direction.json` 已提供十二关对白、镜头请求、教程、AI 和难度第一版，但除恢复的 objective/scene 引用外均为 `remake_editorial`，仍需要逐关完整通关与原版录像校准。详见 [任务恢复说明](MISSION_RECOVERY.md)与[十二关导演说明](MISSION_DIRECTION.md)。
 
-爆破关必须显式提供 `charge_policy`，并将来源状态保持为 `remake_policy_from_recovered_map_inventory`。m001/m004/m011 使用 `preplanted`；m002/m003/m008/m009 使用 `inventory_required`。验证器会将 `target_count` 与 explosion scene 绑定、`map_pickup_count` 与真实 DBL 998 逐关计数交叉核对，并拒绝物资不足的消耗模式。实现时必须先成功发布世界事件，再提交背包扣除；不要把检查和扣除顺序颠倒，也不要让预置目标因背包恰好有炸药而消费物品。
+爆破关必须显式提供 `charge_policy`，并将来源状态保持为 `remake_policy_from_recovered_map_inventory`。策略中的 `inventory_item_id` 必须是 DBL 998 已恢复的物品 45。m001/m004/m011 使用 `preplanted`；m002/m003/m008/m009 使用 `inventory_required`。验证器会将 `target_count` 与 explosion scene 绑定、`map_pickup_count` 与真实 DBL 998 逐关计数交叉核对，并拒绝物资不足的消耗模式。实现时必须先成功发布世界事件，再从角色 `+0x22C` 容器提交扣除；不要把检查和扣除顺序颠倒，不要重新引入共享 `field_inventory`，也不要让预置目标因角色恰好有炸药而消费物品。
 
 m004 的计划书携带者已由物品 101/VWF 携带记录定案为 scene 2637；m009 默认修复原版未使用的全关 faction 1 扫描，要求两份文件、全关清敌和四处爆破；m010 的四个区域由老赵、强子、大牛、古明在 128 像素内分别同时占据，不按 `E`、不累计、不要求停留或先清敌。不要在新脚本中重新引入旧候选或临时近似。
 

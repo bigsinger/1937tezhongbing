@@ -38,6 +38,7 @@ internal static class Program
         {
             "inspect" => Inspect(args),
             "inspect-vwf" => InspectVwf(args),
+            "world-pickup-baseline" => WorldPickupBaseline(args),
             "list-gfl" => ListGfl(args),
             "extract-gfl" => ExtractGfl(args),
             "strip-briefings" => StripBriefings(args),
@@ -50,13 +51,58 @@ internal static class Program
         };
     }
 
+    private static int WorldPickupBaseline(string[] args)
+    {
+        RequireArgumentCount(
+            args,
+            3,
+            3,
+            "world-pickup-baseline <1937db.dbl> <output.json>");
+        var databasePath = System.IO.Path.GetFullPath(args[1]);
+        var outputPath = System.IO.Path.GetFullPath(args[2]);
+        var database = DblDatabase.Open(databasePath);
+        var evidence = OriginalWorldPickupEvidence.Recover(database);
+        var document = new
+        {
+            schema_version = 1,
+            catalog_id = "original-world-pickups-v1",
+            content_profile = "repository-mod-12-level-20260729",
+            source = new
+            {
+                database_file = System.IO.Path.GetFileName(databasePath),
+                database_sha256 = Convert.ToHexString(
+                    System.Security.Cryptography.SHA256.HashData(
+                        File.ReadAllBytes(databasePath))),
+                runtime_item_id = "DBL sprite header[2]",
+                container_and_quantity_mode = "M1937.exe sub_45AE10",
+                grant_quantity = "M1937.exe sub_453F70",
+            },
+            pickup_grants = evidence.PickupGrants,
+            explosive_props = new[] { evidence.GasolineBarrel },
+        };
+        var outputDirectory = System.IO.Path.GetDirectoryName(outputPath);
+        if (!string.IsNullOrEmpty(outputDirectory))
+        {
+            Directory.CreateDirectory(outputDirectory);
+        }
+        File.WriteAllText(
+            outputPath,
+            JsonSerializer.Serialize(document, JsonOptions),
+            new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        Console.WriteLine(
+            $"Recovered {evidence.PickupGrants.Count} world pickups and " +
+            $"gasoline barrel {evidence.GasolineBarrel.DatabaseEntryId}.");
+        Console.WriteLine($"Wrote: {outputPath}");
+        return 0;
+    }
+
     private static int InspectVwf(string[] args)
     {
         RequireArgumentCount(
             args,
             2,
-            5,
-            "inspect-vwf <path.vwf> [1937db.dbl] [--entities] [--patrols]");
+            6,
+            "inspect-vwf <path.vwf> [1937db.dbl] [--entities] [--patrols] [--extended]");
         var vwfPath = System.IO.Path.GetFullPath(args[1]);
         var entityDetails = args.Any(argument =>
             argument.Equals(
@@ -66,6 +112,10 @@ internal static class Program
             argument.Equals(
                 "--patrols",
                 StringComparison.OrdinalIgnoreCase));
+        var extendedDetails = args.Any(argument =>
+            argument.Equals(
+                "--extended",
+                StringComparison.OrdinalIgnoreCase));
         var databaseArgument = args
             .Skip(2)
             .FirstOrDefault(argument =>
@@ -74,6 +124,9 @@ internal static class Program
                     StringComparison.OrdinalIgnoreCase) &&
                 !argument.Equals(
                     "--patrols",
+                    StringComparison.OrdinalIgnoreCase) &&
+                !argument.Equals(
+                    "--extended",
                     StringComparison.OrdinalIgnoreCase));
         DblDatabase? database = databaseArgument is not null
             ? DblDatabase.Open(System.IO.Path.GetFullPath(databaseArgument))
@@ -146,6 +199,18 @@ internal static class Program
                         ";",
                         patrol.Waypoints.Select(
                             point => $"{point.X}:{point.Y}")));
+            }
+        }
+        if (extendedDetails)
+        {
+            Console.WriteLine(
+                "Extended fields: scene,database_id,presence,field_0..field_40");
+            foreach (var entity in sceneList.Entities)
+            {
+                Console.WriteLine(
+                    $"  {entity.SceneIndex},{entity.DatabaseEntryId}," +
+                    $"{entity.ExtendedDataPresence}," +
+                    string.Join(",", entity.ExtendedFields));
             }
         }
         return 0;
@@ -551,7 +616,9 @@ internal static class Program
         Console.WriteLine("Commands:");
         Console.WriteLine("  inspect <game-directory>");
         Console.WriteLine(
-            "  inspect-vwf <path.vwf> [1937db.dbl] [--entities]");
+            "  world-pickup-baseline <1937db.dbl> <output.json>");
+        Console.WriteLine(
+            "  inspect-vwf <path.vwf> [1937db.dbl] [--entities] [--patrols] [--extended]");
         Console.WriteLine(
             "  list-gfl <1937Resources.GFL> [InterMedia.GFL] [--all]");
         Console.WriteLine("  extract-gfl <1937Resources.GFL> <output-directory> [InterMedia.GFL]");

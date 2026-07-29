@@ -207,7 +207,8 @@ static func is_valid_charge_policy(mission: Dictionary) -> bool:
 	var target_count := int(policy.get("target_count", 0))
 	if (
 		mode not in CHARGE_POLICY_MODES
-		or str(policy.get("inventory_item_key", "")).is_empty()
+		or str(policy.get("inventory_item_key", "")) != "explosives"
+		or int(policy.get("inventory_item_id", 0)) != 45
 		or quantity_per_target <= 0
 		or map_pickup_count < 0
 		or target_count != (raw_explosion_scenes as Array).size()
