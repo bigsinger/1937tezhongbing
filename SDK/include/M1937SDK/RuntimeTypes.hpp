@@ -52,7 +52,10 @@ struct RuntimeActorV1 final {
     std::int32_t resolved_goal_x;           // +0x218
     std::byte unknown_21c[4];
     std::int32_t resolved_goal_y;           // +0x220
-    std::byte unknown_224[8];
+    std::byte unknown_224[4];
+    // Actor-carried non-weapon/backpack item container. It uses the same
+    // RuntimeInventoryContainerV1 layout as the weapon container below.
+    std::uint32_t item_inventory_address;    // +0x228
     // Points to RuntimeInventoryContainerV1. This is the same container
     // searched by sub_452E40 and rendered by the original inventory HUD.
     std::uint32_t inventory_address;         // +0x22C
@@ -131,6 +134,7 @@ static_assert(offsetof(RuntimeActorV1, default_attack_type) == 0x20C);
 static_assert(offsetof(RuntimeActorV1, target_actor_address) == 0x214);
 static_assert(offsetof(RuntimeActorV1, resolved_goal_x) == 0x218);
 static_assert(offsetof(RuntimeActorV1, resolved_goal_y) == 0x220);
+static_assert(offsetof(RuntimeActorV1, item_inventory_address) == 0x228);
 static_assert(offsetof(RuntimeActorV1, inventory_address) == 0x22C);
 static_assert(offsetof(RuntimeActorV1, search_delay_limit) == 0x248);
 static_assert(offsetof(RuntimeActorV1, contact_state) == 0x250);

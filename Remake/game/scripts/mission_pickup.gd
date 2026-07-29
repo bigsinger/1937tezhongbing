@@ -5,12 +5,23 @@ const WORLD_DEPTH: Script = preload("res://scripts/world_depth.gd")
 
 var item_payload: Dictionary = {}
 var collected := false
+var original_texture: Texture2D
+var original_sprite: Sprite2D
 
 
-func configure(payload: Dictionary, world_position: Vector2) -> void:
+func configure(
+	payload: Dictionary,
+	world_position: Vector2,
+	texture: Texture2D = null,
+) -> void:
 	item_payload = payload.duplicate(true)
 	position = world_position
 	z_index = WORLD_DEPTH.normal_z(position.y, 2)
+	original_texture = texture
+	if original_texture != null:
+		original_sprite = Sprite2D.new()
+		original_sprite.texture = original_texture
+		add_child(original_sprite)
 	queue_redraw()
 
 
@@ -23,6 +34,8 @@ func collect() -> Dictionary:
 
 
 func _draw() -> void:
+	if original_texture != null:
+		return
 	draw_circle(Vector2.ZERO, 13.0, Color(0.08, 0.06, 0.02, 0.82))
 	draw_colored_polygon(
 		PackedVector2Array([

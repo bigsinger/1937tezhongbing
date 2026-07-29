@@ -28,6 +28,7 @@ if ($LASTEXITCODE -ne 0) {
 
 & (Join-Path $PSScriptRoot 'Test-ModParityContract.ps1')
 & (Join-Path $PSScriptRoot 'Test-OriginalInitialWeaponInventory.ps1')
+& (Join-Path $PSScriptRoot 'Test-OriginalInitialItemInventory.ps1')
 & (Join-Path $PSScriptRoot 'Test-OriginalRuntimeActorCatalog.ps1')
 if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
     & (Join-Path $PSScriptRoot 'Test-ModRuntimeIdentityCatalog.ps1') `
@@ -117,6 +118,16 @@ if ($LASTEXITCODE -ne 0) {
 & $GodotExecutable --headless --path $game --script 'res://tests/original_inventory_test.gd'
 if ($LASTEXITCODE -ne 0) {
     throw "Godot original inventory parity tests failed with exit code $LASTEXITCODE."
+}
+
+& $GodotExecutable --headless --path $game --script 'res://tests/backpack_inventory_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot backpack inventory parity tests failed with exit code $LASTEXITCODE."
+}
+
+& $GodotExecutable --headless --path $game --script 'res://tests/original_item_runtime_test.gd' -- --skip-briefing
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot original item runtime tests failed with exit code $LASTEXITCODE."
 }
 
 & $GodotExecutable --headless --path $game --script 'res://tests/world_interactables_test.gd'

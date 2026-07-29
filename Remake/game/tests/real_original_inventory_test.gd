@@ -4,6 +4,10 @@ const MAIN_SCENE: PackedScene = preload("res://scenes/main.tscn")
 const ORIGINAL_INVENTORY: Script = preload(
 	"res://scripts/original_initial_weapon_inventory.gd"
 )
+const ORIGINAL_ITEMS: Script = preload(
+	"res://scripts/original_initial_item_inventory.gd"
+)
+const GAME_SESSION_STATE: Script = preload("res://scripts/game_session_state.gd")
 const LEVEL_IDS := [
 	"m000", "m001", "m002", "m003", "m004", "m005",
 	"m006", "m007", "m008", "m009", "m010", "m011",
@@ -23,6 +27,11 @@ func _run_tests() -> void:
 	await process_frame
 	var player_count := 0
 	var entry_count := 0
+	var backpack_player_count := 0
+	var backpack_entry_count := 0
+	var empty_backpack_player_count := 0
+	var exact_runtime_actor_count := 0
+	var exact_runtime_entry_count := 0
 	for level_index: int in range(LEVEL_IDS.size()):
 		var level_id := str(LEVEL_IDS[level_index])
 		if level_index > 0:
@@ -58,6 +67,48 @@ func _run_tests() -> void:
 			_validate_unit(level_id, unit, expected)
 			player_count += 1
 			entry_count += (expected.get("items", []) as Array).size()
+			var expected_backpack: Dictionary = (
+				ORIGINAL_ITEMS.loadout_for_scene(
+					level_id,
+					int(unit.get("scene_index")),
+				)
+			)
+			_expect(
+				not expected_backpack.is_empty(),
+				"%s scene %d resolves an exact original backpack"
+				% [level_id, int(unit.get("scene_index"))],
+			)
+			if not expected_backpack.is_empty():
+				_validate_backpack(level_id, unit, expected_backpack)
+				backpack_player_count += 1
+				var expected_backpack_items := (
+					expected_backpack.get("items", []) as Array
+				)
+				backpack_entry_count += expected_backpack_items.size()
+				if expected_backpack_items.is_empty():
+					empty_backpack_player_count += 1
+		for group_name: String in [
+			"units", "enemies", "escorts", "ambient_units",
+		]:
+			for actor_value: Variant in main.get(group_name) as Array:
+				var actor := actor_value as Node2D
+				var expected_actor_backpack: Dictionary = (
+					ORIGINAL_ITEMS.loadout_for_scene(
+						level_id,
+						int(actor.get("scene_index")),
+					)
+				)
+				if expected_actor_backpack.is_empty():
+					continue
+				_validate_backpack(
+					level_id,
+					actor,
+					expected_actor_backpack,
+				)
+				exact_runtime_actor_count += 1
+				exact_runtime_entry_count += (
+					expected_actor_backpack.get("items", []) as Array
+				).size()
 		var model: Dictionary = main._inventory_grid_model()
 		for group_value: Variant in model.get("groups", []):
 			if not group_value is Dictionary:
@@ -79,6 +130,18 @@ func _run_tests() -> void:
 		player_count == 27 and entry_count == 83,
 		"all 27 original players and 83 ordered weapon entries reach gameplay",
 	)
+	_expect(
+		backpack_player_count == 27
+		and backpack_entry_count == 74
+		and empty_backpack_player_count == 1,
+		"all 27 original players and 74 backpack entries reach gameplay",
+	)
+	_expect(
+		exact_runtime_actor_count == 650
+		and exact_runtime_entry_count == 538,
+		"all 650 exact dynamic actors and 538 backpack entries reach gameplay",
+	)
+	_test_session_backpack_round_trip(main)
 	main.queue_free()
 	if failures.is_empty():
 		print(
@@ -157,6 +220,70 @@ func _validate_unit(
 		not bool(unit.call("request_reload")),
 		"%s scene %d never enters an invented reload action"
 		% [level_id, int(unit.get("scene_index"))],
+	)
+
+
+func _validate_backpack(
+	level_id: String,
+	unit: Node2D,
+	expected: Dictionary,
+) -> void:
+	var inventory: Variant = unit.get("backpack_inventory")
+	_expect(
+		inventory != null,
+		"%s scene %d has a distinct per-actor backpack container"
+		% [level_id, int(unit.get("scene_index"))],
+	)
+	if inventory == null:
+		return
+	var actual: Array[Dictionary] = inventory.call("ordered_entries")
+	var expected_items := expected.get("items", []) as Array
+	_expect(
+		actual.size() == expected_items.size(),
+		"%s scene %d backpack size matches capture"
+		% [level_id, int(unit.get("scene_index"))],
+	)
+	for inventory_index: int in range(mini(actual.size(), expected_items.size())):
+		var actual_item := actual[inventory_index]
+		var expected_item := expected_items[inventory_index] as Dictionary
+		_expect(
+			int(actual_item.get("item_id", 0))
+				== int(expected_item.get("item_id", -1))
+			and int(actual_item.get("quantity", -1))
+				== int(expected_item.get("quantity", -2))
+			and int(actual_item.get("quantity_mode", -1))
+				== int(expected_item.get("quantity_mode", -2)),
+			"%s scene %d backpack index %d preserves item, quantity and mode"
+			% [level_id, int(unit.get("scene_index")), inventory_index],
+		)
+
+
+func _test_session_backpack_round_trip(main: Node) -> void:
+	if (main.units as Array).is_empty():
+		_expect(false, "session test has a player")
+		return
+	var unit := (main.units as Array)[0] as Node2D
+	var before: Dictionary = unit.call("backpack_snapshot")
+	var session: Dictionary = GAME_SESSION_STATE.capture(main)
+	var records := session.get("squad", []) as Array
+	_expect(not records.is_empty(), "session captures squad")
+	if records.is_empty():
+		return
+	_expect(
+		(records[0] as Dictionary).get("backpack_inventory") == before,
+		"session record persists the separate backpack",
+	)
+	var inventory: Variant = unit.get("backpack_inventory")
+	if inventory != null:
+		inventory.call("clear")
+	var result: Dictionary = GAME_SESSION_STATE.apply_after_level_loaded(
+		main,
+		session,
+	)
+	_expect(bool(result.get("ok", false)), "session restore succeeds")
+	_expect(
+		unit.call("backpack_snapshot") == before,
+		"session restore recreates backpack order, quantities and modes",
 	)
 
 

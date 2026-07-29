@@ -222,6 +222,7 @@ MOD profile，构建脚本会先自动执行 `Import-ModAssets.ps1`。默认使�
 - [十二关对白、镜头、教程、AI 与难度编排](docs/MISSION_DIRECTION.md)
 - [导航、视线与战斗边界](docs/NAVIGATION_AND_COMBAT.md)
 - [投射物、背包与世界交互物](docs/PROJECTILES_AND_INVENTORY.md)
+- [原版角色物品背包恢复](docs/ORIGINAL_ITEM_INVENTORY.md)
 - [对白、声音、任务简报与旧视频恢复](docs/MEDIA_RECOVERY.md)
 - [开发路线图与里程碑边界](docs/ROADMAP.md)
 - [开发环境、验证与 IDA Python 修复](docs/DEVELOPMENT.md)

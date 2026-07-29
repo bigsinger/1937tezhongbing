@@ -41,3 +41,14 @@ use UTF-8 text normalized to LF without BOM for cross-platform reproducibility.
 Product data in
 `game/data/original_initial_weapon_inventory.json` must remain semantically
 identical and is checked on every build.
+
+`initial-item-inventory-v1.json` is the corresponding `RuntimeActorV1 +0x228`
+backpack baseline. Exact identity filtering produces 650 actors and 538 ordered
+entries across all twelve levels; the 27 captured players account for 74
+entries and one intentionally empty backpack. Resolved/high and unresolved
+identities remain evidence-only and are never guessed into product scene IDs.
+The baseline also records the recovered item names, direct effects, generic
+mode semantics, death-drop behavior, raw snapshot hashes, and canonical
+identity hashes. Product data in
+`game/data/original_initial_item_inventory.json` is cross-checked on every
+build.

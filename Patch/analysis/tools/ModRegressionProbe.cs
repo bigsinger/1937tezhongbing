@@ -71,6 +71,7 @@ internal static class ModRegressionProbe
     private const int ActorTargetAddressOffset = 0x214;
     private const int ActorResolvedGoalXOffset = 0x218;
     private const int ActorResolvedGoalYOffset = 0x220;
+    private const int ActorItemInventoryAddressOffset = 0x228;
     private const int ActorInventoryAddressOffset = 0x22C;
     private const int ActorSearchDelayLimitOffset = 0x248;
     private const int ActorSearchDelayCounterOffset = 0x24C;
@@ -763,6 +764,13 @@ internal static class ModRegressionProbe
                         Path.Combine(
                             outputDirectory,
                             "actor-inventory-entry.csv"));
+                    WriteActorItemInventorySnapshot(
+                        process,
+                        imageBase,
+                        actorIdentities,
+                        Path.Combine(
+                            outputDirectory,
+                            "actor-items-entry.csv"));
                 }
                 Thread.Sleep(5000);
                 WriteActorStateSnapshot(
@@ -797,6 +805,13 @@ internal static class ModRegressionProbe
                         Path.Combine(
                             outputDirectory,
                             "actor-inventory-steady.csv"));
+                    WriteActorItemInventorySnapshot(
+                        process,
+                        imageBase,
+                        actorIdentities,
+                        Path.Combine(
+                            outputDirectory,
+                            "actor-items-steady.csv"));
                 }
                 bool spawnSafe =
                     spawnStart != null && spawnEnd != null &&
@@ -825,6 +840,20 @@ internal static class ModRegressionProbe
                             process,
                             inventoryAddress + 0x0C)
                         : int.MinValue;
+                    int itemInventoryAddressValue = spawnEnd == null
+                        ? 0
+                        : ReadInt(
+                            process,
+                            spawnEnd.Address +
+                            ActorItemInventoryAddressOffset);
+                    long itemInventoryAddress =
+                        (long)(uint)itemInventoryAddressValue;
+                    int itemInventoryCount =
+                        itemInventoryAddressValue > 0
+                            ? ReadInt(
+                                process,
+                                itemInventoryAddress + 0x0C)
+                            : 0;
                     int selectedActionId = ReadInt(
                         process,
                         imageBase + EngineAddresses.CurrentActionId);
@@ -838,15 +867,30 @@ internal static class ModRegressionProbe
                         File.Exists(Path.Combine(
                             outputDirectory,
                             "actor-inventory-steady.csv"));
+                    bool itemInventoryReadable =
+                        itemInventoryAddressValue >= 0 &&
+                        itemInventoryCount >= 0 &&
+                        itemInventoryCount <= 256 &&
+                        File.Exists(Path.Combine(
+                            outputDirectory,
+                            "actor-items-entry.csv")) &&
+                        File.Exists(Path.Combine(
+                            outputDirectory,
+                            "actor-items-steady.csv"));
                     AddStage(
                         stages, game, process, imageBase, clock,
                         "player_inventory_snapshot",
-                        inventoryReadable,
-                        "container=0x" +
+                        inventoryReadable && itemInventoryReadable,
+                        "weapon_container=0x" +
                         inventoryAddress.ToString(
                             "X8",
                             CultureInfo.InvariantCulture) +
-                        "; item_count=" + inventoryCount +
+                        "; weapon_count=" + inventoryCount +
+                        "; item_container=0x" +
+                        itemInventoryAddress.ToString(
+                            "X8",
+                            CultureInfo.InvariantCulture) +
+                        "; item_count=" + itemInventoryCount +
                         "; selected_action_id=" +
                         selectedActionId);
                     samplerStop = true;
@@ -867,6 +911,7 @@ internal static class ModRegressionProbe
                         missionStarted &&
                         spawnSafe &&
                         inventoryReadable &&
+                        itemInventoryReadable &&
                         inventoryProcessResponsive &&
                         inventoryCursorClipSafe ? 0 : 1;
                     WriteArtifacts(
@@ -1877,6 +1922,35 @@ internal static class ModRegressionProbe
         Dictionary<int, RuntimeActorIdentity> actorIdentities,
         string path)
     {
+        WriteActorInventoryContainerSnapshot(
+            process,
+            imageBase,
+            actorIdentities,
+            ActorInventoryAddressOffset,
+            path);
+    }
+
+    private static void WriteActorItemInventorySnapshot(
+        IntPtr process,
+        long imageBase,
+        Dictionary<int, RuntimeActorIdentity> actorIdentities,
+        string path)
+    {
+        WriteActorInventoryContainerSnapshot(
+            process,
+            imageBase,
+            actorIdentities,
+            ActorItemInventoryAddressOffset,
+            path);
+    }
+
+    private static void WriteActorInventoryContainerSnapshot(
+        IntPtr process,
+        long imageBase,
+        Dictionary<int, RuntimeActorIdentity> actorIdentities,
+        int containerOffset,
+        string path)
+    {
         int worldValue = ReadInt(
             process, imageBase + EngineAddresses.WorldRoot);
         if (worldValue == 0 || worldValue == int.MinValue)
@@ -1914,7 +1988,7 @@ internal static class ModRegressionProbe
             int defaultAttackType = ReadInt(
                 process, actorAddress + ActorDefaultAttackTypeOffset);
             int containerValue = ReadInt(
-                process, actorAddress + ActorInventoryAddressOffset);
+                process, actorAddress + containerOffset);
             if (containerValue == int.MinValue)
                 continue;
             long containerAddress = (long)(uint)containerValue;

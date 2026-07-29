@@ -344,6 +344,52 @@ func full_snapshot() -> Dictionary:
 	}
 
 
+func take_all_original_drops(
+	preferred_order: Array[String] = [],
+) -> Array[Dictionary]:
+	var drops: Array[Dictionary] = []
+	if not _original_parity:
+		# Synthetic/schema-1 compatibility inventories do not claim original
+		# death-drop semantics and must not be cleared by this exact path.
+		return drops
+	var order: Array[String] = []
+	for action_key: String in preferred_order:
+		if _weapons.has(action_key) and not order.has(action_key):
+			order.append(action_key)
+	for action_key_value: Variant in _weapons.keys():
+		var action_key := str(action_key_value)
+		if not order.has(action_key):
+			order.append(action_key)
+	for action_key: String in order:
+		var state_value: Variant = _weapons.get(action_key)
+		if not state_value is Dictionary:
+			continue
+		var state := state_value as Dictionary
+		if not bool(state.get("original_parity", false)):
+			continue
+		var item_id := int(state.get("ammo_item_id", 0))
+		var quantity_mode := int(state.get("quantity_mode", -1))
+		var quantity := ammo_item_count(item_id)
+		if (
+			not supports_ammo_item(item_id)
+			or not bool(state.get("owned", false))
+			or quantity_mode < 0
+		):
+			continue
+		drops.append({
+			"action_key": action_key,
+			"item_id": item_id,
+			"quantity": quantity,
+			"quantity_mode": quantity_mode,
+			"profile": (state.get("profile", {}) as Dictionary).duplicate(true),
+		})
+	_weapons.clear()
+	_active_action_key = ""
+	_original_parity = false
+	_reset_items()
+	return drops
+
+
 func restore_snapshot(snapshot: Dictionary) -> bool:
 	_weapons.clear()
 	_active_action_key = ""

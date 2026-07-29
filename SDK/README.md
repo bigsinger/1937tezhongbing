@@ -106,7 +106,8 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 
 `RuntimeActorV1` 现已固定角色世界坐标、导航网格缓存、地面命令、
 寻路状态、当前生命、默认攻击类型、接敌/丢失状态、解析后目标和八方向
-朝向字段，以及 `+0x22C` 武器容器指针。`RuntimeInventoryContainerV1`
+朝向字段，以及 `+0x228` 物品容器、`+0x22C` 武器容器两个独立指针。
+`RuntimeInventoryContainerV1`
 固定项目 ID、数量、数量模式三数组和项目数的四字段 `0x10` 布局；
 `CurrentActionId` 也进入单一地址目录。地址表同时收录地面命令分派点及
 原版的移动重置/命令清理函数。

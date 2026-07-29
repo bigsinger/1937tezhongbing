@@ -18,6 +18,9 @@ const COMBAT_PROFILES: Script = preload("res://scripts/combat_profiles.gd")
 const ORIGINAL_INITIAL_WEAPON_INVENTORY: Script = preload(
 	"res://scripts/original_initial_weapon_inventory.gd"
 )
+const ORIGINAL_INITIAL_ITEM_INVENTORY: Script = preload(
+	"res://scripts/original_initial_item_inventory.gd"
+)
 const ORIGINAL_RUNTIME_ACTOR_CATALOG: Script = preload(
 	"res://scripts/original_runtime_actor_catalog.gd"
 )
@@ -126,12 +129,26 @@ const MISSION_ITEM_NAMES := {
 	"explosives": "任务炸药",
 }
 const INVENTORY_ICON_SPRITES_BY_ITEM_ID := {
+	33: "0002",
 	36: "0377",
 	38: "0375",
 	41: "0239",
 	43: "0374",
 	44: "0376",
 	45: "0250",
+	46: "0373",
+	47: "0249",
+	48: "0241",
+	49: "0245",
+	50: "0247",
+	51: "0238",
+	52: "0242",
+	53: "0365",
+	54: "0243",
+	82: "0240",
+	83: "0248",
+	92: "0271",
+	101: "0246",
 }
 const INVENTORY_ICON_SPRITES_BY_MISSION_ITEM := {
 	"uniform": "0243",
@@ -244,6 +261,7 @@ var legacy_ai_control_effects: Array[Node] = []
 var legacy_deployment_targets: Array[Node2D] = []
 var buried_enemy_scene_indices: Dictionary = {}
 var field_inventory: Dictionary = {}
+var selected_backpack_item_id := 0
 var runtime_settings: Dictionary = {
 	"fullscreen": false,
 	"difficulty_mode": "original",
@@ -416,6 +434,7 @@ func load_imported_level(level_id: String = LEVEL_VIEW.DEFAULT_LEVEL_ID) -> bool
 	field_pickups.clear()
 	explosive_props.clear()
 	field_inventory.clear()
+	selected_backpack_item_id = 0
 	buried_enemy_scene_indices.clear()
 	remove_imported_node("ImportedTerrain")
 	remove_imported_node("ImportedEntities")
@@ -882,6 +901,7 @@ func spawn_squad() -> void:
 						true,
 						false,
 					)
+		_configure_original_backpack(unit, level_id, scene_index, name)
 		_connect_combatant(unit)
 		units.append(unit)
 	_spawn_escorts()
@@ -914,6 +934,22 @@ static func playable_initial_attack_type(entity: Dictionary, display_name: Strin
 	if authored_attack_type >= 1 and authored_attack_type <= 11:
 		return authored_attack_type
 	return int(PLAYABLE_LOADOUT_ATTACK_TYPES.get(display_name, 1))
+
+
+func _configure_original_backpack(
+	actor: SQUAD_UNIT,
+	level_id: String,
+	scene_index: int,
+	display_name: String,
+) -> bool:
+	if actor == null:
+		return false
+	var loadout: Dictionary = ORIGINAL_INITIAL_ITEM_INVENTORY.loadout_for_actor(
+		level_id,
+		scene_index,
+		display_name,
+	)
+	return not loadout.is_empty() and actor.configure_original_backpack(loadout)
 
 
 func _spawn_escorts() -> void:
@@ -951,6 +987,12 @@ func _spawn_escorts() -> void:
 			dynamic_occupancy,
 			attack_groups,
 		)
+		_configure_original_backpack(
+			escort,
+			str(current_mission.get("id", FORMAL_LEVEL_IDS[current_level_index])),
+			int(entity.get("scene_index", -1)),
+			str(entity.get("display_name", "")),
+		)
 		escort.rescued.connect(_on_escort_rescued)
 		_connect_combatant(escort)
 		escorts.append(escort)
@@ -987,6 +1029,12 @@ func _spawn_enemies() -> void:
 			attack_groups,
 			death_groups,
 		)
+		_configure_original_backpack(
+			enemy,
+			str(current_mission.get("id", FORMAL_LEVEL_IDS[current_level_index])),
+			int(entity.get("scene_index", -1)),
+			str(entity.get("display_name", "")),
+		)
 		_connect_combatant(enemy)
 		enemies.append(enemy)
 
@@ -1012,6 +1060,12 @@ func _spawn_ambient_units() -> void:
 			idle_groups,
 			death_groups,
 			dynamic_occupancy,
+		)
+		_configure_original_backpack(
+			ambient,
+			str(current_mission.get("id", FORMAL_LEVEL_IDS[current_level_index])),
+			int(entity.get("scene_index", -1)),
+			str(entity.get("display_name", "")),
 		)
 		_connect_combatant(ambient)
 		ambient_units.append(ambient)
@@ -2205,24 +2259,52 @@ func drop_selected_item_at(world_position: Vector2) -> bool:
 	if selected_units.is_empty():
 		update_status("请先选择队员")
 		return false
-	var item_key := ""
-	for raw_key: Variant in field_inventory.keys():
-		if int(field_inventory[raw_key]) > 0:
-			item_key = str(raw_key)
-			break
-	if item_key.is_empty():
+	var actor: SQUAD_UNIT = selected_units[0]
+	if actor.backpack_inventory == null:
 		update_status("当前没有可丢弃物品")
 		return false
-	field_inventory[item_key] = int(field_inventory[item_key]) - 1
+	var item_id := selected_backpack_item_id
+	if (
+		item_id <= 0
+		or actor.backpack_inventory.item_count(item_id) <= 0
+	):
+		item_id = 0
+		for entry: Dictionary in actor.backpack_inventory.ordered_entries():
+			if int(entry.get("quantity", 0)) > 0:
+				item_id = int(entry.get("item_id", 0))
+				break
+	if item_id <= 0:
+		update_status("当前没有可丢弃物品")
+		return false
+	var dropped: Dictionary = actor.backpack_inventory.take_for_drop(item_id, 1)
+	if dropped.is_empty():
+		update_status("当前物品不能丢弃")
+		return false
+	var item_name: String = (
+		ORIGINAL_INITIAL_ITEM_INVENTORY.item_display_name(item_id)
+	)
 	var pickup := MISSION_PICKUP.new()
 	add_child(pickup)
-	pickup.configure({"item_name": item_key, "item_key": item_key, "quantity": 1}, world_position)
+	pickup.configure(
+		{
+			"original_inventory_kind": "backpack",
+			"item_id": item_id,
+			"item_name": item_name,
+			"quantity": int(dropped.get("quantity", 1)),
+			"quantity_mode": int(dropped.get("quantity_mode", 0)),
+			"source_scene_index": int(actor.scene_index),
+		},
+		world_position,
+		_inventory_icon_for("", item_id, ""),
+	)
 	mission_pickups.append(pickup)
 	for enemy: ENEMY_UNIT in enemies:
 		if enemy.is_alive and enemy.position.distance_to(world_position) <= 640.0:
 			enemy.investigate_position(world_position)
+	if not actor.backpack_inventory.has_item(item_id):
+		selected_backpack_item_id = 0
 	_refresh_inventory_ui()
-	update_status("已将 %s 丢到地面，附近敌人会前往查看" % item_key)
+	update_status("已将 %s 丢到地面，附近敌人会前往查看" % item_name)
 	return true
 
 func _process_enemy_ground_pickups() -> void:
@@ -2234,6 +2316,12 @@ func _process_enemy_ground_pickups() -> void:
 				var payload := pickup.collect()
 				if payload.is_empty():
 					break
+				if str(payload.get("original_inventory_kind", "")) == "backpack":
+					enemy.add_backpack_item(
+						int(payload.get("item_id", 0)),
+						maxi(int(payload.get("quantity", 1)), 1),
+						int(payload.get("quantity_mode", 0)),
+					)
 				mission_pickups.erase(pickup)
 				enemy.last_known_target_position = enemy.position
 				enemy.behavior_state = ENEMY_UNIT.BehaviorState.PATROL
@@ -2324,6 +2412,28 @@ func _refresh_inventory_ui() -> void:
 			unit.maximum_hit_points,
 		]
 		lines.append(inventory_line + deployable_text)
+		if unit.backpack_inventory != null:
+			var backpack_parts := PackedStringArray()
+			for entry: Dictionary in unit.backpack_inventory.ordered_entries():
+				var item_id := int(entry.get("item_id", 0))
+				var quantity := int(entry.get("quantity", 0))
+				if quantity <= 0:
+					continue
+				backpack_parts.append(
+					"%s %d"
+					% [
+						ORIGINAL_INITIAL_ITEM_INVENTORY.item_display_name(item_id),
+						quantity,
+					]
+				)
+			lines.append(
+				"背包｜%s"
+				% (
+					"空"
+					if backpack_parts.is_empty()
+					else "｜".join(backpack_parts)
+				)
+			)
 	var squad_supplies: Array[String] = []
 	if int(field_inventory.get("explosives", 0)) > 0:
 		squad_supplies.append("炸药 %d" % int(field_inventory["explosives"]))
@@ -2342,6 +2452,8 @@ func _refresh_inventory_ui() -> void:
 func _on_combatant_died(unit: Node2D, killer: Node2D) -> void:
 	_cancel_legacy_deployment_for_unit(unit)
 	selected_units.erase(unit)
+	if unit is SQUAD_UNIT:
+		_spawn_original_inventory_drops(unit as SQUAD_UNIT)
 	var death_actor := (
 		"enemy" if unit is ENEMY_UNIT else ("civilian" if unit is ESCORT_UNIT else "ally")
 	)
@@ -2371,6 +2483,72 @@ func _on_combatant_died(unit: Node2D, killer: Node2D) -> void:
 			payload["scene_index"] = int(unit.scene_index)
 		_publish_mission_event("required_character_lost", payload)
 	_refresh_mission_ui()
+
+
+func _spawn_original_inventory_drops(unit: SQUAD_UNIT) -> void:
+	if unit.backpack_inventory != null:
+		var backpack_entries: Array[Dictionary] = (
+			unit.backpack_inventory.ordered_entries()
+		)
+		unit.backpack_inventory.clear()
+		for entry: Dictionary in backpack_entries:
+			var item_id := int(entry.get("item_id", 0))
+			var quantity := int(entry.get("quantity", 0))
+			if item_id <= 0 or quantity <= 0:
+				continue
+			_spawn_original_inventory_pickup(
+				unit.position,
+				{
+					"original_inventory_kind": "backpack",
+					"item_id": item_id,
+					"item_name": (
+						ORIGINAL_INITIAL_ITEM_INVENTORY.item_display_name(item_id)
+					),
+					"quantity": quantity,
+					"quantity_mode": int(entry.get("quantity_mode", 0)),
+					"source_scene_index": int(unit.scene_index),
+				},
+			)
+	if unit.combat_inventory != null:
+		var weapon_drops: Array[Dictionary] = (
+			unit.combat_inventory.take_all_original_drops(
+				unit.inventory_weapon_order,
+			)
+		)
+		for drop: Dictionary in weapon_drops:
+			var item_id := int(drop.get("item_id", 0))
+			var profile := drop.get("profile", {}) as Dictionary
+			var attack_type := int(profile.get("attack_type", 0))
+			_spawn_original_inventory_pickup(
+				unit.position,
+				{
+					"original_inventory_kind": "weapon",
+					"item_id": item_id,
+					"item_name": str(
+						WEAPON_NAMES.get(attack_type, "武器")
+					),
+					"attack_type": attack_type,
+					"action_key": str(drop.get("action_key", "")),
+					"quantity": int(drop.get("quantity", 0)),
+					"quantity_mode": int(drop.get("quantity_mode", -1)),
+					"source_scene_index": int(unit.scene_index),
+				},
+			)
+
+
+func _spawn_original_inventory_pickup(
+	world_position: Vector2,
+	payload: Dictionary,
+) -> void:
+	var item_id := int(payload.get("item_id", 0))
+	var pickup: MISSION_PICKUP = MISSION_PICKUP.new()
+	add_child(pickup)
+	pickup.configure(
+		payload,
+		world_position,
+		_inventory_icon_for("", item_id, ""),
+	)
+	mission_pickups.append(pickup)
 
 
 func _publish_role_eliminations(unit: Node2D) -> void:
@@ -2405,10 +2583,40 @@ func _spawn_role_drops(unit: Node2D) -> void:
 			continue
 		var payload := (raw_payload as Dictionary).duplicate(true)
 		payload["source_scene_index"] = source_scene
+		var original_item_id := int(payload.get("original_item_id", 0))
+		if original_item_id > 0:
+			var exact_pickup := _find_original_inventory_pickup(
+				source_scene,
+				original_item_id,
+			)
+			if exact_pickup != null:
+				var merged := exact_pickup.item_payload.duplicate(true)
+				for payload_key: Variant in payload.keys():
+					merged[payload_key] = payload[payload_key]
+				exact_pickup.item_payload = merged
+				continue
 		var pickup: MISSION_PICKUP = MISSION_PICKUP.new()
 		add_child(pickup)
 		pickup.configure(payload, unit.position)
 		mission_pickups.append(pickup)
+
+
+func _find_original_inventory_pickup(
+	source_scene_index: int,
+	item_id: int,
+) -> MISSION_PICKUP:
+	for pickup: MISSION_PICKUP in mission_pickups:
+		if pickup == null or not is_instance_valid(pickup) or pickup.collected:
+			continue
+		var payload := pickup.item_payload
+		if (
+			str(payload.get("original_inventory_kind", "")) == "backpack"
+			and int(payload.get("source_scene_index", -1))
+				== source_scene_index
+			and int(payload.get("item_id", 0)) == item_id
+		):
+			return pickup
+	return null
 
 
 func _living_enemy_count() -> int:
@@ -3028,10 +3236,121 @@ func _on_inventory_slot_requested(slot: Dictionary) -> void:
 		update_status("%d 名队员装备%s" % [equipped, str(slot.get("label", "武器"))])
 	elif kind == "active_item":
 		_equip_selected_attack_type(int(slot.get("attack_type", 0)))
+	elif kind == "backpack_item":
+		var item_id := int(slot.get("item_id", 0))
+		selected_backpack_item_id = item_id
+		var actor: SQUAD_UNIT = (
+			selected_units[0] if not selected_units.is_empty() else null
+		)
+		if actor != null:
+			var profile: Dictionary = (
+				ORIGINAL_INITIAL_ITEM_INVENTORY.item_profile(item_id)
+			)
+			if str(profile.get("behavior", "")) == "use":
+				_use_original_backpack_item(actor, item_id, profile)
+			else:
+				update_status(
+					"已选中 %s；移动鼠标后按 T 可丢到地面"
+					% str(slot.get("label", "物品"))
+				)
 	elif kind == "mission_item":
 		update_status("%s：在对应任务位置按 E 使用" % str(slot.get("label", "任务物品")))
 	if game_shell != null:
 		game_shell.update_inventory(_inventory_grid_model())
+
+
+func _use_original_backpack_item(
+	actor: SQUAD_UNIT,
+	item_id: int,
+	profile: Dictionary = {},
+) -> bool:
+	if (
+		actor == null
+		or not actor.is_alive
+		or actor.backpack_inventory == null
+		or not actor.backpack_inventory.has_item(item_id)
+	):
+		return false
+	var resolved_profile: Dictionary = (
+		profile
+		if not profile.is_empty()
+		else ORIGINAL_INITIAL_ITEM_INVENTORY.item_profile(item_id)
+	)
+	var effect_value: Variant = resolved_profile.get("effect")
+	if not effect_value is Dictionary:
+		return false
+	var effect := effect_value as Dictionary
+	var effect_kind := str(effect.get("kind", ""))
+	var detail := ""
+	match effect_kind:
+		"refill_original_weapons":
+			if actor.combat_inventory == null:
+				return false
+			var refill_value: Variant = effect.get("refill_by_weapon_item_id")
+			if not refill_value is Dictionary:
+				return false
+			var added_total := 0
+			for raw_weapon_item_id: Variant in (refill_value as Dictionary).keys():
+				var weapon_item_id := int(str(raw_weapon_item_id))
+				var refill := int((refill_value as Dictionary)[raw_weapon_item_id])
+				var owns_weapon := false
+				for action_key: String in (
+					actor.combat_inventory.registered_weapon_keys()
+				):
+					var state: Dictionary = (
+						actor.combat_inventory.weapon_state(action_key)
+					)
+					if int(state.get("ammo_item_id", 0)) == weapon_item_id:
+						owns_weapon = true
+						break
+				if owns_weapon:
+					added_total += int(
+						actor.combat_inventory.add_item(weapon_item_id, refill)
+					)
+			actor.call("_sync_ammo_from_inventory", true)
+			detail = "补充 %d 发/件武器用量" % added_total
+		"set_hit_points":
+			var previous := actor.current_hit_points
+			actor.current_hit_points = clampi(
+				int(effect.get("value", 8)),
+				0,
+				actor.maximum_hit_points,
+			)
+			detail = "生命 %d → %d" % [previous, actor.current_hit_points]
+		"heal":
+			var previous := actor.current_hit_points
+			var cap := mini(
+				int(effect.get("cap", actor.maximum_hit_points)),
+				actor.maximum_hit_points,
+			)
+			actor.current_hit_points = mini(
+				actor.current_hit_points + maxi(int(effect.get("value", 0)), 0),
+				cap,
+			)
+			detail = "生命 %d → %d" % [previous, actor.current_hit_points]
+		"set_disguise":
+			actor.set_original_disguise(int(effect.get("appearance_state", 100)))
+			detail = "进入原版伪装状态"
+		_:
+			return false
+	if not actor.consume_backpack_item(item_id):
+		return false
+	if (
+		selected_backpack_item_id == item_id
+		and not actor.backpack_inventory.has_item(item_id)
+	):
+		selected_backpack_item_id = 0
+	_play_media_audio("ui_confirm")
+	update_status(
+		"%s 使用 %s：%s"
+		% [
+			actor.display_name,
+			ORIGINAL_INITIAL_ITEM_INVENTORY.item_display_name(item_id),
+			detail,
+		]
+	)
+	_refresh_inventory_ui()
+	return true
 
 
 func _camera_world_rect() -> Rect2:
@@ -3111,6 +3430,7 @@ func _inventory_grid_model() -> Dictionary:
 	if selected_units.size() > 1:
 		actor_name = "已选 %d 人" % selected_units.size()
 	var weapon_slots: Array[Dictionary] = []
+	var backpack_slots: Array[Dictionary] = []
 	var mission_item_slots: Array[Dictionary] = []
 	if actor != null and actor.combat_inventory != null:
 		var active_key := str(actor.combat_inventory.active_weapon_key())
@@ -3153,6 +3473,44 @@ func _inventory_grid_model() -> Dictionary:
 				"icon": _inventory_icon_for(action_key, 0, ""),
 				"description": description,
 			})
+	if actor != null and actor.backpack_inventory != null:
+		for entry: Dictionary in actor.backpack_inventory.ordered_entries():
+			var item_id := int(entry.get("item_id", 0))
+			var quantity := int(entry.get("quantity", 0))
+			var quantity_mode := int(entry.get("quantity_mode", -1))
+			var profile: Dictionary = (
+				ORIGINAL_INITIAL_ITEM_INVENTORY.item_profile(item_id)
+			)
+			var label := str(
+				profile.get(
+					"display_name",
+					ORIGINAL_INITIAL_ITEM_INVENTORY.item_display_name(item_id),
+				)
+			)
+			var behavior := str(profile.get("behavior", "world_interaction"))
+			var description := "%s × %d" % [label, quantity]
+			if quantity_mode == 1:
+				description += "；原版耐久物品，普通使用不消耗"
+			elif quantity_mode == 2:
+				description += "；原版保留零数量条目"
+			if behavior == "use":
+				description += "；点击使用"
+			elif behavior == "mission_item":
+				description += "；任务物品"
+			else:
+				description += "；选中后可按 T 丢到地面"
+			backpack_slots.append({
+				"kind": "backpack_item",
+				"item_id": item_id,
+				"quantity_mode": quantity_mode,
+				"label": label,
+				"short_label": label.left(3),
+				"quantity": quantity,
+				"active": item_id == selected_backpack_item_id,
+				"enabled": actor.is_alive and quantity > 0,
+				"icon": _inventory_icon_for("", item_id, ""),
+				"description": description,
+			})
 	for raw_key: Variant in field_inventory.keys():
 		var quantity := int(field_inventory[raw_key])
 		if quantity <= 0:
@@ -3173,6 +3531,7 @@ func _inventory_grid_model() -> Dictionary:
 		"actor_name": actor_name,
 		"groups": [
 			{"title": "武器", "mode": "weapons", "slots": weapon_slots},
+			{"title": "原版角色背包", "mode": "items", "slots": backpack_slots},
 			{"title": "任务物资", "mode": "items", "slots": mission_item_slots},
 		],
 	}
@@ -3680,16 +4039,29 @@ func interact_with_mission_world() -> void:
 		return
 
 	var nearest_pickup: MISSION_PICKUP
+	var nearest_pickup_collector: SQUAD_UNIT
 	nearest_distance = INF
 	for pickup: MISSION_PICKUP in mission_pickups:
 		if pickup.collected:
 			continue
-		var distance := _nearest_origin_distance(origins, pickup.position)
-		if distance < nearest_distance:
-			nearest_distance = distance
-			nearest_pickup = pickup
+		for origin: SQUAD_UNIT in origins:
+			var distance := origin.position.distance_to(pickup.position)
+			if distance < nearest_distance:
+				nearest_distance = distance
+				nearest_pickup = pickup
+				nearest_pickup_collector = origin
 	if nearest_pickup != null and nearest_distance <= MISSION_INTERACTION_RADIUS:
 		var payload := nearest_pickup.collect()
+		mission_pickups.erase(nearest_pickup)
+		if (
+			nearest_pickup_collector != null
+			and _collect_original_inventory_pickup(
+				payload,
+				nearest_pickup_collector,
+			)
+		):
+			_report_direction_action("pickup_role_drop")
+			return
 		_publish_mission_event("item_acquired", payload)
 		_report_direction_action("pickup_role_drop")
 		update_status("已取得任务物品")
@@ -3740,6 +4112,71 @@ func interact_with_mission_world() -> void:
 		if _activate_bound_scene(best_binding, best_scene):
 			return
 	update_status("附近没有可交互任务目标")
+
+
+func _collect_original_inventory_pickup(
+	payload: Dictionary,
+	collector: SQUAD_UNIT,
+) -> bool:
+	var inventory_kind := str(payload.get("original_inventory_kind", ""))
+	if inventory_kind not in ["backpack", "weapon"]:
+		return false
+	var item_id := int(payload.get("item_id", 0))
+	var quantity := maxi(int(payload.get("quantity", 0)), 0)
+	var quantity_mode := int(payload.get("quantity_mode", -1))
+	var accepted := false
+	if inventory_kind == "backpack":
+		accepted = (
+			quantity > 0
+			and collector.add_backpack_item(
+				item_id,
+				quantity,
+				quantity_mode,
+			) == quantity
+		)
+	else:
+		var attack_type := int(payload.get("attack_type", 0))
+		if attack_type <= 0:
+			attack_type = (
+				ORIGINAL_INITIAL_WEAPON_INVENTORY.attack_type_for_item_id(item_id)
+			)
+		var profile: Dictionary = (
+			COMBAT_PROFILES.weapon_profile_for_attack_type(attack_type)
+		)
+		var action_key := str(profile.get("action_key", ""))
+		if not profile.is_empty() and not action_key.is_empty():
+			if collector.has_inventory_weapon(action_key):
+				accepted = (
+					quantity <= 0
+					or collector.add_ammo_item(item_id, quantity) == quantity
+				)
+			else:
+				accepted = collector.register_original_inventory_weapon(
+					profile,
+					_attack_groups_for_unit(collector, action_key),
+					quantity,
+					quantity_mode,
+					false,
+				)
+	if not accepted:
+		# Collection is already committed by the original interaction flow.
+		# Preserve the evidence in the mission event instead of silently losing it.
+		_publish_mission_event("item_acquired", payload)
+		update_status("物品容器冲突，已按任务物品记录")
+		return true
+	var item_name := str(
+		payload.get(
+			"item_name",
+			ORIGINAL_INITIAL_ITEM_INVENTORY.item_display_name(item_id),
+		)
+	)
+	var event_payload := payload.duplicate(true)
+	event_payload["item_name"] = item_name
+	_publish_mission_event("item_acquired", event_payload)
+	_play_media_audio("ui_confirm")
+	update_status("%s 拾取 %s" % [collector.display_name, item_name])
+	_refresh_inventory_ui()
+	return true
 
 
 func _collector_can_use_field_pickup(collector: SQUAD_UNIT, pickup: Node2D) -> bool:

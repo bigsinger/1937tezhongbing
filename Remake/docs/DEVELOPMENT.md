@@ -101,6 +101,11 @@ Godot 端的责任分工为：
 - `combat_profiles.gd` 与 `game/data/combat_profiles.json`：版本化、可校验的原版感知/武器参数。
 - `combat_inventory.gd`：原版 mode 0/1/2 直接数量、多武器、旧档迁移和状态快照；
 - `original_initial_weapon_inventory.gd`：按关卡和 scene ID 读取 27 名角色的精确开局武器；
+- `backpack_inventory.gd`：独立实现 actor `+0x228` 的有序物品容器、
+  mode 0/1/2、强制丢弃和存档快照；
+- `original_initial_item_inventory.gd`：按关卡和 scene ID 读取 650 个
+  精确动态角色的开局背包；物品效果证据见
+  [原版角色物品背包恢复](ORIGINAL_ITEM_INVENTORY.md)；
 - `original_runtime_actor_catalog.gd`：读取 762 个运行时角色身份及阵营覆盖；
 - `projectile_world.gd` / `combat_projectile.gd`：type 6/7/9 世界飞行、段碰撞、落地和椭圆爆炸；
 - `legacy_special_world_object.gd` / `legacy_ai_control_effect.gd`：type 8/10 世界对象与 type 11 状态的建立、推进、释放和快照；

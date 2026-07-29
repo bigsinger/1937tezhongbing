@@ -13,6 +13,7 @@ const CRAWL_SPEED := 48.0
 const TACTICAL_SENSES_SCRIPT: Script = preload("res://scripts/tactical_senses.gd")
 const PROJECTILE_PROFILES: Script = preload("res://scripts/projectile_profiles.gd")
 const COMBAT_INVENTORY_SCRIPT: Script = preload("res://scripts/combat_inventory.gd")
+const BACKPACK_INVENTORY_SCRIPT: Script = preload("res://scripts/backpack_inventory.gd")
 const LEGACY_SPECIAL_ACTION_PROFILES: Script = preload("res://scripts/legacy_special_action_profiles.gd")
 const WORLD_DEPTH: Script = preload("res://scripts/world_depth.gd")
 
@@ -87,8 +88,10 @@ var pending_hit_resolved := false
 var hurt_remaining := 0.0
 var death_emitted := false
 var combat_inventory: RefCounted
+var backpack_inventory: RefCounted
 var attack_groups_by_action: Dictionary = {}
 var inventory_weapon_order: Array[String] = []
+var disguise_appearance_state := 0
 
 
 func configure(
@@ -131,8 +134,10 @@ func configure(
 	hurt_remaining = 0.0
 	death_emitted = false
 	combat_inventory = null
+	backpack_inventory = null
 	attack_groups_by_action.clear()
 	inventory_weapon_order.clear()
+	disguise_appearance_state = 0
 	is_alive = true
 	damage_event_count = 0
 	damage_taken_total = 0
@@ -422,6 +427,66 @@ func inventory_snapshot() -> Dictionary:
 	if combat_inventory == null:
 		return {}
 	return combat_inventory.full_snapshot()
+
+
+func configure_original_backpack(loadout: Dictionary) -> bool:
+	if loadout.is_empty():
+		return false
+	var inventory = BACKPACK_INVENTORY_SCRIPT.new()
+	for item_value: Variant in loadout.get("items", []):
+		if not item_value is Dictionary:
+			return false
+		var item := item_value as Dictionary
+		if not inventory.register_original_item(
+			int(item.get("item_id", 0)),
+			int(item.get("quantity", -1)),
+			int(item.get("quantity_mode", -1)),
+		):
+			return false
+	backpack_inventory = inventory
+	return true
+
+
+func add_backpack_item(
+	item_id: int,
+	quantity: int,
+	quantity_mode: int = 0,
+) -> int:
+	if backpack_inventory == null:
+		backpack_inventory = BACKPACK_INVENTORY_SCRIPT.new()
+	return int(
+		backpack_inventory.add_original_item(item_id, quantity, quantity_mode)
+	)
+
+
+func consume_backpack_item(
+	item_id: int,
+	force_consumption: bool = false,
+	quantity: int = 1,
+) -> bool:
+	return (
+		backpack_inventory != null
+		and bool(
+			backpack_inventory.consume(
+				item_id,
+				force_consumption,
+				quantity,
+			)
+		)
+	)
+
+
+func backpack_snapshot() -> Dictionary:
+	return (
+		backpack_inventory.snapshot()
+		if backpack_inventory != null
+		else {}
+	)
+
+
+func set_original_disguise(appearance_state: int) -> void:
+	disguise_appearance_state = maxi(appearance_state, 0)
+	queue_redraw()
 
 
 func issue_move(destination: Vector2) -> void:

@@ -16,7 +16,7 @@
 
 伤害值仍由 `game/data/combat_profiles.json` 提供：飞镖 8、弹弓 1；手榴弹 16 也明确属于重制版默认值。攻击类型 8/10 已有持久世界对象，type 11 已有可应用、刷新和解除的 AI 控制状态；其生命周期已经接线，但最终伤害、爆炸几何及 type 11 的精确语义/时长仍是带标签的重制默认，不能称为原作精确数值。
 
-## 2. 战斗背包与武器切换
+## 2. 武器容器、角色物品背包与切换
 
 `CombatInventory` 是玩家弹药和多武器状态的权威来源，统一管理：
 
@@ -30,6 +30,14 @@
 原版模式下前者显示当前项目的直接数量，后者恒为零。schema 2 存档保存数量模式、
 拥有状态和当前武器；schema 1 的“弹匣 + 备弹”旧档会在读取时合并成一个直接
 数量。敌方单位暂时仍使用无限弹药。
+
+`BackpackInventory` 另行实现 actor `+0x228`，不与上述 `+0x22C`
+武器容器或 `field_inventory` 混用。`original_initial_item_inventory.json`
+固化十二关 650 个精确动态角色、538 条有序物品记录，其中 27 名玩家共有
+74 条；A 页显示当前选中角色自己的物品。弹药箱、医药箱、西瓜、中药和
+服装的直接效果，丢弃、敌人拾取、死亡掉落及存档均已按恢复代码接线。
+完整证据与物品表见
+[原版角色物品背包恢复](ORIGINAL_ITEM_INVENTORY.md)。
 
 当前数字键按原版项目次序处理，输入如下：
 
@@ -107,6 +115,8 @@ type 8/10 世界对象和汽油桶走统一的世界爆炸结算，可伤害单�
 | `game/scripts/projectile_world.gd` | 投射物生成、战斗候选与命中/爆炸信号 |
 | `game/scripts/combat_inventory.gd` | 原版数量模式、多武器切换、旧档迁移和快照 |
 | `game/data/original_initial_weapon_inventory.json` | 十二关 27 名角色的 83 个取证开局条目 |
+| `game/scripts/backpack_inventory.gd` | actor +0x228 有序物品、mode、丢弃和快照 |
+| `game/data/original_initial_item_inventory.json` | 十二关 650 个精确角色的 538 个取证开局条目 |
 | `game/data/world_pickups.json` | 真实拾取实体、地雷和汽油桶的数据配置 |
 | `game/scripts/field_pickup.gd` | 一次性场景拾取物 |
 | `game/scripts/legacy_special_world_object.gd` | type 8/10 部署、触发/计时、爆炸、清理和快照 |
@@ -116,15 +126,16 @@ type 8/10 世界对象和汽油桶走统一的世界爆炸结算，可伤害单�
 | `game/scripts/explosive_prop.gd` | 可受伤汽油桶和爆炸请求 |
 | `game/scripts/main.gd` | 输入、原 scene 生成、背包 UI、任务与警报接线 |
 
-仍待恢复或校准的真实内容包括：全部投射物飞行和爆炸参数、角色物品容器
-`actor+552` 的逐关初始内容、拾取数量和治疗值、type 8/10 最终伤害、爆炸几何及
+仍待恢复或校准的真实内容包括：全部投射物飞行和爆炸参数、地图 DBL
+拾取实体到两套角色容器的完整逐项转移脚本、type 8/10 最终伤害、爆炸几何及
 残留显示时长、type 11 精确语义/持续时间、汽油桶数值及动画，以及爆炸对地形/
-遮挡的原规则。原版武器容器 `actor+556` 的布局、数量模式和十二关开局内容已经
-恢复，不再把不存在的弹匣/装填时间列为待校准项。
+遮挡的原规则。原版物品容器 `actor+552`、武器容器 `actor+556` 的布局、
+数量模式和十二关开局内容已经恢复，不再把不存在的弹匣/装填时间或已确认的
+医药箱/西瓜/中药直接效果列为待校准项。
 
 ## 6. 验证
 
-`projectile_inventory_test.gd` 覆盖三类投射物、11 个物品 ID、兼容背包切换/快照、最后攻击帧发射、飞行碰撞、弧线、手榴弹敌我伤害和 `ProjectileWorld` 分流。`original_inventory_test.gd` 覆盖 mode 0/1/2、空枪保留、无换弹和 schema 1→2 迁移；`real_original_inventory_test.gd` 在真实十二关逐一核对 27 名玩家、83 个条目、默认武器和 W/A 去重。`world_interactables_test.gd` 覆盖原关卡拾取、type 8 基础世界交互、汽油桶受伤与连锁爆炸，以及七关爆破策略的 schema、真实 DBL 998 计数、成功后扣除和失败不扣除；`legacy_special_actions_test.gd` 专门覆盖 type 8/10/11 生命周期。各套件在日志中报告当前检查数，文档不固定复制计数。
+`projectile_inventory_test.gd` 覆盖三类投射物、11 个物品 ID、兼容背包切换/快照、最后攻击帧发射、飞行碰撞、弧线、手榴弹敌我伤害和 `ProjectileWorld` 分流。`original_inventory_test.gd` 覆盖武器 mode 0/1/2、空枪保留、无换弹和 schema 1→2 迁移；`backpack_inventory_test.gd` 与 `original_item_runtime_test.gd` 覆盖独立物品容器、真实治疗/补给、A 页、丢弃、敌人拾取和死亡掉落；`real_original_inventory_test.gd` 在真实十二关逐一核对 27 名玩家/83 个武器条目以及 650 个角色/538 个物品条目。`world_interactables_test.gd` 覆盖原关卡拾取、type 8 基础世界交互、汽油桶受伤与连锁爆炸，以及七关爆破策略的 schema、真实 DBL 998 计数、成功后扣除和失败不扣除；`legacy_special_actions_test.gd` 专门覆盖 type 8/10/11 生命周期。各套件在日志中报告当前检查数，文档不固定复制计数。
 
 ```powershell
 godot --headless --path Remake/game --script res://tests/projectile_inventory_test.gd

@@ -8,6 +8,7 @@ extends RefCounted
 ## `apply_after_level_loaded()` so the imported level supplies those resources.
 
 const COMBAT_INVENTORY: Script = preload("res://scripts/combat_inventory.gd")
+const BACKPACK_INVENTORY: Script = preload("res://scripts/backpack_inventory.gd")
 const LAND_MINE: Script = preload("res://scripts/land_mine.gd")
 const LEGACY_SPECIAL_ACTION_PROFILES: Script = preload("res://scripts/legacy_special_action_profiles.gd")
 const MISSION_PICKUP: Script = preload("res://scripts/mission_pickup.gd")
@@ -140,6 +141,13 @@ static func _capture_actor(actor: Node2D, group_name: String) -> Dictionary:
 	if actor.has_method("inventory_snapshot"):
 		record["inventory"] = _json_value(actor.call("inventory_snapshot"))
 		record["inventory_weapon_order"] = _json_value(actor.get("inventory_weapon_order"))
+	if actor.has_method("backpack_snapshot"):
+		record["backpack_inventory"] = _json_value(
+			actor.call("backpack_snapshot")
+		)
+		record["disguise_appearance_state"] = int(
+			actor.get("disguise_appearance_state")
+		)
 	if group_name == "enemies":
 		var current_target: Variant = actor.get("current_target")
 		record["ai"] = {
@@ -430,6 +438,8 @@ static func _restore_actor(game: Node, actor: Node2D, record: Dictionary, group_
 		actor.set("pending_hit_forced", false)
 	if record.get("inventory") is Dictionary:
 		_restore_inventory(game, actor, record)
+	if record.get("backpack_inventory") is Dictionary:
+		_restore_backpack(actor, record)
 	if alive:
 		actor.set("death_emitted", false)
 		actor.set("combat_action", 0)
@@ -586,6 +596,20 @@ static func _restore_inventory(game: Node, actor: Node2D, record: Dictionary) ->
 	actor.call("_sync_ammo_from_inventory", false)
 
 
+static func _restore_backpack(actor: Node2D, record: Dictionary) -> void:
+	var snapshot := record.get("backpack_inventory", {}) as Dictionary
+	if snapshot.is_empty():
+		return
+	var inventory = BACKPACK_INVENTORY.new()
+	if not inventory.restore_snapshot(snapshot):
+		return
+	actor.set("backpack_inventory", inventory)
+	actor.set(
+		"disguise_appearance_state",
+		maxi(int(record.get("disguise_appearance_state", 0)), 0),
+	)
+
+
 static func _restore_world(game: Node, world: Dictionary, warnings: Array[String]) -> Dictionary:
 	var activated: Dictionary = {}
 	for value: Variant in world.get("activated_scene_indices", []) as Array:
@@ -707,8 +731,30 @@ static func _restore_mission_pickups(game: Node, records: Array) -> void:
 		if not record_value is Dictionary:
 			continue
 		var record := record_value as Dictionary
+		var payload := record.get("payload", {}) as Dictionary
+		var texture: Texture2D
+		if (
+			not str(payload.get("original_inventory_kind", "")).is_empty()
+			and game.has_method("_inventory_icon_for")
+		):
+			var texture_value: Variant = game.call(
+				"_inventory_icon_for",
+				"",
+				int(payload.get("item_id", 0)),
+				"",
+			)
+			if texture_value is Texture2D:
+				texture = texture_value as Texture2D
 		var pickup: Node2D = MISSION_PICKUP.new()
-		pickup.call("configure", record.get("payload", {}) as Dictionary, Vector2(float(record.get("x", 0.0)), float(record.get("y", 0.0))))
+		pickup.call(
+			"configure",
+			payload,
+			Vector2(
+				float(record.get("x", 0.0)),
+				float(record.get("y", 0.0)),
+			),
+			texture,
+		)
 		game.add_child(pickup)
 		existing.append(pickup)
 
