@@ -19,8 +19,8 @@
     {
       "id": "map_layers_and_rendering",
       "status": "partial",
-      "evidence": ["VWF L1-L5 import", "DBL four render queues", "m000 fidelity baseline"],
-      "gaps": ["eleven level visual baselines", "all wall/door/foreground occlusion cases", "multi-layer SPR baseline calibration"]
+      "evidence": ["VWF L1-L5 import", "DBL four render queues", "twelve-level structural and artifact-hash fidelity baseline"],
+      "gaps": ["1024x768 and 1920x1080 pixel baselines", "all wall/door/foreground occlusion cases", "multi-layer SPR baseline calibration"]
     },
     {
       "id": "actors_and_animation",

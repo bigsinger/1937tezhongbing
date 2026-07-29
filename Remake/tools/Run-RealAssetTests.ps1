@@ -12,6 +12,8 @@ if (-not (Test-Path -LiteralPath $levelManifest -PathType Leaf)) {
     throw 'Local imported assets are missing. Run Import-OriginalAssets.cmd first.'
 }
 
+& (Join-Path $PSScriptRoot 'Build-LevelFidelityBaselines.ps1') -Verify
+
 if ([string]::IsNullOrWhiteSpace($GodotExecutable) -and
     -not [string]::IsNullOrWhiteSpace($env:GODOT4)) {
     $GodotExecutable = $env:GODOT4

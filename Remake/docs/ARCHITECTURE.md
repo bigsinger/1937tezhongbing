@@ -82,6 +82,8 @@ game/data/world_pickups.json ───────────┤ 原实体身�
 
 VWF 五层的主要用途已由原程序的层名表和实际读取路径交叉验证：L1 是地块索引，L2 是视线/射击遮挡，L3 是移动障碍与八方向寻路的权威平面，L4 在十二个正式关卡中全为零，L5 是编辑期的手工移动障碍修正标记。这一结论不代表 DBL/SLIST 的所有扩展字段都已理解，也不代表完整 AI 和交互已经还原。详见 [导航、视线与战斗边界](NAVIGATION_AND_COMBAT.md)。
 
+仓库中的 `game/data/level_fidelity_baselines.json` 是本地批量资源之外的可审计结构指纹。它由 `tools/Build-LevelFidelityBaselines.ps1` 从受支持的稳定 MOD profile 和十二关转换结果确定性生成，固定源 VWF/DBL 身份、地形和导航哈希、逐关结构计数及任务/玩家/地标关键 scene；真实资源验证会先以 `-Verify` 重算，再由 Godot 对实际加载结果执行字段和文件哈希校验。该结构门禁不能替代画面像素基线，但能阻止地图、层、路线、任务对象或出生点在不可见处静默漂移。
+
 ## 3. 动画模型
 
 SPR 每个 frame group 的参数 0 是动作/方向序列号：

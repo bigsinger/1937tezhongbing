@@ -51,6 +51,10 @@ const EXPECTED_SPRITE_COUNT := 980
 const EXPECTED_GROUP_COUNT := 2775
 const EXPECTED_FRAME_COUNT := 11898
 const EXPECTED_MANUAL_CORRECTION_COUNT := 17858
+const EXPECTED_FIDELITY_KEY_SCENE_COUNT := 258
+const WORLD_PICKUP_DATABASE_IDS: Array[int] = [
+	982, 983, 984, 986, 987, 988, 990, 993, 998, 999, 1003,
+]
 
 var failures: Array[String] = []
 var check_count := 0
@@ -208,7 +212,7 @@ func _init() -> void:
 	validate_sprite_manifests()
 	validate_special_action_assets()
 	validate_m000_farmland_depth()
-	validate_m000_fidelity_baseline()
+	validate_all_level_fidelity_baselines()
 	validate_level_independent_inventory_icons()
 
 	if failures.is_empty():
@@ -390,134 +394,233 @@ func validate_m000_farmland_depth() -> void:
 	expect(rice_count == 70 and rice_uses_y_depth, "m000's 70 individual rice plants retain baseline depth sorting")
 
 
-func validate_m000_fidelity_baseline() -> void:
+func validate_all_level_fidelity_baselines() -> void:
 	var catalog := load_json_dictionary("res://data/level_fidelity_baselines.json")
-	expect(int(catalog.get("schema_version", 0)) == 1, "level fidelity baseline schema loads")
-	var baseline: Dictionary = {}
-	for value: Variant in catalog.get("levels", []) as Array:
-		var candidate := value as Dictionary
-		if str(candidate.get("id", "")) == "m000":
-			baseline = candidate
-			break
-	expect(not baseline.is_empty(), "m000 fidelity baseline is present")
-	if baseline.is_empty():
+	expect(int(catalog.get("schema_version", 0)) == 2, "twelve-level fidelity baseline schema loads")
+	expect(
+		str(catalog.get("content_profile", "")) == "repository-mod-12-level-20260729",
+		"fidelity baseline is bound to the supported stable Mod profile",
+	)
+	var baselines := catalog.get("levels", []) as Array
+	expect(baselines.size() == LEVEL_IDS.size(), "all twelve fidelity baselines are present")
+	expect(
+		int((catalog.get("summary", {}) as Dictionary).get("entity_count", -1))
+		== EXPECTED_ENTITY_COUNT,
+		"fidelity catalog covers all 19,199 formal entities",
+	)
+	expect(
+		int((catalog.get("summary", {}) as Dictionary).get("key_entity_count", -1))
+		== EXPECTED_FIDELITY_KEY_SCENE_COUNT,
+		"fidelity catalog covers all 258 mission, player and task-anchor scenes",
+	)
+	if baselines.size() != LEVEL_IDS.size():
 		return
-
-	var level: Dictionary = IMPORTED_LEVEL_DATA.load_level("m000")
-	var world_size := level.get("world_size", {}) as Dictionary
-	var expected_world := baseline.get("world_size", {}) as Dictionary
-	expect(
-		int(world_size.get("width", 0)) == int(expected_world.get("width", -1))
-		and int(world_size.get("height", 0)) == int(expected_world.get("height", -1)),
-		"m000 world dimensions match the recovered 4960x2240 baseline",
-	)
-	var navigation := level.get("navigation", {}) as Dictionary
-	var expected_navigation := baseline.get("navigation", {}) as Dictionary
-	expect(
-		int(navigation.get("width", 0)) == int(expected_navigation.get("width", -1))
-		and int(navigation.get("height", 0)) == int(expected_navigation.get("height", -1))
-		and int(navigation.get("cell_width", 0)) == int(expected_navigation.get("cell_width", -1))
-		and int(navigation.get("cell_height", 0)) == int(expected_navigation.get("cell_height", -1)),
-		"m000 navigation dimensions and cells match the recovered baseline",
-	)
-
-	var entities := level.get("entities", []) as Array
-	expect(entities.size() == int(baseline.get("entity_count", -1)), "m000 preserves all 1,630 entities")
-	var entities_by_scene: Dictionary = {}
-	var faction_counts: Dictionary = {}
-	var queue_counts := {"0": 0, "1": 0, "2": 0, "3": 0}
-	var enemy_attack_counts: Dictionary = {}
-	var enemy_hit_point_counts: Dictionary = {}
-	var enemy_count := 0
-	var enemy_patrol_count := 0
-	var enemy_special_sensor_count := 0
-	for entity_value: Variant in entities:
-		var entity := entity_value as Dictionary
-		entities_by_scene[int(entity.get("scene_index", -1))] = entity
-		var faction_key := str(int(entity.get("faction_id", 0)))
-		faction_counts[faction_key] = int(faction_counts.get(faction_key, 0)) + 1
-		var header := entity.get("database_header_values", []) as Array
-		var queue_key := str(int(header[0]) if not header.is_empty() else 0)
-		queue_counts[queue_key] = int(queue_counts.get(queue_key, 0)) + 1
-		if int(entity.get("faction_id", 0)) == 1:
-			enemy_count += 1
-			if not (entity.get("patrol_waypoints", []) as Array).is_empty():
-				enemy_patrol_count += 1
-			if bool(entity.get("special_sensor_mode", false)):
-				enemy_special_sensor_count += 1
-			var attack_key := str(int(entity.get("default_attack_type", 0)))
-			enemy_attack_counts[attack_key] = int(enemy_attack_counts.get(attack_key, 0)) + 1
-			var hit_point_key := str(int(entity.get("current_hit_points", 0)))
-			enemy_hit_point_counts[hit_point_key] = int(enemy_hit_point_counts.get(hit_point_key, 0)) + 1
-
-	expect(
-		integer_dictionary_matches(
-			faction_counts,
-			baseline.get("faction_counts", {}) as Dictionary,
-		),
-		"m000 faction composition matches the original VWF",
-	)
-	expect(
-		integer_dictionary_matches(
-			queue_counts,
-			baseline.get("draw_queue_counts", {}) as Dictionary,
-		),
-		"m000 all four recovered draw queues retain their entity counts",
-	)
-	var expected_enemy := baseline.get("enemy", {}) as Dictionary
-	expect(enemy_count == int(expected_enemy.get("count", -1)), "m000 preserves all 54 enemies")
-	expect(
-		enemy_patrol_count == int(expected_enemy.get("nonempty_patrol_count", -1)),
-		"m000 preserves all 43 non-empty enemy patrol routes",
-	)
-	expect(
-		integer_dictionary_matches(
-			enemy_attack_counts,
-			expected_enemy.get("attack_type_counts", {}) as Dictionary,
-		),
-		"m000 enemy attack-type composition matches the original VWF",
-	)
-	expect(
-		integer_dictionary_matches(
-			enemy_hit_point_counts,
-			expected_enemy.get("hit_point_counts", {}) as Dictionary,
-		),
-		"m000 enemy hit-point composition matches the original VWF",
-	)
-	expect(
-		enemy_special_sensor_count == int(expected_enemy.get("special_sensor_count", -1)),
-		"m000 preserves its one special-sensor guard dog",
-	)
-
-	for expected_value: Variant in baseline.get("key_entities", []) as Array:
-		var expected := expected_value as Dictionary
-		var scene_index := int(expected.get("scene_index", -1))
-		expect(entities_by_scene.has(scene_index), "m000 key scene %d exists" % scene_index)
-		if not entities_by_scene.has(scene_index):
+	var baseline_ids: Array[String] = []
+	var total_baseline_entities := 0
+	var total_key_scenes := 0
+	for baseline_value: Variant in baselines:
+		var baseline := baseline_value as Dictionary
+		var level_id := str(baseline.get("id", ""))
+		baseline_ids.append(level_id)
+		var level: Dictionary = IMPORTED_LEVEL_DATA.load_level(level_id)
+		expect(not level.is_empty(), "%s fidelity source level loads" % level_id)
+		if level.is_empty():
 			continue
-		var actual := entities_by_scene[scene_index] as Dictionary
-		var matches := true
-		for key_value: Variant in expected.keys():
-			var key := str(key_value)
-			if key == "scene_index":
-				continue
-			matches = matches and actual.get(key) == expected[key]
-		expect(matches, "m000 key scene %d retains identity, role and position" % scene_index)
+		var mission: Dictionary = MISSION_DATA.load_mission(level_id)
+		expect(
+			int(baseline.get("number", -1)) == int(mission.get("number", -2))
+			and str(baseline.get("title", "")) == str(mission.get("title", "")),
+			"%s fidelity identity matches its mission catalog" % level_id,
+		)
+		var world_size := level.get("world_size", {}) as Dictionary
+		var expected_world := baseline.get("world_size", {}) as Dictionary
+		expect(
+			int(world_size.get("width", 0)) == int(expected_world.get("width", -1))
+			and int(world_size.get("height", 0)) == int(expected_world.get("height", -1)),
+			"%s world dimensions match the recovered VWF baseline" % level_id,
+		)
+		var navigation := level.get("navigation", {}) as Dictionary
+		var expected_navigation := baseline.get("navigation", {}) as Dictionary
+		expect(
+			int(navigation.get("width", 0)) == int(expected_navigation.get("width", -1))
+			and int(navigation.get("height", 0)) == int(expected_navigation.get("height", -1))
+			and int(navigation.get("cell_width", 0)) == int(expected_navigation.get("cell_width", -1))
+			and int(navigation.get("cell_height", 0)) == int(expected_navigation.get("cell_height", -1)),
+			"%s navigation dimensions and cells match the recovered baseline" % level_id,
+		)
 
-	var anchor_counts: Dictionary = {}
-	for anchor_value: Variant in level.get("task_anchors", []) as Array:
-		var anchor := anchor_value as Dictionary
-		var kind := str(anchor.get("kind", ""))
-		anchor_counts[kind] = int(anchor_counts.get(kind, 0)) + 1
+		var level_path := ProjectSettings.globalize_path(
+			IMPORTED_LEVEL_DATA.level_path(level_id)
+		)
+		var level_directory := level_path.get_base_dir()
+		var terrain_path := level_directory.path_join(str(level.get("terrain_image", "")))
+		var navigation_path := level_directory.path_join(str(navigation.get("relative_path", "")))
+		var expected_artifacts := baseline.get("converted_artifacts", {}) as Dictionary
+		expect(
+			FileAccess.get_sha256(terrain_path).to_upper()
+			== str(expected_artifacts.get("terrain_sha256", "")).to_upper(),
+			"%s converted terrain pixels retain their committed SHA-256" % level_id,
+		)
+		expect(
+			FileAccess.get_sha256(navigation_path).to_upper()
+			== str(expected_artifacts.get("navigation_sha256", "")).to_upper(),
+			"%s converted navigation retains its committed SHA-256" % level_id,
+		)
+
+		var entities := level.get("entities", []) as Array
+		total_baseline_entities += entities.size()
+		expect(
+			entities.size() == int(baseline.get("entity_count", -1)),
+			"%s preserves every recovered entity" % level_id,
+		)
+		var entities_by_scene: Dictionary = {}
+		var faction_counts: Dictionary = {}
+		var queue_counts := {"0": 0, "1": 0, "2": 0, "3": 0}
+		var enemy_attack_counts: Dictionary = {}
+		var enemy_hit_point_counts: Dictionary = {}
+		var world_interactable_counts: Dictionary = {}
+		var enemy_count := 0
+		var enemy_patrol_count := 0
+		var enemy_special_sensor_count := 0
+		for entity_value: Variant in entities:
+			var entity := entity_value as Dictionary
+			entities_by_scene[int(entity.get("scene_index", -1))] = entity
+			var faction_key := str(int(entity.get("faction_id", 0)))
+			faction_counts[faction_key] = int(faction_counts.get(faction_key, 0)) + 1
+			var header := entity.get("database_header_values", []) as Array
+			var queue_key := str(int(header[0]) if not header.is_empty() else 0)
+			queue_counts[queue_key] = int(queue_counts.get(queue_key, 0)) + 1
+			var database_entry_id := int(entity.get("database_entry_id", 0))
+			if database_entry_id in WORLD_PICKUP_DATABASE_IDS:
+				var pickup_key := str(database_entry_id)
+				world_interactable_counts[pickup_key] = (
+					int(world_interactable_counts.get(pickup_key, 0)) + 1
+				)
+			if int(entity.get("faction_id", 0)) == 1:
+				enemy_count += 1
+				if not (entity.get("patrol_waypoints", []) as Array).is_empty():
+					enemy_patrol_count += 1
+				if bool(entity.get("special_sensor_mode", false)):
+					enemy_special_sensor_count += 1
+				var attack_key := str(int(entity.get("default_attack_type", 0)))
+				enemy_attack_counts[attack_key] = (
+					int(enemy_attack_counts.get(attack_key, 0)) + 1
+				)
+				var hit_point_key := str(int(entity.get("current_hit_points", 0)))
+				enemy_hit_point_counts[hit_point_key] = (
+					int(enemy_hit_point_counts.get(hit_point_key, 0)) + 1
+				)
+
+		expect(
+			integer_dictionary_matches(
+				faction_counts,
+				baseline.get("faction_counts", {}) as Dictionary,
+			),
+			"%s faction composition matches the original VWF" % level_id,
+		)
+		expect(
+			integer_dictionary_matches(
+				queue_counts,
+				baseline.get("draw_queue_counts", {}) as Dictionary,
+			),
+			"%s all four recovered draw queues retain their entity counts" % level_id,
+		)
+		expect(
+			integer_dictionary_matches(
+				world_interactable_counts,
+				baseline.get("world_interactable_counts", {}) as Dictionary,
+			),
+			"%s physical world pickups match the recovered VWF" % level_id,
+		)
+		var expected_enemy := baseline.get("enemy", {}) as Dictionary
+		expect(
+			enemy_count == int(expected_enemy.get("count", -1)),
+			"%s preserves every recovered enemy" % level_id,
+		)
+		expect(
+			enemy_patrol_count == int(expected_enemy.get("nonempty_patrol_count", -1)),
+			"%s preserves every non-empty enemy patrol route" % level_id,
+		)
+		expect(
+			integer_dictionary_matches(
+				enemy_attack_counts,
+				expected_enemy.get("attack_type_counts", {}) as Dictionary,
+			),
+			"%s enemy attack-type composition matches the original VWF" % level_id,
+		)
+		expect(
+			integer_dictionary_matches(
+				enemy_hit_point_counts,
+				expected_enemy.get("hit_point_counts", {}) as Dictionary,
+			),
+			"%s enemy hit-point composition matches the original VWF" % level_id,
+		)
+		expect(
+			enemy_special_sensor_count == int(expected_enemy.get("special_sensor_count", -1)),
+			"%s special-sensor actor count matches the original VWF" % level_id,
+		)
+
+		var key_entities := baseline.get("key_entities", []) as Array
+		total_key_scenes += key_entities.size()
+		for expected_value: Variant in key_entities:
+			var expected := expected_value as Dictionary
+			var scene_index := int(expected.get("scene_index", -1))
+			expect(
+				entities_by_scene.has(scene_index),
+				"%s key scene %d exists" % [level_id, scene_index],
+			)
+			if not entities_by_scene.has(scene_index):
+				continue
+			var actual := entities_by_scene[scene_index] as Dictionary
+			var header := actual.get("database_header_values", []) as Array
+			var actual_queue := int(header[0]) if not header.is_empty() else 0
+			var matches := actual_queue == int(expected.get("draw_queue", -1))
+			for key: String in [
+				"database_entry_id",
+				"display_name",
+				"faction_id",
+				"default_attack_type",
+				"x",
+				"y",
+				"reference_x",
+				"reference_y",
+			]:
+				matches = matches and actual.get(key) == expected.get(key)
+			expect(
+				matches,
+				"%s key scene %d retains identity, draw layer and position"
+				% [level_id, scene_index],
+			)
+
+		var anchor_counts: Dictionary = {}
+		for anchor_value: Variant in level.get("task_anchors", []) as Array:
+			var anchor := anchor_value as Dictionary
+			var kind := str(anchor.get("kind", ""))
+			anchor_counts[kind] = int(anchor_counts.get(kind, 0)) + 1
+		expect(
+			integer_dictionary_matches(
+				anchor_counts,
+				baseline.get("task_anchor_counts", {}) as Dictionary,
+			),
+			"%s task landmark composition matches the recovered VWF" % level_id,
+		)
+
+	expect(baseline_ids == LEVEL_IDS, "fidelity baselines retain canonical m000-m011 order")
 	expect(
-		integer_dictionary_matches(
-			anchor_counts,
-			baseline.get("task_anchor_counts", {}) as Dictionary,
-		),
-		"m000 preserves four spawn anchors, one marker and one exit detector",
+		total_baseline_entities == EXPECTED_ENTITY_COUNT,
+		"all per-level fidelity entity totals sum to 19,199",
+	)
+	expect(
+		total_key_scenes == EXPECTED_FIDELITY_KEY_SCENE_COUNT,
+		"all per-level fidelity key-scene totals sum to 258",
 	)
 
-	var playable := entities_by_scene.get(1436, {}) as Dictionary
+	var first_level: Dictionary = IMPORTED_LEVEL_DATA.load_level("m000")
+	var first_entities_by_scene: Dictionary = {}
+	for entity_value: Variant in first_level.get("entities", []) as Array:
+		var entity := entity_value as Dictionary
+		first_entities_by_scene[int(entity.get("scene_index", -1))] = entity
+	var playable := first_entities_by_scene.get(1436, {}) as Dictionary
 	expect(
 		MAIN_SCRIPT.playable_initial_attack_type(playable, "强子") == 4,
 		"m000 starts its recovered playable actor Qiangzi with authored dagger attack type 4",

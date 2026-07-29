@@ -65,7 +65,7 @@ godot --headless --editor --path .\game --quit-after 2
 
 由 Godot 自己扫描项目并生成类缓存，再逐脚本执行 `--check-only`、逻辑测试和场景冒烟测试。存在完整 `LocalAssets` 时，验证入口还会窗口化运行产品 UI 探针，并在 `LocalAssets/qa/verify-product-ui/` 留下实时小地图、五列背包、暂停菜单和失败界面截图。不要把本机 `.godot/` 或 QA 截图提交进仓库，也不要通过调整 PowerShell 文件枚举顺序来掩盖依赖；fresh checkout 和本机缓存热启动必须走同一验证入口。
 
-验证入口依次执行 .NET 合成格式/媒体目录、Godot 核心逻辑、战斗/任务、投射物/背包、世界交互、type 8/10/11、无资产媒体、十二关导演、产品壳、存档/设置、确定性回放和主场景冒烟。存在完整 `LocalAssets` 时再追加真实关卡/任务绑定、真实媒体审计、`real_mission_world_loop_test.gd` 十二关世界动作胜利/中途存读档/角色死亡失败闭环和 m004 高密度寻路压力测试。该闭环只调用营救、地面拾取、战斗伤害、任务交互、引爆、占区和出口等产品入口，禁止直接调用 `MissionRuntime.publish_world_event()` 伪造进度。各套件会输出自己的当前计数；计数变化必须由功能或 fixture 变化解释，不能只改文档或放宽断言，说明文档也不复制容易过期的固定总数。
+验证入口依次执行 .NET 合成格式/媒体目录、Godot 核心逻辑、战斗/任务、投射物/背包、世界交互、type 8/10/11、无资产媒体、十二关导演、产品壳、存档/设置、确定性回放和主场景冒烟。存在完整 `LocalAssets` 时，先执行 `tools/Build-LevelFidelityBaselines.ps1 -Verify`，把当前稳定 MOD 的十二个 VWF、转换地形/导航 SHA-256、19,199 个实体结构和 258 个关键 scene 与提交基线逐项比较；随后追加真实关卡/任务绑定、真实媒体审计、`real_mission_world_loop_test.gd` 十二关世界动作胜利/中途存读档/角色死亡失败闭环和 m004 高密度寻路压力测试。该闭环只调用营救、地面拾取、战斗伤害、任务交互、引爆、占区和出口等产品入口，禁止直接调用 `MissionRuntime.publish_world_event()` 伪造进度。各套件会输出自己的当前计数；计数变化必须由功能或 fixture 变化解释，不能只改文档或放宽断言，说明文档也不复制容易过期的固定总数。
 
 ## 当前导入基线
 
@@ -76,6 +76,7 @@ godot --headless --editor --path .\game --quit-after 2
 - `m000`—`m011` 十二关地形与 JSON，共 19,199 个实体；
 - 每关经过数量校验的任务标记、爆破检测、出口、敌人出生和入口锚点。
 - 每个实体的 `database_header_values` 必须被 `ImportedLevelData` 保留，并通过“字段为数组、各元素为整数”的校验；m000 应有 22 个 DBL 336/337 queue 1 庄稼底图和 70 个 DBL 335 queue 0 稻谷。当前检查计数以验证日志为准。
+- `game/data/level_fidelity_baselines.json` 必须由 `tools/Build-LevelFidelityBaselines.ps1` 从上述完整输入生成；修改转换器后先重建并审查 diff，不能手工放宽哈希或数量。
 
 这些计数属于输入版本不变量。少一项或多一项都应当让导入失败，不应通过放宽断言掩盖格式差异。
 

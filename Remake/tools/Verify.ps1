@@ -178,6 +178,8 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
+    & (Join-Path $PSScriptRoot 'Build-LevelFidelityBaselines.ps1') -Verify
+
     $parityProbeOutput = Join-Path $remakeRoot 'LocalAssets\qa\verify-parity'
     New-Item -ItemType Directory -Force -Path $parityProbeOutput | Out-Null
     & $GodotExecutable --headless --path $game `
