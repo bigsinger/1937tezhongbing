@@ -1,5 +1,0 @@
-{
-  "schema_version": 1,
-  "base_level_id": "m006",
-  "note": "m013 reuses the m006 town terrain and scene resource identities while replacing the player spawn, guard deployment and counter-surveillance patrol routes."
-}

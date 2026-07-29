@@ -41,9 +41,6 @@ foreach ($forbiddenBriefingPrimitive in @(
 }
 foreach ($requiredBriefingElement in @(
     'original_text_asset',
-    'Brief_012.psd',
-    'Brief_013.psd',
-    'Brief_014.psd',
     'briefing_advance')) {
     if (-not $source.Contains($requiredBriefingElement)) {
         throw (

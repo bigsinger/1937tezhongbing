@@ -1,22 +1,22 @@
 # 《1937特种兵：敌后武工队》现代兼容与社区开发项目
 
-本仓库现在以“保留原版玩法、通过补丁和工具持续增强”为主线，包含四个
-主要子项目，以及一个保留作研究参考的旧复刻工程：
+本仓库同时维护稳定原版 MOD 与现代完全复刻工程，包含四个相互协作的
+子项目：
 
 | 目录 | 内容 |
 |---|---|
-| [`Mod/`](Mod/) | 完整可运行的现代增强版，含 12 个原版关卡、3 个扩展关卡和全部运行资源 |
+| [`Mod/`](Mod/) | 完整可运行的现代增强版，含 12 个原版关卡和全部运行资源 |
 | [`Patch/`](Patch/) | 可叠加到已安装原版上的轻量补丁、源码、分析和发行包 |
 | [`MapEditor/`](MapEditor/) | 现代地图与任务编辑器，可导入原版 VWF |
 | [`SDK/`](SDK/) | 已验证 EXE 的地址、结构、补丁原语和运行时访问接口 |
-| [`Remake/`](Remake/) | 已停止继续扩张、保留作格式研究和现代实现参考的 Godot 工程 |
+| [`Remake/`](Remake/) | 正在继续开发的 Godot 现代复刻工程，以稳定 MOD 为行为基准 |
 
 ## 项目效果一览
 
-| MapEditor：原版地图、活动路线与任务分析 | Mod：第 15 关实机与动态小地图 |
+| MapEditor：原版地图、活动路线与任务分析 | Mod：现代启动中心 |
 |---|---|
-| [![MapEditor 可视化编辑器](Screenshots/MapEditor-module-overview.jpg)](Screenshots/MapEditor-module-overview.jpg) | [![Mod 第 15 关实机画面](Screenshots/Mod-level15-gameplay.jpg)](Screenshots/Mod-level15-gameplay.jpg) |
-| **Patch：15 关现代启动中心** | **Remake：Godot 格式研究原型** |
+| [![MapEditor 可视化编辑器](Screenshots/MapEditor-module-overview.jpg)](Screenshots/MapEditor-module-overview.jpg) | [![Mod 现代启动中心](Screenshots/ModernLauncher-final.png)](Screenshots/ModernLauncher-final.png) |
+| **Patch：12 关现代启动中心** | **Remake：Godot 现代复刻工程** |
 | [![Patch 现代启动中心](Screenshots/Patch-modern-launcher.jpg)](Screenshots/Patch-modern-launcher.jpg) | [![Remake 运行时研究原型](Screenshots/Remake-runtime-prototype.jpg)](Screenshots/Remake-runtime-prototype.jpg) |
 
 以上均为本机实际程序窗口截图；图片已在本地完成 OCR 检查和 JPEG 压缩，
@@ -34,7 +34,7 @@ cd .\1937tezhongbing\Mod
 ```
 
 也可以双击 `Mod\启动游戏-窗口模式.cmd`。现代启动中心可直接选择任意
-一个原版或扩展关卡，并持久化难度、敌军 AI、显示、渲染、卷屏、输入法屏蔽
+一个原版关卡，并持久化难度、敌军 AI、显示、渲染、卷屏、输入法屏蔽
 和计时设置。
 
 增强版的主要改进：
@@ -53,55 +53,58 @@ cd .\1937tezhongbing\Mod
   重获目标与超时返回原版巡逻，不持续读取视线外玩家坐标；
 - 可关闭的按键别名、结构化诊断和分通道性能遥测；
 - 可选任务 sidecar 和 x64 原生插件 ABI；默认关闭，失败完整回退原版；
-- 全部 12 个原版关卡和扩展关“余烬行动”“锄奸行动”“破晓密令”可直接选择，
-  不改写原 EXE、不伪造存档；
-- 15 关继续使用原版“新游戏 → 任务简报 → 点击/Enter 继续 → 地图”的
+- 全部 12 个原版关卡都可直接选择，不改写原 EXE、不伪造存档；
+- 12 关继续使用原版“新游戏 → 任务简报 → 点击/Enter 继续 → 地图”的
   界面与交互流程；没有额外弹窗，只把原简报图片内容替换为文字排版图；
-- 原版 12 个 `Intro_*.psd` 资源在原索引原位替换，第 13—15 关追加三个
-  独立 `Brief_*.psd`；修改 `Mod/关卡名称.json` 后运行
+- 原版 12 个 `Intro_*.psd` 资源在原索引原位替换；修改
+  `Mod/关卡名称.json` 后运行
   `Patch/tools/Update-TextBriefings.ps1` 即可安全重建 GFL；
-- “破晓密令”采用引擎语义安全合成：8 个城区仅在相同
-  `TileGroupMapId` 内交叉替换开放地表帧，196/24,000 格发生视觉变化，
-  资源身份、移动、阻挡、事件、对象和巡逻拓扑均保持不变；
-- 修复扩展关角色重定位后导航网格缓存仍指向来源关卡的问题；第 15 关连续
-  两次地面点击均精确替换目标并到达，移动 135/202 世界单位，20 个运动
-  采样全部朝向一致、倒跑样本为 0，P95/P99 为 8.048/9.561 ms；
 - 兼容全屏保留底栏、F1 帮助、M 小地图和全部原版热键，可选择保持
   比例或无黑边铺满；
 - 设置保存在原版 `rungame.ini` 新增的 `[mod]` 段。
 
 关卡数量审计见 [`doc/关卡数量与VWF审计.md`](doc/关卡数量与VWF审计.md)，
-十二关故事见 [`doc/十二关故事.md`](doc/十二关故事.md)，扩展关设计见
-[`doc/第十三关-余烬行动.md`](doc/第十三关-余烬行动.md)、
-[`doc/第十四关-锄奸行动.md`](doc/第十四关-锄奸行动.md)、
-[`doc/第十五关-破晓密令.md`](doc/第十五关-破晓密令.md)，地图选型与
-可完成性说明见
-[`doc/扩展关卡地图选型与可完成性审计.md`](doc/扩展关卡地图选型与可完成性审计.md)。
+十二关故事见 [`doc/十二关故事.md`](doc/十二关故事.md)。
 后续制作统一遵循
 [`doc/关卡制作与验证方法论.md`](doc/关卡制作与验证方法论.md)；MOD 与
 编辑器的分级改进清单见
 [`doc/MOD与MapEditor持续改进评估.md`](doc/MOD与MapEditor持续改进评估.md)，
 全部建议的最终实现与证据见
 [`doc/MOD与MapEditor持续改进实施报告.md`](doc/MOD与MapEditor持续改进实施报告.md)；
-原流程文字简报与扩展关卡最终修复见
-[`doc/原流程文字任务简报与扩展关卡修复报告-20260728.md`](doc/原流程文字任务简报与扩展关卡修复报告-20260728.md)。
 
 ![现代启动中心](Screenshots/ModernLauncher-final.png)
 
-![原版任务简报界面中的文字排版图](Screenshots/MissionBriefing-original-flow-m014.jpg)
+## 运行与开发 Remake
+
+`Remake` 现在直接以仓库稳定 `Mod/` 为唯一产品内容基线。生成最新版本：
+
+```powershell
+cd .\Remake
+.\tools\Build-Playable.cmd
+```
+
+脚本会在需要时自动从 `Mod/` 转换 1,394 项资源和十二关内容，生成入口：
+
+```text
+Remake\LocalBuild\1937Remake\Play-1937-Remake.cmd
+```
+
+完全复刻不是“关卡能显示”就算完成。功能差距、证据规则、逐关通关矩阵和
+发布硬门禁见
+[`Remake/docs/MOD完全复刻开发实施方案.md`](Remake/docs/MOD完全复刻开发实施方案.md)；
+机器可读状态位于
+[`Remake/game/data/mod_parity_contract.json`](Remake/game/data/mod_parity_contract.json)。
 
 ## 地图编辑器
 
 `MapEditor` 是 .NET 10 WPF 程序，支持：
 
-- 直接打开原版及扩展 VWF，以完整地形和原版对象进行预览、编辑、另存；
+- 直接打开原版 VWF，以完整地形和原版对象进行预览、编辑、另存；
 - 读取 VWF 内真实巡逻路线，并结合移动障碍层还原八方向寻路轨迹；默认
   显示全部活动路线和低开销运动预览，选中活物后高亮完整轨迹、路线点
   顺序和当前位置；
 - 内置 1,037 项相对路径素材，包括角色、树木、院墙、房屋、门、
-  障碍物、车辆、物品、地表图块和 12 张关卡整图；前两个扩展关在完整
-  原版地形上重新部署，第 15 关则让 8 个城区的开放地表材质交叉合成，
-  并保持五层碰撞语义、1,470 个场景对象和巡逻拓扑稳定；
+  障碍物、车辆、物品、地表图块和 12 张原版关卡整图；
 - 高对比浅色界面，默认使用“打开地图→选择素材→另存”三步流程；
 - 素材库第一项为默认“鼠标箭头（仅查看）”，浏览时不会误放置对象；
 - 地表、视线障碍、移动障碍、事件、人工通行修正五层编辑；
@@ -130,25 +133,13 @@ cd .\1937tezhongbing\Mod
 
 ![高级任务 Sidecar 可视化编辑](Screenshots/MapEditor-v4-sidecar-authoring.jpg)
 
-![扩展关巡逻路线与运动预览](Screenshots/MapEditor-m012-patrol-preview.jpg)
-
-![锄奸行动城镇与出生点预览](Screenshots/MapEditor-m013-anti-traitor-preview.jpg)
-
-![破晓密令拓扑安全合成地图与巡逻预览](Screenshots/MapEditor-module-overview.jpg)
+![原版关卡拓扑、巡逻与任务分析](Screenshots/MapEditor-module-overview.jpg)
 
 开发构建：
 
 ```powershell
 dotnet build .\MapEditor\MapEditor.slnx -c Release
 dotnet run --project .\MapEditor\MapEditor.Tests\MapEditor.Tests.csproj -c Release
-```
-
-扩展关可通过统一关卡包入口确定性重建：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass `
-  -File .\MapEditor\tools\Build-MissionPackage.ps1 `
-  -MissionId m014
 ```
 
 ## M1937SDK
@@ -181,7 +172,7 @@ RVA、VWF 场景布局及运行时全局变量。补丁只能在 PE 元数据和
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Patch\tools\Build-Mod.ps1
 ```
 
-脚本会以 x86 Release 参数重新编译 `dinput.dll`，并把 DLL、关卡数据和
+脚本会以 x86 Release 参数重新编译 `dinput.dll`，并把 DLL 和
 启动中心同步到 `Mod/`；源码构建与可玩成品不会再出现版本脱节。需要同时
 重建轻量补丁发行包时执行 `Patch\tools\Build-Release.ps1`，该脚本也会
 先自动更新 `Mod/`。
@@ -192,17 +183,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Patch\tools\Build-Mod.ps1
 - 1024×768 原版 UI 画布经现代桌面缩放后通过响应探针，底栏、F1、M 等界面资源不再因宽屏内部画布丢失；
 - 第一关 VWF 导入验证为 155×140 网格、5 个图层、1,630 个对象；
 - MapEditor Release 构建为 0 警告、0 错误，JSON 往返测试通过；
-- 15 关十阶段隔离回归全部通过；未响应、光标裁剪限制以及系统
+- 12 关隔离回归覆盖启动、F1、M、鼠标、AI、存读档和任务转换；未响应、
+  光标裁剪限制以及系统
   鼠标/输入/焦点调用均为 0；
-- 第 15 关完成原流程文字简报、菜单、进入地图、两段真实移动、途中改道、
-  方向帧、相机跟随、F1、M 和稳定性回归；目标距离分别从 135/202 降到
-  0，20/20 个运动采样朝向一致，倒跑样本为 0；
-- 第 15 关进入场景后通过原版 F4 角色定位路径完成相机居中与整屏重绘；
-  黑色加载块残留检测通过，最大连续近黑区域为 63 像素、占地图画布
-  0.05%，项目展示图已由修复后的实机窗口重新采集；
 - AI 搜索 44 次、路径重规划 176 次、脱离成功 44/44，最大 tick
   为 620 μs，且警报后不采样视线外玩家的实时位置；
 - 菜单、小/中/大地图各 10 分钟共 38,739 个样本，P99 为
   9.414—12.837ms，未响应和超过 50ms 卡顿均为 0；
-- m000—m014 原生 VWF 无修改逐字节往返和损坏输入拒绝通过；
+- m000—m011 原生 VWF 无修改逐字节往返和损坏输入拒绝通过；
 - 原版源目录只作只读取证，后续开发均在 `Mod/`。

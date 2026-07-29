@@ -408,12 +408,6 @@ public static class OriginalVwfImporter
             document.ImportedSourceSha256 =
                 Convert.ToHexString(SHA256.HashData(source));
         }
-        if (levelId.Equals("m014", StringComparison.Ordinal))
-        {
-            document.QualityVerticalSeams = [40, 80];
-            document.QualityHorizontalSeams = [100];
-        }
-
         for (var index = 0; index < document.Width * document.Height; index++)
         {
             document.Layer(EditorLayerKind.Terrain).Cells[index] =

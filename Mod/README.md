@@ -13,7 +13,7 @@ cd .\1937tezhongbing\Mod
 也可以双击 `启动游戏-窗口模式.cmd` 打开现代启动中心；该入口每次都会
 先恢复原生 1024×768 安全窗口配置，可用于修复错误显示设置。
 
-![第 15 关实机与动态小地图](../Screenshots/Mod-level15-gameplay.jpg)
+![现代启动中心](../Screenshots/ModernLauncher-final.png)
 
 ## 设置与持久化
 
@@ -59,11 +59,9 @@ cnc-ddraw 的 DirectInput 坐标转换；原生窗口不需要灵敏度缩放。
 以前混入目录的 `m012`—`m015` 是 2004 年其他软件 ZIP/CDXA 数据，
 不属于本游戏且已从发行目录移除。
 
-本项目随后用合法 VWF 重新生成了三个内容完全不同的扩展文件：
-`m012`“余烬行动”、`m013`“锄奸行动”和 `m014`“破晓密令”。它们由
-[`MapEditor/Missions`](../MapEditor/Missions/) 中的设计源确定性构建，
-不是恢复出的原版第 13—15 关。制作与发布门槛见
-[`doc/关卡制作与验证方法论.md`](../doc/关卡制作与验证方法论.md)。
+MOD 只保留这 12 个已验证原版任务，不再发布第 13—15 关或相应任务
+sidecar。地图实验工具仍位于 [`MapEditor`](../MapEditor/)，但其实验产物
+不会自动进入 MOD。
 
 详细说明见 [使用说明.txt](使用说明.txt) 和仓库
 [Patch/docs](../Patch/docs/)。本轮全部持续改进及验收证据见

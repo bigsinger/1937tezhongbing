@@ -87,8 +87,29 @@ function Assert-SafeOutputDirectory {
     return $full
 }
 
-if (-not (Test-Path -LiteralPath $requiredLevel -PathType Leaf)) {
-    throw "Converted local assets were not found at $convertedAssets. Run tools\Import-OriginalAssets.cmd first."
+$assetManifestPath = Join-Path $sourceAssets 'manifest.json'
+$assetProfile = ''
+if (Test-Path -LiteralPath $assetManifestPath -PathType Leaf) {
+    try {
+        $assetManifest = Get-Content -LiteralPath $assetManifestPath `
+            -Raw -Encoding UTF8 | ConvertFrom-Json
+        $assetProfile =
+            [string]$assetManifest.source.known_version.version_id
+    }
+    catch {
+        $assetProfile = ''
+    }
+}
+if (-not (Test-Path -LiteralPath $requiredLevel -PathType Leaf) -or
+    $assetProfile -ne 'repository-mod-12-level-20260729') {
+    Write-Host 'Stable Mod assets are missing or stale; importing them now.'
+    & (Join-Path $PSScriptRoot 'Import-ModAssets.ps1') `
+        -OutputDirectory $sourceAssets
+    if ($LASTEXITCODE -ne 0 -or
+        -not (Test-Path -LiteralPath $requiredLevel -PathType Leaf)) {
+        throw 'Stable Mod asset import did not produce a playable content set.'
+    }
+    $assetProfile = 'repository-mod-12-level-20260729'
 }
 
 $godot = Resolve-GodotExecutable -RequestedPath $GodotExecutable
@@ -168,6 +189,13 @@ $buildInfo = [ordered]@{
     godot_version = $version
     build_kind = $buildKind
     asset_mode = $AssetMode
+    asset_content_profile = $assetProfile
+    asset_manifest_sha256 = (
+        Get-FileHash -LiteralPath $assetManifestPath -Algorithm SHA256).Hash
+    parity_contract_sha256 = (
+        Get-FileHash -LiteralPath (
+            Join-Path $gameRoot 'data\mod_parity_contract.json') `
+            -Algorithm SHA256).Hash
 }
 $buildInfo | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $outputRoot 'build-info.json') -Encoding utf8
 
@@ -181,6 +209,7 @@ Keep game and LocalAssets in their current relative locations. The launcher fixe
 directory so the exported program can find the locally converted assets.
 Asset mode: $AssetMode
 Build kind: $buildKind
+Content profile: $assetProfile
 
 Junction mode is local-only. LocalAssets points to Remake\LocalAssets. Before moving this
 directory, rebuild it in Copy mode:

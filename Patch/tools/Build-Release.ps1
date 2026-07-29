@@ -1,5 +1,5 @@
 param(
-    [string]$WorkDirectory = 'E:\1937\patch-v141-build'
+    [string]$WorkDirectory = 'E:\1937\patch-v142-build'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,9 +19,9 @@ $basePackage = if ($basePackageItem) { $basePackageItem.FullName } else { '' }
 $packageName = if ($basePackageItem) {
     $basePackageItem.BaseName.Replace(
         'v1.2.0-20260726',
-        'v1.4.1-20260727')
+        'v1.4.2-20260729')
 } else {
-    '1937-compatibility-patch-v1.4.1-20260727'
+    '1937-compatibility-patch-v1.4.2-20260729'
 }
 $stage = Join-Path $workRoot $packageName
 $archive = Join-Path $patchRoot ('release\' + $packageName + '.zip')
@@ -107,11 +107,14 @@ Get-ChildItem -LiteralPath (Join-Path $modRoot 'Tools\MissionSidecar') |
     }
 $missionTarget = Join-Path $payload 'Missions'
 New-Item -ItemType Directory -Path $missionTarget -Force | Out-Null
-Get-ChildItem -LiteralPath (Join-Path $modRoot 'Missions') -File |
-    ForEach-Object {
-        Copy-Item -LiteralPath $_.FullName `
-            -Destination $missionTarget -Force
-    }
+$missionSource = Join-Path $modRoot 'Missions'
+if (Test-Path -LiteralPath $missionSource -PathType Container) {
+    Get-ChildItem -LiteralPath $missionSource -File |
+        ForEach-Object {
+            Copy-Item -LiteralPath $_.FullName `
+                -Destination $missionTarget -Force
+        }
+}
 $sdkSourceTarget = Join-Path $source 'SDK'
 $schemaTarget = Join-Path $sdkSourceTarget 'schemas'
 New-Item -ItemType Directory -Path $schemaTarget -Force | Out-Null
@@ -188,34 +191,37 @@ $installPath = Join-Path $stage 'Install-Patch.ps1'
 $installText = Get-Content -LiteralPath $installPath -Raw -Encoding UTF8
 $installText = $installText.Replace(
     '1937 compatibility patch v1.1.1 backup',
-    '1937 compatibility patch v1.4.1 backup')
+    '1937 compatibility patch v1.4.2 backup')
 $installText = $installText.Replace(
     '1937 compatibility patch v1.2.0 backup',
-    '1937 compatibility patch v1.4.1 backup')
+    '1937 compatibility patch v1.4.2 backup')
 $installText = $installText.Replace(
     '1937 compatibility patch v1.3.0 backup',
-    '1937 compatibility patch v1.4.1 backup')
+    '1937 compatibility patch v1.4.2 backup')
 $installText = $installText.Replace(
     '1937 compatibility patch v1.3.2 backup',
-    '1937 compatibility patch v1.4.1 backup')
+    '1937 compatibility patch v1.4.2 backup')
 $installText = $installText.Replace(
     '1937 compatibility patch v1.3.3 backup',
-    '1937 compatibility patch v1.4.1 backup')
+    '1937 compatibility patch v1.4.2 backup')
 $installText = $installText.Replace(
     '1937 compatibility patch v1.3.4 backup',
-    '1937 compatibility patch v1.4.1 backup')
+    '1937 compatibility patch v1.4.2 backup')
 $installText = $installText.Replace(
     '1937 compatibility patch v1.3.5 backup',
-    '1937 compatibility patch v1.4.1 backup')
+    '1937 compatibility patch v1.4.2 backup')
 $installText = $installText.Replace(
     '1937 compatibility patch v1.3.6 backup',
-    '1937 compatibility patch v1.4.1 backup')
+    '1937 compatibility patch v1.4.2 backup')
 $installText = $installText.Replace(
     '1937 compatibility patch v1.3.7 backup',
-    '1937 compatibility patch v1.4.1 backup')
+    '1937 compatibility patch v1.4.2 backup')
 $installText = $installText.Replace(
     '1937 compatibility patch v1.4.0 backup',
-    '1937 compatibility patch v1.4.1 backup')
+    '1937 compatibility patch v1.4.2 backup')
+$installText = $installText.Replace(
+    '1937 compatibility patch v1.4.1 backup',
+    '1937 compatibility patch v1.4.2 backup')
 $installText = $installText.Replace(
     'Use the windowed-mode launcher in the game directory. Press Alt+Enter for fullscreen.',
     'Run the modern enhanced launcher, then choose the validated 1024x768 stable window mode.')

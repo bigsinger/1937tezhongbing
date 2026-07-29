@@ -171,7 +171,7 @@ int main(int argc, char** argv) {
                 "1937M006.VWF", 13) == 0,
             "mission 7 filename mismatch", checks);
         require(
-            m1937::sdk::mission_route_count == 15,
+            m1937::sdk::mission_route_count == 12,
             "mission route count mismatch", checks);
         for (std::size_t index = 0;
              index < m1937::sdk::mission_route_count;

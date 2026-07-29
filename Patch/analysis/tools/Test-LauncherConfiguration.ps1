@@ -106,7 +106,7 @@ foreach ($route in $routeCatalog.routes) {
         [string]$route.title
 }
 $briefingTextLengths = [Collections.Generic.List[int]]::new()
-foreach ($briefingLevel in 1..15) {
+foreach ($briefingLevel in 1..12) {
     $mission = @($catalog.missions | Where-Object {
         [int]$_.number -eq $briefingLevel
     })
@@ -153,7 +153,7 @@ foreach ($cursorSafeSetting in @(
     SystemCursorCalls = 0
     CursorCaptureCalls = 0
     StableWindowProfile = 'cursor-safe'
-    TextBriefings = 15
+    TextBriefings = 12
     BriefingDisplay = 'in-game-native'
     MinimumBriefingCharacters = (
         $briefingTextLengths | Measure-Object -Minimum).Minimum

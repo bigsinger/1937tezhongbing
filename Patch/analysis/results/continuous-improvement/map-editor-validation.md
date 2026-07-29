@@ -1,5 +1,8 @@
 # MapEditor Validation
 
+> Historical snapshot notice (2026-07-29): experimental m012-m014 maps were
+> retired. The current published and round-trip-tested map set is m000-m011.
+
 - Release build: 0 warnings, 0 errors
 - Core/editing/quality/spatial/mission/collaboration tests: passed
 - Original VWF import: 155×140, 5 layers, 1,630 objects, 47 patrol routes

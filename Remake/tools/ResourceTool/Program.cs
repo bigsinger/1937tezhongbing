@@ -41,6 +41,7 @@ internal static class Program
             "list-gfl" => ListGfl(args),
             "extract-gfl" => ExtractGfl(args),
             "strip-briefings" => StripBriefings(args),
+            "prune-retired-briefings" => PruneRetiredBriefings(args),
             "render-text-briefings" => RenderTextBriefings(args),
             "install-text-briefings" => InstallTextBriefings(args),
             "import" => Import(args),
@@ -157,7 +158,8 @@ internal static class Program
 
         Console.WriteLine($"Directory: {report.DirectoryPath}");
         Console.WriteLine($"Plausible original directory: {report.IsPlausibleOriginalDirectory}");
-        Console.WriteLine($"Known version hashes match: {report.KnownVersion.IsMatch}");
+        Console.WriteLine($"Supported content profile: {report.KnownVersion.VersionId}");
+        Console.WriteLine($"Supported content hashes match: {report.KnownVersion.IsMatch}");
         Console.WriteLine($"Formal VWF levels: {report.FormalLevelCount}/12");
         Console.WriteLine($"Files: {report.Files.Count}");
 
@@ -290,6 +292,28 @@ internal static class Program
         return 0;
     }
 
+    private static int PruneRetiredBriefings(string[] args)
+    {
+        RequireArgumentCount(
+            args,
+            5,
+            5,
+            "prune-retired-briefings <1937Resources.GFL> <InterMedia.GFL> " +
+            "<output-resources.GFL> <output-index.GFL>");
+        var report = GflArchivePruner.RemoveTrailingEntries(
+            args[1],
+            args[2],
+            args[3],
+            args[4],
+            ["Brief_012.psd", "Brief_013.psd", "Brief_014.psd"]);
+        Console.WriteLine(
+            $"Removed {string.Join(", ", report.RemovedNames)}.");
+        Console.WriteLine(
+            $"Preserved {report.EntryCount} original numeric indexes; " +
+            $"archive size is {report.OutputResourceBytes} bytes.");
+        return 0;
+    }
+
     private static int InstallTextBriefings(string[] args)
     {
         RequireArgumentCount(
@@ -345,7 +369,7 @@ internal static class Program
         if (!report.KnownVersion.IsMatch)
         {
             throw new InvalidDataException(
-                "The selected directory does not match the known supported hashes. " +
+                "The selected directory does not match a supported original or stable Mod content profile. " +
                 "Run inspect for the mismatched filenames before adding support for another release.");
         }
 
@@ -533,6 +557,9 @@ internal static class Program
         Console.WriteLine("  extract-gfl <1937Resources.GFL> <output-directory> [InterMedia.GFL]");
         Console.WriteLine(
             "  strip-briefings <1937Resources.GFL> <InterMedia.GFL> " +
+            "<output-resources.GFL> <output-index.GFL>");
+        Console.WriteLine(
+            "  prune-retired-briefings <1937Resources.GFL> <InterMedia.GFL> " +
             "<output-resources.GFL> <output-index.GFL>");
         Console.WriteLine(
             "  render-text-briefings <关卡名称.json> <output-directory>");

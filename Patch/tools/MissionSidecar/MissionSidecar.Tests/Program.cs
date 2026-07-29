@@ -253,26 +253,18 @@ Console.WriteLine(
     "Read-only world snapshot event detection passed.");
 
 var repository = FindRepository();
-var shippedDefinitions = Directory.GetFiles(
-    Path.Combine(repository, "Mod", "Missions"),
-    "*.m1937mission.json",
-    SearchOption.TopDirectoryOnly);
-if (shippedDefinitions.Length != 3)
+var shippedDirectory = Path.Combine(repository, "Mod", "Missions");
+var shippedDefinitions = Directory.Exists(shippedDirectory)
+    ? Directory.GetFiles(
+        shippedDirectory,
+        "*.m1937mission.json",
+        SearchOption.TopDirectoryOnly)
+    : [];
+if (shippedDefinitions.Length != 0)
     throw new InvalidOperationException(
-        "Expected exactly three shipped extension sidecars.");
-foreach (var path in shippedDefinitions)
-{
-    var shipped = MissionRuntimeEngine.LoadDefinition(path);
-    if (shipped.SelectorLevel is < 13 or > 15 ||
-        shipped.EngineMission is < 1 or > 12 ||
-        shipped.ExecutableSha256.Length != 64 ||
-        shipped.ExecutableFileSize <= 0 ||
-        shipped.ExecutablePeTimestamp <= 0)
-        throw new InvalidOperationException(
-            $"Shipped sidecar identity is incomplete: {path}");
-}
+        "Stable Mod must not ship retired extension sidecars.");
 Console.WriteLine(
-    "Three shipped extension sidecars passed schema/runtime validation.");
+    "Stable Mod ships no extension sidecars.");
 
 return;
 

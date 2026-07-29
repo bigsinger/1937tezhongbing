@@ -1,5 +1,5 @@
 param(
-    [int[]]$Levels = (1..15),
+    [int[]]$Levels = (1..12),
     [string]$LevelList = '',
     [ValidateRange(20, 600)]
     [int]$DurationSeconds = 60,
@@ -34,8 +34,8 @@ if (-not [string]::IsNullOrWhiteSpace($LevelList)) {
 }
 
 foreach ($level in $Levels) {
-    if ($level -lt 1 -or $level -gt 15) {
-        throw "Level is outside 1..15: $level"
+    if ($level -lt 1 -or $level -gt 12) {
+        throw "Level is outside 1..12: $level"
     }
 }
 
@@ -145,25 +145,6 @@ foreach ($level in $Levels) {
         $level, [string]$route.title)
     $probeArguments = @(
         $runtime, $levelOutput, $level, $DurationSeconds)
-    if ($level -ge 13) {
-        $missionId = 'm{0:D3}' -f ($level - 1)
-        $missionDefinition = Join-Path $repositoryRoot (
-            "MapEditor\Missions\$missionId\mission.json")
-        if (Test-Path -LiteralPath $missionDefinition -PathType Leaf) {
-            $mission = Get-Content -LiteralPath $missionDefinition `
-                -Raw -Encoding UTF8 | ConvertFrom-Json
-            if ($null -ne $mission.movement_probe) {
-                $probeArguments += @(
-                    [int]$mission.movement_probe.x,
-                    [int]$mission.movement_probe.y)
-                if ($null -ne $mission.movement_return_probe) {
-                    $probeArguments += @(
-                        [int]$mission.movement_return_probe.x,
-                        [int]$mission.movement_return_probe.y)
-                }
-            }
-        }
-    }
     if ($BriefingOnly) {
         $probeArguments += '--briefing-only'
     }
@@ -285,7 +266,7 @@ $summary | ConvertTo-Json -Depth 8 |
         -Encoding UTF8
 
 $markdown = [Collections.Generic.List[string]]::new()
-$markdown.Add('# MOD 15-Level Isolated Regression Report')
+$markdown.Add('# MOD 12-Level Isolated Regression Report')
 $markdown.Add('')
 $markdown.Add(
     'The probe posts only to the tested game window and the process-local ' +

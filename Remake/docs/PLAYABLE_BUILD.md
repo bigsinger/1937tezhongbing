@@ -1,6 +1,7 @@
 # Windows 本地试玩包
 
-本工程不会把原版或本地转换资源提交到 Git。试玩包只在开发者电脑的
+本工程从仓库稳定 `Mod/` 重建本地转换资源，不把转换结果重复提交到普通
+Git 历史。试玩包只在开发者电脑的
 `Remake/LocalBuild/1937Remake/` 中生成，该目录已由根 `.gitignore` 排除。
 
 当前开发机的默认启动入口为：
@@ -13,12 +14,15 @@ F:\bigsinger\1937tezhongbing\Remake\LocalBuild\1937Remake\Play-1937-Remake.cmd
 
 ## 一键生成
 
-先完成本地资源导入，确保存在
-`Remake/LocalAssets/converted/levels/m000/level.json`，然后在 `Remake` 目录运行：
+在 `Remake` 目录运行：
 
 ```powershell
 .\tools\Build-Playable.cmd
 ```
+
+脚本会检查 `LocalAssets/manifest.json`。如果资源缺失或来源不是
+`repository-mod-12-level-20260729`，会先自动执行 `Import-ModAssets.ps1`；
+无需再手工指定原绿色版目录。
 
 如果 Godot 4.7.1 不在 `PATH`，显式传入标准版控制台程序：
 

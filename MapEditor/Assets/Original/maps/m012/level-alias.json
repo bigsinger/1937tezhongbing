@@ -1,5 +1,0 @@
-{
-  "schema_version": 1,
-  "base_level_id": "m011",
-  "note": "m012 reuses the m011 airport terrain and scene resource identities while replacing unit deployment and patrol data in its VWF."
-}

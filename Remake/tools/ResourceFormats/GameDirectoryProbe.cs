@@ -104,7 +104,13 @@ public static class GameDirectoryProbe
             }
         }
 
-        var knownVersion = KnownOriginalVersion.Validate(directory.FullName);
+        var originalVersion = KnownOriginalVersion.Validate(directory.FullName);
+        var stableModVersion = KnownStableModVersion.Validate(directory.FullName);
+        var knownVersion = originalVersion.IsMatch
+            ? originalVersion
+            : stableModVersion.IsMatch
+                ? stableModVersion
+                : originalVersion;
         if (!knownVersion.IsMatch)
         {
             foreach (var hash in knownVersion.Files.Where(hash => !hash.Matches))

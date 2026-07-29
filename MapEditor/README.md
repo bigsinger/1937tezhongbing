@@ -6,7 +6,7 @@
 
 1. 运行 `启动地图编辑器.ps1`；
 2. 点击顶部“打开原版/工程地图”，选择 `Mod` 中任意
-   `1937m000.vwf`—`1937m014.vwf`；
+   `1937m000.vwf`—`1937m011.vwf`；
 3. 默认选中素材库第一项“鼠标箭头（仅查看）”，浏览地图不会添加对象；
    需要编辑时再从左侧选择其他素材，在地图上单击放置；
 4. 点击“另存为新地图”保存为 `*.m37map.json`；如果地图来自 VWF，
@@ -22,7 +22,7 @@
 - 默认显示全部路线和低开销运动预览；静态路线与动态标记分层绘制；
 - 单击活物或在对象表选中后，高亮它避开墙体后的完整轨迹、路线点顺序和运动位置；
 - 素材列表以“鼠标箭头（仅查看）”为第一项且默认选中，打开地图安全预览；
-- 12 张原版与 3 张扩展地图、最多 1,470 个场景对象的完整预览；
+- 12 张原版地图及其场景对象的完整预览；
 - 1,037 个角色、树木、院墙、房屋、门、车辆、障碍和物品素材；
 - 45 套地表图块；
 - 地表、视线障碍、移动障碍、事件和通行修正五类图层；
@@ -56,26 +56,10 @@
 原版变长记录布局。此类设计仍可保存为 JSON 工程或通过关卡包向导重新部署，
 不会冒险生成半损坏 VWF。
 
-第 13—15 关的可复现设计分别位于 `Missions/m012`、`Missions/m013`、
-`Missions/m014`。`tools/VwfMissionBuilder` 会同步改写对象坐标、巡逻数组
-和动态占用格，
-并对真实任务 scene、出生区以及保留/改写后的每一段巡逻路线执行 A* 校验。
-
-第 15 关“破晓密令”还增加了 `tools/VwfBlueprintComposer`：它先按
-`Missions/m014/blueprint.json` 让 8 个城区的开放地表材质交叉合成，
-但保持移动/视线/事件/人工修正层、场景坐标和巡逻记录不变，再交给任务
-生成器验证剧情对象。这个“拓扑安全”模式用于兼容原任务 7 的硬编码路线；
-普通关卡仍可使用完整区块迁移模式。编辑器预览使用最终拓扑和素材，因此
-与游戏中的可行走布局一致。
-
-三个扩展关现在都由 `Missions/mNNN/mission-package.json` 描述，使用同一
-入口构建并校验确定性哈希：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass `
-  -File .\tools\Build-MissionPackage.ps1 `
-  -MissionId m014
-```
+`tools/VwfMissionBuilder` 和 `tools/VwfBlueprintComposer` 继续作为格式研究
+工具保留，可同步处理对象坐标、巡逻数组和五层网格；但 MOD 不再发布由它们
+生成的扩展关。任何候选都必须经过完整原版实机任务闭环，不能仅凭离线 A*
+或文件可载入就登记为可玩关卡。
 
 普通制作者不必手写这些 JSON。选择“文件 → 新建可运行关卡包向导”后可以：
 
@@ -113,7 +97,7 @@ dotnet run --project .\MapEditor.Tests\MapEditor.Tests.csproj -c Release
 ```
 
 设置 `M1937_TEST_VWF_DIRECTORY` 为 `Mod` 后，测试会对
-`1937m000.vwf`—`1937m014.vwf` 执行无修改字节等价 round-trip，并验证
+`1937m000.vwf`—`1937m011.vwf` 执行无修改字节等价 round-trip，并验证
 对象/参考坐标/动态占用/巡逻同步以及损坏、越界、scene 增删和容量变化拒绝。
 完整结果见
 [`docs/原生VWF安全写回测试报告.md`](docs/原生VWF安全写回测试报告.md)。
@@ -130,4 +114,4 @@ dotnet run --project .\MapEditor.Tests\MapEditor.Tests.csproj -c Release
 
 ![高级任务 Sidecar 可视化编辑](../Screenshots/MapEditor-v4-sidecar-authoring.jpg)
 
-![第 15 关拓扑、巡逻与任务分析](../Screenshots/MapEditor-module-overview.jpg)
+![原版关卡拓扑、巡逻与任务分析](../Screenshots/MapEditor-module-overview.jpg)

@@ -19,6 +19,7 @@ internal static class Program
             ReadsSyntheticGfl(temporaryDirectory);
             RewritesSyntheticGflBriefings(temporaryDirectory);
             InstallsSyntheticGflBriefings(temporaryDirectory);
+            PrunesSyntheticTrailingGflEntries(temporaryDirectory);
             RejectsTruncatedGfl(temporaryDirectory);
             DetectsLegacyHeaders();
             ReadsSyntheticSoundLibrary(temporaryDirectory);
@@ -238,6 +239,63 @@ internal static class Program
 
         byte[] mpeg = [0x00, 0x00, 0x01, 0xBA];
         Equal("MPEG-PS", LegacyFileDetector.DetectHeader(mpeg).Format, "SVT MPEG program stream detection");
+    }
+
+    private static void PrunesSyntheticTrailingGflEntries(
+        string directory)
+    {
+        var resourcePath = System.IO.Path.Combine(
+            directory,
+            "briefing-prune-source.gfl");
+        CreateSyntheticGfl(
+            resourcePath,
+            [
+                ("保留0.spr", Encoding.ASCII.GetBytes("retained zero")),
+                ("保留1.wav", CreateWaveFixture()),
+                ("Brief_012.psd", Encoding.ASCII.GetBytes("retired 12")),
+                ("Brief_013.psd", Encoding.ASCII.GetBytes("retired 13")),
+                ("Brief_014.psd", Encoding.ASCII.GetBytes("retired 14"))
+            ]);
+        var source = GflArchive.Open(resourcePath);
+        var indexPath = System.IO.Path.Combine(
+            directory,
+            "briefing-prune-source-index.gfl");
+        CreateSyntheticIndex(indexPath, source);
+        var outputResource = System.IO.Path.Combine(
+            directory,
+            "briefing-pruned.gfl");
+        var outputIndex = System.IO.Path.Combine(
+            directory,
+            "briefing-pruned-index.gfl");
+
+        var report = GflArchivePruner.RemoveTrailingEntries(
+            resourcePath,
+            indexPath,
+            outputResource,
+            outputIndex,
+            ["Brief_012.psd", "Brief_013.psd", "Brief_014.psd"]);
+        Equal(2, report.EntryCount, "pruned GFL retained count");
+        Equal(3, report.RemovedNames.Count, "pruned GFL removal count");
+        var output = GflArchive.Open(outputResource, outputIndex);
+        Equal("保留0.spr", output.Entries[0].OriginalName,
+            "pruned GFL preserves first numeric index");
+        Equal("保留1.wav", output.Entries[1].OriginalName,
+            "pruned GFL preserves second numeric index");
+
+        var unsafeResource = System.IO.Path.Combine(
+            directory,
+            "briefing-prune-unsafe.gfl");
+        var unsafeIndex = System.IO.Path.Combine(
+            directory,
+            "briefing-prune-unsafe-index.gfl");
+        Throws<InvalidDataException>(
+            () => GflArchivePruner.RemoveTrailingEntries(
+                resourcePath,
+                indexPath,
+                unsafeResource,
+                unsafeIndex,
+                ["保留1.wav"]),
+            "non-trailing GFL prune rejection");
     }
 
     private static void ReadsSyntheticSoundLibrary(string directory)

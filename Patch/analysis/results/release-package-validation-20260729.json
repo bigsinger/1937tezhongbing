@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "release": "v1.4.2-20260729",
+  "archive": "1937特种兵-Win10-Win11兼容补丁-v1.4.2-20260729.zip",
+  "sha256": "0013643947FCA34CDF573678916532904C1A5025F378505E581E045389DC1423",
+  "entry_count": 75,
+  "selector_levels": 12,
+  "retired_level_or_briefing_entries": 0,
+  "checks": {
+    "archive_sidecar_hash": "passed",
+    "per_entry_hash_manifest": "passed",
+    "forbidden_original_game_data": "passed",
+    "installer_known_exe_gate": "passed",
+    "installed_selector_catalog": "passed_12_levels",
+    "mission_sidecar_source_rebuild": "passed",
+    "sample_native_plugin_rebuild": "passed",
+    "uninstall_restore": "passed"
+  }
+}

@@ -12,7 +12,10 @@
 
 ![任务失败与重玩界面](Screenshots/failure-menu.png)
 
-这是一个从零实现的新游戏工程。游戏运行时使用 Godot 4.7.1 Standard 与 typed GDScript，旧资源研究和本地转换工具使用 .NET 10。
+这是一个从零实现的新游戏工程。游戏运行时使用 Godot 4.7.1 Standard 与
+typed GDScript，旧资源研究和本地转换工具使用 .NET 10。仓库中的稳定
+`Mod/` 是当前唯一产品内容基线；完全复刻的完成标准和实施顺序见
+[稳定 MOD 完全复刻开发实施方案](docs/MOD完全复刻开发实施方案.md)。
 
 ## 里程碑状态
 
@@ -47,41 +50,44 @@ serial_id = action_index * 9 + direction_index
 - Windows 10/11；
 - [.NET 10 SDK](https://dotnet.microsoft.com/)；
 - Godot 4.7.1 Standard（无须 .NET 版）；
-- 一份与当前已知哈希版本匹配的原版目录；
+- 已通过 Git LFS 取回完整 `Mod/` 内容；
 - 若导入目标位于 Git 工作树中，需要命令行可调用的 Git，以检查输出目录是否已被忽略。
 
-## 1. 检查原版目录
+## 1. 检查稳定 MOD 内容
 
-以下命令只读检查目录，不提取资源：
+以下命令只读检查仓库稳定 MOD，不提取资源：
 
 ```powershell
-dotnet run --project .\tools\ResourceTool -- inspect "E:\1937\1937tzb_1229"
+dotnet run --project .\tools\ResourceTool -- inspect ..\Mod
 ```
 
-已知版本的输出应包括 `Known version hashes match: True`、`GFL entries: 1394` 和 `Formal VWF levels: 12/12`。未知哈希版本不会被静默套用既有偏移。
+输出必须包括
+`Supported content profile: repository-mod-12-level-20260729`、
+`Supported content hashes match: True`、`GFL entries: 1394` 和
+`Formal VWF levels: 12/12`。未知哈希版本不会被静默套用既有偏移。
 
-## 2. 本地导入资源
+## 2. 从稳定 MOD 本地导入资源
 
 在 `Remake` 目录运行：
 
 ```powershell
-.\tools\Import-OriginalAssets.cmd "E:\1937\1937tzb_1229"
+.\tools\Import-ModAssets.cmd
 ```
 
 也可以显式指定输出目录：
 
 ```powershell
-.\tools\Import-OriginalAssets.cmd "E:\1937\1937tzb_1229" "D:\Mission1937-LocalAssets"
+.\tools\Import-ModAssets.cmd "D:\Mission1937-LocalAssets"
 ```
 
-等价的底层命令：
+需要对未修改原版做取证时，仍可显式使用兼容入口：
 
 ```powershell
-dotnet run --project .\tools\ResourceTool --configuration Release -- `
-  import "E:\1937\1937tzb_1229" ".\LocalAssets"
+.\tools\Import-OriginalAssets.cmd "E:\1937\1937tzb_1229"
 ```
 
-导入器会先完成版本哈希、输入/输出目录隔离和 Git 忽略规则检查。默认输出结构为：
+导入器会先完成稳定 MOD profile 哈希、输入/输出目录隔离和 Git 忽略规则
+检查。默认输出结构为：
 
 ```text
 LocalAssets/
@@ -168,7 +174,9 @@ godot --path .\game -- --level=m007
 
 脚本会在已被 Git 忽略的 `LocalBuild/1937Remake/` 生成
 `Play-1937-Remake.cmd`、Windows 可执行文件、PCK 和资源目录，并分别通过 PCK 加载路径与
-最终 `1937Remake.exe` 的 headless 冒烟测试。默认使用目录联接避免重复复制数百 MiB 资源；需要可移动目录时传入
+最终 `1937Remake.exe` 的 headless 冒烟测试。若本地资产缺失或不是稳定
+MOD profile，构建脚本会先自动执行 `Import-ModAssets.ps1`。默认使用目录
+联接避免重复复制数百 MiB 资源；需要可移动目录时传入
 `-AssetMode Copy`。完整说明见 [Windows 本地试玩包](docs/PLAYABLE_BUILD.md)。
 
 ## 文档
@@ -185,6 +193,7 @@ godot --path .\game -- --level=m007
 - [开发路线图与里程碑边界](docs/ROADMAP.md)
 - [开发环境、验证与 IDA Python 修复](docs/DEVELOPMENT.md)
 - [Windows 本地试玩包](docs/PLAYABLE_BUILD.md)
+- [稳定 MOD 完全复刻开发实施方案](docs/MOD完全复刻开发实施方案.md)
 - [资产收录与本地导入策略](ASSET_POLICY.md)
 
 ## 项目边界

@@ -522,7 +522,7 @@
                            Grid.Column="1" Margin="0,4,4,0"
                            GotKeyboardFocus="MissionMetadata_GotKeyboardFocus"
                            LostKeyboardFocus="MissionMetadata_LostKeyboardFocus"
-                           ToolTip="1–15；扩展关通常为 13–15" />
+                           ToolTip="稳定 MOD 仅支持原版关卡 1–12" />
                   <TextBlock Grid.Row="1" Grid.Column="2"
                              Text="骨架" VerticalAlignment="Center"
                              Margin="2,4,4,0" />

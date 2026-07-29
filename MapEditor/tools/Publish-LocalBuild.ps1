@@ -78,7 +78,7 @@ $files = @(
     target_framework = 'net10.0-windows'
     entry_point = '1937MapEditor.exe'
     tests = 'passed'
-    original_maps_round_trip = 'm000-m014'
+    original_maps_round_trip = 'm000-m011'
     asset_metadata_count = 1037
     files = $files
 } | ConvertTo-Json -Depth 5 |
@@ -88,6 +88,6 @@ $files = @(
 [pscustomobject]@{
     Executable = $executable
     Files = $files.Count
-    OriginalMaps = 15
+    OriginalMaps = 12
     AssetMetadata = 1037
 }

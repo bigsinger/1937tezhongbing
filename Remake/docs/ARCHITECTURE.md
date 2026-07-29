@@ -5,7 +5,7 @@
 工程把旧引擎格式解析、本地中间资产、新游戏数据和 Godot 运行时分开。Godot 不直接解析 GFL、VWF、DBL 或 SPR；.NET 工具先校验输入版本，再转换为 PNG、WAV 和版本化 JSON。任务目标则使用仓库内的新数据模型描述。
 
 ```text
-本地原版目录
+仓库稳定 Mod/（默认）或受支持的原版目录（取证兼容）
       │ 只读探针、已知版本 SHA-256、结构边界校验
       ▼
 .NET ResourceTool / ResourceFormats
@@ -43,7 +43,9 @@ game/data/world_pickups.json ───────────┤ 原实体身�
 
 ## 1. 输入探针与严格解析
 
-`GameDirectoryProbe` 检查目录结构、十二个正式关卡和已知文件 SHA-256。未知哈希版本不会被静默套用既有偏移。
+`GameDirectoryProbe` 检查目录结构、十二个正式关卡和已知文件 SHA-256。
+默认内容 profile 为 `repository-mod-12-level-20260729`；未知哈希版本不会
+被静默套用既有偏移。
 
 `GflArchive` 同时读取 `1937Resources.GFL` 和 `InterMedia.GFL`，逐条核对 1394 个名称、属性、payload 长度和绝对偏移。解析器采用“已知结构严格接受、未知变体明确拒绝”的策略；越界、尾随数据、重复名称或索引不一致都会终止导入。
 

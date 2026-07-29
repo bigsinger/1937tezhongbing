@@ -118,7 +118,7 @@ internal static class GameFrameProbe
             Console.Error.WriteLine(
                 "Usage: GameFrameProbe.exe GAME_DIR OUTPUT_DIR TEST_NAME [SECONDS] " +
                 "[nocapture] [nonintrusive] [forcecameracorners] " +
-                "[level=1..15]");
+                "[level=1..12]");
             return 2;
         }
 
@@ -145,9 +145,9 @@ internal static class GameFrameProbe
                 CultureInfo.InvariantCulture,
                 out requestedSelectorLevel) ||
              requestedSelectorLevel < 1 ||
-             requestedSelectorLevel > 15))
+             requestedSelectorLevel > 12))
             throw new ArgumentOutOfRangeException(
-                "level", "Selector level must be between 1 and 15.");
+                "level", "Selector level must be between 1 and 12.");
         int cameraMaximumX = -1;
         int cameraMaximumY = -1;
         if (forceCameraCorners)

@@ -7,6 +7,7 @@ $ErrorActionPreference = 'Stop'
 $remakeRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $solution = Join-Path $remakeRoot '1937Remake.slnx'
 $tests = Join-Path $PSScriptRoot 'ResourceFormats.Tests\ResourceFormats.Tests.csproj'
+$resourceTool = Join-Path $PSScriptRoot 'ResourceTool\ResourceTool.csproj'
 $game = Join-Path $remakeRoot 'game'
 $realAssetManifest = Join-Path $remakeRoot 'LocalAssets\converted\levels\m000\level.json'
 $localOcrScript = Join-Path `
@@ -23,6 +24,23 @@ if ($LASTEXITCODE -ne 0) {
 dotnet run --project $tests --configuration Release --no-build
 if ($LASTEXITCODE -ne 0) {
     throw "Resource format tests failed with exit code $LASTEXITCODE."
+}
+
+& (Join-Path $PSScriptRoot 'Test-ModParityContract.ps1')
+
+$modResource = Join-Path `
+    ([System.IO.Path]::GetDirectoryName($remakeRoot)) `
+    'Mod\1937Resources.GFL'
+if ((Test-Path -LiteralPath $modResource -PathType Leaf) -and
+    (Get-Item -LiteralPath $modResource).Length -gt 1000000) {
+    dotnet run --project $resourceTool --configuration Release --no-build -- `
+        inspect ([System.IO.Path]::GetDirectoryName($modResource))
+    if ($LASTEXITCODE -ne 0) {
+        throw "Stable Mod content-profile verification failed with exit code $LASTEXITCODE."
+    }
+}
+else {
+    Write-Host 'Stable Mod binary content is not materialized (for example, a Git LFS pointer); hash verification skipped.'
 }
 
 if ([string]::IsNullOrWhiteSpace($GodotExecutable) -and -not [string]::IsNullOrWhiteSpace($env:GODOT4)) {

@@ -309,7 +309,7 @@ Console.WriteLine("MapEditor atomic autosave/recovery tests passed.");
 
 var missionMap = MapDocument.Create("任务图", 20, 20);
 missionMap.Metadata["id"] = "editor-roundtrip";
-missionMap.Metadata["selector_level"] = "15";
+missionMap.Metadata["selector_level"] = "12";
 missionMap.Metadata["engine_mission"] = "11";
 missionMap.Objects.Add(new MapObject
 {
@@ -430,7 +430,7 @@ var sidecarImported = interchange.FindForImport(sidecarPath).Import(
         new Dictionary<string, string>()));
 if (sidecarImported.Tasks.Count != missionMap.Tasks.Count ||
     sidecarImported.Metadata["id"] != "editor-roundtrip" ||
-    sidecarImported.Metadata["selector_level"] != "15" ||
+    sidecarImported.Metadata["selector_level"] != "12" ||
     sidecarImported.Metadata["engine_mission"] != "11" ||
     sidecarImported.Tasks[1].SubjectDatabaseId != 77 ||
     sidecarImported.Tasks[1].RegionRadius != 3 ||
@@ -503,7 +503,7 @@ if (Directory.Exists(shippedSidecarDirectory))
                 $"Shipped sidecar schema round-trip failed: {shippedSidecar}");
     }
     Console.WriteLine(
-        "Three shipped .m1937mission.json files passed editor round-trip.");
+        "Shipped .m1937mission.json files passed editor round-trip.");
 }
 
 var assetCatalogForTest = Path.Combine(
@@ -558,16 +558,6 @@ if (!string.IsNullOrWhiteSpace(originalVwf))
         throw new InvalidOperationException(
             "Original asset enrichment test failed.");
     }
-    if (Path.GetFileName(originalVwf)
-            .Equals("1937m014.vwf",
-                StringComparison.OrdinalIgnoreCase) &&
-        !imported.BackgroundAsset.Equals(
-            "maps/m014/terrain.png",
-            StringComparison.OrdinalIgnoreCase))
-    {
-        throw new InvalidOperationException(
-            "Composite terrain/entity alias test failed.");
-    }
     var importedRoutes = imported.Objects.Count(
         item => item.PatrolWaypoints.Count > 0);
     if (importedRoutes == 0 ||
@@ -599,7 +589,7 @@ static void RunNativeVwfTests(
 {
     var roundTripRoot = Path.Combine(testRoot, "native-vwf-roundtrip");
     Directory.CreateDirectory(roundTripRoot);
-    var levels = Enumerable.Range(0, 15)
+    var levels = Enumerable.Range(0, 12)
         .Select(index => Path.Combine(
             vwfDirectory, $"1937m{index:D3}.vwf"))
         .ToArray();
@@ -607,7 +597,7 @@ static void RunNativeVwfTests(
     {
         throw new InvalidOperationException(
             "Native VWF matrix requires 1937m000.vwf through " +
-            "1937m014.vwf.");
+            "1937m011.vwf.");
     }
 
     foreach (var source in levels)
@@ -629,7 +619,7 @@ static void RunNativeVwfTests(
         }
     }
     Console.WriteLine(
-        "Native VWF no-change round-trip passed for m000-m014.");
+        "Native VWF no-change round-trip passed for m000-m011.");
 
     var baselineSource = levels[0];
     var changed = OriginalVwfImporter.Import(baselineSource);

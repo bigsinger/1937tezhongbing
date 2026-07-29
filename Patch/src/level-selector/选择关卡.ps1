@@ -1,5 +1,5 @@
 ﻿param(
-    [ValidateRange(0, 15)]
+    [ValidateRange(0, 12)]
     [int]$Level = 0,
     [switch]$StartImmediately,
     [switch]$SafeWindow,
@@ -271,8 +271,8 @@ if ($SafeWindow) {
 }
 
 if ($StartImmediately) {
-    if ($Level -lt 1 -or $Level -gt 15) {
-        throw 'StartImmediately requires Level in the range 1..15.'
+    if ($Level -lt 1 -or $Level -gt 12) {
+        throw 'StartImmediately requires Level in the range 1..12.'
     }
     $screen = [Windows.Forms.Screen]::PrimaryScreen.Bounds
     $startExpanded =
@@ -638,7 +638,7 @@ $missionHeading.Font = New-Object Drawing.Font(
 $missionPanel.Controls.Add($missionHeading)
 
 $missionHint = New-Object Windows.Forms.Label
-$missionHint.Text = '12 个原版任务；检测到扩展 VWF 时自动显示第 13—15 关'
+$missionHint.Text = '12 个原版任务，全部使用稳定 MOD 运行路径'
 $missionHint.Location = New-Object Drawing.Point(20, 45)
 $missionHint.AutoSize = $true
 $missionHint.ForeColor = $textMuted
@@ -659,12 +659,6 @@ $missionList.BorderStyle = [Windows.Forms.BorderStyle]::None
 [void]$missionList.Columns.Add('任务名称', 205)
 [void]$missionList.Columns.Add('资源', 120)
 foreach ($mission in $catalog.missions) {
-    if ([bool]$mission.is_extension) {
-        $extensionMap = Join-Path $gameDirectory ([string]$mission.vwf_name)
-        if (-not (Test-Path -LiteralPath $extensionMap -PathType Leaf)) {
-            continue
-        }
-    }
     $item = New-Object Windows.Forms.ListViewItem(
         ('第 {0:D2} 关' -f [int]$mission.number))
     [void]$item.SubItems.Add([string]$mission.title)
@@ -841,7 +835,7 @@ $status.ForeColor = $textMuted
 $form.Controls.Add($status)
 
 $savedLevel = Get-IniInt $runGameIni 'mod' 'StartLevel' 1
-if ($savedLevel -lt 1 -or $savedLevel -gt 15) { $savedLevel = 1 }
+if ($savedLevel -lt 1 -or $savedLevel -gt 12) { $savedLevel = 1 }
 $savedItem = $null
 foreach ($candidate in $missionList.Items) {
     if ([int]$candidate.Tag -eq $savedLevel) {

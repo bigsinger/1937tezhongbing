@@ -1,6 +1,6 @@
 param(
     [string]$ArchivePath = '',
-    [string]$OutputRoot = 'E:\1937\patch-v141-package-test'
+    [string]$OutputRoot = 'E:\1937\patch-v142-package-test'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -9,10 +9,10 @@ $repositoryRoot = [IO.Path]::GetFullPath(
 if ([string]::IsNullOrWhiteSpace($ArchivePath)) {
     $archiveItem = Get-ChildItem -LiteralPath (
         Join-Path $repositoryRoot 'Patch\release') `
-        -Filter '*v1.4.1-20260727.zip' -File |
+        -Filter '*v1.4.2-20260729.zip' -File |
         Select-Object -First 1
     if (-not $archiveItem) {
-        throw 'v1.4.1 release archive was not found.'
+        throw 'v1.4.2 release archive was not found.'
     }
     $ArchivePath = $archiveItem.FullName
 }
@@ -128,8 +128,7 @@ $installedChecks = @(
     'dinput.dll',
     'ddraw.dll',
     'Tools\MissionSidecar\MissionSidecar.Host.exe',
-    'Tools\MissionSidecar\build-manifest.json',
-    'Missions\m012.m1937mission.json')
+    'Tools\MissionSidecar\build-manifest.json')
 foreach ($relative in $installedChecks) {
     if (-not (Test-Path -LiteralPath (
                 Join-Path $target $relative) -PathType Leaf)) {
@@ -147,7 +146,7 @@ $levelCatalog = Get-ChildItem -LiteralPath $target -Filter '*.json' -File |
         try {
             $catalog = Get-Content -LiteralPath $_.FullName -Raw `
                 -Encoding UTF8 | ConvertFrom-Json
-            @($catalog.missions).Count -eq 15
+            @($catalog.missions).Count -eq 12
         }
         catch {
             $false
@@ -155,7 +154,7 @@ $levelCatalog = Get-ChildItem -LiteralPath $target -Filter '*.json' -File |
     } |
     Select-Object -First 1
 if (-not $launcherScript -or -not $levelCatalog) {
-    throw 'Installed launcher or 15-level catalog is missing.'
+    throw 'Installed launcher or 12-level catalog is missing.'
 }
 $installedCatalog = Get-Content -LiteralPath $levelCatalog.FullName `
     -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -164,8 +163,8 @@ $textBriefings = @($installedCatalog.missions | Where-Object {
     @($_.objectives).Count -eq 3 -and
     [bool]$_.replace_legacy_briefing
 })
-if ($textBriefings.Count -ne 15) {
-    throw 'Installed catalog does not contain 15 complete text briefings.'
+if ($textBriefings.Count -ne 12) {
+    throw 'Installed catalog does not contain 12 complete text briefings.'
 }
 $localizedInstalledPaths = @(
     $launcherScript.FullName,
@@ -261,7 +260,7 @@ foreach ($path in $localizedInstalledPaths) {
     mission_sidecar_manifest_verified = $true
     packaged_sidecar_source_compiles = $true
     packaged_plugin_source_compiles = $true
-    text_briefings_verified = 15
+    text_briefings_verified = 12
     original_game_data_files = 0
 } | ConvertTo-Json -Depth 4 |
     Set-Content -LiteralPath (
