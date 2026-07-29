@@ -16,6 +16,24 @@ if ([string]::IsNullOrWhiteSpace($OutputPath)) {
 }
 $IdentityRoot = (Resolve-Path -LiteralPath $IdentityRoot).Path
 
+function Get-CanonicalTextSha256 {
+    param([Parameter(Mandatory = $true)][string]$LiteralPath)
+
+    $text = [IO.File]::ReadAllText(
+        [IO.Path]::GetFullPath($LiteralPath),
+        [Text.Encoding]::UTF8)
+    $canonical = $text.Replace("`r`n", "`n").Replace("`r", "`n")
+    $bytes = [Text.UTF8Encoding]::new($false).GetBytes($canonical)
+    $sha256 = [Security.Cryptography.SHA256]::Create()
+    try {
+        return ([BitConverter]::ToString(
+            $sha256.ComputeHash($bytes))).Replace('-', '')
+    }
+    finally {
+        $sha256.Dispose()
+    }
+}
+
 $levels = [ordered]@{}
 $resolvedTotal = 0
 $unresolvedTotal = 0
@@ -65,9 +83,8 @@ for ($levelIndex = 0; $levelIndex -lt 12; ++$levelIndex) {
     $levels[$levelId] = [ordered]@{
         resolved_actor_count = $actors.Count
         unresolved_actor_count = $unresolvedCount
-        identity_catalog_sha256 = (
-            Get-FileHash -LiteralPath $identityPath -Algorithm SHA256
-        ).Hash
+        identity_catalog_sha256 =
+            Get-CanonicalTextSha256 -LiteralPath $identityPath
         actors = $actors
     }
 }
@@ -95,6 +112,7 @@ $document = [ordered]@{
         scene_index = 'stable VWF scene identity'
         runtime_faction_id = 'live RuntimeActorV1 +0x150 value at gameplay entry'
         vwf_faction_id = 'authored VWF faction value'
+        identity_catalog_hash = 'SHA-256 of UTF-8 text normalized to LF without BOM'
     }
     levels = $levels
 }
@@ -103,9 +121,13 @@ $document = [ordered]@{
     [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($OutputPath))
 ) | Out-Null
 $utf8NoBom = [Text.UTF8Encoding]::new($false)
+$catalogJson = (
+    ($document | ConvertTo-Json -Depth 20).
+        Replace("`r`n", "`n").
+        Replace("`r", "`n") + "`n")
 [IO.File]::WriteAllText(
     [IO.Path]::GetFullPath($OutputPath),
-    (($document | ConvertTo-Json -Depth 20) + [Environment]::NewLine),
+    $catalogJson,
     $utf8NoBom)
 Write-Host (
     "Original runtime actor catalog generated: $resolvedTotal resolved, " +

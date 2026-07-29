@@ -12,13 +12,14 @@
                       "runtime_index":  "capture-local actor-array index; never a VWF scene index",
                       "scene_index":  "stable VWF scene identity",
                       "runtime_faction_id":  "live RuntimeActorV1 +0x150 value at gameplay entry",
-                      "vwf_faction_id":  "authored VWF faction value"
+                      "vwf_faction_id":  "authored VWF faction value",
+                      "identity_catalog_hash":  "SHA-256 of UTF-8 text normalized to LF without BOM"
                   },
     "levels":  {
                    "m000":  {
                                 "resolved_actor_count":  54,
                                 "unresolved_actor_count":  8,
-                                "identity_catalog_sha256":  "0F2FC432A66F74BE625833D79979E7EB52C30889EEA3B43AC33C710CBF29FD78",
+                                "identity_catalog_sha256":  "FDB68898B289BDECB3F59264436007BE688B0393C06EF46BCA6FB5BF3717D065",
                                 "actors":  {
                                                "1415":  {
                                                             "runtime_index":  0,
@@ -619,7 +620,7 @@
                    "m001":  {
                                 "resolved_actor_count":  75,
                                 "unresolved_actor_count":  0,
-                                "identity_catalog_sha256":  "17A018A58CD80E42D89015EB40FE864EB8E8C5A89CB66A9E17E9BB4434AC67D0",
+                                "identity_catalog_sha256":  "F268971BAC1F8959A8805F5E896F775A50BDBB71C8497B572AAF742E9471D8AF",
                                 "actors":  {
                                                "1993":  {
                                                             "runtime_index":  0,
@@ -1451,7 +1452,7 @@
                    "m002":  {
                                 "resolved_actor_count":  34,
                                 "unresolved_actor_count":  0,
-                                "identity_catalog_sha256":  "7D1652F317DC741CFEB9ADE9C17E0060C413D67A2D96270737D71C155FDBA836",
+                                "identity_catalog_sha256":  "1152474ADF164732098936CB93FEA21D590ACCF11A24976BD38E2341BE0A9EC6",
                                 "actors":  {
                                                "69":  {
                                                           "runtime_index":  0,
@@ -1832,7 +1833,7 @@
                    "m003":  {
                                 "resolved_actor_count":  53,
                                 "unresolved_actor_count":  0,
-                                "identity_catalog_sha256":  "DC3675635FF0AB24F159A6B6664492E4F3C358CD394FA428B0D243A7A929A988",
+                                "identity_catalog_sha256":  "D31366161D3D60C7DF4101C435ABAF6799AB063985C4455AC3BAD01695F13D57",
                                 "actors":  {
                                                "806":  {
                                                            "runtime_index":  0,
@@ -2422,7 +2423,7 @@
                    "m004":  {
                                 "resolved_actor_count":  114,
                                 "unresolved_actor_count":  2,
-                                "identity_catalog_sha256":  "062121926FF6BF396BB47CDE6095CD48F39CE6A82EECEDC8B98CE2CAE7E9069D",
+                                "identity_catalog_sha256":  "9DDB183120585672DC7D6D7F45C52158C90CF8480F0B1B929452298A6420D459",
                                 "actors":  {
                                                "2530":  {
                                                             "runtime_index":  0,
@@ -3683,7 +3684,7 @@
                    "m005":  {
                                 "resolved_actor_count":  92,
                                 "unresolved_actor_count":  0,
-                                "identity_catalog_sha256":  "B56A028E72B3839F523ECC560F8AF0AC3210BA634EDE9B80503C01209BD92AE9",
+                                "identity_catalog_sha256":  "5FEFC80ABDDEEED6E08F006301E92ACB7E402E941971EA6796EB55636F298361",
                                 "actors":  {
                                                "549":  {
                                                            "runtime_index":  0,
@@ -4702,7 +4703,7 @@
                    "m006":  {
                                 "resolved_actor_count":  44,
                                 "unresolved_actor_count":  0,
-                                "identity_catalog_sha256":  "C26EAA33C4A4FA3A098AE7C1D5BB844CFA3C48447FC319C300C0BF6B0A4BA293",
+                                "identity_catalog_sha256":  "70C635B093BBAEF027F1DCFEB1C52A84E5E5A6B8CD217B8FA2752D690888E037",
                                 "actors":  {
                                                "1097":  {
                                                             "runtime_index":  0,
@@ -5193,7 +5194,7 @@
                    "m007":  {
                                 "resolved_actor_count":  99,
                                 "unresolved_actor_count":  0,
-                                "identity_catalog_sha256":  "FBB395AA515587E70C22FEF3FA522AA4E44BAB64906BE14CB80B84802DC7DED7",
+                                "identity_catalog_sha256":  "F24F5FACE3F27A47DBEAF83970271A13F3A62CAFD89935E158FF5C8190A5027D",
                                 "actors":  {
                                                "2264":  {
                                                             "runtime_index":  0,
@@ -6289,7 +6290,7 @@
                    "m008":  {
                                 "resolved_actor_count":  28,
                                 "unresolved_actor_count":  0,
-                                "identity_catalog_sha256":  "479D9455B8FAD3DFDC0140AB3C9654B41A9C11B8992AC7D0699D32A55C9500C9",
+                                "identity_catalog_sha256":  "33E84BE634C4498333F771607351FBB56EF9FB79C5469FAE6EAA25F7E92ED990",
                                 "actors":  {
                                                "539":  {
                                                            "runtime_index":  0,
@@ -6604,7 +6605,7 @@
                    "m009":  {
                                 "resolved_actor_count":  48,
                                 "unresolved_actor_count":  0,
-                                "identity_catalog_sha256":  "DDD3895914B9705DEBA663541FDA741AAB16BEC1663C302DE6C9F070602AF1C6",
+                                "identity_catalog_sha256":  "A19B3AB3EE396B548D1A1E72E7106979C24FA469AADBD1B2F4370A213E49A62C",
                                 "actors":  {
                                                "690":  {
                                                            "runtime_index":  0,
@@ -7139,7 +7140,7 @@
                    "m010":  {
                                 "resolved_actor_count":  81,
                                 "unresolved_actor_count":  0,
-                                "identity_catalog_sha256":  "DDABE5F374D4A9E3AFA8314C4E5D8E047E9FBB50C29A7933F94EF29A86D7C9A4",
+                                "identity_catalog_sha256":  "67972411433DC146438FB672310192D98F82952F3B972A3554E0160D9E464F0C",
                                 "actors":  {
                                                "1126":  {
                                                             "runtime_index":  0,
@@ -8037,7 +8038,7 @@
                    "m011":  {
                                 "resolved_actor_count":  40,
                                 "unresolved_actor_count":  0,
-                                "identity_catalog_sha256":  "E579F68F38DAA95866F44085FAE8A103B3567621C87516F5EBC2450E51B2C9D6",
+                                "identity_catalog_sha256":  "ADBCA0C8DA315AAD511DCAD3B74E5C01BB2ADC216213452A334EE0F0563112AA",
                                 "actors":  {
                                                "759":  {
                                                            "runtime_index":  7,

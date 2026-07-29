@@ -14,6 +14,25 @@ if ([string]::IsNullOrWhiteSpace($CatalogPath)) {
 if (-not (Test-Path -LiteralPath $CatalogPath -PathType Leaf)) {
     throw "Original runtime actor catalog is missing: $CatalogPath"
 }
+
+function Get-CanonicalTextSha256 {
+    param([Parameter(Mandatory = $true)][string]$LiteralPath)
+
+    $text = [IO.File]::ReadAllText(
+        [IO.Path]::GetFullPath($LiteralPath),
+        [Text.Encoding]::UTF8)
+    $canonical = $text.Replace("`r`n", "`n").Replace("`r", "`n")
+    $bytes = [Text.UTF8Encoding]::new($false).GetBytes($canonical)
+    $sha256 = [Security.Cryptography.SHA256]::Create()
+    try {
+        return ([BitConverter]::ToString(
+            $sha256.ComputeHash($bytes))).Replace('-', '')
+    }
+    finally {
+        $sha256.Dispose()
+    }
+}
+
 $catalog = Get-Content -LiteralPath $CatalogPath `
     -Raw -Encoding UTF8 | ConvertFrom-Json
 if ([int]$catalog.schema_version -ne 1 -or
@@ -36,7 +55,7 @@ for ($levelIndex = 0; $levelIndex -lt 12; ++$levelIndex) {
         $identityRoot `
         "$levelId-runtime-actors-v1.json"
     if (-not (Test-Path -LiteralPath $identityPath -PathType Leaf) -or
-        (Get-FileHash -LiteralPath $identityPath -Algorithm SHA256).Hash -ne
+        (Get-CanonicalTextSha256 -LiteralPath $identityPath) -ne
             [string]$level.identity_catalog_sha256) {
         throw "$levelId product actor data is stale against its identity evidence."
     }

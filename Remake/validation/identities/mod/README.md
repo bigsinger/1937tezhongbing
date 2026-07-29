@@ -24,5 +24,7 @@ they provide 762 resolved identities and ten unresolved actors.
 The generator is `Remake/tools/Build-ModRuntimeIdentityCatalog.ps1`.
 `Build-OriginalRuntimeActorCatalog.ps1` derives the smaller product catalog
 `game/data/original_runtime_actor_catalog.json`, including five verified live
-faction overrides. Source hashes and totals are checked in CI, and m000 is
-additionally checked against the locally imported VWF manifest when available.
+faction overrides. Source hashes and totals are checked in CI. Identity JSON
+hashes use UTF-8 text normalized to LF without BOM, so Windows and GitHub
+checkouts produce the same evidence digest. m000 is additionally checked
+against the locally imported VWF manifest when available.

@@ -60,6 +60,24 @@ function Get-Sha256 {
     return (Get-FileHash -LiteralPath $LiteralPath -Algorithm SHA256).Hash
 }
 
+function Get-CanonicalTextSha256 {
+    param([Parameter(Mandatory = $true)][string]$LiteralPath)
+
+    $text = [IO.File]::ReadAllText(
+        [IO.Path]::GetFullPath($LiteralPath),
+        [Text.Encoding]::UTF8)
+    $canonical = $text.Replace("`r`n", "`n").Replace("`r", "`n")
+    $bytes = [Text.UTF8Encoding]::new($false).GetBytes($canonical)
+    $sha256 = [Security.Cryptography.SHA256]::Create()
+    try {
+        return ([BitConverter]::ToString(
+            $sha256.ComputeHash($bytes))).Replace('-', '')
+    }
+    finally {
+        $sha256.Dispose()
+    }
+}
+
 function Read-Json {
     param([Parameter(Mandatory = $true)][string]$LiteralPath)
 
@@ -205,7 +223,8 @@ for ($levelIndex = 0; $levelIndex -lt 12; ++$levelIndex) {
     $provenanceLevels[$levelId] = [ordered]@{
         entry_snapshot_sha256 = Get-Sha256 -LiteralPath $entryPath
         steady_snapshot_sha256 = Get-Sha256 -LiteralPath $steadyPath
-        identity_catalog_sha256 = Get-Sha256 -LiteralPath $identityPath
+        identity_catalog_sha256 =
+            Get-CanonicalTextSha256 -LiteralPath $identityPath
         player_count = $players.Count
     }
 }
@@ -260,6 +279,7 @@ $baseline = [ordered]@{
     provenance = [ordered]@{
         capture_method = 'process-local read-only RuntimeActorV1 inventory snapshots'
         actor_identity_method = 'exact runtime actor to VWF scene correlation'
+        identity_catalog_hash = 'SHA-256 of UTF-8 text normalized to LF without BOM'
         levels = $provenanceLevels
     }
     levels = $levels
@@ -270,13 +290,21 @@ foreach ($outputPath in @($BaselinePath, $GameDataPath)) {
     [System.IO.Directory]::CreateDirectory($parent) | Out-Null
 }
 $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+$baselineJson = (
+    ($baseline | ConvertTo-Json -Depth 24).
+        Replace("`r`n", "`n").
+        Replace("`r", "`n") + "`n")
+$gameDataJson = (
+    ($gameData | ConvertTo-Json -Depth 24).
+        Replace("`r`n", "`n").
+        Replace("`r", "`n") + "`n")
 [System.IO.File]::WriteAllText(
     [System.IO.Path]::GetFullPath($BaselinePath),
-    (($baseline | ConvertTo-Json -Depth 24) + [Environment]::NewLine),
+    $baselineJson,
     $utf8NoBom)
 [System.IO.File]::WriteAllText(
     [System.IO.Path]::GetFullPath($GameDataPath),
-    (($gameData | ConvertTo-Json -Depth 24) + [Environment]::NewLine),
+    $gameDataJson,
     $utf8NoBom)
 
 Write-Host (
