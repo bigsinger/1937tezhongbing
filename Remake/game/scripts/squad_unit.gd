@@ -37,6 +37,7 @@ signal ammo_changed(unit: Node2D, magazine: int, reserve: int)
 var display_name: String = "队员"
 var body_color: Color = Color.WHITE
 var selected: bool = false
+var action_progress_ratio := -1.0
 var target_position: Vector2
 var movement_path := PackedVector2Array()
 var movement_path_index := 0
@@ -288,6 +289,11 @@ func configure_combat(
 
 func set_selected(value: bool) -> void:
 	selected = value and is_alive
+	queue_redraw()
+
+
+func set_action_progress(value: float) -> void:
+	action_progress_ratio = clampf(value, 0.0, 1.0) if value >= 0.0 else -1.0
 	queue_redraw()
 
 
@@ -1000,6 +1006,7 @@ func _die(killer: Node2D) -> void:
 		return
 	is_alive = false
 	selected = false
+	action_progress_ratio = -1.0
 	clear_combat_target()
 	_interrupt_combat_action()
 	cancel_path()
@@ -1110,6 +1117,18 @@ func _draw() -> void:
 		draw_rect(
 			Rect2(-17.0, health_y + 1.0, 34.0 * health_ratio, 3.0),
 			Color(0.30, 0.78, 0.30) if health_ratio > 0.35 else Color(0.92, 0.25, 0.18),
+			true,
+		)
+	if action_progress_ratio >= 0.0:
+		var progress_y := -maxf(sprite_anchor.y, 28.0) - 20.0
+		draw_rect(
+			Rect2(-18.0, progress_y, 36.0, 4.0),
+			Color(0.08, 0.08, 0.07, 0.88),
+			true,
+		)
+		draw_rect(
+			Rect2(-17.0, progress_y + 1.0, 34.0 * action_progress_ratio, 2.0),
+			Color(0.88, 0.70, 0.22),
 			true,
 		)
 	if selected:

@@ -10,11 +10,16 @@ namespace m1937::sdk {
 // when SDK layout tests are built by a 64-bit host compiler.
 #pragma pack(push, 1)
 struct RuntimeActorV1 final {
-    std::byte unknown_000[100];
+    std::byte unknown_000[60];
+    // sub_4527E0(1) sets this when burial replaces the source corpse.
+    std::int32_t hidden_or_removed;        // +0x03C
+    std::byte unknown_040[36];
     // Matches VWF database_header_values[2]. This is a runtime actor type,
     // not the authored DBL database_entry_id.
     std::int32_t runtime_type;            // +0x064
-    std::byte unknown_068[12];
+    std::byte unknown_068[8];
+    // Actor 78 becomes state 3 when either copied inventory has entries.
+    std::int32_t world_object_state;       // +0x070
     std::int32_t faction_id;              // +0x074
     std::byte unknown_078[96];
     std::int32_t world_x;                 // +0x0D8
@@ -39,10 +44,16 @@ struct RuntimeActorV1 final {
     std::int32_t selected_for_command;      // +0x1AC
     std::byte unknown_1b0[16];
     std::int32_t current_hit_points;        // +0x1C0
-    std::byte unknown_1c4[16];
+    std::byte unknown_1c4[8];
+    // Burial completion sets this on the source target.
+    std::int32_t burial_resolved;          // +0x1CC
+    std::byte unknown_1d0[4];
     std::int32_t search_or_return_active;   // +0x1D4
     std::int32_t movement_active;           // +0x1D8
-    std::byte unknown_1dc[32];
+    std::byte unknown_1dc[16];
+    // Command kind 4 uses this pending/active slot.
+    std::int32_t burial_command_active;     // +0x1EC
+    std::byte unknown_1f0[12];
     std::int32_t movement_path_state;       // +0x1FC
     std::byte unknown_200[8];
     std::int32_t movement_mode;             // +0x208
@@ -66,7 +77,10 @@ struct RuntimeActorV1 final {
     std::int32_t target_lost;               // +0x254
     std::byte unknown_258[4];
     std::int32_t reaction_state;            // +0x25C
-    std::byte unknown_260[48];
+    std::byte unknown_260[40];
+    // Set after the worker reaches the corpse and the 100-limit counter starts.
+    std::int32_t burial_action_started;     // +0x288
+    std::byte unknown_28c[4];
     union {
         // Historical SDK name retained for source compatibility.
         std::int32_t path_override_active;   // +0x290
@@ -116,6 +130,8 @@ struct RuntimeViewportControllerV1 final {
 #pragma pack(pop)
 
 static_assert(offsetof(RuntimeActorV1, runtime_type) == 0x064);
+static_assert(offsetof(RuntimeActorV1, hidden_or_removed) == 0x03C);
+static_assert(offsetof(RuntimeActorV1, world_object_state) == 0x070);
 static_assert(offsetof(RuntimeActorV1, faction_id) == 0x074);
 static_assert(offsetof(RuntimeActorV1, world_x) == 0x0D8);
 static_assert(offsetof(RuntimeActorV1, world_height) == 0x0DC);
@@ -133,8 +149,10 @@ static_assert(offsetof(RuntimeActorV1, command_variant) == 0x1A4);
 static_assert(offsetof(RuntimeActorV1, command_pending) == 0x1A8);
 static_assert(offsetof(RuntimeActorV1, selected_for_command) == 0x1AC);
 static_assert(offsetof(RuntimeActorV1, current_hit_points) == 0x1C0);
+static_assert(offsetof(RuntimeActorV1, burial_resolved) == 0x1CC);
 static_assert(offsetof(RuntimeActorV1, search_or_return_active) == 0x1D4);
 static_assert(offsetof(RuntimeActorV1, movement_active) == 0x1D8);
+static_assert(offsetof(RuntimeActorV1, burial_command_active) == 0x1EC);
 static_assert(offsetof(RuntimeActorV1, movement_path_state) == 0x1FC);
 static_assert(offsetof(RuntimeActorV1, movement_mode) == 0x208);
 static_assert(offsetof(RuntimeActorV1, default_attack_type) == 0x20C);
@@ -147,6 +165,7 @@ static_assert(offsetof(RuntimeActorV1, search_delay_limit) == 0x248);
 static_assert(offsetof(RuntimeActorV1, contact_state) == 0x250);
 static_assert(offsetof(RuntimeActorV1, target_lost) == 0x254);
 static_assert(offsetof(RuntimeActorV1, reaction_state) == 0x25C);
+static_assert(offsetof(RuntimeActorV1, burial_action_started) == 0x288);
 static_assert(offsetof(RuntimeActorV1, path_override_active) == 0x290);
 static_assert(offsetof(RuntimeActorV1, special_attention_hold) == 0x290);
 static_assert(sizeof(RuntimeActorV1) == 0x294);

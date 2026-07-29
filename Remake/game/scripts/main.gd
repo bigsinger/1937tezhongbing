@@ -39,6 +39,8 @@ const LAND_MINE_SCRIPT: Script = preload("res://scripts/land_mine.gd")
 const LEGACY_SPECIAL_ACTION_PROFILES: Script = preload("res://scripts/legacy_special_action_profiles.gd")
 const LEGACY_SPECIAL_WORLD_OBJECT_SCRIPT: Script = preload("res://scripts/legacy_special_world_object.gd")
 const LEGACY_AI_CONTROL_EFFECT_SCRIPT: Script = preload("res://scripts/legacy_ai_control_effect.gd")
+const LEGACY_OBSERVATION_BEACON_SCRIPT: Script = preload("res://scripts/legacy_observation_beacon.gd")
+const LEGACY_BURIAL_CACHE_SCRIPT: Script = preload("res://scripts/legacy_burial_cache.gd")
 const WORLD_DEPTH: Script = preload("res://scripts/world_depth.gd")
 const NAVIGATION_GRID_DATA: Script = preload("res://scripts/navigation_grid_data.gd")
 const DYNAMIC_OCCUPANCY_GRID: Script = preload("res://scripts/dynamic_occupancy_grid.gd")
@@ -55,6 +57,8 @@ const QUICK_SAVE_SLOT := "quick"
 const AUTO_SAVE_SLOT := "autosave"
 const ORIGINAL_CHEAT_COMPLETE := "FLIPMISSION"
 const ORIGINAL_CHEAT_ABOUT := "LOVEBABY"
+const ORIGINAL_BURIAL_GRID_SIZE := Vector2i(32, 16)
+const ORIGINAL_BURIAL_COUNTER_LIMIT := 100
 const FORMAL_LEVEL_IDS: Array[String] = [
 	"m000",
 	"m001",
@@ -210,12 +214,13 @@ var right_drag_current_screen := Vector2.ZERO
 var original_force_target_held := false
 var sight_observation_mode := false
 var sight_target_pending := false
-var sight_beacons: Array[Dictionary] = []
+var sight_beacon: Node2D
+var sight_observation_target: ENEMY_UNIT
 var burial_mode := false
 var burial_target: ENEMY_UNIT
 var burial_worker: SQUAD_UNIT
-var burial_progress := 0.0
-const BURIAL_SECONDS := 1.6
+var burial_progress_ticks := 0
+var burial_action_started := false
 var minimap_refresh_elapsed := 0.0
 var original_cheat_buffer := ""
 var pending_initial_briefing_level := ""
@@ -259,6 +264,7 @@ var deployed_mines: Array[Node2D] = []
 var legacy_special_world_objects: Array[Node2D] = []
 var legacy_ai_control_effects: Array[Node] = []
 var legacy_deployment_targets: Array[Node2D] = []
+var legacy_burial_caches: Array[Node2D] = []
 var buried_enemy_scene_indices: Dictionary = {}
 var field_inventory: Dictionary = {}
 var selected_backpack_item_id := 0
@@ -415,6 +421,12 @@ func _load_mission_graph(level_id: String) -> void:
 
 
 func load_imported_level(level_id: String = LEVEL_VIEW.DEFAULT_LEVEL_ID) -> bool:
+	_cancel_burial_command()
+	_remove_sight_beacon()
+	_clear_sight_observation_target()
+	sight_observation_mode = false
+	sight_target_pending = false
+	burial_mode = false
 	for mine: Node2D in deployed_mines:
 		if is_instance_valid(mine):
 			mine.queue_free()
@@ -431,6 +443,10 @@ func load_imported_level(level_id: String = LEVEL_VIEW.DEFAULT_LEVEL_ID) -> bool
 		if is_instance_valid(deployment_target):
 			deployment_target.queue_free()
 	legacy_deployment_targets.clear()
+	for burial_cache: Node2D in legacy_burial_caches:
+		if is_instance_valid(burial_cache):
+			burial_cache.queue_free()
+	legacy_burial_caches.clear()
 	field_pickups.clear()
 	explosive_props.clear()
 	field_inventory.clear()
@@ -1076,15 +1092,6 @@ func _process(delta: float) -> void:
 	_update_context_cursor()
 	_process_enemy_ground_pickups()
 	_update_tactical_sight_visibility()
-	if burial_target != null and is_instance_valid(burial_target):
-		if burial_worker == null or not is_instance_valid(burial_worker) or not burial_worker.is_alive:
-			burial_target = null
-		else:
-			if burial_worker.position.distance_to(burial_target.position) <= 52.0:
-				burial_progress = minf(burial_progress + maxf(delta, 0.0) / BURIAL_SECONDS, 1.0)
-				update_status("掩埋中 %d%%" % int(burial_progress * 100.0))
-				if burial_progress >= 1.0:
-					_finish_burial()
 	if mission_direction_runtime != null:
 		mission_direction_runtime.advance_time(maxf(delta, 0.0))
 	if mission_ai_coordinator != null:
@@ -1130,6 +1137,11 @@ func _process(delta: float) -> void:
 	level_camera.position += direction * CAMERA_PAN_SPEED * delta / level_camera.zoom.x
 	clamp_level_camera()
 
+
+func _physics_process(_delta: float) -> void:
+	_advance_burial_command_world_tick()
+
+
 func _update_context_cursor() -> void:
 	if burial_mode:
 		Input.set_default_cursor_shape(Input.CURSOR_POINTING_HAND)
@@ -1141,20 +1153,24 @@ func _update_context_cursor() -> void:
 		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
 
 func _update_tactical_sight_visibility() -> void:
-	var hovered_enemy: ENEMY_UNIT = enemy_at_world_point(_mouse_world_position()) if sight_observation_mode else null
+	if (
+		sight_observation_target != null
+		and (
+			not is_instance_valid(sight_observation_target)
+			or not sight_observation_target.is_alive
+			or sight_observation_target.faction_id != 1
+		)
+	):
+		_clear_sight_observation_target()
+	var hovered_enemy: ENEMY_UNIT = (
+		enemy_at_world_point(_mouse_world_position())
+		if sight_target_pending
+		else null
+	)
 	for enemy: ENEMY_UNIT in enemies:
-		enemy.set_tactical_ranges_visible(enemy == hovered_enemy)
-	# Observation beacons are transient traps: the first enemy that steps onto
-	# one exposes its fan once, then the beacon is consumed and never saved.
-	for index: int in range(sight_beacons.size() - 1, -1, -1):
-		var beacon := sight_beacons[index]
-		var beacon_position := beacon.get("position", Vector2.ZERO) as Vector2
-		for enemy: ENEMY_UNIT in enemies:
-			if enemy.is_alive and enemy.position.distance_to(beacon_position) <= 28.0:
-				enemy.set_tactical_ranges_visible(true)
-				sight_beacons.remove_at(index)
-				queue_redraw()
-				break
+		enemy.set_tactical_ranges_visible(
+			enemy == hovered_enemy or enemy == sight_observation_target
+		)
 
 
 func _mouse_edge_scroll_direction() -> Vector2:
@@ -1304,8 +1320,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _handle_original_left_click(world_position: Vector2, additive: bool) -> void:
 	if burial_mode:
-		if _try_bury_at(world_position):
-			burial_mode = false
+		_try_bury_at(world_position)
+		burial_mode = false
 		return
 	if sight_target_pending:
 		_select_sight_observation_target(world_position)
@@ -1321,6 +1337,8 @@ func _handle_original_left_click(world_position: Vector2, additive: bool) -> voi
 		if unit.is_alive and unit.contains_parent_point(world_position):
 			handle_selection(world_position, additive)
 			return
+	if _try_interact_burial_cache_at(world_position):
+		return
 	if _try_issue_legacy_world_object_deployment(world_position):
 		return
 	var combat_target: Node2D = enemy_at_world_point(world_position)
@@ -1397,8 +1415,10 @@ func _handle_original_key_action(action: String, key_event: InputEventKey) -> bo
 		"sight_mode":
 			_toggle_sight_observation()
 		"burial_mode":
-			burial_mode = not burial_mode
-			update_status("掩埋模式：%s" % ("点击阵亡敌人进行处理" if burial_mode else "关闭"))
+			burial_mode = true
+			sight_observation_mode = false
+			sight_target_pending = false
+			update_status("掩埋模式：点击阵亡的敌军目标")
 		"quick_save":
 			_save_game()
 		"quick_load":
@@ -1474,7 +1494,12 @@ func _select_units_in_screen_rect(screen_rect: Rect2, additive: bool) -> void:
 func _try_bury_at(world_point: Vector2) -> bool:
 	var corpse: ENEMY_UNIT
 	for enemy: ENEMY_UNIT in enemies:
-		if not enemy.is_alive and enemy.contains_parent_point(world_point):
+		if (
+			not enemy.is_alive
+			and enemy.faction_id == 1
+			and not buried_enemy_scene_indices.has(int(enemy.scene_index))
+			and enemy.contains_parent_point(world_point)
+		):
 			corpse = enemy
 			break
 	if corpse == null:
@@ -1482,35 +1507,235 @@ func _try_bury_at(world_point: Vector2) -> bool:
 		return false
 	burial_target = corpse
 	burial_worker = selected_units[0] if not selected_units.is_empty() else null
-	burial_progress = 0.0
+	burial_progress_ticks = 0
+	burial_action_started = false
 	if burial_worker == null:
-		burial_target = null
+		_cancel_burial_command()
 		update_status("请先选择执行掩埋的队员")
 		return false
-	if burial_worker.position.distance_to(corpse.position) > 52.0:
-		burial_worker.issue_move(corpse.position)
+	burial_worker.clear_combat_target()
+	if not is_original_burial_range(burial_worker.position, corpse.position):
+		_issue_burial_approach_path()
 	update_status("已下达掩埋命令，队员将先接近目标")
-	return true
-	var scene_index := int(corpse.scene_index)
-	if scene_index >= 0:
-		buried_enemy_scene_indices[scene_index] = true
-	corpse.visible = false
-	corpse.process_mode = Node.PROCESS_MODE_DISABLED
-	update_status("已处理敌军尸体，避免其被巡逻队发现")
 	return true
 
 func _finish_burial() -> void:
-	# Kept as a small lifecycle hook for the timed interaction path. Existing
-	# recovered corpse state is applied by _try_bury_at when the action resolves.
-	if burial_target != null and is_instance_valid(burial_target):
-		var scene_index := int(burial_target.scene_index)
-		if scene_index >= 0:
-			buried_enemy_scene_indices[scene_index] = true
-		burial_target.visible = false
-		burial_target.process_mode = Node.PROCESS_MODE_DISABLED
+	if (
+		burial_target == null
+		or not is_instance_valid(burial_target)
+		or burial_worker == null
+		or not is_instance_valid(burial_worker)
+	):
+		_cancel_burial_command()
+		return
+	var scene_index := int(burial_target.scene_index)
+	_spawn_legacy_burial_cache(
+		burial_target.position,
+		scene_index,
+		burial_target.inventory_snapshot(),
+		burial_target.backpack_snapshot(),
+	)
+	if scene_index >= 0:
+		buried_enemy_scene_indices[scene_index] = true
+	burial_target.visible = false
+	burial_target.process_mode = Node.PROCESS_MODE_DISABLED
+	update_status("掩埋完成：已生成原版藏尸处，尸体物品保留其中")
+	_cancel_burial_command()
+
+
+func _advance_burial_command_world_tick() -> void:
+	if burial_target == null:
+		return
+	if (
+		not is_instance_valid(burial_target)
+		or burial_target.is_alive
+		or burial_target.faction_id != 1
+		or burial_worker == null
+		or not is_instance_valid(burial_worker)
+		or not burial_worker.is_alive
+	):
+		_cancel_burial_command()
+		return
+	if not is_original_burial_range(burial_worker.position, burial_target.position):
+		if burial_action_started:
+			burial_action_started = false
+			burial_progress_ticks = 0
+			burial_worker.set_action_progress(-1.0)
+		if (
+			burial_worker.movement_path_index >= burial_worker.movement_path.size()
+			and not burial_worker.position.is_equal_approx(burial_target.position)
+		):
+			_issue_burial_approach_path()
+		return
+	if not burial_action_started:
+		burial_action_started = true
+		burial_progress_ticks = 0
+		burial_worker.cancel_path()
+		_face_actor_toward(burial_worker, burial_target.position)
+	burial_progress_ticks += 1
+	burial_worker.set_action_progress(
+		clampf(
+			float(burial_progress_ticks) / float(ORIGINAL_BURIAL_COUNTER_LIMIT),
+			0.0,
+			1.0,
+		)
+	)
+	update_status(
+		"掩埋中 %d%%"
+		% mini(
+			int(
+				100.0
+				* float(burial_progress_ticks)
+				/ float(ORIGINAL_BURIAL_COUNTER_LIMIT)
+			),
+			100,
+		)
+	)
+	# sub_456CD0 completes only when the counter is strictly greater than 100.
+	if burial_progress_ticks > ORIGINAL_BURIAL_COUNTER_LIMIT:
+		_finish_burial()
+
+
+func _issue_burial_approach_path() -> void:
+	if (
+		burial_worker == null
+		or burial_target == null
+		or not is_instance_valid(burial_worker)
+		or not is_instance_valid(burial_target)
+	):
+		return
+	var path := PackedVector2Array()
+	if dynamic_occupancy != null and burial_worker.scene_index >= 0:
+		path = dynamic_occupancy.find_path_for_scene(
+			burial_worker.scene_index,
+			burial_worker.position,
+			burial_target.position,
+		)
+	elif navigation_grid != null:
+		path = navigation_grid.find_path(
+			burial_worker.position,
+			burial_target.position,
+			true,
+		)
+	else:
+		path.append(burial_target.position)
+	if path.is_empty() and not is_original_burial_range(
+		burial_worker.position, burial_target.position
+	):
+		burial_worker.cancel_path()
+		update_status("无法到达该尸体附近")
+		return
+	burial_worker.issue_path(path)
+
+
+func _cancel_burial_command() -> void:
+	if burial_worker != null and is_instance_valid(burial_worker):
+		burial_worker.set_action_progress(-1.0)
 	burial_target = null
 	burial_worker = null
-	burial_progress = 0.0
+	burial_progress_ticks = 0
+	burial_action_started = false
+
+
+static func is_original_burial_range(
+	worker_position: Vector2,
+	target_position: Vector2,
+) -> bool:
+	var worker_cell := Vector2i(
+		floori(worker_position.x / float(ORIGINAL_BURIAL_GRID_SIZE.x)),
+		floori(worker_position.y / float(ORIGINAL_BURIAL_GRID_SIZE.y)),
+	)
+	var target_cell := Vector2i(
+		floori(target_position.x / float(ORIGINAL_BURIAL_GRID_SIZE.x)),
+		floori(target_position.y / float(ORIGINAL_BURIAL_GRID_SIZE.y)),
+	)
+	return (
+		absi(worker_cell.x - target_cell.x) <= 1
+		and absi(worker_cell.y - target_cell.y) <= 1
+	)
+
+
+static func _face_actor_toward(actor: Node2D, target_position: Vector2) -> void:
+	var direction := target_position - actor.position
+	if direction.is_zero_approx():
+		return
+	actor.set_animation_group(SQUAD_UNIT.direction_group_index(direction))
+	actor.apply_idle_frame()
+	actor.queue_redraw()
+
+
+func _spawn_legacy_burial_cache(
+	world_position: Vector2,
+	source_scene_index: int,
+	weapon_snapshot: Dictionary,
+	backpack_snapshot: Dictionary,
+	runtime_snapshot: Dictionary = {},
+) -> Node2D:
+	var cache: Node2D = LEGACY_BURIAL_CACHE_SCRIPT.new()
+	cache.name = "LegacyBurialCache_%d" % source_scene_index
+	cache.call(
+		"configure",
+		world_position,
+		source_scene_index,
+		weapon_snapshot,
+		backpack_snapshot,
+		_load_legacy_special_visual(64),
+	)
+	if not runtime_snapshot.is_empty():
+		cache.call("restore_runtime_state", runtime_snapshot)
+	cache.connect(
+		"tree_exited",
+		Callable(self, "_on_legacy_burial_cache_exited").bind(cache),
+	)
+	add_child(cache)
+	legacy_burial_caches.append(cache)
+	return cache
+
+
+func _on_legacy_burial_cache_exited(cache: Node2D) -> void:
+	legacy_burial_caches.erase(cache)
+
+
+func _try_interact_burial_cache_at(world_position: Vector2) -> bool:
+	var cache: Node2D
+	for candidate: Node2D in legacy_burial_caches:
+		if (
+			is_instance_valid(candidate)
+			and bool(candidate.call("contains_parent_point", world_position))
+		):
+			cache = candidate
+			break
+	if cache == null:
+		return false
+	if selected_units.is_empty():
+		update_status("请先选择一名队员查看藏尸处")
+		return true
+	var collector := selected_units[0]
+	if bool(cache.call("can_interact", collector)):
+		var transferred := cache.call("transfer_all_to", collector) as Dictionary
+		update_status(
+			"已从藏尸处取得 %d 类武器物资和 %d 类背包物品"
+			% [
+				int(transferred.get("weapon_entries", 0)),
+				int(transferred.get("backpack_entries", 0)),
+			]
+		)
+		_refresh_inventory_ui()
+		return true
+	var path := PackedVector2Array()
+	if dynamic_occupancy != null and collector.scene_index >= 0:
+		path = dynamic_occupancy.find_path_for_scene(
+			collector.scene_index,
+			collector.position,
+			cache.position,
+		)
+	elif navigation_grid != null:
+		path = navigation_grid.find_path(collector.position, cache.position, true)
+	else:
+		path.append(cache.position)
+	collector.issue_path(path)
+	update_status("队员正在接近藏尸处；到达后再次点击或按 E 取物")
+	return true
 
 
 func _toggle_selected_run_walk() -> void:
@@ -1536,30 +1761,99 @@ func _toggle_selected_crawl() -> void:
 
 
 func _toggle_sight_observation() -> void:
-	sight_observation_mode = not sight_observation_mode
-	sight_target_pending = sight_observation_mode
-	for enemy: ENEMY_UNIT in enemies:
-		enemy.set_tactical_ranges_visible(false)
-	update_status(
-		"视线观察模式：%s" % ("请点击一名存活队员" if sight_observation_mode else "关闭")
-	)
+	burial_mode = false
+	sight_observation_mode = true
+	sight_target_pending = true
+	update_status("视线观察模式：点击存活敌军查看视野，或点击空地埋下观察标记")
 
 
 func _select_sight_observation_target(world_point: Vector2) -> void:
-	for unit: SQUAD_UNIT in units:
-		if unit.is_alive and unit.contains_parent_point(world_point):
-			select_only(unit)
-			sight_target_pending = false
-			update_status("正在以%s观察：把鼠标移到敌人上方显示其扇形视野" % unit.display_name)
-			return
-	if not selected_units.is_empty():
-		sight_beacons.append({"position": world_point, "owner": selected_units[0].scene_index})
-		sight_target_pending = false
-		sight_observation_mode = false
-		update_status("已设置观察点；敌人经过时将显示其视线区域")
-		queue_redraw()
-		return
-	update_status("视线观察模式：请点击一名存活队员或空地")
+	var target := enemy_at_world_point(world_point)
+	if target != null and target.is_alive and target.faction_id == 1:
+		_set_sight_observation_target(target)
+		update_status("正在观察 %s 的动态扇形视野" % target.display_name)
+	else:
+		_place_or_move_sight_beacon(world_point)
+		update_status("已设置原版唯一观察点；进入敌军当前视野后自动触发并消失")
+	sight_target_pending = false
+	sight_observation_mode = false
+
+
+func _place_or_move_sight_beacon(world_point: Vector2) -> Node2D:
+	var seed := _sight_beacon_seed(world_point)
+	if sight_beacon != null and is_instance_valid(sight_beacon):
+		sight_beacon.call("move_marker", world_point, seed)
+		sight_beacon.call("set_potential_observers", _living_enemy_observers())
+		return sight_beacon
+	var marker: Node2D = LEGACY_OBSERVATION_BEACON_SCRIPT.new()
+	marker.name = "LegacyObservationBeacon"
+	marker.call(
+		"configure",
+		world_point,
+		dynamic_occupancy,
+		_living_enemy_observers(),
+		_load_legacy_special_visual(341),
+		seed,
+	)
+	marker.connect("observed", Callable(self, "_on_sight_beacon_observed"))
+	marker.connect("tree_exited", Callable(self, "_on_sight_beacon_exited").bind(marker))
+	add_child(marker)
+	sight_beacon = marker
+	return marker
+
+
+func _living_enemy_observers() -> Array[Node2D]:
+	var observers: Array[Node2D] = []
+	for enemy: ENEMY_UNIT in enemies:
+		if is_instance_valid(enemy) and enemy.is_alive and enemy.faction_id == 1:
+			observers.append(enemy)
+	return observers
+
+
+func _on_sight_beacon_observed(marker: Node2D, observer: Node2D) -> void:
+	if marker == sight_beacon:
+		sight_beacon = null
+	if observer is ENEMY_UNIT:
+		_set_sight_observation_target(observer as ENEMY_UNIT)
+		update_status("%s 触发观察点；标记已消失" % (observer as ENEMY_UNIT).display_name)
+
+
+func _on_sight_beacon_exited(marker: Node2D) -> void:
+	if marker == sight_beacon:
+		sight_beacon = null
+
+
+func _set_sight_observation_target(target: ENEMY_UNIT) -> void:
+	_clear_sight_observation_target()
+	clear_selection()
+	sight_observation_target = target
+	if target != null and is_instance_valid(target):
+		target.set_selected(true)
+		target.set_tactical_ranges_visible(true)
+
+
+func _clear_sight_observation_target() -> void:
+	if sight_observation_target != null and is_instance_valid(sight_observation_target):
+		sight_observation_target.set_selected(false)
+		sight_observation_target.set_tactical_ranges_visible(false)
+	sight_observation_target = null
+
+
+func _remove_sight_beacon() -> void:
+	if sight_beacon != null and is_instance_valid(sight_beacon):
+		sight_beacon.queue_free()
+	sight_beacon = null
+
+
+func _sight_beacon_seed(world_point: Vector2) -> int:
+	return maxi(
+		1,
+		(
+			(current_level_index + 1) * 1103515245
+			+ floori(world_point.x) * 31
+			+ floori(world_point.y) * 17
+		) & 0x7fffffff,
+	)
 
 func _mouse_world_position() -> Vector2:
 	return get_global_transform_with_canvas().affine_inverse() * get_viewport().get_mouse_position()
@@ -1585,6 +1879,7 @@ func _reload_selected_units() -> void:
 
 
 func clear_selection() -> void:
+	_clear_sight_observation_target()
 	for unit: SQUAD_UNIT in selected_units:
 		unit.set_selected(false)
 	selected_units.clear()
@@ -4107,6 +4402,22 @@ func interact_with_mission_world() -> void:
 		return
 	for origin: SQUAD_UNIT in origins:
 		_cancel_legacy_deployment_for_unit(origin)
+	for cache: Node2D in legacy_burial_caches:
+		if not is_instance_valid(cache) or not bool(cache.call("has_loot")):
+			continue
+		for origin: SQUAD_UNIT in origins:
+			if not bool(cache.call("can_interact", origin)):
+				continue
+			var transferred := cache.call("transfer_all_to", origin) as Dictionary
+			update_status(
+				"已从藏尸处取得 %d 类武器物资和 %d 类背包物品"
+				% [
+					int(transferred.get("weapon_entries", 0)),
+					int(transferred.get("backpack_entries", 0)),
+				]
+			)
+			_refresh_inventory_ui()
+			return
 	var nearest_escort: ESCORT_UNIT
 	var nearest_distance := INF
 	var nearest_rescuer: SQUAD_UNIT
@@ -4870,10 +5181,6 @@ func _media_actor_key(actor_name: String) -> String:
 
 func _draw() -> void:
 	if terrain_loaded:
-		for beacon: Dictionary in sight_beacons:
-			var beacon_position := beacon.get("position", Vector2.ZERO) as Vector2
-			draw_circle(beacon_position, 7.0, Color(0.25, 0.95, 0.42, 0.9))
-			draw_arc(beacon_position, 15.0, 0.0, TAU, 20, Color(0.25, 0.95, 0.42, 0.7), 2.0)
 		_draw_mission_markers()
 		_draw_selection_marquee()
 		return

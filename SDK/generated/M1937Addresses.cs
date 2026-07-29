@@ -16,7 +16,11 @@ namespace Mission1937.SDK.Generated
         public const long SafeBlit = 0x0000EE30L;
         public const long MenuPoll = 0x00044800L;
         public const long SmoothScroll = 0x0004C9B0L;
+        public const long WorldResolveHoverTarget = 0x0004C050L;
+        public const long EnableSightObservationMode = 0x0004CD00L;
+        public const long EnableBurialMode = 0x0004CD30L;
         public const long WorldHandleClick = 0x0004FED0L;
+        public const long FindObservationMarker = 0x000503D0L;
         public const long FalseResourceWarningBranch = 0x0000734AL;
         public const long StartupMovieEnqueue = 0x0000762CL;
         public const long NewGameLevelImmediate = 0x00003B66L;
@@ -39,7 +43,11 @@ namespace Mission1937.SDK.Generated
         public const long ExplosionActorUpdate = 0x000554A0L;
         public const long TriggeredSpecialUpdate = 0x000556B0L;
         public const long SpecialAttackDispatch = 0x00056DF0L;
+        public const long BurialRangeCheck = 0x00056A20L;
+        public const long BurialCompletion = 0x00056CD0L;
         public const long ApplyActorDamage = 0x00058700L;
+        public const long BurialCommandUpdate = 0x00058520L;
+        public const long ActorCommandDispatch = 0x00058A80L;
         public const long FaceActor = 0x00059B70L;
         public const long IsometricEllipseContains = 0x0005A8C0L;
         public const long CreateEffectActor = 0x00065250L;
@@ -47,6 +55,8 @@ namespace Mission1937.SDK.Generated
         public const long SetFacingFromAngle = 0x00066790L;
         public const long ResetActorMovement = 0x0005C1C0L;
         public const long ClearActorCommandTargets = 0x0005C1E0L;
+        public const long BurialCommandCleanup = 0x0005C220L;
+        public const long ObservationMarkerScan = 0x0005C320L;
         public const long PlayerGroundCommandResetCall = 0x00058B81L;
         public const long EnemyAiUpdate = 0x0005C710L;
         public const long AlertPropagation = 0x0005DDA0L;

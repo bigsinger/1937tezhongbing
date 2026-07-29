@@ -216,6 +216,8 @@ static func _capture_world(game: Node) -> Dictionary:
 		"deployed_mines": [],
 		"legacy_special_world_objects": [],
 		"legacy_ai_control_effects": [],
+		"legacy_burial_caches": [],
+		"pending_burial_command": {},
 		"projectiles": [],
 		"mission_direction": {},
 		"mission_ai_coordinator": {},
@@ -280,6 +282,47 @@ static func _capture_world(game: Node) -> Dictionary:
 			(world["legacy_ai_control_effects"] as Array).append(
 				_json_value((effect_value as Node).call("snapshot"))
 			)
+	for cache_value: Variant in _array_property(game, "legacy_burial_caches"):
+		if (
+			cache_value is Node
+			and is_instance_valid(cache_value)
+			and (cache_value as Node).has_method("snapshot")
+		):
+			(world["legacy_burial_caches"] as Array).append(
+				_json_value((cache_value as Node).call("snapshot"))
+			)
+	var burial_target: Variant = (
+		game.get("burial_target")
+		if _has_property(game, "burial_target")
+		else null
+	)
+	var burial_worker: Variant = (
+		game.get("burial_worker")
+		if _has_property(game, "burial_worker")
+		else null
+	)
+	if (
+		burial_target is Node2D
+		and is_instance_valid(burial_target)
+		and burial_worker is Node2D
+		and is_instance_valid(burial_worker)
+	):
+		world["pending_burial_command"] = {
+			"target_scene_index": int((burial_target as Node2D).get("scene_index")),
+			"target_display_name": _actor_display_name(burial_target),
+			"worker_scene_index": int((burial_worker as Node2D).get("scene_index")),
+			"worker_display_name": _actor_display_name(burial_worker),
+			"progress_ticks": (
+				maxi(int(game.get("burial_progress_ticks")), 0)
+				if _has_property(game, "burial_progress_ticks")
+				else 0
+			),
+			"action_started": (
+				bool(game.get("burial_action_started"))
+				if _has_property(game, "burial_action_started")
+				else false
+			),
+		}
 	var projectile_world: Variant = game.get("projectile_world")
 	if projectile_world is Node:
 		for child: Node in (projectile_world as Node).get_children():
@@ -696,6 +739,16 @@ static func _restore_world(game: Node, world: Dictionary, warnings: Array[String
 		world.get("legacy_ai_control_effects", []) as Array,
 		warnings,
 	)
+	_restore_legacy_burial_caches(
+		game,
+		world.get("legacy_burial_caches", []) as Array,
+		warnings,
+	)
+	_restore_pending_burial_command(
+		game,
+		world.get("pending_burial_command", {}) as Dictionary,
+		warnings,
+	)
 	_restore_projectiles(game, world.get("projectiles", []) as Array, warnings)
 	var direction_runtime: Variant = game.get("mission_direction_runtime")
 	var direction_state: Variant = world.get("mission_direction", {})
@@ -906,6 +959,98 @@ static func _restore_legacy_ai_control_effects(
 			warnings.append("a legacy AI control effect could not be restored")
 
 
+static func _restore_legacy_burial_caches(
+	game: Node,
+	records: Array,
+	warnings: Array[String],
+) -> void:
+	var cache_array := _array_property(game, "legacy_burial_caches")
+	for cache_value: Variant in cache_array.duplicate():
+		if cache_value is Node and is_instance_valid(cache_value):
+			(cache_value as Node).queue_free()
+	cache_array.clear()
+	if not game.has_method("_spawn_legacy_burial_cache"):
+		if not records.is_empty():
+			warnings.append("legacy burial caches are unsupported by this runtime")
+		return
+	for record_value: Variant in records:
+		if not record_value is Dictionary:
+			continue
+		var record := record_value as Dictionary
+		var weapon_value: Variant = record.get("weapon_inventory", {})
+		var backpack_value: Variant = record.get("backpack_inventory", {})
+		var cache: Variant = game.call(
+			"_spawn_legacy_burial_cache",
+			Vector2(
+				float(record.get("x", 0.0)),
+				float(record.get("y", 0.0)),
+			),
+			int(record.get("source_enemy_scene_index", -1)),
+			weapon_value as Dictionary if weapon_value is Dictionary else {},
+			backpack_value as Dictionary if backpack_value is Dictionary else {},
+			record,
+		)
+		if not cache is Node2D:
+			warnings.append("a legacy burial cache could not be restored")
+
+
+static func _restore_pending_burial_command(
+	game: Node,
+	record: Dictionary,
+	warnings: Array[String],
+) -> void:
+	if record.is_empty():
+		if game.has_method("_cancel_burial_command"):
+			game.call("_cancel_burial_command")
+		return
+	if (
+		not _has_property(game, "burial_target")
+		or not _has_property(game, "burial_worker")
+	):
+		warnings.append("pending burial commands are unsupported by this runtime")
+		return
+	var target := _find_actor_by_identity(
+		game,
+		int(record.get("target_scene_index", -1)),
+		str(record.get("target_display_name", "")),
+	)
+	var worker := _find_actor_by_identity(
+		game,
+		int(record.get("worker_scene_index", -1)),
+		str(record.get("worker_display_name", "")),
+	)
+	if (
+		target == null
+		or worker == null
+		or bool(target.get("is_alive"))
+		or int(target.get("faction_id")) != 1
+		or not bool(worker.get("is_alive"))
+	):
+		warnings.append("a pending burial command lost its worker or corpse")
+		return
+	var progress_ticks := clampi(
+		int(record.get("progress_ticks", 0)),
+		0,
+		101,
+	)
+	var action_started := bool(record.get("action_started", false))
+	game.set("burial_target", target)
+	game.set("burial_worker", worker)
+	if _has_property(game, "burial_progress_ticks"):
+		game.set("burial_progress_ticks", progress_ticks)
+	if _has_property(game, "burial_action_started"):
+		game.set("burial_action_started", action_started)
+	if worker.has_method("set_action_progress"):
+		worker.call(
+			"set_action_progress",
+			clampf(float(progress_ticks) / 100.0, 0.0, 1.0)
+			if action_started
+			else -1.0,
+		)
+	if not action_started and game.has_method("_issue_burial_approach_path"):
+		game.call("_issue_burial_approach_path")
+
+
 static func _restore_projectiles(game: Node, records: Array, warnings: Array[String]) -> void:
 	var projectile_world: Variant = game.get("projectile_world")
 	if not projectile_world is Node:
@@ -1016,6 +1161,13 @@ static func _array_property(object: Object, property_name: String) -> Array:
 static func _dictionary_property(object: Object, property_name: String) -> Dictionary:
 	var value: Variant = object.get(property_name)
 	return value as Dictionary if value is Dictionary else {}
+
+
+static func _has_property(object: Object, property_name: String) -> bool:
+	for property: Dictionary in object.get_property_list():
+		if str(property.get("name", "")) == property_name:
+			return true
+	return false
 
 
 static func _sorted_integer_keys(dictionary: Dictionary) -> Array[int]:

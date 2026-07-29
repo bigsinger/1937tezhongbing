@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Addresses.hpp"
+#include "Commands.hpp"
 #include "EnemyAI.hpp"
 #include "Inventory.hpp"
 #include "MissionRoutes.hpp"

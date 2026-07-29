@@ -49,6 +49,8 @@ static func empty_session(level_id: String = "m000") -> Dictionary:
 			"deployed_mines": [],
 			"legacy_special_world_objects": [],
 			"legacy_ai_control_effects": [],
+			"legacy_burial_caches": [],
+			"pending_burial_command": {},
 			"projectiles": [],
 		},
 	}
@@ -305,9 +307,19 @@ func _is_valid_session(session: Dictionary) -> bool:
 	for key: String in ["activated_scene_indices", "collected_scene_indices", "destroyed_scene_indices", "deployed_mines"]:
 		if not world.get(key) is Array:
 			return false
-	for optional_key: String in ["buried_enemy_scene_indices", "legacy_special_world_objects", "legacy_ai_control_effects"]:
+	for optional_key: String in [
+		"buried_enemy_scene_indices",
+		"legacy_special_world_objects",
+		"legacy_ai_control_effects",
+		"legacy_burial_caches",
+	]:
 		if world.has(optional_key) and not world.get(optional_key) is Array:
 			return false
+	if (
+		world.has("pending_burial_command")
+		and not world.get("pending_burial_command") is Dictionary
+	):
+		return false
 	if not world.get("field_inventory") is Dictionary:
 		return false
 	for group_name: String in ["squad", "enemies", "escorts", "ambient"]:

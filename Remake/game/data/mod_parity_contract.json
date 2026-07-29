@@ -31,13 +31,13 @@
     {
       "id": "input_and_hotkeys",
       "status": "partial",
-      "evidence": ["original key defaults", "release cadence", "remapping and conflict handling", "m000 basic and obstacle-route zero-mismatch MOD/Remake differential traces"],
-      "gaps": ["S command exact semantics", "B command exact semantics", "full mouse/cursor matrix against Mod"]
+      "evidence": ["original key defaults", "release cadence", "remapping and conflict handling", "recovered S living-faction-1 direct target and singleton actor-90 ground marker command", "recovered B dead-faction-1 command kind 4, path-first 32x16 adjacent-cell range and strict >100 completion counter", "m000 basic and obstacle-route zero-mismatch MOD/Remake differential traces"],
+      "gaps": ["full mouse/cursor matrix against Mod"]
     },
     {
       "id": "inventory_items_and_world_pickups",
       "status": "partial",
-      "evidence": ["five-column inventory", "real map pickups", "drop/lure interaction", "27 exact player identities and 83 ordered initial weapon-container entries across all 12 levels", "650 exact actor+552 item containers with 538 ordered entries", "ten exact DBL world-pickup item/container/mode/quantity mappings"],
+      "evidence": ["five-column inventory", "real map pickups", "drop/lure interaction", "B completion actor 78/GFL 64 cache with independent copies of both corpse inventory containers and player recovery interaction", "27 exact player identities and 83 ordered initial weapon-container entries across all 12 levels", "650 exact actor+552 item containers with 538 ordered entries", "ten exact DBL world-pickup item/container/mode/quantity mappings"],
       "gaps": ["exact effects and ownership rules for remaining world-interaction items 33/48/49/52/82/83"]
     },
     {
@@ -55,7 +55,7 @@
     {
       "id": "vision_hearing_and_ai",
       "status": "partial",
-      "evidence": ["directional near/far perception", "L2 occlusion", "recovered 640-pixel ordinary-enemy hearing radius", "event-driven noise investigation without omniscient live-target tracking", "alert sharing and last-known search", "m000 natural-contact MOD/Remake differential gate with exact scene 1598 to scene 1436 live-target identity and at most one checkpoint onset drift"],
+      "evidence": ["directional near/far perception", "L2 occlusion", "actor 90/GFL 341 observation marker uses enemy current recovered fan plus LOS, original rand()%2 gate, selects the first detecting enemy and is consumed without persistence", "recovered 640-pixel ordinary-enemy hearing radius", "event-driven noise investigation without omniscient live-target tracking", "alert sharing and last-known search", "m000 natural-contact MOD/Remake differential gate with exact scene 1598 to scene 1436 live-target identity and at most one checkpoint onset drift"],
       "gaps": ["special-actor hearing overrides", "corpse discovery cascade", "original search/return timing and cooperation rules"]
     },
     {
@@ -73,13 +73,13 @@
     {
       "id": "menus_hud_minimap_and_cursor",
       "status": "partial",
-      "evidence": ["pause/failure menus", "F1/F7", "right-side inventory", "live minimap", "cursor modes"],
-      "gaps": ["1024x768 pixel baselines", "1920x1080 baselines", "all contextual cursors and progress bars"]
+      "evidence": ["pause/failure menus", "F1/F7", "right-side inventory", "live minimap", "cursor modes", "S eye/help and B hand command cursors plus overhead fixed-tick burial progress"],
+      "gaps": ["1024x768 pixel baselines", "1920x1080 baselines", "remaining contextual cursor pixel parity"]
     },
     {
       "id": "save_load_settings_and_progression",
       "status": "partial",
-      "evidence": ["10 slots", "quick/autosave", "atomic JSON with backup", "remapping and channel volumes", "12 real-content heterogeneous mid-mission capture/rebuild hash round-trips"],
+      "evidence": ["10 slots", "quick/autosave", "atomic JSON with backup", "remapping and channel volumes", "actor-78 cache and pending B worker/target/counter persistence while ephemeral actor 90 is deliberately excluded", "12 real-content heterogeneous mid-mission capture/rebuild hash round-trips"],
       "gaps": ["physical-disk slot save at every mission phase", "cross-version migration policy", "campaign progression parity"]
     },
     {

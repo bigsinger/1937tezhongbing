@@ -265,6 +265,36 @@ int main(int argc, char** argv) {
                 m1937::sdk::rva::special_attack_dispatch !=
                     m1937::sdk::rva::explosion_actor_update,
             "special-action RVA catalog mismatch", checks);
+        require(
+            m1937::sdk::rva::enable_sight_observation_mode != 0 &&
+                m1937::sdk::rva::enable_burial_mode != 0 &&
+                m1937::sdk::rva::burial_command_update != 0 &&
+                m1937::sdk::rva::observation_marker_scan != 0 &&
+                m1937::sdk::rva::enable_sight_observation_mode !=
+                    m1937::sdk::rva::enable_burial_mode,
+            "S/B command RVA catalog mismatch", checks);
+        using namespace m1937::sdk::command;
+        require(
+            is_sight_direct_target(1, 0) &&
+                !is_sight_direct_target(1, 1) &&
+                !is_sight_direct_target(3, 0) &&
+                is_burial_target(1, 1) &&
+                !is_burial_target(1, 0) &&
+                !is_burial_target(3, 1),
+            "S/B original target filters mismatch", checks);
+        require(
+            observation_marker_actor_type == 90 &&
+                observation_marker_gfl_index == 341 &&
+                burial_cache_actor_type == 78 &&
+                burial_cache_gfl_index == 64 &&
+                burial_command_kind == 4,
+            "S/B recovered actor identity mismatch", checks);
+        require(
+            is_burial_adjacent_cell(0, 0, 63, 31) &&
+                !is_burial_adjacent_cell(0, 0, 64, 32) &&
+                !burial_counter_has_completed(100) &&
+                burial_counter_has_completed(101),
+            "B range/counter semantics mismatch", checks);
         const auto& triggered =
             m1937::sdk::triggered_special_action;
         const auto& timed =
