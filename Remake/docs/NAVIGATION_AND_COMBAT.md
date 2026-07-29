@@ -53,7 +53,12 @@ uint32  layer_count = 4
 重复四次：uint32 layer_id（2、3、4、5）+ uint32 values[width*height]
 ```
 
-Godot 使用 `AStarGrid2D` 的八方向模式 `DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES`，因此不会从两个贴角障碍间斜穿。目标在障碍中时会寻找附近可走格；不可达时只返回同侧 partial path，不会补一条穿墙直线。
+Godot 使用 `AStarGrid2D` 的八方向模式
+`DIAGONAL_MODE_AT_LEAST_ONE_WALKABLE`。稳定 MOD 的 m000 轨迹证明角色可以
+贴着单侧树木斜向绕行；当两个相邻正交格都被阻挡时仍禁止从夹角穿过。
+动态占位对角色完整足印采用同一规则，并额外禁止同一物理帧两名角色交叉
+对角换位。目标在障碍中时会寻找附近可走格；不可达时只返回同侧 partial
+path，不会补一条穿墙直线。
 
 L2 采用 supercover 整数格线，沿途格和对角经过的两个侧格都会检查。普通敌人视线和手枪、步枪、机枪、投掷及近战攻击都受 L2 阻挡；观察者和目标可以忽略各自动态占位，但第三方动态实体仍会遮挡。
 

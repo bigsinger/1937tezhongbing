@@ -94,6 +94,9 @@ Remake\LocalBuild\1937Remake\Play-1937-Remake.cmd
 [`Remake/docs/MOD完全复刻开发实施方案.md`](Remake/docs/MOD完全复刻开发实施方案.md)；
 机器可读状态位于
 [`Remake/game/data/mod_parity_contract.json`](Remake/game/data/mod_parity_contract.json)。
+第一关无遮挡移动与树边绕行已建立 MOD/Remake 共用运行轨迹和严格差分
+回归；schema、基线、比较器与当前证据见
+[`Remake/docs/MOD完全复刻开发实施方案.md`](Remake/docs/MOD完全复刻开发实施方案.md#8-已落地的首条-modremake-差分闭环)。
 
 ## 地图编辑器
 

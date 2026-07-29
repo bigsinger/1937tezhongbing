@@ -1,0 +1,25 @@
+# Stable MOD runtime baselines
+
+These files are read-only behavioral evidence captured from the repository's
+hash-locked `repository-mod-12-level-20260729` content profile.
+
+`m000-basic-movement-v1.json` and `m000-obstacle-route-v1.json` were produced by
+`Patch/analysis/tools/ModRegressionProbe.cs`. The probe:
+
+- starts an isolated copy of the MOD;
+- reads only the tested process;
+- posts input only to the tested window and its process-local DirectInput queue;
+- never calls a global cursor, keyboard, focus, or input-injection API;
+- maps the unique m000 player at `(241,51)` to recovered VWF scene 1436 /
+  DBL entry 924;
+- records the unobstructed command-replacement route `(1,3) -> (5,3)`;
+- records the tree-edge detour `(16,34) -> (9,8)`, including the original
+  one-open-side diagonal rule and early return to the prior movement corridor.
+
+The MOD's compact runtime object array is not the VWF scene array. Only an
+identity that has a recovered, reviewable mapping may be assigned a VWF
+`scene_index`; unproven enemy identities are deliberately excluded from this
+first baseline.
+
+Run `Remake/tools/Run-RuntimeProbe.ps1` to generate the matching Remake trace
+and `comparison.json` / `comparison.md`.

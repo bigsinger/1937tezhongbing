@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "trace_id": "mod-m000-m000-obstacle-route-v1",
+  "runtime": "mod",
+  "content_profile": "repository-mod-12-level-20260729",
+  "level": {"id":"m000","selector_level":1,"engine_mission":1},
+  "scenario": {"id":"m000-obstacle-route-v1","coordinate_space":"legacy-world-pixels","description":"Window-local selection and movement observation; no global cursor or focus API; cells 16,34 -> 9,8."},
+  "metadata": {"producer":"ModRegressionProbe","input_isolation":"window-message-to-process-local-DirectInput"},
+  "checkpoints": [
+    {
+      "id":"gameplay_ready","sequence":0,"elapsed_ms":0,
+      "camera":{"position":[0,0],"viewport":[1024,708],"zoom":[1,1]},
+      "world":{"size":[4960,2240],"tracked_actor_count":1,"source_entity_count":1630,"runtime_object_count":127},
+      "actors": [
+        {"actor_id":"scene:1436","role":"player","scene_index":1436,"database_entry_id":924,"faction_id":3,"position":[241,51],"target_position":[241,51],"facing_direction":5,"alive":true,"native":{"goal_kind":0,"command_variant":0,"command_pending":0,"movement_active":0,"movement_path_state":0,"movement_mode":0,"resolved_goal_x":0,"resolved_goal_y":0,"path_override_active":0}}
+      ],
+      "mission":{"id":"m000","status":"active"},
+      "tags":{"source":"stable-mod-read-only-process-snapshot"}
+    },
+    {
+      "id":"player_selected","sequence":1,"elapsed_ms":2551,
+      "camera":{"position":[0,0],"viewport":[1024,708],"zoom":[1,1]},
+      "world":{"size":[4960,2240],"tracked_actor_count":1,"source_entity_count":1630,"runtime_object_count":127},
+      "actors": [
+        {"actor_id":"scene:1436","role":"player","scene_index":1436,"database_entry_id":924,"faction_id":3,"position":[241,51],"target_position":[241,51],"facing_direction":5,"alive":true,"native":{"goal_kind":0,"command_variant":0,"command_pending":0,"movement_active":0,"movement_path_state":0,"movement_mode":0,"resolved_goal_x":0,"resolved_goal_y":0,"path_override_active":0}}
+      ],
+      "mission":{"id":"m000","status":"active"},
+      "tags":{"source":"stable-mod-read-only-process-snapshot"}
+    },
+    {
+      "id":"move_outbound_commanded","sequence":2,"elapsed_ms":2857,
+      "camera":{"position":[0,0],"viewport":[1024,708],"zoom":[1,1]},
+      "world":{"size":[4960,2240],"tracked_actor_count":1,"source_entity_count":1630,"runtime_object_count":127},
+      "actors": [
+        {"actor_id":"scene:1436","role":"player","scene_index":1436,"database_entry_id":924,"faction_id":3,"position":[240,72],"target_position":[528,552],"facing_direction":5,"alive":true,"native":{"goal_kind":1,"command_variant":1,"command_pending":0,"movement_active":0,"movement_path_state":2,"movement_mode":2,"resolved_goal_x":528,"resolved_goal_y":552,"path_override_active":0}}
+      ],
+      "mission":{"id":"m000","status":"active"},
+      "tags":{"source":"stable-mod-read-only-process-snapshot"}
+    },
+    {
+      "id":"move_outbound_observed","sequence":3,"elapsed_ms":3652,
+      "camera":{"position":[0,0],"viewport":[1024,708],"zoom":[1,1]},
+      "world":{"size":[4960,2240],"tracked_actor_count":1,"source_entity_count":1630,"runtime_object_count":127},
+      "actors": [
+        {"actor_id":"scene:1436","role":"player","scene_index":1436,"database_entry_id":924,"faction_id":3,"position":[240,200],"target_position":[528,552],"facing_direction":5,"alive":true,"native":{"goal_kind":1,"command_variant":1,"command_pending":0,"movement_active":0,"movement_path_state":2,"movement_mode":2,"resolved_goal_x":528,"resolved_goal_y":552,"path_override_active":0}}
+      ],
+      "mission":{"id":"m000","status":"active"},
+      "tags":{"source":"stable-mod-read-only-process-snapshot","observed_positions":[[240,72],[240,81],[240,88],[228,94],[210,103],[208,107],[208,116],[208,120],[220,126],[238,135],[240,139],[240,148],[240,152],[240,161],[240,167],[240,174],[240,180],[240,187],[240,193],[240,200]]}
+    },
+    {
+      "id":"move_return_commanded","sequence":4,"elapsed_ms":3958,
+      "camera":{"position":[0,0],"viewport":[1024,708],"zoom":[1,1]},
+      "world":{"size":[4960,2240],"tracked_actor_count":1,"source_entity_count":1630,"runtime_object_count":127},
+      "actors": [
+        {"actor_id":"scene:1436","role":"player","scene_index":1436,"database_entry_id":924,"faction_id":3,"position":[240,210],"target_position":[304,136],"facing_direction":1,"alive":true,"native":{"goal_kind":1,"command_variant":1,"command_pending":0,"movement_active":0,"movement_path_state":2,"movement_mode":2,"resolved_goal_x":304,"resolved_goal_y":136,"path_override_active":0}}
+      ],
+      "mission":{"id":"m000","status":"active"},
+      "tags":{"source":"stable-mod-read-only-process-snapshot"}
+    },
+    {
+      "id":"move_return_observed","sequence":5,"elapsed_ms":4740,
+      "camera":{"position":[0,0],"viewport":[1024,708],"zoom":[1,1]},
+      "world":{"size":[4960,2240],"tracked_actor_count":1,"source_entity_count":1630,"runtime_object_count":127},
+      "actors": [
+        {"actor_id":"scene:1436","role":"player","scene_index":1436,"database_entry_id":924,"faction_id":3,"position":[304,136],"target_position":[304,136],"facing_direction":2,"alive":true,"native":{"goal_kind":1,"command_variant":1,"command_pending":0,"movement_active":0,"movement_path_state":0,"movement_mode":0,"resolved_goal_x":304,"resolved_goal_y":136,"path_override_active":0}}
+      ],
+      "mission":{"id":"m000","status":"active"},
+      "tags":{"source":"stable-mod-read-only-process-snapshot","observed_positions":[[240,210],[240,201],[240,197],[240,188],[240,184],[240,175],[240,169],[252,162],[264,156],[278,149],[290,143],[304,136]]}
+    }
+  ]
+}

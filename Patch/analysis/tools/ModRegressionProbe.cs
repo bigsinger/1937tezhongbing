@@ -176,6 +176,7 @@ internal static class ModRegressionProbe
 
     private sealed class ActorSnapshot
     {
+        public int SceneIndex;
         public long Address;
         public int DatabaseEntry;
         public int Faction;
@@ -196,6 +197,21 @@ internal static class ModRegressionProbe
         public int PathOverrideActive;
     }
 
+    private sealed class ParityCheckpoint
+    {
+        public string Id;
+        public long ElapsedMilliseconds;
+        public int CameraX;
+        public int CameraY;
+        public int ViewportWidth;
+        public int ViewportHeight;
+        public int SourceEntityCount;
+        public readonly List<ActorSnapshot> Actors =
+            new List<ActorSnapshot>();
+        public readonly List<Point> ObservedPositions =
+            new List<Point>();
+    }
+
     private sealed class MovementSegmentObservation
     {
         public ActorSnapshot Last;
@@ -209,6 +225,7 @@ internal static class ModRegressionProbe
         public int EndTargetDistance;
         public int MinimumTargetDistance;
         public readonly HashSet<int> Directions = new HashSet<int>();
+        public readonly List<Point> Positions = new List<Point>();
     }
 
     public static int Main(string[] args)
@@ -266,6 +283,7 @@ internal static class ModRegressionProbe
         var route = MissionRoutes.Find(selectorLevel);
         if (route == null)
             throw new InvalidOperationException("Unknown selector level.");
+        var parityCheckpoints = new List<ParityCheckpoint>();
         bool extensionGameplaySmoke = selectorLevel >= 13;
         bool renderAuditEnabled = String.Equals(
             Environment.GetEnvironmentVariable("M1937_RENDER_AUDIT"),
@@ -616,6 +634,12 @@ internal static class ModRegressionProbe
                           spawnStart.WorldY + "); end=(" +
                           spawnEnd.WorldX + "," + spawnEnd.WorldY +
                           "); dead=" + spawnEnd.Dead);
+                CaptureParityCheckpoint(
+                    parityCheckpoints,
+                    process,
+                    imageBase,
+                    clock,
+                    "gameplay_ready");
 
                 using (CaptureResult baseline = CaptureWindow(window))
                 {
@@ -665,6 +689,8 @@ internal static class ModRegressionProbe
                     process, imageBase, window,
                     movementCellX, movementCellY,
                     returnCellX, returnCellY,
+                    selectorLevel == 1 ? 750 : 1800,
+                    parityCheckpoints, clock,
                     out movementEvidence);
                 if (renderAuditEnabled)
                 {
@@ -885,6 +911,15 @@ internal static class ModRegressionProbe
                     missionStarted && allStages &&
                     transitionsLogged && replayConsumed &&
                     cursorClipSafe ? 0 : 1;
+                WriteParityTrace(
+                    outputDirectory,
+                    selectorLevel,
+                    route.EngineMission,
+                    movementCellX,
+                    movementCellY,
+                    returnCellX,
+                    returnCellY,
+                    parityCheckpoints);
                 WriteArtifacts(
                     outputDirectory, selectorLevel, route.EngineMission,
                     stages, perf, transitionsLogged, replayConsumed,
@@ -1124,24 +1159,9 @@ internal static class ModRegressionProbe
     {
         switch (selectorLevel)
         {
-        case 7:
-            cellX = 20;
-            cellY = 8;
-            break;
-        case 13:
-            // Validated southwest ammunition-node route.
-            cellX = 21;
-            cellY = 179;
-            break;
-        case 14:
-            cellX = 12;
-            cellY = 114;
-            break;
-        case 15:
-            // First required mission target; VwfMissionBuilder proves a
-            // 24-step A* route from the spawn at (4,188).
-            cellX = 20;
-            cellY = 164;
+        case 1:
+            cellX = 1;
+            cellY = 3;
             break;
         default:
             cellX = -1;
@@ -1155,14 +1175,9 @@ internal static class ModRegressionProbe
     {
         switch (selectorLevel)
         {
-        case 13:
-            cellX = 1;
-            cellY = 189;
-            break;
-        case 14:
-        case 15:
-            cellX = 2;
-            cellY = 118;
+        case 1:
+            cellX = 5;
+            cellY = 3;
             break;
         default:
             cellX = -1;
@@ -1202,6 +1217,7 @@ internal static class ModRegressionProbe
             ActorSnapshot snapshot = ReadActor(process, actor);
             if (snapshot == null)
                 continue;
+            snapshot.SceneIndex = index;
             text.AppendFormat(
                 CultureInfo.InvariantCulture,
                 "{0},0x{1:X8},{2},{3},{4},{5},{6},{7},{8},{9},{10}," +
@@ -1258,6 +1274,7 @@ internal static class ModRegressionProbe
             var snapshot = ReadActor(process, actor);
             if (snapshot == null)
                 continue;
+            snapshot.SceneIndex = index;
             if (snapshot.DatabaseEntry == 924)
                 return snapshot;
             if (fallback == null)
@@ -1341,6 +1358,9 @@ internal static class ModRegressionProbe
         IntPtr process, long imageBase, IntPtr window,
         int targetCellX, int targetCellY,
         int returnCellX, int returnCellY,
+        int segmentObservationMilliseconds,
+        List<ParityCheckpoint> parityCheckpoints,
+        Stopwatch runClock,
         out string evidence)
     {
         if (targetCellX < 0 || targetCellY < 0)
@@ -1408,6 +1428,12 @@ internal static class ModRegressionProbe
             evidence = "player actor disappeared after F4 selection";
             return false;
         }
+        CaptureParityCheckpoint(
+            parityCheckpoints,
+            process,
+            imageBase,
+            runClock,
+            "player_selected");
 
         int targetWorldX = checked(targetCellX * 32 + 16);
         int targetWorldY = checked(targetCellY * 16 + 8);
@@ -1435,11 +1461,25 @@ internal static class ModRegressionProbe
             process, imageBase,
             targetWorldX, targetWorldY, 900,
             out firstGoal);
+        CaptureParityCheckpoint(
+            parityCheckpoints,
+            process,
+            imageBase,
+            runClock,
+            "move_outbound_commanded");
         MovementSegmentObservation outbound = ObserveMovementSegment(
             process, imageBase,
             firstGoal ?? selected,
             targetWorldX, targetWorldY,
-            1800);
+            segmentObservationMilliseconds);
+        CaptureParityCheckpoint(
+            parityCheckpoints,
+            process,
+            imageBase,
+            runClock,
+            "move_outbound_observed");
+        AttachObservedPositions(
+            parityCheckpoints, outbound.Positions);
         bool firstMoved =
             outbound.MaximumDisplacement >= 24 &&
             outbound.EndTargetDistance <
@@ -1482,11 +1522,25 @@ internal static class ModRegressionProbe
             process, imageBase,
             returnWorldX, returnWorldY, 900,
             out returnGoal);
+        CaptureParityCheckpoint(
+            parityCheckpoints,
+            process,
+            imageBase,
+            runClock,
+            "move_return_commanded");
         MovementSegmentObservation inbound = ObserveMovementSegment(
             process, imageBase,
             returnGoal ?? returnStart,
             returnWorldX, returnWorldY,
-            1800);
+            segmentObservationMilliseconds);
+        CaptureParityCheckpoint(
+            parityCheckpoints,
+            process,
+            imageBase,
+            runClock,
+            "move_return_observed");
+        AttachObservedPositions(
+            parityCheckpoints, inbound.Positions);
         bool returnMoved =
             inbound.MaximumDisplacement >= 16 &&
             inbound.EndTargetDistance <
@@ -1610,6 +1664,11 @@ internal static class ModRegressionProbe
         observation.Last = start;
         if (start == null)
             return observation;
+        observation.Positions.Add(new Point
+        {
+            X = start.WorldX,
+            Y = start.WorldY
+        });
         observation.Directions.Add(start.Direction);
         observation.StartTargetDistance =
             ManhattanDistance(start.WorldX, start.WorldY, targetX, targetY);
@@ -1629,6 +1688,16 @@ internal static class ModRegressionProbe
             observation.Samples++;
             observation.Last = sample;
             observation.Directions.Add(sample.Direction);
+            Point lastPosition =
+                observation.Positions[
+                    observation.Positions.Count - 1];
+            if (lastPosition.X != sample.WorldX ||
+                lastPosition.Y != sample.WorldY)
+                observation.Positions.Add(new Point
+                {
+                    X = sample.WorldX,
+                    Y = sample.WorldY
+                });
             int displacement =
                 ManhattanDistance(
                     sample.WorldX, sample.WorldY,
@@ -2101,6 +2170,371 @@ internal static class ModRegressionProbe
         if (ordered.Length == 0) return 0;
         int index = (int)Math.Ceiling(percentile * ordered.Length) - 1;
         return ordered[Math.Max(0, Math.Min(ordered.Length - 1, index))];
+    }
+
+    private static void CaptureParityCheckpoint(
+        List<ParityCheckpoint> checkpoints,
+        IntPtr process,
+        long imageBase,
+        Stopwatch clock,
+        string checkpointId)
+    {
+        if (checkpoints == null || process == IntPtr.Zero)
+            return;
+        var checkpoint = new ParityCheckpoint();
+        checkpoint.Id = checkpointId ?? "";
+        checkpoint.ElapsedMilliseconds =
+            clock == null ? 0 : clock.ElapsedMilliseconds;
+        checkpoint.CameraX = ReadInt(
+            process, imageBase + EngineAddresses.CameraX);
+        checkpoint.CameraY = ReadInt(
+            process, imageBase + EngineAddresses.CameraY);
+        checkpoint.ViewportWidth = ReadInt(
+            process, imageBase + EngineAddresses.ScreenWidth);
+        checkpoint.ViewportHeight = Math.Max(
+            0,
+            ReadInt(
+                process,
+                imageBase + EngineAddresses.ScreenHeight) - 80);
+        int viewportValue = ReadInt(
+            process, imageBase + EngineAddresses.ViewportController);
+        if (viewportValue > 0)
+        {
+            long viewport = (long)(uint)viewportValue;
+            int width = ReadInt(process, viewport + 0x28);
+            int height = ReadInt(process, viewport + 0x2C);
+            if (width > 0 && width <= 8192)
+                checkpoint.ViewportWidth = width;
+            if (height > 0 && height <= 8192)
+                checkpoint.ViewportHeight = height;
+        }
+        checkpoint.SourceEntityCount =
+            ReadWorldActorCount(process, imageBase);
+        foreach (ActorSnapshot actor in ReadTraceActors(
+            process, imageBase))
+            checkpoint.Actors.Add(actor);
+        checkpoints.Add(checkpoint);
+    }
+
+    private static List<ActorSnapshot> ReadTraceActors(
+        IntPtr process, long imageBase)
+    {
+        var result = new List<ActorSnapshot>();
+        int worldValue = ReadInt(
+            process, imageBase + EngineAddresses.WorldRoot);
+        if (worldValue == 0 || worldValue == int.MinValue)
+            return result;
+        long world = (long)(uint)worldValue;
+        int actorArrayValue = ReadInt(process, world + 0x18);
+        int count = ReadInt(process, world + 0x3C);
+        if (actorArrayValue == 0 ||
+            actorArrayValue == int.MinValue ||
+            count <= 0 ||
+            count > 4096)
+            return result;
+        long actorArray = (long)(uint)actorArrayValue;
+        for (int index = 0; index < count; ++index)
+        {
+            int actorValue = ReadInt(
+                process, actorArray + index * 4L);
+            if (actorValue == 0 || actorValue == int.MinValue)
+                continue;
+            ActorSnapshot snapshot = ReadActor(
+                process, (long)(uint)actorValue);
+            if (snapshot == null)
+                continue;
+            snapshot.SceneIndex = index;
+            if (snapshot.Faction < 1 || snapshot.Faction > 3)
+                continue;
+            if (snapshot.DatabaseEntry < 0 ||
+                snapshot.Direction < 0 ||
+                snapshot.Direction > 8 ||
+                snapshot.WorldX < -4096 ||
+                snapshot.WorldY < -4096 ||
+                snapshot.WorldX > 131072 ||
+                snapshot.WorldY > 131072)
+                continue;
+            result.Add(snapshot);
+        }
+        return result;
+    }
+
+    private static void AttachObservedPositions(
+        List<ParityCheckpoint> checkpoints,
+        IEnumerable<Point> positions)
+    {
+        if (checkpoints == null ||
+            checkpoints.Count == 0 ||
+            positions == null)
+            return;
+        ParityCheckpoint checkpoint =
+            checkpoints[checkpoints.Count - 1];
+        foreach (Point position in positions)
+            checkpoint.ObservedPositions.Add(position);
+    }
+
+    private static void WorldSizeForSelector(
+        int selectorLevel,
+        out int width,
+        out int height,
+        out int sourceEntityCount)
+    {
+        int[,] sizes =
+        {
+            { 4960, 2240, 1630 },
+            { 4096, 4096, 2525 },
+            { 3200, 1920, 898 },
+            { 4096, 3200, 1254 },
+            { 5440, 3200, 2721 },
+            { 3840, 3200, 771 },
+            { 3840, 3200, 1470 },
+            { 4800, 3200, 2408 },
+            { 2880, 1920, 805 },
+            { 3200, 3200, 1720 },
+            { 4800, 3360, 1629 },
+            { 3200, 3200, 1368 }
+        };
+        int index = selectorLevel - 1;
+        if (index < 0 || index >= sizes.GetLength(0))
+        {
+            width = 0;
+            height = 0;
+            sourceEntityCount = 0;
+            return;
+        }
+        width = sizes[index, 0];
+        height = sizes[index, 1];
+        sourceEntityCount = sizes[index, 2];
+    }
+
+    private static void WriteParityTrace(
+        string outputDirectory,
+        int selectorLevel,
+        int engineMission,
+        int movementCellX,
+        int movementCellY,
+        int returnCellX,
+        int returnCellY,
+        List<ParityCheckpoint> checkpoints)
+    {
+        if (checkpoints == null || checkpoints.Count == 0)
+            return;
+        int worldWidth;
+        int worldHeight;
+        int sourceEntityCount;
+        WorldSizeForSelector(
+            selectorLevel,
+            out worldWidth,
+            out worldHeight,
+            out sourceEntityCount);
+        string levelId = String.Format(
+            CultureInfo.InvariantCulture,
+            "m{0:D3}",
+            selectorLevel - 1);
+        string scenarioId;
+        if (selectorLevel == 1 &&
+            movementCellX == 1 && movementCellY == 3 &&
+            returnCellX == 5 && returnCellY == 3)
+            scenarioId = "m000-basic-movement-v1";
+        else if (selectorLevel == 1 &&
+                 movementCellX == 16 && movementCellY == 34 &&
+                 returnCellX == 9 && returnCellY == 8)
+            scenarioId = "m000-obstacle-route-v1";
+        else
+            scenarioId = selectorLevel == 1
+                ? "m000-custom-movement-v1"
+                : "level-smoke-v1";
+        var json = new StringBuilder();
+        json.Append("{\n");
+        json.Append("  \"schema_version\": 1,\n");
+        json.AppendFormat(
+            CultureInfo.InvariantCulture,
+            "  \"trace_id\": \"mod-{0}-{1}\",\n",
+            levelId,
+            scenarioId);
+        json.Append("  \"runtime\": \"mod\",\n");
+        json.Append(
+            "  \"content_profile\": " +
+            "\"repository-mod-12-level-20260729\",\n");
+        json.AppendFormat(
+            CultureInfo.InvariantCulture,
+            "  \"level\": {{\"id\":\"{0}\"," +
+            "\"selector_level\":{1},\"engine_mission\":{2}}},\n",
+            levelId, selectorLevel, engineMission);
+        json.AppendFormat(
+            CultureInfo.InvariantCulture,
+            "  \"scenario\": {{\"id\":\"{0}\"," +
+            "\"coordinate_space\":\"legacy-world-pixels\"," +
+            "\"description\":\"{1}\"}},\n",
+            scenarioId,
+            Escape(
+                "Window-local selection and movement observation; " +
+                "no global cursor or focus API; cells " +
+                movementCellX + "," + movementCellY + " -> " +
+                returnCellX + "," + returnCellY + "."));
+        json.Append(
+            "  \"metadata\": {" +
+            "\"producer\":\"ModRegressionProbe\"," +
+            "\"input_isolation\":" +
+            "\"window-message-to-process-local-DirectInput\"},\n");
+        json.Append("  \"checkpoints\": [\n");
+        for (int checkpointIndex = 0;
+             checkpointIndex < checkpoints.Count;
+             ++checkpointIndex)
+        {
+            ParityCheckpoint checkpoint =
+                checkpoints[checkpointIndex];
+            List<ActorSnapshot> outputActors = selectorLevel == 1
+                ? checkpoint.Actors.Where(
+                    delegate(ActorSnapshot actor)
+                    {
+                        return actor.Faction == 3;
+                    }).ToList()
+                : checkpoint.Actors;
+            json.Append("    {\n");
+            json.AppendFormat(
+                CultureInfo.InvariantCulture,
+                "      \"id\":\"{0}\",\"sequence\":{1}," +
+                "\"elapsed_ms\":{2},\n",
+                Escape(checkpoint.Id),
+                checkpointIndex,
+                Math.Max(
+                    0,
+                    checkpoint.ElapsedMilliseconds -
+                    checkpoints[0].ElapsedMilliseconds));
+            json.AppendFormat(
+                CultureInfo.InvariantCulture,
+                "      \"camera\":{{\"position\":[{0},{1}]," +
+                "\"viewport\":[{2},{3}],\"zoom\":[1,1]}},\n",
+                checkpoint.CameraX,
+                checkpoint.CameraY,
+                checkpoint.ViewportWidth,
+                checkpoint.ViewportHeight);
+            json.AppendFormat(
+                CultureInfo.InvariantCulture,
+                "      \"world\":{{\"size\":[{0},{1}]," +
+                "\"tracked_actor_count\":{2}," +
+                "\"source_entity_count\":{3}," +
+                "\"runtime_object_count\":{4}}},\n",
+                worldWidth,
+                worldHeight,
+                outputActors.Count,
+                sourceEntityCount,
+                checkpoint.SourceEntityCount);
+            json.Append("      \"actors\": [\n");
+            for (int actorIndex = 0;
+                 actorIndex < outputActors.Count;
+                 ++actorIndex)
+            {
+                ActorSnapshot actor =
+                    outputActors[actorIndex];
+                int traceSceneIndex =
+                    selectorLevel == 1 && actor.Faction == 3
+                        ? 1436
+                        : actor.SceneIndex;
+                int traceDatabaseEntry =
+                    selectorLevel == 1 && actor.Faction == 3
+                        ? 924
+                        : Math.Max(actor.DatabaseEntry, 0);
+                int targetX = actor.GoalKind == 1
+                    ? actor.GoalX
+                    : actor.WorldX;
+                int targetY = actor.GoalKind == 1
+                    ? actor.GoalY
+                    : actor.WorldY;
+                string role = actor.Faction == 3
+                    ? "player"
+                    : actor.Faction == 2
+                        ? "escort"
+                        : "enemy";
+                json.AppendFormat(
+                    CultureInfo.InvariantCulture,
+                    "        {{\"actor_id\":\"scene:{0}\"," +
+                    "\"role\":\"{1}\",\"scene_index\":{0}," +
+                    "\"database_entry_id\":{2}," +
+                    "\"faction_id\":{3}," +
+                    "\"position\":[{4},{5}]," +
+                    "\"target_position\":[{6},{7}]," +
+                    "\"facing_direction\":{8}," +
+                    "\"alive\":{9}," +
+                    "\"native\":{{\"goal_kind\":{10}," +
+                    "\"command_variant\":{11}," +
+                    "\"command_pending\":{12}," +
+                    "\"movement_active\":{13}," +
+                    "\"movement_path_state\":{14}," +
+                    "\"movement_mode\":{15}," +
+                    "\"resolved_goal_x\":{16}," +
+                    "\"resolved_goal_y\":{17}," +
+                    "\"path_override_active\":{18}}}}}{19}\n",
+                    traceSceneIndex,
+                    role,
+                    traceDatabaseEntry,
+                    actor.Faction,
+                    actor.WorldX,
+                    actor.WorldY,
+                    targetX,
+                    targetY,
+                    actor.Direction,
+                    actor.Dead == 0 ? "true" : "false",
+                    actor.GoalKind,
+                    actor.CommandVariant,
+                    actor.CommandPending,
+                    actor.MovementActive,
+                    actor.MovementPathState,
+                    actor.MovementMode,
+                    actor.ResolvedGoalX,
+                    actor.ResolvedGoalY,
+                    actor.PathOverrideActive,
+                    actorIndex + 1 == outputActors.Count
+                        ? ""
+                        : ",");
+            }
+            json.Append("      ],\n");
+            json.AppendFormat(
+                CultureInfo.InvariantCulture,
+                "      \"mission\":{{\"id\":\"{0}\"," +
+                "\"status\":\"active\"}},\n",
+                levelId);
+            json.Append(
+                "      \"tags\":{" +
+                "\"source\":\"stable-mod-read-only-process-snapshot\"");
+            if (checkpoint.ObservedPositions.Count > 0)
+            {
+                json.Append(",\"observed_positions\":[");
+                for (int sampleIndex = 0;
+                     sampleIndex < checkpoint.ObservedPositions.Count;
+                     ++sampleIndex)
+                {
+                    Point sample =
+                        checkpoint.ObservedPositions[sampleIndex];
+                    json.AppendFormat(
+                        CultureInfo.InvariantCulture,
+                        "[{0},{1}]{2}",
+                        sample.X,
+                        sample.Y,
+                        sampleIndex + 1 ==
+                            checkpoint.ObservedPositions.Count
+                            ? ""
+                            : ",");
+                }
+                json.Append("]");
+            }
+            json.Append("}\n");
+            json.Append(
+                checkpointIndex + 1 == checkpoints.Count
+                    ? "    }\n"
+                    : "    },\n");
+        }
+        json.Append("  ]\n");
+        json.Append("}\n");
+        File.WriteAllText(
+            Path.Combine(
+                outputDirectory,
+                selectorLevel == 1
+                    ? "mod-" + scenarioId + ".json"
+                    : "mod-level-smoke-v1.json"),
+            json.ToString(),
+            new UTF8Encoding(false));
     }
 
     private static void WriteArtifacts(

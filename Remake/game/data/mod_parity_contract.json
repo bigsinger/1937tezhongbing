@@ -31,7 +31,7 @@
     {
       "id": "input_and_hotkeys",
       "status": "partial",
-      "evidence": ["original key defaults", "release cadence", "remapping and conflict handling"],
+      "evidence": ["original key defaults", "release cadence", "remapping and conflict handling", "m000 basic and obstacle-route zero-mismatch MOD/Remake differential traces"],
       "gaps": ["S command exact semantics", "B command exact semantics", "full mouse/cursor matrix against Mod"]
     },
     {
@@ -49,8 +49,8 @@
     {
       "id": "navigation_routes_and_doors",
       "status": "partial",
-      "evidence": ["L3 A*", "516 patrol routes", "dynamic occupancy and replanning"],
-      "gaps": ["all non-character footprints", "all open/closed door state transitions", "corridor coordination parity"]
+      "evidence": ["L3 A*", "516 patrol routes", "dynamic occupancy and replanning", "m000 obstacle-free command replacement and movement-vector parity at 260 px/s", "m000 tree-edge one-open-side diagonal and early corridor recovery parity"],
+      "gaps": ["all non-character footprints", "all open/closed door state transitions", "remaining foreground route-shape parity", "corridor coordination parity"]
     },
     {
       "id": "vision_hearing_and_ai",
@@ -91,12 +91,12 @@
     {
       "id": "performance_and_windows_release",
       "status": "partial",
-      "evidence": ["Godot 4.7 compatibility renderer", "dense navigation stress", "window UI probe", "local playable build"],
+      "evidence": ["Godot 4.7 compatibility renderer", "dense navigation stress", "window UI probe", "local playable build", "versioned cross-runtime trace schema and strict local real-content comparison"],
       "gaps": ["10-minute real-input replay", "P95/P99 gates on all 12 levels", "Windows 10/11 cross-machine release package"]
     }
   ],
   "levels": [
-    {"id": "m000", "number": 1, "title": "营救行动", "status": "partial", "gaps": ["full Mod differential trace", "combat and timing calibration", "save/reload at each objective"]},
+    {"id": "m000", "number": 1, "title": "营救行动", "status": "partial", "gaps": ["combat/inventory/mission differential traces", "door/foreground obstacle-path parity", "save/reload at each objective"]},
     {"id": "m001", "number": 2, "title": "奇袭火车站", "status": "partial", "gaps": ["victory/failure traces", "uniform and train interaction parity", "difficulty calibration"]},
     {"id": "m002", "number": 3, "title": "劫狱", "status": "partial", "gaps": ["victory/failure traces", "prison interaction parity", "difficulty calibration"]},
     {"id": "m003", "number": 4, "title": "铁路桥", "status": "partial", "gaps": ["victory/failure traces", "bridge explosion parity", "difficulty calibration"]},

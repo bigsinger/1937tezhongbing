@@ -27,6 +27,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 & (Join-Path $PSScriptRoot 'Test-ModParityContract.ps1')
+& (Join-Path $PSScriptRoot 'Test-RuntimeParityTrace.ps1')
 
 $modResource = Join-Path `
     ([System.IO.Path]::GetDirectoryName($remakeRoot)) `
@@ -134,6 +135,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "Godot deterministic replay tests failed with exit code $LASTEXITCODE."
 }
 
+& $GodotExecutable --headless --path $game --script 'res://tests/runtime_parity_trace_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot runtime parity trace tests failed with exit code $LASTEXITCODE."
+}
+
 & $GodotExecutable --headless --path $game --quit-after 600 `
     --script 'res://tests/product_shell_test.gd'
 if ($LASTEXITCODE -ne 0) {
@@ -146,6 +152,47 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
+    $parityProbeOutput = Join-Path $remakeRoot 'LocalAssets\qa\verify-parity'
+    New-Item -ItemType Directory -Force -Path $parityProbeOutput | Out-Null
+    & $GodotExecutable --headless --path $game `
+        --max-fps 60 --disable-vsync `
+        --script 'res://tests/parity_runtime_probe.gd' -- `
+        "--output-dir=$parityProbeOutput"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Godot real-content parity probe failed with exit code $LASTEXITCODE."
+    }
+    & $GodotExecutable --headless --path $game `
+        --max-fps 60 --disable-vsync `
+        --script 'res://tests/parity_runtime_probe.gd' -- `
+        "--output-dir=$parityProbeOutput" `
+        '--scenario-id=m000-obstacle-route-v1' `
+        '--outbound-target=528,552' `
+        '--return-target=304,136' `
+        '--observation-seconds=0.75'
+    if ($LASTEXITCODE -ne 0) {
+        throw "Godot obstacle-route parity probe failed with exit code $LASTEXITCODE."
+    }
+    foreach ($parityScenarioId in @(
+        'm000-basic-movement-v1',
+        'm000-obstacle-route-v1'
+    )) {
+        $modParityBaseline = Join-Path $remakeRoot (
+            'validation\baselines\mod\' +
+            $parityScenarioId +
+            '.json')
+        & (Join-Path $PSScriptRoot 'Compare-RuntimeParityTrace.ps1') `
+            -ReferenceTrace $modParityBaseline `
+            -CandidateTrace (
+                Join-Path $parityProbeOutput (
+                    'remake-' + $parityScenarioId + '.json')) `
+            -OutputJson (
+                Join-Path $parityProbeOutput (
+                    $parityScenarioId + '-comparison.json')) `
+            -OutputMarkdown (
+                Join-Path $parityProbeOutput (
+                    $parityScenarioId + '-comparison.md')) | Out-Null
+    }
+
     $realMediaCatalog = Join-Path $remakeRoot 'LocalAssets\converted\legacy-media-catalog.json'
     if (Test-Path -LiteralPath $realMediaCatalog -PathType Leaf) {
         & $GodotExecutable --headless --path $game --script 'res://tests/real_media_test.gd'

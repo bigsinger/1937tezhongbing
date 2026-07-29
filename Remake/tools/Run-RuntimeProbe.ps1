@@ -13,7 +13,7 @@ $localOcrScript = Join-Path `
     'Patch\analysis\tools\Invoke-LocalScreenshotOcr.ps1'
 
 if (-not (Test-Path -LiteralPath $levelManifest -PathType Leaf)) {
-    throw 'The m000 local asset import is missing. Run Import-OriginalAssets.cmd first.'
+    throw 'The m000 stable-MOD asset import is missing. Run Import-ModAssets.cmd first.'
 }
 
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
@@ -61,6 +61,61 @@ $logPath = Join-Path $OutputDirectory 'godot.log'
     "--output-dir=$OutputDirectory"
 if ($LASTEXITCODE -ne 0) {
     throw "Godot runtime probe failed with exit code $LASTEXITCODE."
+}
+
+$parityOutput = Join-Path $OutputDirectory 'parity'
+New-Item -ItemType Directory -Force -Path $parityOutput | Out-Null
+$parityLog = Join-Path $OutputDirectory 'parity.log'
+& $GodotExecutable `
+    --headless `
+    --path $gameDirectory `
+    --max-fps 60 `
+    --disable-vsync `
+    --log-file $parityLog `
+    --script 'res://tests/parity_runtime_probe.gd' `
+    -- `
+    "--output-dir=$parityOutput"
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot parity runtime probe failed with exit code $LASTEXITCODE."
+}
+
+& $GodotExecutable `
+    --headless `
+    --path $gameDirectory `
+    --max-fps 60 `
+    --disable-vsync `
+    --log-file (Join-Path $OutputDirectory 'parity-obstacle.log') `
+    --script 'res://tests/parity_runtime_probe.gd' `
+    -- `
+    "--output-dir=$parityOutput" `
+    '--scenario-id=m000-obstacle-route-v1' `
+    '--outbound-target=528,552' `
+    '--return-target=304,136' `
+    '--observation-seconds=0.75'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot obstacle-route parity probe failed with exit code $LASTEXITCODE."
+}
+
+$parityScenarios = @(
+    'm000-basic-movement-v1',
+    'm000-obstacle-route-v1'
+)
+foreach ($scenarioId in $parityScenarios) {
+    $modBaseline = Join-Path $remakeRoot (
+        'validation\baselines\mod\' + $scenarioId + '.json')
+    $remakeTrace = Join-Path $parityOutput (
+        'remake-' + $scenarioId + '.json')
+    if (-not (Test-Path -LiteralPath $modBaseline -PathType Leaf)) {
+        throw "The stable-MOD parity baseline is missing: $scenarioId"
+    }
+    & (Join-Path $PSScriptRoot 'Compare-RuntimeParityTrace.ps1') `
+        -ReferenceTrace $modBaseline `
+        -CandidateTrace $remakeTrace `
+        -OutputJson (
+            Join-Path $parityOutput ($scenarioId + '-comparison.json')) `
+        -OutputMarkdown (
+            Join-Path $parityOutput ($scenarioId + '-comparison.md')) |
+        Out-Null
 }
 
 $productUiOutput = Join-Path $OutputDirectory 'product-ui'

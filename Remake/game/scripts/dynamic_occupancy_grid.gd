@@ -4,6 +4,11 @@ extends RefCounted
 const NAVIGATION_GRID_DATA: Script = preload("res://scripts/navigation_grid_data.gd")
 const MOVEMENT_SAMPLE_PIXELS := 4.0
 const MIN_ACTOR_SEPARATION := 12.0
+## A small set of formal-map actors and vehicles has its connected L2/L3
+## footprint one cell away from the serialized reference cell. Larger
+## distances indicate a stale/reused scene reference and must not create an
+## unbounded runtime footprint.
+const MAX_SOURCE_ANCHOR_DISTANCE := 1
 
 var navigation: RefCounted
 var actors: Dictionary = {}
@@ -276,9 +281,31 @@ func _source_offsets(layer_id: int, scene_index: int, origin: Vector2i) -> Array
 	var source_lookup: Dictionary = {}
 	for cell: Vector2i in source_cells:
 		source_lookup[cell] = true
-	if source_lookup.has(origin):
-		var pending: Array[Vector2i] = [origin]
-		var visited: Dictionary = {origin: true}
+	var source_seed := origin
+	if not source_lookup.has(source_seed):
+		var nearest_distance := MAX_SOURCE_ANCHOR_DISTANCE + 1
+		for cell: Vector2i in source_cells:
+			var distance := maxi(
+				absi(cell.x - origin.x),
+				absi(cell.y - origin.y),
+			)
+			if (
+				distance < nearest_distance
+				or (
+					distance == nearest_distance
+					and (
+						cell.y < source_seed.y
+						or (cell.y == source_seed.y and cell.x < source_seed.x)
+					)
+				)
+			):
+				nearest_distance = distance
+				source_seed = cell
+		if nearest_distance > MAX_SOURCE_ANCHOR_DISTANCE:
+			source_seed = origin
+	if source_lookup.has(source_seed):
+		var pending: Array[Vector2i] = [source_seed]
+		var visited: Dictionary = {source_seed: true}
 		while not pending.is_empty():
 			var cell: Vector2i = pending.pop_back()
 			offsets.append(cell - origin)
@@ -380,15 +407,20 @@ func _diagonal_transition_is_clear(
 		Vector2i(to_origin.x, from_origin.y),
 		Vector2i(from_origin.x, to_origin.y),
 	]
+	var blocked_side_count := 0
 	for side_origin: Vector2i in side_origins:
+		var side_blocked := false
 		for offset: Vector2i in movement_offsets:
 			var side_cell := side_origin + offset
 			if (
 				_source_movement_blocked(side_cell)
 				or _has_other_owner(movement_owners, side_cell, scene_index)
 			):
-				return false
-	return true
+				side_blocked = true
+				break
+		if side_blocked:
+			blocked_side_count += 1
+	return blocked_side_count < side_origins.size()
 
 
 func _mark_temporary_solid(cell: Vector2i, changed_solids: Array[Vector2i]) -> void:

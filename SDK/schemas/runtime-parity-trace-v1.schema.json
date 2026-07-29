@@ -1,0 +1,347 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/bigsinger/1937tezhongbing/SDK/schemas/runtime-parity-trace-v1.schema.json",
+  "title": "1937 MOD and Remake runtime parity trace",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "trace_id",
+    "runtime",
+    "content_profile",
+    "level",
+    "scenario",
+    "checkpoints"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "trace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "runtime": {
+      "enum": [
+        "mod",
+        "remake",
+        "synthetic"
+      ]
+    },
+    "content_profile": {
+      "type": "string",
+      "minLength": 1
+    },
+    "level": {
+      "$ref": "#/$defs/level"
+    },
+    "scenario": {
+      "$ref": "#/$defs/scenario"
+    },
+    "metadata": {
+      "type": "object"
+    },
+    "checkpoints": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/checkpoint"
+      }
+    }
+  },
+  "$defs": {
+    "point": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "number"
+        }
+      ],
+      "items": false
+    },
+    "level": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "selector_level",
+        "engine_mission"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^m[0-9]{3}$"
+        },
+        "selector_level": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        },
+        "engine_mission": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        }
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "coordinate_space"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "coordinate_space": {
+          "const": "legacy-world-pixels"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "camera": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "position",
+        "viewport",
+        "zoom"
+      ],
+      "properties": {
+        "position": {
+          "$ref": "#/$defs/point"
+        },
+        "viewport": {
+          "$ref": "#/$defs/point"
+        },
+        "zoom": {
+          "$ref": "#/$defs/point"
+        }
+      }
+    },
+    "world": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "size",
+        "tracked_actor_count"
+      ],
+      "properties": {
+        "size": {
+          "$ref": "#/$defs/point"
+        },
+        "tracked_actor_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "source_entity_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "runtime_object_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "weapon": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "attack_type": {
+          "type": "integer"
+        },
+        "action_key": {
+          "type": "string"
+        },
+        "magazine_ammo": {
+          "type": "integer"
+        },
+        "reserve_ammo": {
+          "type": "integer"
+        },
+        "infinite_ammo": {
+          "type": "boolean"
+        }
+      }
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "actor_id",
+        "role",
+        "scene_index",
+        "database_entry_id",
+        "faction_id",
+        "position",
+        "target_position",
+        "facing_direction",
+        "alive"
+      ],
+      "properties": {
+        "actor_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "enum": [
+            "player",
+            "escort",
+            "enemy",
+            "neutral",
+            "unknown"
+          ]
+        },
+        "scene_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "database_entry_id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "faction_id": {
+          "type": "integer"
+        },
+        "position": {
+          "$ref": "#/$defs/point"
+        },
+        "target_position": {
+          "$ref": "#/$defs/point"
+        },
+        "facing_direction": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        },
+        "alive": {
+          "type": "boolean"
+        },
+        "selected": {
+          "type": "boolean"
+        },
+        "stance": {
+          "type": "string"
+        },
+        "hit_points": {
+          "type": "object",
+          "required": [
+            "current",
+            "maximum"
+          ],
+          "properties": {
+            "current": {
+              "type": "integer"
+            },
+            "maximum": {
+              "type": "integer"
+            }
+          }
+        },
+        "weapon": {
+          "$ref": "#/$defs/weapon"
+        },
+        "inventory": {
+          "type": "object"
+        },
+        "ai_state": {
+          "type": "integer"
+        },
+        "native": {
+          "type": "object"
+        }
+      }
+    },
+    "mission": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "status"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "failed",
+            "victory",
+            "unknown"
+          ]
+        },
+        "failure_id": {
+          "type": "string"
+        },
+        "completed": {
+          "type": "object"
+        },
+        "progress": {
+          "type": "object"
+        },
+        "elapsed_seconds": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "checkpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "sequence",
+        "elapsed_ms",
+        "camera",
+        "world",
+        "actors",
+        "mission"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "elapsed_ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "camera": {
+          "$ref": "#/$defs/camera"
+        },
+        "world": {
+          "$ref": "#/$defs/world"
+        },
+        "actors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/actor"
+          }
+        },
+        "mission": {
+          "$ref": "#/$defs/mission"
+        },
+        "tags": {
+          "type": "object"
+        }
+      }
+    }
+  }
+}

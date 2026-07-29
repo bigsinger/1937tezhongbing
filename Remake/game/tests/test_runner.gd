@@ -340,6 +340,39 @@ func _init() -> void:
 		"diagonal movement cannot cut through a blocked corner",
 		failures,
 	)
+	var detour_layer := PackedInt64Array()
+	detour_layer.resize(5 * 9)
+	detour_layer[3 * 5 + 2] = 1
+	var detour_navigation: NavigationGridData = NAVIGATION_GRID_DATA.create_for_tests(
+		5, 9, Vector2i(32, 16), detour_layer
+	)
+	detour_navigation.prepare_astar()
+	var delayed_detour := PackedVector2Array(
+		[
+			detour_navigation.cell_to_world(Vector2i(2, 0)),
+			detour_navigation.cell_to_world(Vector2i(2, 1)),
+			detour_navigation.cell_to_world(Vector2i(2, 2)),
+			detour_navigation.cell_to_world(Vector2i(1, 3)),
+			detour_navigation.cell_to_world(Vector2i(1, 4)),
+			detour_navigation.cell_to_world(Vector2i(1, 5)),
+			detour_navigation.cell_to_world(Vector2i(2, 6)),
+			detour_navigation.cell_to_world(Vector2i(3, 7)),
+			detour_navigation.cell_to_world(Vector2i(4, 8)),
+		]
+	)
+	var recovered_detour: PackedVector2Array = (
+		detour_navigation
+		. _canonicalize_equal_cost_steps(delayed_detour, Vector2i(4, 8))
+	)
+	expect(
+		(
+			detour_navigation.world_to_cell(recovered_detour[4]) == Vector2i(2, 4)
+			and detour_navigation.world_to_cell(recovered_detour[6]) == Vector2i(2, 6)
+			and detour_navigation.world_to_cell(recovered_detour[7]) == Vector2i(3, 7)
+		),
+		"equal-cost path canonicalization restores an obstacle detour early without pulling later goal progress forward",
+		failures,
+	)
 	var corner_sight_navigation: NavigationGridData = NAVIGATION_GRID_DATA.create_for_tests(
 		2, 2, Vector2i(32, 16), PackedInt64Array([0, 0, 0, 0]), corner_layer
 	)
@@ -677,6 +710,9 @@ func _init() -> void:
 
 	var path_unit = SQUAD_UNIT_SCRIPT.new()
 	path_unit.configure("测试队员", Color.WHITE, Vector2.ZERO)
+	# This unit test isolates residual-distance handling from the separately
+	# calibrated original run speed.
+	path_unit.move_speed = 150.0
 	path_unit.issue_path(PackedVector2Array([Vector2(10, 0), Vector2(10, 10)]))
 	path_unit._physics_process(0.1)
 	expect(
@@ -839,8 +875,8 @@ func _init() -> void:
 		failures,
 	)
 	expect(
-		not crossing_first and not crossing_second,
-		"a diagonal move is rejected when either current-frame side cell has a dynamic actor",
+		crossing_first and not crossing_second,
+		"one open cardinal side permits the first diagonal while reciprocal same-frame crossing is rejected",
 		failures,
 	)
 	var reserved_path: PackedVector2Array = crossing_grid.find_path_for_scene(
@@ -911,6 +947,30 @@ func _init() -> void:
 			) == [Vector2i.ZERO]
 		),
 		"serialized reference coordinates select one connected footprint and ignore separated historical scene references",
+		failures,
+	)
+
+	var shifted_navigation: NavigationGridData = NAVIGATION_GRID_DATA.create_for_tests(
+		4, 2, Vector2i(32, 16), PackedInt64Array([0, 1040, 0, 0, 0, 0, 0, 0])
+	)
+	var shifted_grid: RefCounted = DYNAMIC_OCCUPANCY_GRID.new()
+	shifted_grid.configure(shifted_navigation)
+	shifted_grid.register_scene(
+		40,
+		shifted_navigation.cell_to_world(Vector2i(0, 0)),
+		shifted_navigation.cell_to_world(Vector2i(0, 0)),
+	)
+	shifted_grid.finalize_registration()
+	expect(
+		(
+			(
+				(shifted_grid.actors[40] as Dictionary)["movement_offsets"]
+				as Array[Vector2i]
+			) == [Vector2i(1, 0)]
+			and shifted_grid.runtime_movement_owner(Vector2i(0, 0)) == -1
+			and shifted_grid.runtime_movement_owner(Vector2i(1, 0)) == 40
+		),
+		"VWF actor footprints preserve a nearby serialized scene-cell offset",
 		failures,
 	)
 

@@ -164,6 +164,24 @@ godot --path .\game -- --level=m007
 .\tools\Run-RealAssetTests.cmd C:\path\to\Godot_v4.7.1-stable_win64_console.exe
 ```
 
+### MOD/Remake 行为差分
+
+导入稳定 MOD 资源后，可以重放第一关已固化的无遮挡移动与树边绕行轨迹：
+
+```powershell
+.\tools\Run-RuntimeProbe.ps1 `
+  -GodotExecutable D:\Godot\Godot_v4.7.1-stable_win64_console.exe
+```
+
+脚本只操作 Remake 自己的窗口；建立 MOD 基线的只读探针也只向隔离测试
+窗口投递消息，不移动或锁定系统鼠标。轨迹遵循
+[`SDK/schemas/runtime-parity-trace-v1.schema.json`](../SDK/schemas/runtime-parity-trace-v1.schema.json)，
+原版基线位于
+[`validation/baselines/mod/m000-basic-movement-v1.json`](validation/baselines/mod/m000-basic-movement-v1.json)。
+结果写入 `LocalAssets/qa/runtime-probe/parity/`；已有基线一旦出现位置、
+目标、朝向、树边绕行方向或时间区间差异，脚本会直接失败。本地
+`Verify.ps1` 在发现真实导入资源时也会执行这两条严格差分门禁。
+
 ## 5. 生成 Windows 本地试玩程序
 
 本地资源导入完成后运行：
@@ -194,6 +212,7 @@ MOD profile，构建脚本会先自动执行 `Import-ModAssets.ps1`。默认使�
 - [开发环境、验证与 IDA Python 修复](docs/DEVELOPMENT.md)
 - [Windows 本地试玩包](docs/PLAYABLE_BUILD.md)
 - [稳定 MOD 完全复刻开发实施方案](docs/MOD完全复刻开发实施方案.md)
+- [MOD 运行轨迹基线说明](validation/baselines/mod/README.md)
 - [资产收录与本地导入策略](ASSET_POLICY.md)
 
 ## 项目边界

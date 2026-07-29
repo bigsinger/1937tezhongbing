@@ -120,9 +120,9 @@ Godot 运行时分为以下独立系统：
 
 ### P1：取证与差分回放基础设施
 
-- 建立仅目标窗口的输入录制器和真实帧回放格式；
-- 把 MOD 已有 SDK 地址扩展为只读角色、背包、武器、任务和 AI 快照；
-- 同一轨迹在 MOD/Remake 输出规范化事件与状态哈希；
+- 已建立仅目标窗口的输入探针和版本化运行轨迹格式；
+- 已为 MOD/Remake 输出同一 schema 的基础移动轨迹，并完成第一条严格比较；
+- 继续把 MOD 已有 SDK 地址扩展为已证明身份的只读角色、背包、武器、任务和 AI 快照；
 - 为加载、移动、选择、攻击、拾取、姿态、视线、声音、警报、存读档建立
   最小差分用例；
 - 增加 10 分钟回放的内存、P95/P99 和 >50 ms 尖峰门禁。
@@ -212,7 +212,50 @@ m009 与 m011 已知原控制流缺陷同时保留“严格原版”和“修正
 `mod_parity_contract.json`，不会因“自动测试能直接发送任务事件”而提前
 标记完成。
 
-## 8. 每次提交的固定交付
+## 8. 已落地的 MOD/Remake 差分闭环
+
+2026-07-29 已完成 `m000-basic-movement-v1` 与
+`m000-obstacle-route-v1`，它们不是只在 Remake 内部自测：
+
+- `SDK/schemas/runtime-parity-trace-v1.schema.json` 固定跨运行时轨迹格式；
+- `Patch/analysis/tools/ModRegressionProbe.cs` 在隔离的稳定 MOD 中采集轨迹；
+- `validation/baselines/mod/` 保存两份可审阅的 MOD 基线；
+- `game/tests/parity_runtime_probe.gd` 在 Remake 中重放相同的地面命令；
+- `tools/Compare-RuntimeParityTrace.ps1` 比较关卡身份、检查点、角色身份、
+  位置/目标、移动向量、朝向和时间区间；
+- `tools/Run-RuntimeProbe.ps1` 与本地真实资源 `Verify.ps1` 均采用严格比较，
+  一旦既有基线产生差异就失败，而不是只输出警告。
+
+探针不移动、锁定或裁剪系统鼠标，不抢占桌面输入；MOD 侧只读取目标进程
+快照，并把命令投递到该测试窗口的私有回放队列。首条轨迹确认强子从 MOD
+原始位置执行两次无遮挡命令时，与 Remake 在 12 像素移动容差内零差异；
+由 0.75 秒位移样本校准出的当前跑速为 260 px/s。
+
+第二条轨迹覆盖第一关开局树丛：原版允许在一个正交侧格开放时贴着单侧
+障碍斜行，但两个侧格都阻挡时仍禁止穿角；绕开树木后会尽早回到原移动
+走廊，而不会沿等价 A* 路线长期偏移。Remake 现用同一斜行规则，并对
+Godot 返回的等价路线只做“提前消除逆向绕行”的确定性规范化。两条轨迹
+均为零差异，且已进入真实资源 `Verify.ps1` 的严格门禁。
+
+这些证据仍只证明第一关两个移动片段，不能把 m000 或导航 domain 标成
+完成。另一个重要取证结论是：原版
+运行时活动对象数组下标并不等于 VWF `scene_index`，其中的角色数据库字段
+也不能直接当作 DBL entry。当前只登记已经由位置、阵营和唯一性共同证明的
+强子映射（VWF scene 1436 / DBL 924）；敌军身份在建立可靠映射表前不得
+猜测写入基线。
+
+本地复现命令：
+
+```powershell
+.\tools\Import-ModAssets.cmd
+.\tools\Run-RuntimeProbe.ps1 `
+  -GodotExecutable D:\Godot\Godot_v4.7.1-stable_win64_console.exe
+```
+
+结果位于 `LocalAssets/qa/runtime-probe/parity/`，包括两份 Remake 轨迹
+以及各自的机器可读 JSON、可读 Markdown 比较报告。
+
+## 9. 每次提交的固定交付
 
 每次完善必须同时完成：
 

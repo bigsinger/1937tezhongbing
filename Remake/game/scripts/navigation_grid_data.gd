@@ -114,7 +114,10 @@ func prepare_astar(scene_indices_to_ignore: Array[int] = []) -> void:
 	astar.region = Rect2i(Vector2i.ZERO, dimensions)
 	astar.cell_size = Vector2(cell_size)
 	astar.offset = Vector2(cell_size) * 0.5
-	astar.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
+	# Original m000 movement traces permit a diagonal around one blocked
+	# cardinal side (for example the tree beside 强子), but never through a
+	# corner where both cardinal sides are blocked.
+	astar.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_AT_LEAST_ONE_WALKABLE
 	astar.default_compute_heuristic = AStarGrid2D.HEURISTIC_EUCLIDEAN
 	astar.default_estimate_heuristic = AStarGrid2D.HEURISTIC_EUCLIDEAN
 	astar.update()
@@ -145,6 +148,7 @@ func find_path(
 		astar.set_point_solid(start_cell, false)
 		temporarily_opened_start = true
 	var path := astar.get_point_path(start_cell, destination_cell, true)
+	path = _canonicalize_equal_cost_steps(path, destination_cell)
 	if temporarily_opened_start:
 		astar.set_point_solid(start_cell, true)
 	if path.is_empty():
@@ -164,6 +168,100 @@ func find_path(
 		if path.is_empty() or path[-1].distance_squared_to(world_destination) > 1.0:
 			path.append(world_destination)
 	return path
+
+
+func _canonicalize_equal_cost_steps(
+	path: PackedVector2Array,
+	destination_cell: Vector2i,
+) -> PackedVector2Array:
+	if path.size() < 3 or astar == null:
+		return path
+	var result := path.duplicate()
+	var start_cell := world_to_cell(result[0])
+	# AStarGrid2D can return any of several equal-cost staircases. Stable MOD
+	# m000 traces return from a one-cell obstacle detour as soon as the
+	# original corridor is clear, while keeping later goal progress in its
+	# original vertical-first order. Bubble only a step that cancels such a
+	# wrong-way detour; do not generally pull all goal-facing diagonals ahead.
+	for _pass_index: int in range(result.size()):
+		var changed := false
+		for index: int in range(result.size() - 2):
+			var first := world_to_cell(result[index])
+			var middle := world_to_cell(result[index + 1])
+			var finish := world_to_cell(result[index + 2])
+			var first_step := middle - first
+			var second_step := finish - middle
+			if (
+				first_step == second_step
+				or maxi(absi(first_step.x), absi(first_step.y)) != 1
+				or maxi(absi(second_step.x), absi(second_step.y)) != 1
+			):
+				continue
+			var candidate := first + second_step
+			if candidate == middle or candidate == first or candidate == finish:
+				continue
+			if not _reduces_wrong_way_detour(
+				middle,
+				candidate,
+				start_cell,
+				destination_cell,
+			):
+				continue
+			if not _astar_step_is_clear(first, candidate):
+				continue
+			if not _astar_step_is_clear(candidate, finish):
+				continue
+			result[index + 1] = cell_to_world(candidate)
+			changed = true
+		if not changed:
+			break
+	return result
+
+
+func _astar_step_is_clear(from_cell: Vector2i, to_cell: Vector2i) -> bool:
+	if (
+		not is_valid_cell(from_cell)
+		or not is_valid_cell(to_cell)
+		or astar.is_point_solid(to_cell)
+	):
+		return false
+	var delta := to_cell - from_cell
+	if maxi(absi(delta.x), absi(delta.y)) != 1:
+		return false
+	if delta.x == 0 or delta.y == 0:
+		return true
+	var side_x := Vector2i(to_cell.x, from_cell.y)
+	var side_y := Vector2i(from_cell.x, to_cell.y)
+	return (
+		not astar.is_point_solid(side_x)
+		or not astar.is_point_solid(side_y)
+	)
+
+
+func _reduces_wrong_way_detour(
+	current: Vector2i,
+	candidate: Vector2i,
+	start: Vector2i,
+	destination: Vector2i,
+) -> bool:
+	var improves := false
+	for axis: int in range(2):
+		var target_delta := destination[axis] - start[axis]
+		var current_delta := current[axis] - start[axis]
+		var candidate_delta := candidate[axis] - start[axis]
+		var current_is_wrong := (
+			current_delta != 0
+			and (target_delta == 0 or current_delta * target_delta < 0)
+		)
+		var candidate_is_wrong := (
+			candidate_delta != 0
+			and (target_delta == 0 or candidate_delta * target_delta < 0)
+		)
+		if candidate_is_wrong and absi(candidate_delta) > absi(current_delta):
+			return false
+		if current_is_wrong and absi(candidate_delta) < absi(current_delta):
+			improves = true
+	return improves
 
 
 func nearest_walkable_cell(requested: Vector2i) -> Vector2i:

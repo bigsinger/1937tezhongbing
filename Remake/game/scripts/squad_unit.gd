@@ -5,7 +5,9 @@ const BASE_SPRITE_TICK_SECONDS := 0.085
 const DEFAULT_REPLAN_BLOCKED_SECONDS := 0.25
 const COMBAT_REPATH_SECONDS := 0.40
 const HURT_REACTION_SECONDS := 0.18
-const RUN_SPEED := 150.0
+## Calibrated against the stable MOD m000 window-local movement trace:
+## a 0.75 s unobstructed run advances approximately 154-156 world pixels.
+const RUN_SPEED := 260.0
 const WALK_SPEED := 92.0
 const CRAWL_SPEED := 48.0
 const TACTICAL_SENSES_SCRIPT: Script = preload("res://scripts/tactical_senses.gd")
@@ -29,7 +31,7 @@ signal damage_received(unit: Node2D, attacker: Node2D, damage: int, remaining_hi
 signal died(unit: Node2D, killer: Node2D)
 signal ammo_changed(unit: Node2D, magazine: int, reserve: int)
 
-@export_range(0.0, 1000.0, 1.0, "or_greater") var move_speed: float = 150.0
+@export_range(0.0, 1000.0, 1.0, "or_greater") var move_speed: float = RUN_SPEED
 
 var display_name: String = "队员"
 var body_color: Color = Color.WHITE
