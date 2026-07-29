@@ -337,8 +337,7 @@ static string FindRepository()
                 "address-catalog.json")) &&
             Directory.Exists(Path.Combine(
                 directory.FullName,
-                "Mod",
-                "Missions")))
+                "Mod")))
             return directory.FullName;
     }
     throw new DirectoryNotFoundException(
