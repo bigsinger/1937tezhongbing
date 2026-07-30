@@ -16,6 +16,9 @@ const LOW_DAMAGE_IMMUNE_ACTOR_TYPES := {
 	97: true,
 }
 const LOW_DAMAGE_IMMUNITY_THRESHOLD := 32
+const ORIGINAL_CELL_SIZE := Vector2i(32, 16)
+const MACHINE_GUN_LIVE_TARGET_SPREAD_DEGREES := [0, -1, 1]
+const MACHINE_GUN_COORDINATE_SPREAD_DEGREES := [0, -2, 2]
 
 
 static func direct_actor_damage(
@@ -58,3 +61,82 @@ static func accepted_actor_damage(runtime_actor_type: int, requested_damage: int
 	):
 		return 0
 	return damage
+
+
+static func navigation_cell(world_position: Vector2) -> Vector2i:
+	return Vector2i(
+		floori(world_position.x / float(ORIGINAL_CELL_SIZE.x)),
+		floori(world_position.y / float(ORIGINAL_CELL_SIZE.y)),
+	)
+
+
+static func attack_target_cell_coincides(
+	attacker_world_position: Vector2,
+	target_world_position: Vector2,
+) -> bool:
+	# sub_45F000 compares RuntimeActorV1 +0x108/+0x110 and accepts one
+	# navigation cell of separation on each axis.
+	var attacker_cell := navigation_cell(attacker_world_position)
+	var target_cell := navigation_cell(target_world_position)
+	return (
+		absi(attacker_cell.x - target_cell.x) <= 1
+		and absi(attacker_cell.y - target_cell.y) <= 1
+	)
+
+
+static func coordinate_projectile_destinations(
+	attack_type: int,
+	source_world_position: Vector2,
+	target_world_position: Vector2,
+	has_live_actor_target: bool = true,
+) -> PackedVector2Array:
+	if coordinate_projectile_count(attack_type) <= 0:
+		return PackedVector2Array()
+	if attack_type != 3:
+		return PackedVector2Array([target_world_position])
+	var result := PackedVector2Array()
+	var offsets: Array = (
+		MACHINE_GUN_LIVE_TARGET_SPREAD_DEGREES
+		if has_live_actor_target
+		else MACHINE_GUN_COORDINATE_SPREAD_DEGREES
+	)
+	var original_distance := int(
+		source_world_position.distance_to(target_world_position)
+	)
+	var original_angle := fposmod(
+		rad_to_deg(
+			atan2(
+				source_world_position.y - target_world_position.y,
+				source_world_position.x - target_world_position.x,
+			)
+		),
+		360.0,
+	)
+	for offset_degrees: int in offsets:
+		if offset_degrees == 0:
+			result.append(target_world_position)
+		else:
+			result.append(
+				_original_endpoint_from_angle(
+					original_angle + float(offset_degrees),
+					original_distance,
+					source_world_position,
+				)
+			)
+	return result
+
+
+static func _original_endpoint_from_angle(
+	angle_degrees: float,
+	distance: int,
+	source_world_position: Vector2,
+) -> Vector2:
+	# sub_45DD50 converts degrees to radians, truncates both products through
+	# __ftol, and applies the original 0.5 vertical isometric scale.
+	var angle_radians := deg_to_rad(angle_degrees)
+	return Vector2(
+		int(source_world_position.x)
+			- int(cos(angle_radians) * float(distance)),
+		int(source_world_position.y)
+			- int(sin(angle_radians) * float(distance) * 0.5),
+	)

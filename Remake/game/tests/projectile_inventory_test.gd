@@ -4,6 +4,7 @@ const AMMO_PICKUP_SCRIPT: Script = preload("res://scripts/ammo_pickup.gd")
 const COMBAT_INVENTORY_SCRIPT: Script = preload("res://scripts/combat_inventory.gd")
 const COMBAT_PROFILES: Script = preload("res://scripts/combat_profiles.gd")
 const COMBAT_PROJECTILE_SCRIPT: Script = preload("res://scripts/combat_projectile.gd")
+const LEGACY_COMBAT_RULES: Script = preload("res://scripts/legacy_combat_rules.gd")
 const LEGACY_EXPLOSION_RULES: Script = preload("res://scripts/legacy_explosion_rules.gd")
 const LEGACY_PROJECTILE_RULES: Script = preload("res://scripts/legacy_projectile_rules.gd")
 const PROJECTILE_PROFILES: Script = preload("res://scripts/projectile_profiles.gd")
@@ -101,6 +102,7 @@ func _run_tests() -> void:
 	_test_grenade_blast(failures)
 	_test_projectile_snapshot_restore(failures)
 	_test_projectile_world(failures)
+	_test_impact_snapshot_restore(failures)
 	_test_squad_inventory_and_projectile_integration(failures)
 	if failures.is_empty():
 		print("Projectile and inventory tests passed (%d checks)." % check_count)
@@ -114,11 +116,27 @@ func _run_tests() -> void:
 func _test_projectile_profiles(failures: Array[String]) -> void:
 	var catalog: Dictionary = PROJECTILE_PROFILES.load_catalog()
 	_expect(not catalog.is_empty(), "projectile catalog validates", failures)
-	for attack_type: int in [6, 7, 9]:
+	for attack_type: int in [1, 2, 3, 6, 7, 9]:
 		var profile: Dictionary = PROJECTILE_PROFILES.profile_for_attack_type(attack_type)
 		_expect(int(profile.get("attack_type", 0)) == attack_type, "projectile attack type %d resolves" % attack_type, failures)
 		_expect(PROJECTILE_PROFILES.is_projectile_attack(attack_type), "projectile attack type %d is classified" % attack_type, failures)
-	_expect(not PROJECTILE_PROFILES.is_projectile_attack(1), "pistol remains direct-hit delivery", failures)
+	var rifle: Dictionary = PROJECTILE_PROFILES.profile_for_attack_type(2)
+	_expect(
+		int(rifle.get("original_effect_type", 0)) == 1
+		and int(rifle.get("delivery_mode", -1)) == 0
+		and int(rifle.get("world_step_pixels", 0)) == 64
+		and int(rifle.get("runtime_actor_type", -1)) == 0
+		and int(rifle.get("original_gfl_index", -1)) == 0,
+		"ordinary gunfire preserves recovered effect 1, mode 0, step 64 and no travelling actor",
+		failures,
+	)
+	_expect(
+		int(rifle.get("impact_effect_type", 0)) == 8
+		and int(rifle.get("impact_actor_type", 0)) == 60
+		and int(rifle.get("impact_gfl_index", 0)) == 306,
+		"ordinary gunfire resolves through recovered actor 60 / GFL 306 impact",
+		failures,
+	)
 	var grenade: Dictionary = PROJECTILE_PROFILES.profile_for_attack_type(9)
 	_expect(
 		int(grenade.get("delivery_mode", 0)) == 1
@@ -178,6 +196,52 @@ func _test_recovered_projectile_math(failures: Array[String]) -> void:
 		and LEGACY_PROJECTILE_RULES.original_arc_height(8, 12, coefficient)
 			== 50.0,
 		"grenade parabola uses step/(path_count/step) and __ftol truncation",
+		failures,
+	)
+	_expect(
+		LEGACY_COMBAT_RULES.attack_target_cell_coincides(
+			Vector2.ZERO,
+			Vector2(63.0, 31.0),
+		)
+		and not LEGACY_COMBAT_RULES.attack_target_cell_coincides(
+			Vector2.ZERO,
+			Vector2(64.0, 32.0),
+		),
+		"sub_45F000 direct-hit gate accepts at most one 32x16 navigation cell per axis",
+		failures,
+	)
+	var spread: PackedVector2Array = (
+		LEGACY_COMBAT_RULES.coordinate_projectile_destinations(
+			3,
+			Vector2.ZERO,
+			Vector2(80.0, 0.0),
+			true,
+		)
+	)
+	_expect(
+		Array(spread) == [
+			Vector2(80.0, 0.0),
+			Vector2(79.0, 0.0),
+			Vector2(79.0, 0.0),
+		],
+		"live-target machine-gun fan follows center then minus/plus one degree with __ftol truncation",
+		failures,
+	)
+	var diagonal_spread: PackedVector2Array = (
+		LEGACY_COMBAT_RULES.coordinate_projectile_destinations(
+			3,
+			Vector2.ZERO,
+			Vector2(80.0, 40.0),
+			true,
+		)
+	)
+	_expect(
+		Array(diagonal_spread) == [
+			Vector2(80.0, 40.0),
+			Vector2(80.0, 19.0),
+			Vector2(78.0, 20.0),
+		],
+		"diagonal fan uses sub_45A0A0 Euclidean distance and sub_45DD50 half-height endpoint projection",
 		failures,
 	)
 	var actor_61: Dictionary = LEGACY_EXPLOSION_RULES.profile_for_actor(61)
@@ -414,17 +478,82 @@ func _test_projectile_world(failures: Array[String]) -> void:
 	arena.add_child(world)
 	var candidates: Array[Node2D] = [source, enemy]
 	world.set_combatants(candidates)
+	var impact_image := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+	impact_image.fill(Color.WHITE)
+	var impact_texture := ImageTexture.create_from_image(impact_image)
+	var impact_frames: Array[Texture2D] = [
+		impact_texture,
+		impact_texture,
+		impact_texture,
+		impact_texture,
+	]
+	world.configure_runtime(
+		null,
+		null,
+		{
+			306: {
+				"frames": impact_frames,
+				"frame_hold_ticks": 2,
+				"anchor": Vector2.ZERO,
+			},
+		},
+	)
 	_expect(world.supports_attack_type(6), "projectile world accepts darts", failures)
-	_expect(not world.supports_attack_type(2), "projectile world leaves rifles on direct-hit path", failures)
+	_expect(world.supports_attack_type(2), "projectile world accepts distant rifle bullets", failures)
+	var impact_events: Array[Vector2i] = []
+	world.projectile_impact_created.connect(
+		func(
+			_attacker: Node2D,
+			_world_position: Vector2,
+			_attack_type: int,
+			runtime_actor_type: int,
+			original_gfl_index: int,
+		) -> void:
+			impact_events.append(Vector2i(runtime_actor_type, original_gfl_index))
+	)
 	var projectile = world.launch_for_weapon(
 		source, enemy, COMBAT_PROFILES.weapon_profile("dart_attack")
 	)
 	_expect(projectile != null, "projectile world launches configured projectile", failures)
 	projectile.advance_world_ticks(6)
-	_expect(enemy.hit_points == 12, "projectile world launch reaches combat damage path", failures)
 	_expect(
-		world.launch_for_weapon(source, enemy, COMBAT_PROFILES.weapon_profile("rifle_attack")) == null,
-		"direct-hit weapon does not create a projectile",
+		enemy.hit_points == 12
+		and projectile.state == COMBAT_PROJECTILE_SCRIPT.State.LANDED
+		and impact_events == [Vector2i(60, 306)],
+		"linear projectile damage enters the recovered actor-60 impact lifecycle",
+		failures,
+	)
+	projectile.advance_world_ticks(7)
+	_expect(
+		projectile.is_resolved(),
+		"four-frame GFL 306 impact with two-tick holds resolves after eight world ticks",
+		failures,
+	)
+	var rifle_projectile = world.launch_for_weapon(
+		source, enemy, COMBAT_PROFILES.weapon_profile("rifle_attack")
+	)
+	_expect(
+		rifle_projectile != null,
+		"distant rifle fire creates an invisible effect-1 projectile",
+		failures,
+	)
+	rifle_projectile.advance_world_ticks(2)
+	_expect(enemy.hit_points == 10, "effect-1 rifle bullet applies damage on its occupied cell", failures)
+	var machine_gun_projectiles: Array[Node2D] = world.launch_all_for_weapon(
+		source,
+		enemy,
+		COMBAT_PROFILES.weapon_profile("machine_gun_attack"),
+	)
+	_expect(
+		machine_gun_projectiles.size() == 3,
+		"distant machine-gun fire creates the original three coordinate projectiles",
+		failures,
+	)
+	for machine_gun_projectile: Node2D in machine_gun_projectiles:
+		machine_gun_projectile.advance_world_ticks(2)
+	_expect(
+		enemy.hit_points == 4,
+		"all three live-target fan paths can independently hit an occupied target cell",
 		failures,
 	)
 	arena.queue_free()
@@ -488,6 +617,138 @@ func _test_projectile_snapshot_restore(failures: Array[String]) -> void:
 		and restored.is_resolved()
 		and target.hit_points == 44,
 		"restored and uninterrupted grenades resolve on the same endpoint tick",
+		failures,
+	)
+	arena.queue_free()
+
+
+func _test_impact_snapshot_restore(failures: Array[String]) -> void:
+	var arena := Node2D.new()
+	root.add_child(arena)
+	var source := _combatant(3, 20, Vector2.ZERO, arena)
+	var target := _combatant(1, 20, Vector2(80.0, 0.0), arena)
+	var impact_image := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+	impact_image.fill(Color.WHITE)
+	var impact_texture := ImageTexture.create_from_image(impact_image)
+	var impact_visual := {
+		"impact_visual": {
+			"frames": [
+				impact_texture,
+				impact_texture,
+				impact_texture,
+				impact_texture,
+			],
+			"frame_hold_ticks": 2,
+			"anchor": Vector2.ZERO,
+		},
+	}
+	var weapon: Dictionary = COMBAT_PROFILES.weapon_profile("rifle_attack")
+	weapon["resolved_projectile_damage"] = 2
+	var profile: Dictionary = PROJECTILE_PROFILES.profile_for_attack_type(2)
+	var candidates: Array[Node2D] = [source, target]
+	var original = COMBAT_PROJECTILE_SCRIPT.new()
+	arena.add_child(original)
+	_expect(
+		original.configure(
+			source,
+			target,
+			target.global_position,
+			weapon,
+			profile,
+			candidates,
+			null,
+			null,
+			impact_visual,
+		),
+		"impact snapshot source rifle configures",
+		failures,
+	)
+	original.advance_world_ticks(2)
+	_expect(
+		original.state == COMBAT_PROJECTILE_SCRIPT.State.LANDED
+		and target.hit_points == 18,
+		"effect-1 hit reaches actor-60 impact state before snapshot",
+		failures,
+	)
+	original.advance_world_ticks(3)
+	var snapshot := original.snapshot_runtime_state() as Dictionary
+	var restored = COMBAT_PROJECTILE_SCRIPT.new()
+	arena.add_child(restored)
+	_expect(
+		restored.configure(
+			source,
+			target,
+			target.global_position,
+			weapon,
+			profile,
+			candidates,
+			null,
+			null,
+			impact_visual,
+			original.start_world_position,
+		)
+		and restored.restore_runtime_state(snapshot),
+		"actor-60 impact snapshot restores",
+		failures,
+	)
+	_expect(
+		restored.state == original.state
+		and restored.visual_frame_index == original.visual_frame_index
+		and restored.visual_frame_elapsed_ticks
+			== original.visual_frame_elapsed_ticks,
+		"save/load preserves one-shot impact animation progress",
+		failures,
+	)
+	original.advance_world_ticks(5)
+	restored.advance_world_ticks(5)
+	_expect(
+		original.is_resolved()
+		and restored.is_resolved()
+		and target.hit_points == 18,
+		"restored impact finishes on the same tick without applying damage twice",
+		failures,
+	)
+	source.projectile_vertical_baseline = 148.0
+	target.hit_points = 20
+	var dart = COMBAT_PROJECTILE_SCRIPT.new()
+	arena.add_child(dart)
+	var dart_profile: Dictionary = PROJECTILE_PROFILES.profile_for_attack_type(6)
+	_expect(
+		dart.configure(
+			source,
+			target,
+			target.global_position,
+			COMBAT_PROFILES.weapon_profile("dart_attack"),
+			dart_profile,
+			candidates,
+			null,
+			null,
+			impact_visual,
+		),
+		"elevated dart impact snapshot source configures",
+		failures,
+	)
+	dart.advance_world_ticks(5)
+	var dart_snapshot := dart.snapshot_runtime_state() as Dictionary
+	var restored_dart = COMBAT_PROJECTILE_SCRIPT.new()
+	arena.add_child(restored_dart)
+	_expect(
+		restored_dart.configure(
+			source,
+			target,
+			target.global_position,
+			COMBAT_PROFILES.weapon_profile("dart_attack"),
+			dart_profile,
+			candidates,
+			null,
+			null,
+			impact_visual,
+			dart.start_world_position,
+		)
+		and restored_dart.restore_runtime_state(dart_snapshot)
+		and restored_dart.state == COMBAT_PROJECTILE_SCRIPT.State.LANDED
+		and restored_dart.visual_height == 0.0,
+		"restored dart impact stays on the ground instead of reusing its flight baseline",
 		failures,
 	)
 	arena.queue_free()

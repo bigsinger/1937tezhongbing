@@ -4,23 +4,32 @@
 
 ## 1. 世界投射物
 
-攻击动作仍在最后一帧复核目标、射程和视线。类型 1—5 保持即时命中；类型 6、7、9 在最后攻击帧发出 `projectile_requested`，由 `ProjectileWorld` 生成世界对象，飞行或爆炸后才结算伤害。
+攻击动作仍在最后一帧复核目标、射程和视线。attack type 1—7 只有在目标
+actor 与攻击者的 32×16 导航格在两轴都相差不超过一格时才直接命中；
+手枪、步枪、机枪、飞镖和弹弓的非相邻目标，以及所有手榴弹目标，都在最后
+攻击帧发出 `projectile_requested`，由 `ProjectileWorld` 按 world tick
+推进后结算。
 
 | 攻击 | 类型 | 原版投射生命周期 |
 |---|---:|---|
+| 手枪 | 1 | effect 1 / mode 0，无飞行 actor 或 SPR；含首尾点 Bresenham 路径每 tick 前进 64 像素，先查 L3 actor、再查 L2 障碍，伤害 2 |
+| 步枪 | 2 | 与手枪相同；attacker runtime type 1 的伤害为 16，其余为 2 |
+| 机枪 | 3 | 与手枪相同，但坐标目标生成 3 条独立弹路；活动 actor 目标使用中心、−1°、+1°，纯坐标目标使用中心、−2°、+2°，每条伤害 2 |
 | 飞镖 | 6 | effect 13 创建 actor 80 / 首匹配 GFL 251；沿含首尾点的整数 Bresenham 路径每个 world tick 前进 16 像素，先命中 L3 当前格的第一个有效 actor，再检查 L2 障碍，直接伤害 8 |
 | 弹弓 | 7 | effect 14 创建 actor 81 / 首匹配 GFL 635；同一整数路径每 tick 前进 5 像素，碰撞顺序与飞镖一致，直接伤害 1；原版这里是直线模式 4，不是人为添加的弧线 |
 | 手榴弹 | 9 | effect 2 创建 actor 57 / 首匹配 GFL 528；每 tick 前进 8 像素，以 `8t - trunc((8 / floor(path_count / 8)) × t²)` 修正视觉高度；飞行中忽略 L3 actor 和 L2 障碍，到终点后的下一次更新立即创建 actor 61 / 首匹配 GFL 19，不存在 0.35 秒落地延时 |
 
-三类投射物的起点也不再使用角色节点中心。`IEngineSprite::SetCurrentSerial`
+六类投射规则的起点也不再使用角色节点中心。`IEngineSprite::SetCurrentSerial`
 会把当前攻击方向 SPR 组的 primary triplet 写入 actor `+0x44..+0x4c`，
 tertiary triplet 写入 `+0x50..+0x58`；原版路径起始 X 为
 `world_x + tertiary.x - primary.x`，直线投射物的等价视觉高度为
 `primary.z - tertiary.z`。转换器、通用动作加载器和角色运行时现在共同保留
 并使用这两组值，因此武器从当前动作精灵的原锚点发出。
 
-飞镖和弹弓会被路径上第一个有效 actor 拦下，原程序没有先做阵营过滤，所以
-友军同样可以挡弹。actor 61 在 `128 × 64` 等距椭圆内造成 128 点伤害，
+mode 0/3/4 会被路径上第一个有效 actor 拦下，原程序没有先做阵营过滤，
+所以友军同样可以挡弹。命中 actor、L2 障碍或终点时，effect 8 创建一次性
+actor 60；首匹配 GFL 306 `火花效果.spr` 的 4 帧各保持 2 world tick，
+播放完即销毁，进度可随存档恢复。actor 61 在 `128 × 64` 等距椭圆内造成 128 点伤害，
 包括敌人、友军和投掷者；并发布 800 半径警报。其 GFL 19 主动画为 10 帧、
 每帧 3 tick。投射物命中、爆炸警报、战斗状态文字和原版音效事件均接入主
 战斗事件链；未结算路径索引、弧线 tick、SPR 高度和视觉帧会进入存档。
@@ -144,10 +153,10 @@ type 8/10 世界对象和汽油桶走统一的世界爆炸结算，可伤害单�
 
 | 文件 | 职责 |
 |---|---|
-| `game/data/projectile_profiles.json` | 6/7/9 三类投射物配置及逐字段证据状态 |
+| `game/data/projectile_profiles.json` | 1/2/3/6/7/9 六类投射规则及逐字段证据状态 |
 | `game/scripts/legacy_projectile_rules.gd` | 原版含首尾点 Bresenham、步进 tick、格坐标与抛物线公式 |
 | `game/scripts/legacy_explosion_rules.gd` | actor 61/62 的共同爆炸伤害、范围、警报和视觉身份 |
-| `game/scripts/combat_projectile.gd` | 原版离散路径、L3→L2 碰撞、终点 actor 61、动画和版本化快照 |
+| `game/scripts/combat_projectile.gd` | 原版离散路径、L3→L2 碰撞、actor 60 命中火花、终点 actor 61、动画和版本化快照 |
 | `game/scripts/projectile_world.gd` | 投射物生成、战斗候选与命中/爆炸信号 |
 | `game/scripts/combat_inventory.gd` | 原版数量模式、多武器切换、旧档迁移和快照 |
 | `game/data/original_initial_weapon_inventory.json` | 十二关 27 名角色的 83 个取证开局条目 |
@@ -157,7 +166,7 @@ type 8/10 世界对象和汽油桶走统一的世界爆炸结算，可伤害单�
 | `tools/ResourceFormats/OriginalWorldPickupEvidence.cs` | 从 DBL 恢复并严格分类十类原版世界拾取物 |
 | `validation/baselines/mod/world-pickups-v1.json` | MOD 数据库哈希、item ID、容器和 mode 的可复现基线 |
 | `../SDK/include/M1937SDK/Inventory.hpp` | MOD/工具可共用的原版物品容器路由与拾取物常量 |
-| `../SDK/include/M1937SDK/Projectiles.hpp` | 0x44 投射物布局、三类规则、路径/弧线/SPR 锚点公式及 RVA 配套接口 |
+| `../SDK/include/M1937SDK/Projectiles.hpp` | 0x44 投射物布局、六类规则、路径/弧线/SPR 锚点公式及 RVA 配套接口 |
 | `game/scripts/field_pickup.gd` | 一次性场景拾取物 |
 | `game/scripts/legacy_special_world_object.gd` | type 8/10 部署、触发/计时、爆炸、清理和快照 |
 | `game/scripts/legacy_ai_control_effect.gd` | type 11 应用、刷新、解除和快照 |
@@ -167,18 +176,18 @@ type 8/10 世界对象和汽油桶走统一的世界爆炸结算，可伤害单�
 | `game/scripts/main.gd` | 输入、原 scene 生成、背包 UI、任务与警报接线 |
 
 仍待恢复或校准的相邻内容包括：actor 61/62 与其他系统共享的完整全局随机
-调用顺序、汽油桶数值及动画，以及爆炸对地形/遮挡的原规则。三类投射物自身
-的路径、步长、碰撞、伤害、终点爆炸和 SPR 发射锚点已经恢复。原版物品容器
+调用顺序、汽油桶数值及动画，以及爆炸对地形/遮挡的原规则。六类投射规则自身
+的路径、步长、碰撞、伤害、普通命中 actor 60、终点爆炸和 SPR 发射锚点已经恢复。原版物品容器
 `actor+552`、武器容器 `actor+556` 的布局、
 数量模式和十二关开局内容已经恢复，不再把不存在的弹匣/装填时间或已确认的
 医药箱/西瓜/中药直接效果列为待校准项。
 
 ## 6. 验证
 
-`projectile_inventory_test.gd` 覆盖三类投射物、11 个物品 ID、兼容背包切换/
+`projectile_inventory_test.gd` 覆盖六类投射规则、11 个物品 ID、兼容背包切换/
 快照、最后攻击帧发射、整数路径、逐 tick 步长、L3→L2 顺序、友军拦截、
-SPR primary/tertiary 发射锚点、手榴弹终点 tick、actor 61 的 128 伤害和
-`ProjectileWorld` 分流。`original_inventory_test.gd` 覆盖武器 mode
+SPR primary/tertiary 发射锚点、手榴弹终点 tick、actor 60 火花存读档、
+actor 61 的 128 伤害和 `ProjectileWorld` 分流。`original_inventory_test.gd` 覆盖武器 mode
 0/1/2、空枪保留、无换弹和 schema 1→2 迁移；`backpack_inventory_test.gd`
 与 `original_item_runtime_test.gd` 覆盖独立物品容器、真实治疗/补给、A 页、
 丢弃、敌人拾取和死亡掉落；`real_original_inventory_test.gd` 在真实十二关

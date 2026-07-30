@@ -3,6 +3,8 @@
 #include <array>
 #include <cstdint>
 
+#include "Types.hpp"
+
 namespace m1937::sdk {
 
 struct OrdinaryAttackRule {
@@ -33,6 +35,11 @@ inline constexpr std::array<std::int32_t, 8> low_damage_immune_actor_types{{
     97,
 }};
 inline constexpr std::int32_t low_damage_immunity_threshold = 32;
+inline constexpr SizeI32 ordinary_navigation_cell_size{32, 16};
+inline constexpr std::array<std::int32_t, 3>
+    machine_gun_live_target_spread_degrees{{0, -1, 1}};
+inline constexpr std::array<std::int32_t, 3>
+    machine_gun_coordinate_spread_degrees{{0, -2, 2}};
 
 constexpr const OrdinaryAttackRule* find_ordinary_attack_rule(
     std::int32_t attack_type) noexcept {
@@ -80,6 +87,17 @@ constexpr std::int32_t accepted_actor_damage(
     return requested_damage;
 }
 
+constexpr bool attack_target_cell_coincides(
+    PointI32 attacker_navigation_cell,
+    PointI32 target_navigation_cell) noexcept {
+    const auto delta_x =
+        attacker_navigation_cell.x - target_navigation_cell.x;
+    const auto delta_y =
+        attacker_navigation_cell.y - target_navigation_cell.y;
+    return (delta_x < 0 ? -delta_x : delta_x) <= 1 &&
+           (delta_y < 0 ? -delta_y : delta_y) <= 1;
+}
+
 static_assert(direct_actor_damage(2, 1) == 16);
 static_assert(direct_actor_damage(2, 5) == 2);
 static_assert(direct_actor_damage(4, 56) == 1);
@@ -88,5 +106,9 @@ static_assert(find_ordinary_attack_rule(3)->direct_actor_hit_count == 1);
 static_assert(find_ordinary_attack_rule(3)->coordinate_projectile_count == 3);
 static_assert(accepted_actor_damage(34, 31) == 0);
 static_assert(accepted_actor_damage(34, 32) == 32);
+static_assert(attack_target_cell_coincides({0, 0}, {1, 1}));
+static_assert(!attack_target_cell_coincides({0, 0}, {2, 2}));
+static_assert(machine_gun_live_target_spread_degrees[1] == -1);
+static_assert(machine_gun_coordinate_spread_degrees[2] == 2);
 
 } // namespace m1937::sdk

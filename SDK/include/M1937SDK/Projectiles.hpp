@@ -56,6 +56,7 @@ inline constexpr std::int32_t cell_height = 16;
 inline constexpr std::int32_t world_ticks_per_second = 60;
 
 enum class DeliveryMode : std::int32_t {
+    invisible_linear = 0,
     grenade_parabola = 1,
     dart_linear = 3,
     slingshot_linear = 4,
@@ -75,17 +76,32 @@ struct AttackRule final {
     std::int32_t first_match_gfl_index;
     std::int32_t direct_damage;
     CollisionSemantics collision;
+    std::int32_t impact_effect_type;
+    std::int32_t impact_actor_type;
+    std::int32_t impact_first_match_gfl_index;
     std::int32_t explosion_actor_type;
     std::int32_t explosion_first_match_gfl_index;
 };
 
-inline constexpr std::array<AttackRule, 3> attack_rules{{
+inline constexpr std::array<AttackRule, 6> attack_rules{{
+    {1, 1, DeliveryMode::invisible_linear, 64, 0, 0, 2,
+     CollisionSemantics::layer3_actor_then_layer2_obstruction,
+     8, 60, 306, 0, 0},
+    {2, 1, DeliveryMode::invisible_linear, 64, 0, 0, 2,
+     CollisionSemantics::layer3_actor_then_layer2_obstruction,
+     8, 60, 306, 0, 0},
+    {3, 1, DeliveryMode::invisible_linear, 64, 0, 0, 2,
+     CollisionSemantics::layer3_actor_then_layer2_obstruction,
+     8, 60, 306, 0, 0},
     {6, 13, DeliveryMode::dart_linear, 16, 80, 251, 8,
-     CollisionSemantics::layer3_actor_then_layer2_obstruction, 0, 0},
+     CollisionSemantics::layer3_actor_then_layer2_obstruction,
+     8, 60, 306, 0, 0},
     {7, 14, DeliveryMode::slingshot_linear, 5, 81, 635, 1,
-     CollisionSemantics::layer3_actor_then_layer2_obstruction, 0, 0},
+     CollisionSemantics::layer3_actor_then_layer2_obstruction,
+     8, 60, 306, 0, 0},
     {9, 2, DeliveryMode::grenade_parabola, 8, 57, 528, 0,
-     CollisionSemantics::ignore_actor_and_layer2_until_destination, 61, 19},
+     CollisionSemantics::ignore_actor_and_layer2_until_destination,
+     4, 61, 19, 61, 19},
 }};
 
 inline constexpr std::int32_t explosion_damage = 128;

@@ -831,6 +831,7 @@ func spawn_squad() -> void:
 		_load_legacy_projectile_visual_catalog(),
 	)
 	projectile_world.projectile_damage_applied.connect(_on_projectile_damage_applied)
+	projectile_world.projectile_impact_created.connect(_on_projectile_impact_created)
 	projectile_world.projectile_exploded.connect(_on_projectile_exploded)
 	projectile_world.projectile_explosion_actor_requested.connect(
 		_on_projectile_explosion_actor_requested
@@ -2336,7 +2337,7 @@ func _on_projectile_requested(
 ) -> void:
 	if projectile_world == null:
 		return
-	projectile_world.launch_for_weapon(attacker, target, profile)
+	projectile_world.launch_all_for_weapon(attacker, target, profile)
 
 
 func _on_legacy_special_action_requested(
@@ -2620,7 +2621,7 @@ func _load_legacy_projectile_visual(gfl_index: int) -> Dictionary:
 
 func _load_legacy_projectile_visual_catalog() -> Dictionary:
 	var result := _load_legacy_explosion_visual_catalog()
-	for gfl_index: int in [19, 251, 528, 635]:
+	for gfl_index: int in [19, 251, 306, 528, 635]:
 		var visual := _load_legacy_projectile_visual(gfl_index)
 		if not visual.is_empty():
 			result[gfl_index] = visual
@@ -2634,6 +2635,17 @@ func _on_projectile_damage_applied(
 	damage: int,
 ) -> void:
 	_on_attack_hit(attacker, target, attack_type, damage)
+
+
+func _on_projectile_impact_created(
+	_attacker: Node2D,
+	_world_position: Vector2,
+	_attack_type: int,
+	runtime_actor_type: int,
+	original_gfl_index: int,
+) -> void:
+	if runtime_actor_type == 60 and original_gfl_index == 306:
+		_play_media_audio("projectile_impact")
 
 
 func _on_projectile_explosion_actor_requested(
@@ -3570,8 +3582,6 @@ func _on_attack_hit(
 	attack_type: int,
 	damage: int,
 ) -> void:
-	if attack_type in [6, 7]:
-		_play_media_audio("projectile_impact")
 	if units.has(attacker) and target != null:
 		update_status("%s 命中 %s，造成 %d 点伤害" % [
 			attacker.display_name,

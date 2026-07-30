@@ -913,8 +913,31 @@ func _resolve_pending_hit() -> void:
 				ammo_changed.emit(self, magazine_ammo, reserve_ammo)
 		special_action_requested.emit(self, pending_hit_target, weapon_profile.duplicate(true))
 		return
-	if PROJECTILE_PROFILES.is_projectile_attack(attack_type):
-		projectile_requested.emit(self, pending_hit_target, weapon_profile.duplicate(true))
+	var target_cell_coincides: bool = false
+	if pending_hit_target != null:
+		target_cell_coincides = bool(
+			LEGACY_COMBAT_RULES.attack_target_cell_coincides(
+			global_position,
+			pending_hit_target.global_position,
+		)
+		)
+	if (
+		PROJECTILE_PROFILES.is_projectile_attack(attack_type)
+		and (attack_type == 9 or not target_cell_coincides)
+	):
+		var projectile_weapon_profile := weapon_profile.duplicate(true)
+		projectile_weapon_profile["resolved_projectile_damage"] = (
+			LEGACY_COMBAT_RULES.direct_actor_damage(
+				attack_type,
+				runtime_actor_type,
+				int(weapon_profile.get("damage", 1)),
+			)
+		)
+		projectile_requested.emit(
+			self,
+			pending_hit_target,
+			projectile_weapon_profile,
+		)
 		return
 	var damage: int = LEGACY_COMBAT_RULES.direct_actor_damage(
 		attack_type,

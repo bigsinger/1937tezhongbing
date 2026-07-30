@@ -129,12 +129,19 @@ type 等于物品 ID 的世界对象；原角色两套容器随后通过 `sub_45
 
 所以机枪的三条散布弹道不是同一 actor 的三次扣血。普通手枪、步枪和机枪
 坐标弹道都通过 `sub_4656C0(effect=1, step=64, damage=2)` 创建；这条
-视觉/逐 tick 路径尚未接入 Remake，不能用直接目标规则代替后再声称完成。
+mode 0 路径没有飞行 actor/SPR，逐 tick 先查 L3 actor、再查 L2 障碍。
+机枪对活动 actor 中心使用 `0/-1/+1` 度，对纯坐标使用 `0/-2/+2` 度；
+`sub_45DD50` 按 `x=source.x-trunc(cos(a)*d)`、
+`y=source.y-trunc(sin(a)*d*0.5)` 计算散布端点。命中 actor、障碍或终点后，
+effect 8 通过 `sub_465310` 创建 actor 60，首匹配 GFL 306
+`火花效果.spr`，4 帧各保持 2 tick 后销毁。上述不可见弹路、独立散布命中、
+火花生命周期及存读档现均已接入 Remake。
 
 伤害入口 `sub_458700` 在伤害小于 32 时跳过 runtime target type
 34/86/87/88/94/95/96/97；32 及以上不受此门槛影响。Godot 侧由
 `LegacyCombatRules`、SDK 侧由 `OrdinaryCombat.hpp` 固化同一组规则；
-`AttackTargetCellCoincides` RVA `0x0005F000` 已进入地址清单。
+`AttackTargetCellCoincides`、`OriginalEndpointFromAngle`、
+`CreateOneShotEffectActor` 和 `UpdateOneShotEffectActor` RVA 已进入地址清单。
 
 ### 坐标警戒与五点调查
 

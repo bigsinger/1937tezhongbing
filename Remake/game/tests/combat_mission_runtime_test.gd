@@ -170,7 +170,7 @@ func _test_combat_timing_ammo_and_death(failures: Array[String]) -> void:
 	attacker.configure_combat(3, 8, weapon_profile, attack_groups, empty_groups, false)
 	var target = SQUAD_UNIT_SCRIPT.new()
 	target.configure(
-		"target", Color.WHITE, Vector2(100.0, 0.0), null, empty_groups, empty_groups, -1, clear_sight
+		"target", Color.WHITE, Vector2(8.0, 0.0), null, empty_groups, empty_groups, -1, clear_sight
 	)
 	target.configure_combat(1, 7, {}, empty_groups, death_groups, true)
 	arena.add_child(attacker)

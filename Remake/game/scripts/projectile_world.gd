@@ -3,6 +3,13 @@ extends Node2D
 
 signal projectile_launched(projectile: Node2D, attacker: Node2D, attack_type: int)
 signal projectile_damage_applied(attacker: Node2D, victim: Node2D, attack_type: int, damage: int)
+signal projectile_impact_created(
+	attacker: Node2D,
+	world_position: Vector2,
+	attack_type: int,
+	runtime_actor_type: int,
+	original_gfl_index: int,
+)
 signal projectile_exploded(attacker: Node2D, world_position: Vector2, horizontal_radius: float, vertical_radius: float)
 signal projectile_explosion_actor_requested(
 	attacker: Node2D,
@@ -13,6 +20,7 @@ signal projectile_explosion_actor_requested(
 
 const COMBAT_PROJECTILE_SCRIPT: Script = preload("res://scripts/combat_projectile.gd")
 const PROJECTILE_PROFILES: Script = preload("res://scripts/projectile_profiles.gd")
+const LEGACY_COMBAT_RULES: Script = preload("res://scripts/legacy_combat_rules.gd")
 
 var combatants: Array[Node2D] = []
 var navigation_grid: Variant
@@ -63,6 +71,20 @@ func launch_for_weapon(
 		return null
 	var projectile: Node2D = COMBAT_PROJECTILE_SCRIPT.new()
 	add_child(projectile)
+	var projectile_visual := (
+		visual_catalog.get(
+			int(projectile_profile.get("original_gfl_index", 0)),
+			{},
+		) as Dictionary
+	).duplicate()
+	var impact_visual_value: Variant = visual_catalog.get(
+		int(projectile_profile.get("impact_gfl_index", 0)),
+		{},
+	)
+	if impact_visual_value is Dictionary:
+		projectile_visual["impact_visual"] = (
+			impact_visual_value as Dictionary
+		).duplicate()
 	if not projectile.configure(
 		attacker,
 		target,
@@ -72,10 +94,7 @@ func launch_for_weapon(
 		combatants,
 		navigation_grid,
 		dynamic_occupancy,
-		visual_catalog.get(
-			int(projectile_profile.get("original_gfl_index", 0)),
-			{},
-		) as Dictionary,
+		projectile_visual,
 		start_world_position,
 	):
 		projectile.queue_free()
@@ -83,6 +102,21 @@ func launch_for_weapon(
 	projectile.damage_applied.connect(
 		func(_projectile: Node2D, victim: Node2D, applied: int) -> void:
 			projectile_damage_applied.emit(attacker, victim, attack_type, applied)
+	)
+	projectile.impact_created.connect(
+		func(
+			_projectile: Node2D,
+			world_position: Vector2,
+			runtime_actor_type: int,
+			original_gfl_index: int,
+		) -> void:
+			projectile_impact_created.emit(
+				attacker,
+				world_position,
+				attack_type,
+				runtime_actor_type,
+				original_gfl_index,
+			)
 	)
 	projectile.exploded.connect(
 		func(
@@ -112,6 +146,50 @@ func launch_for_weapon(
 	)
 	projectile_launched.emit(projectile, attacker, attack_type)
 	return projectile
+
+
+func launch_all_for_weapon(
+	attacker: Node2D,
+	target: Node2D,
+	weapon_profile: Dictionary,
+	target_world_position: Variant = null,
+	start_world_position: Variant = null,
+) -> Array[Node2D]:
+	if attacker == null:
+		return []
+	var destination: Vector2
+	var has_live_actor_target := target != null and is_instance_valid(target)
+	if target_world_position is Vector2:
+		destination = target_world_position as Vector2
+	elif has_live_actor_target:
+		destination = target.global_position
+	else:
+		return []
+	var source_position := (
+		start_world_position as Vector2
+		if start_world_position is Vector2
+		else attacker.global_position
+	)
+	var destinations: PackedVector2Array = (
+		LEGACY_COMBAT_RULES.coordinate_projectile_destinations(
+			int(weapon_profile.get("attack_type", 0)),
+			source_position,
+			destination,
+			has_live_actor_target,
+		)
+	)
+	var launched: Array[Node2D] = []
+	for projectile_destination: Vector2 in destinations:
+		var projectile := launch_for_weapon(
+			attacker,
+			target,
+			weapon_profile,
+			projectile_destination,
+			start_world_position,
+		)
+		if projectile != null:
+			launched.append(projectile)
+	return launched
 
 
 func supports_attack_type(attack_type: int) -> bool:

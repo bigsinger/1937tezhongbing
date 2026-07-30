@@ -57,11 +57,13 @@ namespace Mission1937.SDK.Generated
         public const long BurialCompletion = 0x00056CD0L;
         public const long ApplyActorDamage = 0x00058700L;
         public const long AttackTargetCellCoincides = 0x0005F000L;
+        public const long OriginalEndpointFromAngle = 0x0005DD50L;
         public const long BurialCommandUpdate = 0x00058520L;
         public const long ActorCommandDispatch = 0x00058A80L;
         public const long FaceActor = 0x00059B70L;
         public const long IsometricEllipseContains = 0x0005A8C0L;
         public const long CreateEffectActor = 0x00065250L;
+        public const long CreateOneShotEffectActor = 0x00065310L;
         public const long EffectDispatch = 0x000656C0L;
         public const long CreateProjectileEffect = 0x00064DF0L;
         public const long ConfigureProjectilePath = 0x00063290L;
@@ -70,6 +72,7 @@ namespace Mission1937.SDK.Generated
         public const long ProjectileAtDestination = 0x000639E0L;
         public const long UpdateProjectileCollision = 0x00063A00L;
         public const long UpdateProjectileManager = 0x00065930L;
+        public const long UpdateOneShotEffectActor = 0x000640B0L;
         public const long FindSpriteByRuntimeType = 0x0001BF80L;
         public const long PopulateExplosionParticles = 0x00064730L;
         public const long UpdateExplosionParticleBurst = 0x00064A80L;

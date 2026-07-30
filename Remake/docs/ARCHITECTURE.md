@@ -106,11 +106,13 @@ direction_index = serial_id % 9
 - 当前武器的攻击/近战动作由战斗状态触发，进入最后一帧时复核并结算命中；
 - `death` 播放一次并保持末帧；当前没有确认可用的独立受伤动作，非致命伤采用 0.18 秒闪红/硬直的重制反馈。
 
-类型 6、7、9 在攻击末帧发出世界投射物请求，使用原版含首尾点整数
-Bresenham 路径、16/5/8 像素逐 tick 步长、当前 SPR 组 primary/tertiary
-锚点和原 L3→L2 碰撞顺序。飞镖/弹弓分别创建 actor 80/81，手榴弹使用
-原抛物线创建 actor 57，并在终点下一 tick 创建 actor 61；伤害、GFL、
-爆炸椭圆和警报均已恢复。type 8/10 在同一末帧协议上创建专用世界对象并
+类型 1、2、3、6、7、9 在非相邻目标或手榴弹攻击末帧发出世界投射物请求，
+使用原版含首尾点整数 Bresenham 路径、64/64/64/16/5/8 像素逐 tick 步长、
+当前 SPR 组 primary/tertiary 锚点和原 L3→L2 碰撞顺序。普通枪弹为不可见
+mode 0，机枪恢复三路角度散布，命中时创建 actor 60 / GFL 306 火花；
+飞镖/弹弓分别创建 actor 80/81，手榴弹使用原抛物线创建 actor 57，并在
+终点下一 tick 创建 actor 61；伤害、GFL、爆炸椭圆和警报均已恢复。
+type 8/10 在同一末帧协议上创建专用世界对象并
 共用已恢复的 actor 62 爆炸语义；其效果 11/15 按原 MSVCRT 随机序列、
 首匹配 GFL 和五轮动画生命周期生成 90/150 tick 粒子。type 11 创建按
 来源移动/战斗转换释放的注意力保持状态；三者均能跨存读档恢复。因此
@@ -163,7 +165,7 @@ Godot 从 `res://../LocalAssets/converted/` 读取本地数据：
 
 当前可控队员使用关卡中对应角色的坐标和已转换动画。玩家、faction 1 敌人和任务护送角色都注册进同一个 `DynamicOccupancyGrid`：源 L2/L3 只读，以源 `ReferenceX/Y` 的八连通分量恢复足印，运行时单独维护角色足印、目标预留、密集移动段检查和第三方视线遮挡。未营救护送角色保持 faction 2 中立，敌人不会提前攻击；营救后切换到 faction 3 并跟随队员。L3 A* 禁止斜穿贴角障碍；敌人读取原巡逻点、方向、感知类型、生命和默认武器，执行巡逻、发现、追击、攻击、实际伤害、基础警报和最后位置搜索。退化巡逻点和拥挤重规划使用确定性错峰退避，避免 A* 重算风暴。
 
-`ImportedLevelData` 保留并校验转换结果中的 `database_header_values`；`WorldDepth` 据 DBL `header[0]` 把地面/固定背景、正常深度、固定前景和顶层映射到四个互不重叠的 z 区间。m000 真实资源回归已确认 22 个 DBL 336/337 庄稼底图在 queue 1，70 个 DBL 335 稻谷在 queue 0；因此前者固定在人物后，后者才参与人物基线排序。玩家身份不再只按姓名猜测，而由 `original_initial_weapon_inventory.json` 的 level + scene ID 确定；`original_runtime_actor_catalog.json` 还固化 762 个已解析运行时角色及 5 个 VWF/运行时阵营差异。玩家单位各自持有原版直接数量语义的 `CombatInventory`；另由 `original_initial_item_inventory.json` 和独立 `BackpackInventory` 固化十二关 650 个精确动态角色、538 条 actor `+0x228` 物品记录，绝不再与 `+0x22C` 武器或全队公共物资混用。`InventoryGridView` 以右侧 276×421 五列方格分别呈现 W 武器/A 物品；`ProjectileWorld` 负责 type 6/7/9 的世界飞行与命中，`LegacySpecialWorldObject` 和 `LegacyAiControlEffect` 负责 type 8/10/11。`FieldPickup` 读取 DBL `header[2]` 的真实 item ID，并按原程序 `sub_45AE10` 路由到拾取角色自己的武器或物品容器；DBL 1003 则保留为可受伤汽油桶，绝不按名称猜成普通物品。`LandMine` 和 `ExplosiveProp` 通过统一椭圆爆炸请求支持地雷、油桶和连锁伤害。世界命令不绘制黄色目标线。
+`ImportedLevelData` 保留并校验转换结果中的 `database_header_values`；`WorldDepth` 据 DBL `header[0]` 把地面/固定背景、正常深度、固定前景和顶层映射到四个互不重叠的 z 区间。m000 真实资源回归已确认 22 个 DBL 336/337 庄稼底图在 queue 1，70 个 DBL 335 稻谷在 queue 0；因此前者固定在人物后，后者才参与人物基线排序。玩家身份不再只按姓名猜测，而由 `original_initial_weapon_inventory.json` 的 level + scene ID 确定；`original_runtime_actor_catalog.json` 还固化 762 个已解析运行时角色及 5 个 VWF/运行时阵营差异。玩家单位各自持有原版直接数量语义的 `CombatInventory`；另由 `original_initial_item_inventory.json` 和独立 `BackpackInventory` 固化十二关 650 个精确动态角色、538 条 actor `+0x228` 物品记录，绝不再与 `+0x22C` 武器或全队公共物资混用。`InventoryGridView` 以右侧 276×421 五列方格分别呈现 W 武器/A 物品；`ProjectileWorld` 负责 type 1/2/3/6/7/9 的原版坐标弹路、命中火花与爆炸，`LegacySpecialWorldObject` 和 `LegacyAiControlEffect` 负责 type 8/10/11。`FieldPickup` 读取 DBL `header[2]` 的真实 item ID，并按原程序 `sub_45AE10` 路由到拾取角色自己的武器或物品容器；DBL 1003 则保留为可受伤汽油桶，绝不按名称猜成普通物品。`LandMine` 和 `ExplosiveProp` 通过统一椭圆爆炸请求支持地雷、油桶和连锁伤害。世界命令不绘制黄色目标线。
 
 `GameShell` 管理暂停菜单、十槽选择器、按键重映射、四通道音量、失败灰化和五列背包。世界左键提交选择/移动/攻击/使用，左 `Ctrl` 或 `↑` 按住时进入强制目标；世界右键只拖框，菜单右键松开返回。右下角地图属于独立 HUD，不暂停 SceneTree；它优先显示原版逐关静态目标图，并增加实时敌我/任务点、镜头框和点击卷屏。`MediaDirector` 在切关时显示原简报图；音乐/环境声和影片音轨进入 `Music`，对白进入 `Voice`，攻击、命中、警报、角色、死亡和 UI WAV 进入 `Sfx`，媒体 `Esc` 在松开时关闭/跳过。导演节拍/教程/持久事件和 AI 姿态/增援预算、已掩埋敌人的 scene 索引及特殊对象等可变状态均随 `GameSessionState` 保存恢复。仍未完成的是通用中立角色行为、听觉遮挡/完整尸体发现、原版 S/B 命令细节、经证据核对的逐关演出和长时间实机验收。
 

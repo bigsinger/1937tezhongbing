@@ -10,6 +10,12 @@ const LEGACY_EXPLOSION_RULES: Script = preload(
 )
 
 signal damage_applied(projectile: Node2D, victim: Node2D, amount: int)
+signal impact_created(
+	projectile: Node2D,
+	world_position: Vector2,
+	runtime_actor_type: int,
+	original_gfl_index: int,
+)
 signal exploded(
 	projectile: Node2D,
 	world_position: Vector2,
@@ -59,6 +65,7 @@ var visual_groups: Array[Dictionary] = []
 var visual_group_index := 0
 var visual_frame_index := 0
 var visual_frame_elapsed_ticks := 0
+var impact_visual: Dictionary = {}
 
 
 func configure(
@@ -93,7 +100,24 @@ func configure(
 		int(projectile_profile.get("world_step_pixels", 1)),
 		1,
 	)
-	damage = maxi(int(projectile_profile.get("direct_damage", 0)), 0)
+	damage = maxi(
+		int(
+			weapon_profile.get(
+				"resolved_projectile_damage",
+				projectile_profile.get("direct_damage", 0),
+			)
+		),
+		0,
+	)
+	var impact_visual_value: Variant = projectile_visual.get(
+		"impact_visual",
+		{},
+	)
+	impact_visual = (
+		(impact_visual_value as Dictionary).duplicate()
+		if impact_visual_value is Dictionary
+		else {}
+	)
 	var launch_offset := Vector2.ZERO
 	if new_source.has_method("legacy_projectile_launch_offset"):
 		var offset_value: Variant = new_source.call(
@@ -177,9 +201,12 @@ func advance_simulation(delta: float) -> void:
 
 func advance_world_ticks(ticks: int = 1) -> void:
 	for unused_tick: int in range(maxi(ticks, 0)):
-		if state != State.FLYING:
+		if state == State.FLYING:
+			_process_original_world_tick()
+		elif state == State.LANDED:
+			_advance_impact_visual_tick()
+		else:
 			break
-		_process_original_world_tick()
 	queue_redraw()
 
 
@@ -226,6 +253,8 @@ func restore_runtime_state(snapshot: Dictionary) -> bool:
 		State.FLYING,
 		State.RESOLVED,
 	) as State
+	if state == State.LANDED:
+		_configure_impact_visual_groups()
 	source_vertical_baseline = float(snapshot.get(
 		"source_vertical_baseline",
 		source_vertical_baseline,
@@ -259,18 +288,20 @@ func _process_original_world_tick() -> void:
 		_finish_resolution()
 		return
 	global_position = path_points[path_index]
-	if delivery_mode in [3, 4]:
+	if delivery_mode in [0, 3, 4]:
 		var victim := _runtime_actor_in_current_cell()
 		if victim != null:
 			_apply_damage(victim, damage)
-			_finish_resolution()
+			_begin_linear_impact()
 			return
 		if _current_layer2_cell_is_blocked():
-			_finish_resolution()
+			_begin_linear_impact()
 			return
 	if path_index == path_points.size() - 1:
 		if delivery_mode == 1:
 			_detonate_actor_61()
+		elif delivery_mode in [0, 3, 4]:
+			_begin_linear_impact()
 		else:
 			_finish_resolution()
 		return
@@ -469,6 +500,63 @@ func _cell_to_world(cell: Vector2i) -> Vector2:
 	)
 
 
+func _begin_linear_impact() -> void:
+	if state != State.FLYING:
+		return
+	state = State.LANDED
+	visual_height = 0.0
+	_configure_impact_visual_groups()
+	impact_created.emit(
+		self,
+		global_position,
+		int(projectile_profile.get("impact_actor_type", 60)),
+		int(projectile_profile.get("impact_gfl_index", 306)),
+	)
+	if visual_groups.is_empty():
+		_finish_resolution()
+	queue_redraw()
+
+
+func _advance_impact_visual_tick() -> void:
+	if state != State.LANDED or visual_groups.is_empty():
+		_finish_resolution()
+		return
+	var group := visual_groups[
+		clampi(visual_group_index, 0, visual_groups.size() - 1)
+	]
+	var frames := group.get("frames", []) as Array
+	if frames.is_empty():
+		_finish_resolution()
+		return
+	visual_frame_elapsed_ticks += 1
+	if (
+		visual_frame_elapsed_ticks
+		< maxi(int(group.get("frame_hold_ticks", 1)), 1)
+	):
+		return
+	visual_frame_elapsed_ticks = 0
+	if visual_frame_index >= frames.size() - 1:
+		_finish_resolution()
+	else:
+		visual_frame_index += 1
+
+
+func _configure_impact_visual_groups() -> void:
+	visual_groups.clear()
+	var raw_groups: Variant = impact_visual.get("groups", [])
+	if raw_groups is Array:
+		for raw_group: Variant in raw_groups as Array:
+			if raw_group is Dictionary:
+				visual_groups.append((raw_group as Dictionary).duplicate())
+	if visual_groups.is_empty():
+		var raw_frames: Variant = impact_visual.get("frames", [])
+		if raw_frames is Array and not (raw_frames as Array).is_empty():
+			visual_groups.append(impact_visual.duplicate())
+	visual_group_index = 0
+	visual_frame_index = 0
+	visual_frame_elapsed_ticks = 0
+
+
 func _configure_visual_groups() -> void:
 	visual_groups.clear()
 	var raw_groups: Variant = projectile_visual.get("groups", [])
@@ -518,6 +606,8 @@ func _advance_visual_animation() -> void:
 
 
 func _restored_visual_height() -> float:
+	if state == State.LANDED:
+		return 0.0
 	if delivery_mode == 1 and arc_tick > 0:
 		return LEGACY_PROJECTILE_RULES.original_arc_height(
 			world_step_pixels,
@@ -559,6 +649,10 @@ static func _candidate_sort_key(candidate: Node2D) -> int:
 
 func _draw() -> void:
 	if state == State.RESOLVED:
+		return
+	if state == State.FLYING and delivery_mode == 0:
+		# effect 1 owns no travelling actor or GFL sprite. Only its actor-60
+		# impact (effect 8) is visible.
 		return
 	var draw_position := Vector2(0.0, -visual_height)
 	if not visual_groups.is_empty():

@@ -277,9 +277,19 @@ int main(int argc, char** argv) {
                         ->direct_actor_hit_count == 1 &&
                 m1937::sdk::find_ordinary_attack_rule(3)
                         ->coordinate_projectile_count == 3 &&
+                m1937::sdk::attack_target_cell_coincides(
+                    {0, 0}, {1, 1}) &&
+                !m1937::sdk::attack_target_cell_coincides(
+                    {0, 0}, {2, 2}) &&
+                m1937::sdk::ordinary_navigation_cell_size.width == 32 &&
+                m1937::sdk::ordinary_navigation_cell_size.height == 16 &&
+                m1937::sdk::
+                        machine_gun_live_target_spread_degrees[1] == -1 &&
+                m1937::sdk::
+                        machine_gun_coordinate_spread_degrees[2] == 2 &&
                 m1937::sdk::accepted_actor_damage(34, 31) == 0 &&
                 m1937::sdk::accepted_actor_damage(34, 32) == 32,
-            "ordinary actor-hit count and low-damage immunity mismatch",
+            "ordinary target-cell, spread and low-damage rules mismatch",
             checks);
         require(
             m1937::sdk::rva::attack_target_cell_coincides != 0 &&
@@ -289,9 +299,33 @@ int main(int argc, char** argv) {
             "ordinary combat RVA catalog mismatch", checks);
         {
         using namespace m1937::sdk::projectile;
+        const auto* pistol = find_attack_rule(1);
+        const auto* rifle = find_attack_rule(2);
+        const auto* machine_gun = find_attack_rule(3);
         const auto* dart = find_attack_rule(6);
         const auto* slingshot = find_attack_rule(7);
         const auto* grenade = find_attack_rule(9);
+        require(
+            pistol && pistol->effect_type == 1 &&
+                pistol->delivery_mode ==
+                    DeliveryMode::invisible_linear &&
+                pistol->world_step_pixels == 64 &&
+                pistol->runtime_actor_type == 0 &&
+                pistol->first_match_gfl_index == 0 &&
+                pistol->direct_damage == 2 &&
+                pistol->impact_effect_type == 8 &&
+                pistol->impact_actor_type == 60 &&
+                pistol->impact_first_match_gfl_index == 306 &&
+                rifle &&
+                rifle->delivery_mode ==
+                    DeliveryMode::invisible_linear &&
+                rifle->direct_damage == 2 &&
+                machine_gun &&
+                machine_gun->delivery_mode ==
+                    DeliveryMode::invisible_linear &&
+                machine_gun->direct_damage == 2,
+            "ordinary effect-1 coordinate projectile table mismatch",
+            checks);
         require(
             dart && dart->effect_type == 13 &&
                 dart->delivery_mode == DeliveryMode::dart_linear &&
@@ -299,13 +333,19 @@ int main(int argc, char** argv) {
                 dart->runtime_actor_type == 80 &&
                 dart->first_match_gfl_index == 251 &&
                 dart->direct_damage == 8 &&
+                dart->impact_effect_type == 8 &&
+                dart->impact_actor_type == 60 &&
+                dart->impact_first_match_gfl_index == 306 &&
                 slingshot && slingshot->effect_type == 14 &&
                 slingshot->delivery_mode ==
                     DeliveryMode::slingshot_linear &&
                 slingshot->world_step_pixels == 5 &&
                 slingshot->runtime_actor_type == 81 &&
                 slingshot->first_match_gfl_index == 635 &&
-                slingshot->direct_damage == 1,
+                slingshot->direct_damage == 1 &&
+                slingshot->impact_effect_type == 8 &&
+                slingshot->impact_actor_type == 60 &&
+                slingshot->impact_first_match_gfl_index == 306,
             "linear projectile dispatch table mismatch", checks);
         require(
             grenade && grenade->effect_type == 2 &&
@@ -315,6 +355,9 @@ int main(int argc, char** argv) {
                 grenade->runtime_actor_type == 57 &&
                 grenade->first_match_gfl_index == 528 &&
                 grenade->direct_damage == 0 &&
+                grenade->impact_effect_type == 4 &&
+                grenade->impact_actor_type == 61 &&
+                grenade->impact_first_match_gfl_index == 19 &&
                 grenade->explosion_actor_type == 61 &&
                 grenade->explosion_first_match_gfl_index == 19 &&
                 explosion_damage == 128 &&
@@ -341,12 +384,15 @@ int main(int argc, char** argv) {
             checks);
         require(
             m1937::sdk::rva::create_projectile_effect != 0 &&
+                m1937::sdk::rva::original_endpoint_from_angle != 0 &&
                 m1937::sdk::rva::configure_projectile_path != 0 &&
                 m1937::sdk::rva::advance_projectile_visual != 0 &&
                 m1937::sdk::rva::current_projectile_path_point != 0 &&
                 m1937::sdk::rva::projectile_at_destination != 0 &&
                 m1937::sdk::rva::update_projectile_collision != 0 &&
                 m1937::sdk::rva::update_projectile_manager != 0 &&
+                m1937::sdk::rva::create_one_shot_effect_actor != 0 &&
+                m1937::sdk::rva::update_one_shot_effect_actor != 0 &&
                 m1937::sdk::rva::configure_projectile_path !=
                     m1937::sdk::rva::update_projectile_collision,
             "projectile RVA catalog mismatch", checks);

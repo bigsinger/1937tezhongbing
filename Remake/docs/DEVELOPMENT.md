@@ -108,15 +108,17 @@ Godot 端的责任分工为：
   精确动态角色的开局背包；物品效果证据见
   [原版角色物品背包恢复](ORIGINAL_ITEM_INVENTORY.md)；
 - `original_runtime_actor_catalog.gd`：读取 762 个运行时角色身份及阵营覆盖；
-- `legacy_projectile_rules.gd` / `projectile_world.gd` / `combat_projectile.gd`：
-  type 6/7/9 的原版整数 Bresenham 路径、逐 world-tick 步长、SPR
-  primary/tertiary 发射锚点、L3→L2 碰撞顺序、手榴弹抛物线及终点 actor 61；
+- `legacy_projectile_rules.gd` / `legacy_combat_rules.gd` /
+  `projectile_world.gd` / `combat_projectile.gd`：type 1/2/3/6/7/9 的
+  原版整数 Bresenham 路径、逐 world-tick 步长、目标格门、机枪角度散布、
+  SPR primary/tertiary 发射锚点、L3→L2 碰撞、actor 60 命中火花、
+  手榴弹抛物线及终点 actor 61；
 - `legacy_special_world_object.gd` / `legacy_explosion_visual_rules.gd` / `legacy_ai_control_effect.gd`：type 8/10 世界对象、actor 62 原粒子计划与 type 11 状态的建立、推进、释放和快照；
 - `world_depth.gd`：地面、正常深度、固定前景和顶层四渲染队列；
 - `imported_level_data.gd`：读取并校验 `database_header_values`，不能再次在导入链中丢弃 DBL `header[0]`；
 - `world_pickup_catalog.gd`、`field_pickup.gd`、`land_mine.gd`、`explosive_prop.gd`：真实场景拾取、地雷和油桶。
 
-`combat_profiles.json` 当前的普通敌人/军犬感知、11 类攻击距离、普通伤害、直接 actor 命中数、坐标弹道数、弹药物品 ID、每次消耗和末帧提交语义来自 `M1937.exe` 字段级逆向，不能随意当作手感参数改写。`LegacyCombatRules` 固定 `sub_456DF0` 的步枪 attacker runtime type 1（16 点）、匕首 attacker runtime type 56（1 点）、机枪直接 actor 只结算一次，以及 `sub_458700` 的八类低于 32 伤害免疫；不得重新把机枪三条坐标散布弹道解释为同一 actor 三次扣血。每个新战斗字段都必须标记 `recovered`、`recovered_with_unresolved_override` 或 `unresolved_remake_default`。原版已确认不存在弹匣/备弹/装填抽象；正式关卡必须使用 `original_initial_weapon_inventory.json` 的直接数量和模式，profile 中旧字段只供 schema 1 迁移及合成测试兼容。十类场景拾取的 DBL `header[2]` 物品 ID、`sub_45AE10` 容器/mode 和 `sub_453F70` 单件数量已经恢复；type 6/7/9 的 delivery mode、逐 tick 步长、actor/GFL、碰撞顺序、伤害、手榴弹抛物线/终点爆炸和 SPR 发射锚点也已恢复，不再使用速度、弧高、碰撞半径或落地延时等重制参数。仍为重制默认的是拾取交互半径和汽油桶数值；普通枪弹的坐标目标逐 tick 表现、爆炸对地形/遮挡的原规则、更高层走廊会车仍待恢复。普通警戒听觉已确认不做障碍遮挡，尸体发现也已进入原版生命周期。
+`combat_profiles.json` 当前的普通敌人/军犬感知、11 类攻击距离、普通伤害、直接 actor 命中数、坐标弹道数、弹药物品 ID、每次消耗和末帧提交语义来自 `M1937.exe` 字段级逆向，不能随意当作手感参数改写。`LegacyCombatRules` 固定 `sub_456DF0` 的步枪 attacker runtime type 1（16 点）、匕首 attacker runtime type 56（1 点）、机枪直接 actor 只结算一次，以及 `sub_458700` 的八类低于 32 伤害免疫；不得重新把机枪三条坐标散布弹道解释为同一 actor 三次扣血。每个新战斗字段都必须标记 `recovered`、`recovered_with_unresolved_override` 或 `unresolved_remake_default`。原版已确认不存在弹匣/备弹/装填抽象；正式关卡必须使用 `original_initial_weapon_inventory.json` 的直接数量和模式，profile 中旧字段只供 schema 1 迁移及合成测试兼容。十类场景拾取的 DBL `header[2]` 物品 ID、`sub_45AE10` 容器/mode 和 `sub_453F70` 单件数量已经恢复；type 1/2/3/6/7/9 的 delivery mode、逐 tick 步长、目标格门、机枪散布、actor/GFL、碰撞顺序、伤害、actor 60 火花、手榴弹抛物线/终点爆炸和 SPR 发射锚点也已恢复，不再使用速度、弧高、碰撞半径或落地延时等重制参数。仍为重制默认的是拾取交互半径和汽油桶数值；爆炸对地形/遮挡的原规则、更高层走廊会车仍待恢复。普通警戒听觉已确认不做障碍遮挡，尸体发现也已进入原版生命周期。
 
 type 8/10/11 已由专用运行时接管：type 8 创建 actor 84 / GFL 470、消费物品 43，并由存活 faction 1 进入 32×16 椭圆触发；type 10 创建 actor 85 / GFL 900、消费物品 45，在第 100 个 world tick 爆炸；二者随后创建 actor 62，主爆炸在 128×64 等距椭圆内造成 128 伤害并传播 800 半径警报，另按运行时 actor type 执行两组已恢复的 128 伤害带。效果 11/15 会按默认状态 1 的 MSVCRT LCG 尝试 1—2 个 64×32 散布粒子，首匹配 GFL 动画完整播放 5 轮并在 90/150 tick 清理；全局随机状态进入 `GameSessionState`。type 11 不直接结算伤害、不消费物品 99；它设置目标 `+656/+0x290` 为注意力保持，暂停普通空闲移动并面向专用来源，来源开始移动或目标进入战斗状态时释放，不存在 180 tick 超时。活跃对象与状态均进入 `GameSessionState`。其他尚未恢复的 `rand()` 调用点仍可能移动特定实机时刻的随机变体。详见 [原版行为取证摘要](ORIGINAL_BEHAVIOR_FORENSICS.md)。
 
@@ -137,7 +139,7 @@ serial_id = action_index * 9 + direction_index
 
 `load_action_groups(preview_path, action_key)` 是通用入口。增加战斗动作时，应让角色状态机请求已有动作 key，并由明确的玩法事件切换动画；不要为每种武器重新写资源解析器。玩家与敌人的 `run`/`walk`、`stand`、对应武器攻击和 `death` 已接入。0.085 秒是基础 sprite tick，每组每帧实际保持 `0.085 × (parameters[2] + 1)` 秒；例如已导入强子的跑、走、匍匐分别保持 1、2、3 个 tick。
 
-攻击只在**进入动作最后一帧**时复核射程/视线并提交即时命中或 type 6/7/9 投射物；投射物在实际碰撞/爆炸时再伤害。死亡动作播放一次并保持末帧。当前没有证据表明资源中存在可直接使用的独立受伤动作，因此非致命伤使用 0.18 秒闪红/硬直，这是明确的重制反馈。修改动作推进时必须覆盖“末帧前不伤害、末帧复核、单帧动作、投射物延迟结算、死亡幂等、死亡末帧保持”。
+攻击只在**进入动作最后一帧**时复核射程/视线并提交相邻格直接命中或 type 1/2/3/6/7/9 坐标投射物；投射物在实际碰撞/爆炸时再伤害。死亡动作播放一次并保持末帧。当前没有证据表明资源中存在可直接使用的独立受伤动作，因此非致命伤使用 0.18 秒闪红/硬直，这是明确的重制反馈。修改动作推进时必须覆盖“末帧前不伤害、末帧复核、单帧动作、投射物延迟结算、死亡幂等、死亡末帧保持”。
 
 ## 任务开发工作流
 
