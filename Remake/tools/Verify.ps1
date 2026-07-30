@@ -136,6 +136,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "Godot original item runtime tests failed with exit code $LASTEXITCODE."
 }
 
+& $GodotExecutable --headless --path $game --script 'res://tests/legacy_disguise_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot legacy disguise tests failed with exit code $LASTEXITCODE."
+}
+
 & $GodotExecutable --headless --path $game --script 'res://tests/legacy_world_items_test.gd'
 if ($LASTEXITCODE -ne 0) {
     throw "Godot legacy world-item tests failed with exit code $LASTEXITCODE."

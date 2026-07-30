@@ -685,6 +685,61 @@ int main(int argc, char** argv) {
                 m1937::sdk::special_attention_rules
                     .releases_on_combat_transition,
             "type-11 attention-hold semantics mismatch", checks);
+        const auto* dress =
+            m1937::sdk::disguise_transition_for(10, 54);
+        const auto* undress =
+            m1937::sdk::disguise_transition_for(91, 92);
+        require(
+            dress != nullptr &&
+                dress->to_runtime_type == 91 &&
+                dress->to_gfl_index == 272 &&
+                dress->to_faction_id == 1 &&
+                dress->granted_backpack_item_id == 92 &&
+                dress->granted_weapon_item_id == 99 &&
+                undress != nullptr &&
+                undress->to_runtime_type == 10 &&
+                undress->to_gfl_index == 270 &&
+                undress->to_faction_id == 3 &&
+                undress->granted_backpack_item_id == 54 &&
+                undress->removed_weapon_item_id == 99,
+            "Gu Ming disguise transition table mismatch", checks);
+        require(
+            m1937::sdk::disguise_change_tick_limit == 100 &&
+                m1937::sdk::disguise_recovery_tick_limit == 100 &&
+                m1937::sdk::disguise_breaks_on_attack(91, 1) &&
+                m1937::sdk::disguise_breaks_on_attack(91, 4) &&
+                !m1937::sdk::disguise_breaks_on_attack(91, 11) &&
+                !m1937::sdk::disguise_breaks_on_attack(10, 1),
+            "Gu Ming disguise timing/attack exposure mismatch", checks);
+        require(
+            m1937::sdk::disguise_detection_mode(
+                4, 1, 1000, 1000) ==
+                    m1937::sdk::DisguiseDetectionMode::ordinary_vision &&
+                m1937::sdk::disguise_detection_mode(
+                    19, 2, 127, 0) ==
+                    m1937::sdk::DisguiseDetectionMode::
+                        close_without_line_of_sight &&
+                m1937::sdk::disguise_detection_mode(
+                    24, 6, 0, 127) ==
+                    m1937::sdk::DisguiseDetectionMode::
+                        close_without_line_of_sight &&
+                m1937::sdk::disguise_detection_mode(
+                    24, 6, 0, 128) ==
+                    m1937::sdk::DisguiseDetectionMode::none,
+            "Gu Ming disguise identification rules mismatch", checks);
+        require(
+            m1937::sdk::rva::player_disguise_toggle != 0 &&
+                m1937::sdk::rva::normal_guming_update != 0 &&
+                m1937::sdk::rva::disguised_guming_update != 0 &&
+                m1937::sdk::rva::transfer_actor_state_for_disguise !=
+                    0 &&
+                m1937::sdk::rva::break_disguise_after_attack != 0 &&
+                m1937::sdk::rva::scan_disguise_observers != 0 &&
+                m1937::sdk::rva::normal_guming_update !=
+                    m1937::sdk::rva::disguised_guming_update &&
+                m1937::sdk::rva::break_disguise_after_attack !=
+                    m1937::sdk::rva::scan_disguise_observers,
+            "Gu Ming disguise RVA catalog mismatch", checks);
 
         using namespace m1937::sdk::enemy_ai;
         const auto novice = tuning_for(0, 0);

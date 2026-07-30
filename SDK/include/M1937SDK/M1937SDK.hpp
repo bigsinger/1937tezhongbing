@@ -3,6 +3,7 @@
 #include "Addresses.hpp"
 #include "Commands.hpp"
 #include "CorpseDiscovery.hpp"
+#include "Disguise.hpp"
 #include "EnemyAI.hpp"
 #include "Input.hpp"
 #include "Inventory.hpp"

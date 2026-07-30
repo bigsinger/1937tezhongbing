@@ -57,6 +57,9 @@ const LEGACY_CORPSE_DISCOVERY_RULES: Script = preload(
 const LEGACY_ENEMY_AI_RULES: Script = preload(
 	"res://scripts/legacy_enemy_ai_rules.gd"
 )
+const LEGACY_DISGUISE_RULES: Script = preload(
+	"res://scripts/legacy_disguise_rules.gd"
+)
 const LEGACY_DOOR_CATALOG: Script = preload(
 	"res://scripts/legacy_door_catalog.gd"
 )
@@ -811,6 +814,50 @@ func load_entity_action_groups(entity: Dictionary, action_key: String) -> Array[
 	return groups
 
 
+func _gfl_preview_path(gfl_index: int) -> String:
+	if converted_root.is_empty() or gfl_index <= 0:
+		return ""
+	var relative_path := "sprites/%04d.png" % gfl_index
+	var preview_path := _contained_converted_path(converted_root, relative_path)
+	if preview_path.is_empty() or not FileAccess.file_exists(preview_path):
+		return ""
+	return preview_path
+
+
+func _load_gfl_texture(gfl_index: int) -> Texture2D:
+	var preview_path := _gfl_preview_path(gfl_index)
+	if preview_path.is_empty():
+		return null
+	if imported_texture_cache.has(preview_path):
+		return imported_texture_cache[preview_path] as Texture2D
+	var image := Image.new()
+	if image.load(preview_path) != OK or image.is_empty():
+		return null
+	var texture := ImageTexture.create_from_image(image)
+	imported_texture_cache[preview_path] = texture
+	return texture
+
+
+func _load_gfl_action_groups(
+	gfl_index: int,
+	action_key: String,
+) -> Array[Dictionary]:
+	var preview_path := _gfl_preview_path(gfl_index)
+	if preview_path.is_empty():
+		return []
+	var cache_key := "%s|%s" % [preview_path, action_key]
+	if imported_animation_cache.has(cache_key):
+		return imported_animation_cache[cache_key] as Array[Dictionary]
+	var groups: Array[Dictionary] = (
+		IMPORTED_SPRITE_ANIMATION.load_action_groups(
+			preview_path,
+			action_key,
+		)
+	)
+	imported_animation_cache[cache_key] = groups
+	return groups
+
+
 func create_level_camera() -> void:
 	level_camera = Camera2D.new()
 	level_camera.name = "LevelCamera"
@@ -1140,6 +1187,9 @@ func _spawn_enemies() -> void:
 			attack_groups,
 			death_groups,
 		)
+		enemy.original_mission_number = int(
+			current_mission.get("number", current_level_index + 1)
+		)
 		_configure_original_backpack(
 			enemy,
 			str(current_mission.get("id", FORMAL_LEVEL_IDS[current_level_index])),
@@ -1184,6 +1234,7 @@ func _spawn_ambient_units() -> void:
 
 func _process(delta: float) -> void:
 	_update_tactical_sight_visibility()
+	_advance_original_disguise_state(delta)
 	if mission_direction_runtime != null:
 		mission_direction_runtime.advance_time(maxf(delta, 0.0))
 	if mission_ai_coordinator != null:
@@ -1237,6 +1288,259 @@ func _process(delta: float) -> void:
 
 func _physics_process(_delta: float) -> void:
 	_advance_burial_command_world_tick()
+
+
+func _advance_original_disguise_state(delta: float) -> void:
+	var safe_delta := maxf(delta, 0.0)
+	for unit: SQUAD_UNIT in units:
+		if unit == null or not is_instance_valid(unit) or not unit.is_alive:
+			continue
+		unit.advance_original_disguise_transition(safe_delta)
+		if (
+			unit.runtime_actor_type
+			!= LEGACY_DISGUISE_RULES.DISGUISED_RUNTIME_ACTOR_TYPE
+		):
+			continue
+		var burial_exposes_actor := (
+			burial_action_started
+			and burial_worker == unit
+			and burial_target != null
+			and is_instance_valid(burial_target)
+		)
+		if (
+			unit.faction_id
+				== LEGACY_DISGUISE_RULES.DISGUISED_FACTION_ID
+			and not burial_exposes_actor
+		):
+			# A settled faction-1 disguise has no recovery counter to advance.
+			# Avoid a full enemy/LOS scan on every rendered frame while idle.
+			unit.advance_original_disguise_recovery(
+				safe_delta,
+				false,
+				false,
+			)
+			continue
+		var observer_has_visibility := _enemy_has_original_visibility_of(unit)
+		unit.advance_original_disguise_recovery(
+			safe_delta,
+			observer_has_visibility,
+			burial_exposes_actor,
+		)
+
+
+func _enemy_has_original_visibility_of(actor: SQUAD_UNIT) -> bool:
+	for enemy: ENEMY_UNIT in enemies:
+		if _enemy_has_original_visibility(enemy, actor):
+			return true
+	return false
+
+
+func _enemy_has_original_visibility(
+	enemy: ENEMY_UNIT,
+	actor: SQUAD_UNIT,
+) -> bool:
+	if (
+		enemy == null
+		or actor == null
+		or not is_instance_valid(enemy)
+		or not is_instance_valid(actor)
+		or not enemy.is_alive
+		or not actor.is_alive
+		or enemy.faction_id != LEGACY_DISGUISE_RULES.DISGUISED_FACTION_ID
+		or not LEGACY_ENEMY_AI_RULES.is_within_alert_ellipse(
+			actor.position,
+			enemy.position,
+			LEGACY_DISGUISE_RULES.OBSERVER_ALERT_RADIUS,
+		)
+	):
+		return false
+	var ignored: Array = []
+	if enemy.scene_index >= 0:
+		ignored.append(enemy.scene_index)
+	if actor.scene_index >= 0:
+		ignored.append(actor.scene_index)
+	return TACTICAL_SENSES.can_detect_original(
+		dynamic_occupancy,
+		enemy.position,
+		actor.position,
+		enemy.original_direction_index,
+		enemy.sense_profile,
+		actor.is_crawling,
+		ignored,
+	)
+
+
+func _on_original_disguise_attack_committed(
+	attacker: Node2D,
+	target: Node2D,
+	_attack_type: int,
+) -> void:
+	if (
+		not attacker is SQUAD_UNIT
+		or target == null
+		or not is_instance_valid(attacker)
+		or not is_instance_valid(target)
+	):
+		return
+	var unit := attacker as SQUAD_UNIT
+	var was_observed := false
+	for enemy: ENEMY_UNIT in enemies:
+		if not _enemy_has_original_visibility(enemy, unit):
+			continue
+		was_observed = true
+		# sub_45EA70 gives each observer the attacked coordinate, not a live
+		# target pointer. This enters the recovered five-point local search.
+		enemy.receive_original_coordinate_alert(target.position)
+	if not was_observed:
+		return
+	unit.expose_original_disguise()
+	_play_media_audio("alert")
+	update_status("%s 的伪装行动被敌军目击" % unit.display_name)
+
+
+func _on_original_disguise_transition_ready(
+	unit: Node2D,
+	item_id: int,
+) -> void:
+	if (
+		not unit is SQUAD_UNIT
+		or not is_instance_valid(unit)
+		or not (unit as SQUAD_UNIT).is_alive
+	):
+		return
+	var actor := unit as SQUAD_UNIT
+	var transition: Dictionary = LEGACY_DISGUISE_RULES.transition_for(
+		actor.runtime_actor_type,
+		item_id,
+	)
+	if (
+		transition.is_empty()
+		or actor.backpack_inventory == null
+		or not actor.backpack_inventory.has_item(
+			int(transition.get("consume_backpack_item_id", 0))
+		)
+	):
+		actor.cancel_original_disguise_transition()
+		return
+	var consumed_item_id := int(
+		transition.get("consume_backpack_item_id", 0)
+	)
+	var granted_item_id := int(
+		transition.get("grant_backpack_item_id", 0)
+	)
+	if not actor.consume_backpack_item(consumed_item_id, true):
+		return
+	if (
+		granted_item_id > 0
+		and actor.add_backpack_item(granted_item_id, 1, 0) != 1
+	):
+		actor.add_backpack_item(consumed_item_id, 1, 0)
+		return
+	var granted_weapon_item_id := int(
+		transition.get("grant_weapon_item_id", 0)
+	)
+	if granted_weapon_item_id > 0:
+		var special_profile: Dictionary = (
+			COMBAT_PROFILES.weapon_profile_for_attack_type(
+				LEGACY_DISGUISE_RULES.SPECIAL_ATTENTION_ATTACK_TYPE
+			)
+		)
+		var special_action_key := str(
+			special_profile.get("action_key", "")
+		)
+		var granted := false
+		if (
+			not special_action_key.is_empty()
+			and actor.has_inventory_weapon(special_action_key)
+		):
+			granted = actor.add_ammo_item(granted_weapon_item_id, 1) == 1
+		elif not special_profile.is_empty():
+			granted = actor.register_original_inventory_weapon(
+				special_profile,
+				_attack_groups_for_actor_variant(
+					actor,
+					special_action_key,
+					int(transition.get("to_runtime_actor_type", 0)),
+				),
+				1,
+				1,
+				false,
+			)
+		if not granted:
+			actor.consume_backpack_item(granted_item_id, true)
+			actor.add_backpack_item(consumed_item_id, 1, 0)
+			return
+	var removed_weapon_item_id := int(
+		transition.get("remove_weapon_item_id", 0)
+	)
+	if removed_weapon_item_id > 0:
+		actor.remove_ammo_item(removed_weapon_item_id, 1)
+	_apply_original_actor_variant(
+		actor,
+		int(transition.get("to_runtime_actor_type", actor.runtime_actor_type)),
+		int(transition.get("to_faction_id", actor.faction_id)),
+		int(
+			transition.get(
+				"appearance_state",
+				actor.disguise_appearance_state,
+			)
+		),
+	)
+	if (
+		selected_backpack_item_id == consumed_item_id
+		and (
+			actor.backpack_inventory == null
+			or not actor.backpack_inventory.has_item(consumed_item_id)
+		)
+	):
+		selected_backpack_item_id = 0
+	_play_media_audio("ui_confirm")
+	update_status(
+		"%s 已%s"
+		% [
+			actor.display_name,
+			"换上日军军服" if actor.runtime_actor_type == 91 else "换回便装",
+		]
+	)
+	_refresh_inventory_ui()
+
+
+func _apply_original_actor_variant(
+	unit: SQUAD_UNIT,
+	runtime_actor_type: int,
+	faction_id: int,
+	appearance_state: int,
+) -> bool:
+	if unit == null or not is_instance_valid(unit):
+		return false
+	var gfl_index := (
+		LEGACY_DISGUISE_RULES.DISGUISED_GFL_INDEX
+		if runtime_actor_type
+			== LEGACY_DISGUISE_RULES.DISGUISED_RUNTIME_ACTOR_TYPE
+		else LEGACY_DISGUISE_RULES.NORMAL_GFL_INDEX
+	)
+	var attack_groups_by_action: Dictionary = {}
+	for action_key: String in unit.inventory_weapon_order:
+		attack_groups_by_action[action_key] = (
+			_attack_groups_for_actor_variant(
+				unit,
+				action_key,
+				runtime_actor_type,
+			)
+		)
+	unit.apply_original_actor_variant(
+		runtime_actor_type,
+		faction_id,
+		appearance_state,
+		_load_gfl_texture(gfl_index),
+		_load_gfl_action_groups(gfl_index, "run"),
+		_load_gfl_action_groups(gfl_index, "walk"),
+		_load_gfl_action_groups(gfl_index, "crawl"),
+		_load_gfl_action_groups(gfl_index, "stand"),
+		_load_gfl_action_groups(gfl_index, "death"),
+		attack_groups_by_action,
+	)
+	return true
 
 
 func _update_context_cursor(delta: float = 0.0) -> void:
@@ -2379,7 +2683,16 @@ func issue_attack_order(target: Node2D, force_target: bool = false) -> void:
 	var issued := 0
 	for unit: SQUAD_UNIT in selected_units:
 		_cancel_legacy_deployment_for_unit(unit)
-		if unit.issue_attack(target, force_target):
+		var disguised_player_attack := (
+			unit.runtime_actor_type
+				== LEGACY_DISGUISE_RULES.DISGUISED_RUNTIME_ACTOR_TYPE
+			and int(target.get("faction_id"))
+				== LEGACY_DISGUISE_RULES.DISGUISED_FACTION_ID
+		)
+		if unit.issue_attack(
+			target,
+			force_target or disguised_player_attack,
+		):
 			issued += 1
 	var target_name := (
 		str(target.display_name)
@@ -2398,6 +2711,12 @@ func _connect_combatant(combatant: Node2D) -> void:
 	combatant.ammo_changed.connect(_on_ammo_changed)
 	combatant.projectile_requested.connect(_on_projectile_requested)
 	combatant.special_action_requested.connect(_on_legacy_special_action_requested)
+	combatant.original_disguise_attack_committed.connect(
+		_on_original_disguise_attack_committed
+	)
+	combatant.original_disguise_transition_ready.connect(
+		_on_original_disguise_transition_ready
+	)
 	if combatant is ENEMY_UNIT:
 		var enemy := combatant as ENEMY_UNIT
 		enemy.legacy_world_item_interaction_requested.connect(
@@ -3033,6 +3352,14 @@ func _on_attack_started(
 	}.get(attack_type, ""))
 	if not attack_event.is_empty():
 		_play_media_audio(attack_event)
+	if LEGACY_DISGUISE_RULES.attack_can_break_disguise(
+		int(attacker.get("runtime_actor_type")),
+		attack_type,
+	):
+		# Type 91 pistol/dagger exposure is deferred to the committed hit frame.
+		# sub_45EA70 alerts only observers that actually see the disguised actor;
+		# the ordinary 640 coordinate broadcast would expose an unseen attack.
+		return
 	if alert_radius <= 0.0 or target == null:
 		return
 	# A gunshot exposes the shooter to the opposing side.  When an enemy fires,
@@ -3531,6 +3858,9 @@ func _spawn_legacy_reinforcement(
 		dynamic_occupancy,
 		attack_groups,
 		death_groups,
+	)
+	reinforcement.original_mission_number = int(
+		current_mission.get("number", current_level_index + 1)
 	)
 	if not reinforcement.dynamic_registered:
 		reinforcement.queue_free()
@@ -4700,8 +5030,18 @@ func _use_original_backpack_item(
 			)
 			detail = "生命 %d → %d" % [previous, actor.current_hit_points]
 		"set_disguise":
-			actor.set_original_disguise(int(effect.get("appearance_state", 100)))
-			detail = "进入原版伪装状态"
+			if not actor.begin_original_disguise_transition(item_id):
+				return false
+			_play_media_audio("ui_confirm")
+			update_status(
+				"%s 开始更换 %s"
+				% [
+					actor.display_name,
+					ORIGINAL_INITIAL_ITEM_INVENTORY.item_display_name(item_id),
+				]
+			)
+			_refresh_inventory_ui()
+			return true
 		_:
 			return false
 	if not actor.consume_backpack_item(item_id):
@@ -5636,6 +5976,18 @@ func _apply_field_pickup(payload: Dictionary, collector: SQUAD_UNIT) -> void:
 
 
 func _attack_groups_for_unit(unit: SQUAD_UNIT, action_key: String) -> Array[Dictionary]:
+	return _attack_groups_for_actor_variant(
+		unit,
+		action_key,
+		unit.runtime_actor_type,
+	)
+
+
+func _attack_groups_for_actor_variant(
+	unit: SQUAD_UNIT,
+	action_key: String,
+	runtime_actor_type: int,
+) -> Array[Dictionary]:
 	if not playable_entities.has(unit.display_name):
 		return []
 	var resolved_action_key := action_key
@@ -5647,8 +5999,26 @@ func _attack_groups_for_unit(unit: SQUAD_UNIT, action_key: String) -> Array[Dict
 			and animation_action < IMPORTED_SPRITE_ANIMATION.ACTION_KEYS.size()
 		):
 			resolved_action_key = IMPORTED_SPRITE_ANIMATION.ACTION_KEYS[animation_action]
+	if (
+		runtime_actor_type
+		== LEGACY_DISGUISE_RULES.DISGUISED_RUNTIME_ACTOR_TYPE
+	):
+		return _load_gfl_action_groups(
+			LEGACY_DISGUISE_RULES.DISGUISED_GFL_INDEX,
+			resolved_action_key,
+		)
+	var entity := playable_entities[unit.display_name] as Dictionary
+	if (
+		runtime_actor_type == LEGACY_DISGUISE_RULES.NORMAL_RUNTIME_ACTOR_TYPE
+		and _entity_runtime_actor_type(entity)
+			== LEGACY_DISGUISE_RULES.NORMAL_RUNTIME_ACTOR_TYPE
+	):
+		return _load_gfl_action_groups(
+			LEGACY_DISGUISE_RULES.NORMAL_GFL_INDEX,
+			resolved_action_key,
+		)
 	return load_entity_action_groups(
-		playable_entities[unit.display_name] as Dictionary,
+		entity,
 		resolved_action_key,
 	)
 

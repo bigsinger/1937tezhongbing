@@ -126,6 +126,8 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 `RuntimeActorV1` 现已固定角色世界坐标、导航网格缓存、地面命令、
 寻路状态、当前生命、默认攻击类型、接敌/丢失状态、解析后目标和八方向
 朝向字段，以及 `+0x228` 物品容器、`+0x22C` 武器容器两个独立指针。
+结构尾部现完整固定到 `0x2A0`：`+0x28C` 服装切换、`+0x290` 注意力保持、
+`+0x294/+0x298/+0x29C` 伪装恢复状态/上限/计数。
 `RuntimeInventoryContainerV1`
 固定项目 ID、数量、数量模式三数组和项目数的四字段 `0x10` 布局；
 `Inventory.hpp` 进一步把 `sub_45AE10` 的完整容器分派表，以及十类真实
@@ -146,6 +148,11 @@ DBL 1003/物品 53 仍明确归入可受伤汽油桶生命周期，不会误作�
 固定；runtime type 102 无匹配 SPR，必须保留“消费随机数但不生成粒子”的
 语义。相关函数入口和 `SpecialAttentionSource` 全局量均由
 `address-catalog.json` 生成到 C++/C# 常量，补丁和 Remake 不再各自复制魔数。
+
+`Disguise.hpp` 固化古明 type 10/GFL 270 与 type 91/GFL 272 的双向换装表、
+军服 54/青衫 92/项目 99 的容器变化、严格 101 tick 切换与恢复、手枪/匕首
+目击暴露，以及 type 4/12 和第 2/6/8 关特殊单位的识破规则。换装、状态转移、
+目击扫描和双形态更新函数 RVA 也由同一地址目录生成。
 
 `Projectiles.hpp` 固化 type 1 手枪、type 2 步枪、type 3 机枪、type 6
 飞镖、type 7 弹弓和 type 9 手榴弹：0x44 字节投射对象、12 字节路径点、

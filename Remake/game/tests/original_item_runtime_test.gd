@@ -7,6 +7,12 @@ const ORIGINAL_ITEMS: Script = preload(
 const LEGACY_WORLD_ITEM_RULES: Script = preload(
 	"res://scripts/legacy_world_item_rules.gd"
 )
+const LEGACY_DISGUISE_RULES: Script = preload(
+	"res://scripts/legacy_disguise_rules.gd"
+)
+const GAME_SESSION_STATE: Script = preload(
+	"res://scripts/game_session_state.gd"
+)
 
 var failures: Array[String] = []
 var checks := 0
@@ -21,6 +27,9 @@ func _run_tests() -> void:
 	root.add_child(main)
 	await process_frame
 	_test_m000_watermelon_and_grid(main)
+	main.switch_level(1)
+	await process_frame
+	await _test_m001_gu_ming_disguise(main)
 	main.switch_level(10)
 	await process_frame
 	_test_m010_medkit_and_ammunition_box(main)
@@ -86,6 +95,164 @@ func _test_m000_watermelon_and_grid(main: Node) -> void:
 	)
 	_expect(int(unit.get("current_hit_points")) == 8, "watermelon healing caps at eight")
 	_expect(not bool(backpack.call("has_item", 50)), "last mode-0 item is removed")
+
+
+func _test_m001_gu_ming_disguise(main: Node) -> void:
+	var gu_ming := _actor_by_scene(main.units as Array, 1994)
+	_expect(gu_ming != null, "m001 Gu Ming scene 1994 spawns")
+	if gu_ming == null:
+		return
+	var backpack: Variant = gu_ming.get("backpack_inventory")
+	_expect(backpack != null, "m001 Gu Ming backpack exists")
+	if backpack == null:
+		return
+	if not bool(backpack.call("has_item", 54)):
+		_expect(
+			int(gu_ming.call("add_backpack_item", 54, 1, 0)) == 1,
+			"test grants the recovered m001 uniform pickup to Gu Ming",
+		)
+	_expect(
+		bool(
+			main.call(
+				"_use_original_backpack_item",
+				gu_ming,
+				54,
+				ORIGINAL_ITEMS.item_profile(54),
+			)
+		),
+		"Gu Ming begins the uniform action",
+	)
+	for unused_tick: int in range(
+		LEGACY_DISGUISE_RULES.CHANGE_TICK_LIMIT
+	):
+		gu_ming.call(
+			"advance_original_disguise_transition",
+			LEGACY_DISGUISE_RULES.ORIGINAL_ACTOR_TICK_SECONDS + 0.000001,
+		)
+	_expect(
+		int(gu_ming.get("runtime_actor_type")) == 10
+		and int(gu_ming.get("disguise_transition_tick_counter")) == 100
+		and bool(backpack.call("has_item", 54)),
+		"real-asset transition has no early effect at tick 100",
+	)
+	gu_ming.call(
+		"advance_original_disguise_transition",
+		LEGACY_DISGUISE_RULES.ORIGINAL_ACTOR_TICK_SECONDS + 0.000001,
+	)
+	var combat_inventory: Variant = gu_ming.get("combat_inventory")
+	_expect(
+		int(gu_ming.get("runtime_actor_type")) == 91
+		and int(gu_ming.get("faction_id")) == 1
+		and not bool(backpack.call("has_item", 54))
+		and bool(backpack.call("has_item", 92))
+		and combat_inventory != null
+		and int(combat_inventory.call("ammo_item_count", 99)) == 1,
+		"real m001 transition installs type 91, faction disguise, clothing 92 and item 99",
+	)
+	_expect(
+		gu_ming.get("sprite_texture") != null
+		and (gu_ming.get("crawl_groups") as Array).is_empty(),
+		"GFL 272 visual is loaded and correctly has no crawl action",
+	)
+	var living_enemy: Node2D
+	for enemy_value: Variant in main.enemies as Array:
+		if bool((enemy_value as Node2D).get("is_alive")):
+			living_enemy = enemy_value as Node2D
+			break
+	main.call("select_only", gu_ming)
+	main.call("issue_attack_order", living_enemy, false)
+	_expect(
+		living_enemy != null
+		and gu_ming.get("combat_target") == living_enemy
+		and bool(gu_ming.get("combat_target_forced")),
+		"disguised faction-1 Gu Ming can still receive a normal player attack order",
+	)
+	gu_ming.call("clear_combat_target")
+	living_enemy.position = gu_ming.position - Vector2(16.0, 0.0)
+	living_enemy.set("original_direction_index", 3)
+	living_enemy.set("current_target", null)
+	living_enemy.set("behavior_state", 0)
+	main.call(
+		"_on_original_disguise_attack_committed",
+		gu_ming,
+		living_enemy,
+		1,
+	)
+	_expect(
+		int(gu_ming.get("faction_id")) == 3
+		and int(living_enemy.get("behavior_state")) == 3,
+		"an actual directional/LOS observer exposes Gu Ming and receives a coordinate search",
+	)
+	for unused_tick: int in range(17):
+		gu_ming.call(
+			"advance_original_disguise_recovery",
+			LEGACY_DISGUISE_RULES.ORIGINAL_ACTOR_TICK_SECONDS + 0.000001,
+			false,
+		)
+	var session: Dictionary = GAME_SESSION_STATE.capture(main)
+	var saved_record: Dictionary = {}
+	for record_value: Variant in session.get("squad", []) as Array:
+		if (
+			record_value is Dictionary
+			and int((record_value as Dictionary).get("scene_index", -1))
+				== 1994
+		):
+			saved_record = record_value as Dictionary
+			break
+	_expect(
+		int(saved_record.get("runtime_actor_type", 0)) == 91
+		and int(
+			(
+				saved_record.get("original_disguise", {}) as Dictionary
+			).get("recovery_tick_counter", 0)
+		) == 17,
+		"save captures runtime actor replacement and disguise recovery counter",
+	)
+	main.switch_level(1)
+	await process_frame
+	var restore_result: Dictionary = (
+		GAME_SESSION_STATE.apply_after_level_loaded(main, session)
+	)
+	var restored := _actor_by_scene(main.units as Array, 1994)
+	_expect(
+		bool(restore_result.get("ok", false))
+		and restored != null
+		and int(restored.get("runtime_actor_type")) == 91
+		and int(restored.get("faction_id")) == 3
+		and int(restored.get("disguise_recovery_tick_counter")) == 17
+		and restored.get("sprite_texture") != null,
+		"load restores exposed GFL 272 Gu Ming and pending recovery exactly",
+	)
+	if restored == null:
+		return
+	var restored_backpack: Variant = restored.get("backpack_inventory")
+	_expect(
+		bool(
+			main.call(
+				"_use_original_backpack_item",
+				restored,
+				92,
+				ORIGINAL_ITEMS.item_profile(92),
+			)
+		),
+		"restored Gu Ming begins changing back to civilian clothes",
+	)
+	for unused_tick: int in range(
+		LEGACY_DISGUISE_RULES.CHANGE_TICK_LIMIT + 1
+	):
+		restored.call(
+			"advance_original_disguise_transition",
+			LEGACY_DISGUISE_RULES.ORIGINAL_ACTOR_TICK_SECONDS + 0.000001,
+		)
+	var restored_combat_inventory: Variant = restored.get("combat_inventory")
+	_expect(
+		int(restored.get("runtime_actor_type")) == 10
+		and int(restored.get("faction_id")) == 3
+		and bool(restored_backpack.call("has_item", 54))
+		and not bool(restored_backpack.call("has_item", 92))
+		and int(restored_combat_inventory.call("ammo_item_count", 99)) == 0,
+		"civilian-clothing action restores type 10/faction 3 and removes item 99",
+	)
 
 
 func _test_m010_medkit_and_ammunition_box(main: Node) -> void:

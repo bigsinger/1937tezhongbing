@@ -152,6 +152,7 @@ static func _capture_actor(actor: Node2D, group_name: String) -> Dictionary:
 		"x": actor.position.x,
 		"y": actor.position.y,
 		"faction_id": int(actor.get("faction_id")),
+		"runtime_actor_type": int(actor.get("runtime_actor_type")),
 		"current_hit_points": int(actor.get("current_hit_points")),
 		"maximum_hit_points": int(actor.get("maximum_hit_points")),
 		"is_alive": bool(actor.get("is_alive")),
@@ -172,6 +173,10 @@ static func _capture_actor(actor: Node2D, group_name: String) -> Dictionary:
 		)
 		record["disguise_appearance_state"] = int(
 			actor.get("disguise_appearance_state")
+		)
+	if actor.has_method("original_disguise_state_snapshot"):
+		record["original_disguise"] = _json_value(
+			actor.call("original_disguise_state_snapshot")
 		)
 	if group_name == "enemies":
 		var current_target: Variant = actor.get("current_target")
@@ -568,6 +573,10 @@ static func _restore_actor(game: Node, actor: Node2D, record: Dictionary, group_
 	actor.set("target_position", actor.position)
 	actor.call("cancel_path")
 	actor.set("faction_id", int(record.get("faction_id", actor.get("faction_id"))))
+	actor.set(
+		"runtime_actor_type",
+		int(record.get("runtime_actor_type", actor.get("runtime_actor_type"))),
+	)
 	actor.set("maximum_hit_points", maxi(int(record.get("maximum_hit_points", 1)), 1))
 	var alive := bool(record.get("is_alive", true))
 	actor.set("is_alive", alive)
@@ -591,6 +600,29 @@ static func _restore_actor(game: Node, actor: Node2D, record: Dictionary, group_
 		_restore_inventory(game, actor, record)
 	if record.get("backpack_inventory") is Dictionary:
 		_restore_backpack(actor, record)
+	if (
+		int(actor.get("runtime_actor_type")) == 91
+		and game.has_method("_apply_original_actor_variant")
+	):
+		game.call(
+			"_apply_original_actor_variant",
+			actor,
+			int(actor.get("runtime_actor_type")),
+			int(actor.get("faction_id")),
+			int(actor.get("disguise_appearance_state")),
+		)
+	var original_disguise_value: Variant = record.get(
+		"original_disguise",
+		{},
+	)
+	if (
+		original_disguise_value is Dictionary
+		and actor.has_method("restore_original_disguise_state")
+	):
+		actor.call(
+			"restore_original_disguise_state",
+			original_disguise_value as Dictionary,
+		)
 	if alive:
 		actor.set("death_emitted", false)
 		actor.set("combat_action", 0)

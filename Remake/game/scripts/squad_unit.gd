@@ -4,7 +4,6 @@ extends Node2D
 const BASE_SPRITE_TICK_SECONDS := 0.085
 const DEFAULT_REPLAN_BLOCKED_SECONDS := 0.25
 const COMBAT_REPATH_SECONDS := 0.40
-const HURT_REACTION_SECONDS := 0.18
 ## Calibrated against the stable MOD m000 window-local movement trace:
 ## a 0.75 s unobstructed run advances approximately 154-156 world pixels.
 const RUN_SPEED := 260.0
@@ -16,6 +15,9 @@ const COMBAT_INVENTORY_SCRIPT: Script = preload("res://scripts/combat_inventory.
 const BACKPACK_INVENTORY_SCRIPT: Script = preload("res://scripts/backpack_inventory.gd")
 const LEGACY_SPECIAL_ACTION_PROFILES: Script = preload("res://scripts/legacy_special_action_profiles.gd")
 const LEGACY_COMBAT_RULES: Script = preload("res://scripts/legacy_combat_rules.gd")
+const LEGACY_DISGUISE_RULES: Script = preload(
+	"res://scripts/legacy_disguise_rules.gd"
+)
 const WORLD_DEPTH: Script = preload("res://scripts/world_depth.gd")
 
 enum CombatAction { NONE, ATTACK, RELOAD, DEATH }
@@ -29,6 +31,12 @@ signal attack_started(
 signal attack_hit(attacker: Node2D, target: Node2D, attack_type: int, damage: int)
 signal projectile_requested(attacker: Node2D, target: Node2D, weapon_profile: Dictionary)
 signal special_action_requested(attacker: Node2D, target: Node2D, weapon_profile: Dictionary)
+signal original_disguise_attack_committed(
+	attacker: Node2D,
+	target: Node2D,
+	attack_type: int,
+)
+signal original_disguise_transition_ready(unit: Node2D, item_id: int)
 signal damage_received(unit: Node2D, attacker: Node2D, damage: int, remaining_hit_points: int)
 signal died(unit: Node2D, killer: Node2D)
 signal ammo_changed(unit: Node2D, magazine: int, reserve: int)
@@ -95,6 +103,11 @@ var backpack_inventory: RefCounted
 var attack_groups_by_action: Dictionary = {}
 var inventory_weapon_order: Array[String] = []
 var disguise_appearance_state := 0
+var disguise_transition_item_id := 0
+var disguise_transition_tick_counter := 0
+var disguise_transition_tick_elapsed := 0.0
+var disguise_recovery_tick_counter := 0
+var disguise_recovery_tick_elapsed := 0.0
 
 
 func configure(
@@ -142,6 +155,11 @@ func configure(
 	attack_groups_by_action.clear()
 	inventory_weapon_order.clear()
 	disguise_appearance_state = 0
+	disguise_transition_item_id = 0
+	disguise_transition_tick_counter = 0
+	disguise_transition_tick_elapsed = 0.0
+	disguise_recovery_tick_counter = 0
+	disguise_recovery_tick_elapsed = 0.0
 	is_alive = true
 	damage_event_count = 0
 	damage_taken_total = 0
@@ -506,6 +524,233 @@ func set_original_disguise(appearance_state: int) -> void:
 	queue_redraw()
 
 
+func begin_original_disguise_transition(item_id: int) -> bool:
+	if (
+		not is_alive
+		or disguise_transition_item_id != 0
+		or backpack_inventory == null
+		or not backpack_inventory.has_item(item_id)
+		or not LEGACY_DISGUISE_RULES.can_begin_transition(
+			runtime_actor_type,
+			item_id,
+		)
+	):
+		return false
+	clear_combat_target()
+	_interrupt_combat_action()
+	cancel_path()
+	disguise_transition_item_id = item_id
+	disguise_transition_tick_counter = 0
+	disguise_transition_tick_elapsed = 0.0
+	set_action_progress(0.0)
+	return true
+
+
+func advance_original_disguise_transition(delta: float) -> bool:
+	if disguise_transition_item_id == 0:
+		return false
+	if (
+		not is_alive
+		or backpack_inventory == null
+		or not backpack_inventory.has_item(disguise_transition_item_id)
+	):
+		cancel_original_disguise_transition()
+		return false
+	disguise_transition_tick_elapsed += maxf(delta, 0.0)
+	while (
+		disguise_transition_tick_elapsed
+		>= LEGACY_DISGUISE_RULES.ORIGINAL_ACTOR_TICK_SECONDS
+	):
+		disguise_transition_tick_elapsed -= (
+			LEGACY_DISGUISE_RULES.ORIGINAL_ACTOR_TICK_SECONDS
+		)
+		disguise_transition_tick_counter += 1
+		set_action_progress(
+			minf(
+				float(disguise_transition_tick_counter)
+				/ float(LEGACY_DISGUISE_RULES.CHANGE_TICK_LIMIT + 1),
+				1.0,
+			)
+		)
+		if (
+			disguise_transition_tick_counter
+			> LEGACY_DISGUISE_RULES.CHANGE_TICK_LIMIT
+		):
+			var completed_item_id := disguise_transition_item_id
+			disguise_transition_item_id = 0
+			disguise_transition_tick_counter = 0
+			disguise_transition_tick_elapsed = 0.0
+			set_action_progress(-1.0)
+			original_disguise_transition_ready.emit(
+				self,
+				completed_item_id,
+			)
+			return true
+	return false
+
+
+func cancel_original_disguise_transition() -> void:
+	disguise_transition_item_id = 0
+	disguise_transition_tick_counter = 0
+	disguise_transition_tick_elapsed = 0.0
+	set_action_progress(-1.0)
+
+
+func expose_original_disguise() -> bool:
+	if runtime_actor_type != LEGACY_DISGUISE_RULES.DISGUISED_RUNTIME_ACTOR_TYPE:
+		return false
+	var changed := faction_id != LEGACY_DISGUISE_RULES.PLAYER_FACTION_ID
+	faction_id = LEGACY_DISGUISE_RULES.PLAYER_FACTION_ID
+	disguise_recovery_tick_counter = 0
+	disguise_recovery_tick_elapsed = 0.0
+	queue_redraw()
+	return changed
+
+
+func advance_original_disguise_recovery(
+	delta: float,
+	observer_has_visibility: bool,
+	burial_exposes_actor: bool = false,
+) -> bool:
+	if runtime_actor_type != LEGACY_DISGUISE_RULES.DISGUISED_RUNTIME_ACTOR_TYPE:
+		disguise_recovery_tick_counter = 0
+		disguise_recovery_tick_elapsed = 0.0
+		return false
+	if (
+		faction_id == LEGACY_DISGUISE_RULES.DISGUISED_FACTION_ID
+		and burial_exposes_actor
+		and observer_has_visibility
+	):
+		return expose_original_disguise()
+	if faction_id != LEGACY_DISGUISE_RULES.PLAYER_FACTION_ID:
+		disguise_recovery_tick_counter = 0
+		disguise_recovery_tick_elapsed = 0.0
+		return false
+	if observer_has_visibility:
+		disguise_recovery_tick_counter = 0
+		disguise_recovery_tick_elapsed = 0.0
+		return false
+	disguise_recovery_tick_elapsed += maxf(delta, 0.0)
+	while (
+		disguise_recovery_tick_elapsed
+		>= LEGACY_DISGUISE_RULES.ORIGINAL_ACTOR_TICK_SECONDS
+	):
+		disguise_recovery_tick_elapsed -= (
+			LEGACY_DISGUISE_RULES.ORIGINAL_ACTOR_TICK_SECONDS
+		)
+		disguise_recovery_tick_counter += 1
+		if (
+			disguise_recovery_tick_counter
+			> LEGACY_DISGUISE_RULES.RECOVERY_TICK_LIMIT
+		):
+			faction_id = LEGACY_DISGUISE_RULES.DISGUISED_FACTION_ID
+			disguise_recovery_tick_counter = 0
+			disguise_recovery_tick_elapsed = 0.0
+			queue_redraw()
+			return true
+	return false
+
+
+func apply_original_actor_variant(
+	new_runtime_actor_type: int,
+	new_faction_id: int,
+	appearance_state: int,
+	texture: Texture2D,
+	new_run_groups: Array[Dictionary],
+	new_walk_groups: Array[Dictionary],
+	new_crawl_groups: Array[Dictionary],
+	new_idle_groups: Array[Dictionary],
+	new_death_groups: Array[Dictionary],
+	new_attack_groups_by_action: Dictionary,
+) -> void:
+	clear_combat_target()
+	_interrupt_combat_action()
+	cancel_path()
+	runtime_actor_type = new_runtime_actor_type
+	faction_id = new_faction_id
+	disguise_appearance_state = maxi(appearance_state, 0)
+	if texture != null:
+		sprite_texture = texture
+	run_groups = new_run_groups
+	walk_groups = new_walk_groups
+	crawl_groups = new_crawl_groups
+	standing_idle_groups = new_idle_groups
+	death_groups = new_death_groups
+	if is_crawling and crawl_groups.is_empty():
+		is_crawling = false
+	attack_groups_by_action.clear()
+	for action_key_value: Variant in new_attack_groups_by_action:
+		var action_groups_value: Variant = (
+			new_attack_groups_by_action[action_key_value]
+		)
+		if action_groups_value is Array:
+			var typed_action_groups: Array[Dictionary] = []
+			typed_action_groups.assign(action_groups_value as Array)
+			attack_groups_by_action[str(action_key_value)] = typed_action_groups
+	var active_action_key := (
+		str(combat_inventory.active_weapon_key())
+		if combat_inventory != null
+		else ""
+	)
+	attack_groups = (
+		attack_groups_by_action.get(active_action_key, []) as Array[Dictionary]
+	)
+	disguise_recovery_tick_counter = 0
+	disguise_recovery_tick_elapsed = 0.0
+	cancel_original_disguise_transition()
+	configure_movement_modes(
+		new_run_groups,
+		new_walk_groups,
+		new_crawl_groups,
+	)
+	_sync_ammo_from_inventory(false)
+	queue_redraw()
+
+
+func original_disguise_state_snapshot() -> Dictionary:
+	return {
+		"transition_item_id": disguise_transition_item_id,
+		"transition_tick_counter": disguise_transition_tick_counter,
+		"transition_tick_elapsed": disguise_transition_tick_elapsed,
+		"recovery_tick_counter": disguise_recovery_tick_counter,
+		"recovery_tick_elapsed": disguise_recovery_tick_elapsed,
+	}
+
+
+func restore_original_disguise_state(state: Dictionary) -> bool:
+	if state.is_empty():
+		return false
+	disguise_transition_item_id = maxi(
+		int(state.get("transition_item_id", 0)),
+		0,
+	)
+	disguise_transition_tick_counter = clampi(
+		int(state.get("transition_tick_counter", 0)),
+		0,
+		LEGACY_DISGUISE_RULES.CHANGE_TICK_LIMIT,
+	)
+	disguise_transition_tick_elapsed = maxf(
+		float(state.get("transition_tick_elapsed", 0.0)),
+		0.0,
+	)
+	disguise_recovery_tick_counter = clampi(
+		int(state.get("recovery_tick_counter", 0)),
+		0,
+		LEGACY_DISGUISE_RULES.RECOVERY_TICK_LIMIT,
+	)
+	disguise_recovery_tick_elapsed = maxf(
+		float(state.get("recovery_tick_elapsed", 0.0)),
+		0.0,
+	)
+	set_action_progress(
+		float(disguise_transition_tick_counter)
+		/ float(LEGACY_DISGUISE_RULES.CHANGE_TICK_LIMIT + 1)
+		if disguise_transition_item_id > 0
+		else -1.0
+	)
+	return true
+
+
 func issue_move(destination: Vector2) -> void:
 	issue_path(PackedVector2Array([destination]))
 
@@ -690,13 +935,9 @@ func take_damage(amount: int, attacker: Node2D = null) -> int:
 	_on_damage_taken(attacker)
 	if current_hit_points <= 0:
 		_die(attacker)
-	else:
-		_interrupt_combat_action()
-		# A non-lethal hit interrupts the current combat animation, but the
-		# original actor keeps its issued movement goal.  The stable MOD contact
-		# sample continues from 8 -> 6 -> 4 HP all the way to the commanded
-		# destination; clearing the path here made a wounded player freeze.
-		hurt_remaining = HURT_REACTION_SECONDS
+	# Original sub_458700 performs no non-lethal command, animation or timing
+	# write: it only subtracts HP and dispatches death at zero. Keep the current
+	# attack and issued movement intact instead of inventing hit-stun.
 	queue_redraw()
 	return applied
 
@@ -725,18 +966,6 @@ func _physics_process(delta: float) -> void:
 		_advance_combat_action(safe_delta)
 		return
 	if not is_alive:
-		return
-	if hurt_remaining > 0.0:
-		hurt_remaining = maxf(hurt_remaining - safe_delta, 0.0)
-		self_modulate = (
-			Color(1.0, 0.35, 0.28, 1.0)
-			if int(hurt_remaining * 60.0) % 2 == 0
-			else Color.WHITE
-		)
-		if hurt_remaining <= 0.0:
-			self_modulate = Color.WHITE
-			apply_idle_frame()
-		queue_redraw()
 		return
 	if auto_combat_enabled and _update_auto_combat(safe_delta):
 		return
@@ -899,6 +1128,15 @@ func _resolve_pending_hit() -> void:
 	if not can_attack_target(pending_hit_target, pending_hit_forced):
 		return
 	var attack_type := int(weapon_profile.get("attack_type", 0))
+	if LEGACY_DISGUISE_RULES.attack_can_break_disguise(
+		runtime_actor_type,
+		attack_type,
+	):
+		original_disguise_attack_committed.emit(
+			self,
+			pending_hit_target,
+			attack_type,
+		)
 	if LEGACY_SPECIAL_ACTION_PROFILES.is_special_attack(attack_type):
 		if attack_type in [8, 10] and not infinite_ammo:
 			var ammo_per_attack := maxi(int(weapon_profile.get("ammo_per_attack", 0)), 0)
@@ -1041,6 +1279,7 @@ func _die(killer: Node2D) -> void:
 	is_alive = false
 	selected = false
 	action_progress_ratio = -1.0
+	cancel_original_disguise_transition()
 	clear_combat_target()
 	_interrupt_combat_action()
 	cancel_path()

@@ -336,6 +336,33 @@ func _test_original_damage_dispatch(failures: Array[String]) -> void:
 	)
 	target.configure_combat(1, 64, {}, empty_groups, empty_groups, true)
 	arena.add_child(target)
+	target.issue_path(
+		PackedVector2Array(
+			[
+				target.position,
+				target.position + Vector2(64.0, 0.0),
+			]
+		)
+	)
+	target.combat_action = SQUAD_UNIT_SCRIPT.CombatAction.ATTACK
+	target.pending_hit_target = attacker
+	target.pending_hit_forced = true
+	var retained_path: PackedVector2Array = target.movement_path.duplicate()
+	_expect(
+		target.take_damage(1, attacker) == 1
+		and target.current_hit_points == 63
+		and target.combat_action == SQUAD_UNIT_SCRIPT.CombatAction.ATTACK
+		and target.pending_hit_target == attacker
+		and target.pending_hit_forced
+		and target.movement_path == retained_path
+		and is_zero_approx(target.hurt_remaining),
+		"non-lethal sub_458700 damage preserves attack, command path and timing state",
+		failures,
+	)
+	target.combat_action = SQUAD_UNIT_SCRIPT.CombatAction.NONE
+	target.pending_hit_target = null
+	target.pending_hit_forced = false
+	target.current_hit_points = 64
 
 	var rifle_profile := _test_weapon_profile()
 	attacker.runtime_actor_type = 1

@@ -68,6 +68,7 @@ var patrol_enabled := false
 var patrol_wait_remaining := 0.0
 var patrol_path_in_flight := false
 var original_direction_index := 1
+var original_mission_number := 0
 var sense_profile: Dictionary = {}
 var potential_targets: Array[Node2D] = []
 var potential_world_items: Array[Node2D] = []
@@ -453,19 +454,22 @@ func _update_detection() -> void:
 	for target: Node2D in potential_targets:
 		if not _is_hostile_target(target):
 			continue
-		var ignored: Array = [scene_index]
-		var target_scene_index := int(target.get("scene_index"))
-		if target_scene_index >= 0:
-			ignored.append(target_scene_index)
-		var visible: bool = TACTICAL_SENSES.can_detect_original(
-			dynamic_occupancy,
-			position,
-			target.position,
-			original_direction_index,
-			sense_profile,
-			bool(target.get("is_crawling")),
-			ignored,
-		)
+		var disguise_mode := _disguise_detection_mode(target)
+		var visible := disguise_mode == "close_without_los"
+		if not visible:
+			var ignored: Array = [scene_index]
+			var target_scene_index := int(target.get("scene_index"))
+			if target_scene_index >= 0:
+				ignored.append(target_scene_index)
+			visible = TACTICAL_SENSES.can_detect_original(
+				dynamic_occupancy,
+				position,
+				target.position,
+				original_direction_index,
+				sense_profile,
+				bool(target.get("is_crawling")),
+				ignored,
+			)
 		# Hearing is event driven. A standing, silent target inside the recovered
 		# radius must not be treated as a continuous omnidirectional noise source;
 		# Main routes explicit N-key, dropped-item, shot and explosion events to
@@ -569,7 +573,10 @@ func _update_behavior(delta: float) -> void:
 					current_target, attack_count
 				)
 				last_editorial_aim_miss = _pending_editorial_aim_miss
-				if try_start_attack(current_target):
+				if try_start_attack(
+					current_target,
+					_is_identified_disguise_target(current_target),
+				):
 					attack_count += 1
 					attack_committed.emit(
 						self, current_target, int(weapon_profile.get("attack_type", 0))
@@ -666,7 +673,10 @@ func _issue_path_to(destination: Vector2) -> bool:
 
 
 func _can_attack_current_target() -> bool:
-	return can_attack_target(current_target)
+	return can_attack_target(
+		current_target,
+		_is_identified_disguise_target(current_target),
+	)
 
 
 func receive_alert(target: Node2D, world_position: Vector2) -> bool:
@@ -1452,7 +1462,31 @@ func _clear_all_legacy_world_item_runtime() -> void:
 func _is_hostile_target(target: Node2D) -> bool:
 	return (
 		_target_is_alive(target)
-		and factions_are_hostile(faction_id, int(target.get("faction_id")))
+		and (
+			factions_are_hostile(faction_id, int(target.get("faction_id")))
+			or _is_identified_disguise_target(target)
+		)
+	)
+
+
+func _is_identified_disguise_target(target: Node2D) -> bool:
+	return not _disguise_detection_mode(target).is_empty()
+
+
+func _disguise_detection_mode(target: Node2D) -> String:
+	if (
+		not _target_is_alive(target)
+		or not LEGACY_DISGUISE_RULES.is_disguised_target(
+			int(target.get("runtime_actor_type")),
+			int(target.get("faction_id")),
+		)
+	):
+		return ""
+	return LEGACY_DISGUISE_RULES.disguise_detection_mode(
+		runtime_actor_type,
+		original_mission_number,
+		position,
+		target.position,
 	)
 
 

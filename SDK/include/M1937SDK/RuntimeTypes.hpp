@@ -105,7 +105,9 @@ struct RuntimeActorV1 final {
     std::byte unknown_280[8];
     // Set after the worker reaches the corpse and the 100-limit counter starts.
     std::int32_t burial_action_started;     // +0x288
-    std::byte unknown_28c[4];
+    // Type 10/91 clothing use sets this while the strict >100 transition
+    // counter at +0x24C advances.
+    std::int32_t disguise_change_pending;   // +0x28C
     union {
         // Historical SDK name retained for source compatibility.
         std::int32_t path_override_active;   // +0x290
@@ -114,6 +116,11 @@ struct RuntimeActorV1 final {
         // transition clears it; it is not a timed stun.
         std::int32_t special_attention_hold; // +0x290
     };
+    // Type 91 uses these fields after a witnessed pistol/dagger action.
+    // Unseen updates restore faction 1 only when counter > limit.
+    std::int32_t disguise_recovery_active;  // +0x294
+    std::int32_t disguise_recovery_limit;   // +0x298, default 100
+    std::int32_t disguise_recovery_counter; // +0x29C
 };
 
 struct RuntimeInventoryContainerV1 final {
@@ -206,9 +213,13 @@ static_assert(offsetof(RuntimeActorV1, poison_counter_limit) == 0x26C);
 static_assert(offsetof(RuntimeActorV1, hypnosis_counter_limit) == 0x278);
 static_assert(offsetof(RuntimeActorV1, hypnosis_counter) == 0x27C);
 static_assert(offsetof(RuntimeActorV1, burial_action_started) == 0x288);
+static_assert(offsetof(RuntimeActorV1, disguise_change_pending) == 0x28C);
 static_assert(offsetof(RuntimeActorV1, path_override_active) == 0x290);
 static_assert(offsetof(RuntimeActorV1, special_attention_hold) == 0x290);
-static_assert(sizeof(RuntimeActorV1) == 0x294);
+static_assert(offsetof(RuntimeActorV1, disguise_recovery_active) == 0x294);
+static_assert(offsetof(RuntimeActorV1, disguise_recovery_limit) == 0x298);
+static_assert(offsetof(RuntimeActorV1, disguise_recovery_counter) == 0x29C);
+static_assert(sizeof(RuntimeActorV1) == 0x2A0);
 static_assert(offsetof(RuntimeInventoryContainerV1, item_ids_address) == 0x00);
 static_assert(offsetof(RuntimeInventoryContainerV1, quantities_address) == 0x04);
 static_assert(offsetof(RuntimeInventoryContainerV1, quantity_modes_address) == 0x08);

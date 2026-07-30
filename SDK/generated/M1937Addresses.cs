@@ -62,6 +62,12 @@ namespace Mission1937.SDK.Generated
         public const long BurialRangeCheck = 0x00056A20L;
         public const long BurialCompletion = 0x00056CD0L;
         public const long ApplyActorDamage = 0x00058700L;
+        public const long PlayerDisguiseToggle = 0x00050200L;
+        public const long NormalGumingUpdate = 0x00059290L;
+        public const long DisguisedGumingUpdate = 0x00059370L;
+        public const long TransferActorStateForDisguise = 0x0005D1A0L;
+        public const long BreakDisguiseAfterAttack = 0x0005EA70L;
+        public const long ScanDisguiseObservers = 0x0005EE00L;
         public const long AttackTargetCellCoincides = 0x0005F000L;
         public const long OriginalEndpointFromAngle = 0x0005DD50L;
         public const long BurialCommandUpdate = 0x00058520L;
