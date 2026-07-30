@@ -714,6 +714,7 @@ func _test_special_action_save_restore_lifecycle(failures: Array[String]) -> voi
 		COMBAT_PROFILES.weapon_profile_for_attack_type(11),
 	)
 	source_game.legacy_ai_control_effects[0].call("advance_world_ticks", 23)
+	source_game.legacy_crt_random_state = 373929026
 	var world: Dictionary = GAME_SESSION_STATE.call("_capture_world", source_game)
 	_expect(
 		(world.get("legacy_special_world_objects", []) as Array).size() == 1
@@ -725,6 +726,11 @@ func _test_special_action_save_restore_lifecycle(failures: Array[String]) -> voi
 		(world.get("legacy_ai_control_effects", []) as Array).size() == 1
 		and int(((world["legacy_ai_control_effects"] as Array)[0] as Dictionary).get("elapsed_world_ticks", 0)) == 23,
 		"session capture preserves the active type 11 diagnostic age",
+		failures,
+	)
+	_expect(
+		int(world.get("legacy_crt_random_state", 0)) == 373929026,
+		"session capture preserves the shared original CRT random state",
 		failures,
 	)
 
@@ -747,6 +753,11 @@ func _test_special_action_save_restore_lifecycle(failures: Array[String]) -> voi
 	var warnings: Array[String] = []
 	GAME_SESSION_STATE.call("_restore_world", target_game, world, warnings)
 	_expect(warnings.is_empty(), "special-action world state restores without warnings", failures)
+	_expect(
+		target_game.legacy_crt_random_state == 373929026,
+		"session restore resumes the shared original CRT random sequence",
+		failures,
+	)
 	_expect(
 		target_game.legacy_special_world_objects.size() == 1
 		and int(target_game.legacy_special_world_objects[0].get("attack_type")) == 10

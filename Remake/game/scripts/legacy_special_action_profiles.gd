@@ -50,7 +50,6 @@ const PROFILES := {
 				"original_visual_effect_type": 15,
 			},
 		],
-		"resolved_visual_ticks": 8,
 		"source_status": {
 			"runtime_kind": "recovered",
 			"original_actor_type": "recovered",
@@ -66,7 +65,6 @@ const PROFILES := {
 			"blast_vertical_radius": "recovered",
 			"alert_radius": "recovered",
 			"special_damage_bands": "recovered",
-			"resolved_visual_ticks": "unresolved_remake_default",
 		},
 	},
 	10: {
@@ -100,7 +98,6 @@ const PROFILES := {
 				"original_visual_effect_type": 15,
 			},
 		],
-		"resolved_visual_ticks": 8,
 		"source_status": {
 			"runtime_kind": "recovered",
 			"original_actor_type": "recovered",
@@ -114,7 +111,6 @@ const PROFILES := {
 			"blast_vertical_radius": "recovered",
 			"alert_radius": "recovered",
 			"special_damage_bands": "recovered",
-			"resolved_visual_ticks": "unresolved_remake_default",
 		},
 	},
 	11: {

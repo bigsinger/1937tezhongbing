@@ -109,14 +109,14 @@ Godot 端的责任分工为：
   [原版角色物品背包恢复](ORIGINAL_ITEM_INVENTORY.md)；
 - `original_runtime_actor_catalog.gd`：读取 762 个运行时角色身份及阵营覆盖；
 - `projectile_world.gd` / `combat_projectile.gd`：type 6/7/9 世界飞行、段碰撞、落地和椭圆爆炸；
-- `legacy_special_world_object.gd` / `legacy_ai_control_effect.gd`：type 8/10 世界对象与 type 11 状态的建立、推进、释放和快照；
+- `legacy_special_world_object.gd` / `legacy_explosion_visual_rules.gd` / `legacy_ai_control_effect.gd`：type 8/10 世界对象、actor 62 原粒子计划与 type 11 状态的建立、推进、释放和快照；
 - `world_depth.gd`：地面、正常深度、固定前景和顶层四渲染队列；
 - `imported_level_data.gd`：读取并校验 `database_header_values`，不能再次在导入链中丢弃 DBL `header[0]`；
 - `world_pickup_catalog.gd`、`field_pickup.gd`、`land_mine.gd`、`explosive_prop.gd`：真实场景拾取、地雷和油桶。
 
 `combat_profiles.json` 当前的普通敌人/军犬感知、11 类攻击距离、普通伤害、连发次数、弹药物品 ID、每次消耗和末帧提交语义来自 `M1937.exe` 字段级逆向，不能随意当作手感参数改写。每个新战斗字段都必须标记 `recovered`、`recovered_with_unresolved_override` 或 `unresolved_remake_default`。原版已确认不存在弹匣/备弹/装填抽象；正式关卡必须使用 `original_initial_weapon_inventory.json` 的直接数量和模式，profile 中旧字段只供 schema 1 迁移及合成测试兼容。十类场景拾取的 DBL `header[2]` 物品 ID、`sub_45AE10` 容器/mode 和 `sub_453F70` 单件数量已经恢复；仍为重制默认的是交互半径、投射物速度/弧高/碰撞半径及手榴弹、地雷、油桶的爆炸参数。听觉遮挡、尸体发现和更高层走廊会车尚未完成。
 
-type 8/10/11 已由专用运行时接管：type 8 创建 actor 84 / GFL 470、消费物品 43，并由存活 faction 1 进入 32×16 椭圆触发；type 10 创建 actor 85 / GFL 900、消费物品 45，在第 100 个 world tick 爆炸；二者随后创建 actor 62，主爆炸在 128×64 等距椭圆内造成 128 伤害并传播 800 半径警报，另按运行时 actor type 执行两组已恢复的 128 伤害带。type 11 不直接结算伤害、不消费物品 99；它设置目标 `+656/+0x290` 为注意力保持，暂停普通空闲移动并面向专用来源，来源开始移动或目标进入战斗状态时释放，不存在 180 tick 超时。活跃对象与状态均进入 `GameSessionState`；目前只剩 actor 62 爆炸结束后的残留显示 tick 仍为 `unresolved_remake_default`。详见 [原版行为取证摘要](ORIGINAL_BEHAVIOR_FORENSICS.md)。
+type 8/10/11 已由专用运行时接管：type 8 创建 actor 84 / GFL 470、消费物品 43，并由存活 faction 1 进入 32×16 椭圆触发；type 10 创建 actor 85 / GFL 900、消费物品 45，在第 100 个 world tick 爆炸；二者随后创建 actor 62，主爆炸在 128×64 等距椭圆内造成 128 伤害并传播 800 半径警报，另按运行时 actor type 执行两组已恢复的 128 伤害带。效果 11/15 会按默认状态 1 的 MSVCRT LCG 尝试 1—2 个 64×32 散布粒子，首匹配 GFL 动画完整播放 5 轮并在 90/150 tick 清理；全局随机状态进入 `GameSessionState`。type 11 不直接结算伤害、不消费物品 99；它设置目标 `+656/+0x290` 为注意力保持，暂停普通空闲移动并面向专用来源，来源开始移动或目标进入战斗状态时释放，不存在 180 tick 超时。活跃对象与状态均进入 `GameSessionState`。其他尚未恢复的 `rand()` 调用点仍可能移动特定实机时刻的随机变体。详见 [原版行为取证摘要](ORIGINAL_BEHAVIOR_FORENSICS.md)。
 
 m011 不再编辑性发放项目 99。原版项目 99 的取得脚本和持有者仍未知；在恢复
 证据前，不得把它加入任何正式关卡开局配置。

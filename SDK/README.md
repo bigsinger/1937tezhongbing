@@ -131,7 +131,10 @@ DBL 1003/物品 53 仍明确归入可受伤汽油桶生命周期，不会误作�
 触发部署、actor 85/GFL 900 的 100 world-tick 定时部署、两者共用的 actor 62
 主爆炸与两组特殊对象伤害带，以及 type 11 在 actor `+0x290` 的来源锚定
 注意力保持。它同时说明 type 11 不消费项目 99、不是定时眩晕，并由来源移动或
-目标战斗转换释放。相关函数入口和 `SpecialAttentionSource` 全局量均由
+目标战斗转换释放。actor 62 的效果 11/15 粒子类型、首匹配 GFL、64×32
+散布、五轮动画寿命和默认状态 1 的 MSVCRT `rand()` 步进也由同一头文件
+固定；runtime type 102 无匹配 SPR，必须保留“消费随机数但不生成粒子”的
+语义。相关函数入口和 `SpecialAttentionSource` 全局量均由
 `address-catalog.json` 生成到 C++/C# 常量，补丁和 Remake 不再各自复制魔数。
 
 `Commands.hpp` 固化 S/B 命令：S 只直接选择存活 faction 1 敌军，空地使用

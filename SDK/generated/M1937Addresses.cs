@@ -62,6 +62,11 @@ namespace Mission1937.SDK.Generated
         public const long IsometricEllipseContains = 0x0005A8C0L;
         public const long CreateEffectActor = 0x00065250L;
         public const long EffectDispatch = 0x000656C0L;
+        public const long FindSpriteByRuntimeType = 0x0001BF80L;
+        public const long PopulateExplosionParticles = 0x00064730L;
+        public const long UpdateExplosionParticleBurst = 0x00064A80L;
+        public const long CreateExplosionParticleBurst = 0x00065580L;
+        public const long CrtRand = 0x0006D545L;
         public const long SetFacingFromAngle = 0x00066790L;
         public const long ResetActorMovement = 0x0005C1C0L;
         public const long ClearActorCommandTargets = 0x0005C1E0L;

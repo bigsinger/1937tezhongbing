@@ -161,6 +161,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "Godot legacy special-action tests failed with exit code $LASTEXITCODE."
 }
 
+& $GodotExecutable --headless --path $game --script 'res://tests/legacy_explosion_visual_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot legacy explosion-visual tests failed with exit code $LASTEXITCODE."
+}
+
 & $GodotExecutable --headless --path $game --script 'res://tests/legacy_sb_commands_test.gd'
 if ($LASTEXITCODE -ne 0) {
     throw "Godot original S/B command tests failed with exit code $LASTEXITCODE."

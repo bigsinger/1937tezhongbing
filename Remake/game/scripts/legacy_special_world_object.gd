@@ -4,6 +4,9 @@ extends Node2D
 const WORLD_DEPTH: Script = preload("res://scripts/world_depth.gd")
 
 const SPECIAL_PROFILES: Script = preload("res://scripts/legacy_special_action_profiles.gd")
+const EXPLOSION_VISUAL_RULES: Script = preload(
+	"res://scripts/legacy_explosion_visual_rules.gd"
+)
 
 signal state_changed(world_object: Node2D, old_state: int, new_state: int)
 signal triggered(world_object: Node2D, target: Node2D)
@@ -41,13 +44,18 @@ var blast_horizontal_radius := 0.0
 var blast_vertical_radius := 0.0
 var alert_radius := 0.0
 var special_damage_bands: Array[Dictionary] = []
-var resolved_visual_ticks := 0
 var original_texture: Texture2D
 var original_frames: Array[Texture2D] = []
+var original_anchor := Vector2.ZERO
 var original_frame_hold_ticks := 1
 var original_frame_index := 0
 var original_animation_ticks := 0
 var evidence_profile: Dictionary = {}
+var resolved_visual_catalog: Dictionary = {}
+var resolved_particles: Array[Dictionary] = []
+var resolved_visual_burst_count := 0
+var visual_random_state := 1
+var visual_world_size := Vector2.ZERO
 
 
 func configure(
@@ -56,6 +64,9 @@ func configure(
 	new_owner: Node2D = null,
 	new_faction_id: int = 3,
 	visual: Variant = null,
+	new_resolved_visual_catalog: Dictionary = {},
+	new_visual_world_size: Vector2 = Vector2.ZERO,
+	new_visual_random_state: int = 1,
 ) -> bool:
 	if not SPECIAL_PROFILES.is_valid_profile(profile):
 		return false
@@ -82,17 +93,27 @@ func configure(
 	for raw_band: Variant in profile.get("special_damage_bands", []) as Array:
 		if raw_band is Dictionary:
 			special_damage_bands.append((raw_band as Dictionary).duplicate(true))
-	resolved_visual_ticks = maxi(int(profile.get("resolved_visual_ticks", 0)), 0)
+	resolved_visual_catalog = new_resolved_visual_catalog.duplicate()
+	resolved_particles.clear()
+	resolved_visual_burst_count = 0
+	visual_world_size = new_visual_world_size
+	visual_random_state = new_visual_random_state
 	original_frames.clear()
+	original_anchor = Vector2.ZERO
 	original_frame_hold_ticks = 1
 	if visual is Texture2D:
 		original_frames.append(visual as Texture2D)
+		original_anchor = (visual as Texture2D).get_size() * 0.5
 	elif visual is Dictionary:
 		var raw_frames: Variant = (visual as Dictionary).get("frames", [])
 		if raw_frames is Array:
 			for raw_frame: Variant in raw_frames as Array:
 				if raw_frame is Texture2D:
 					original_frames.append(raw_frame as Texture2D)
+		original_anchor = (visual as Dictionary).get(
+			"anchor",
+			original_frames[0].get_size() * 0.5 if not original_frames.is_empty() else Vector2.ZERO,
+		) as Vector2
 		original_frame_hold_ticks = maxi(
 			int((visual as Dictionary).get("frame_hold_ticks", 1)),
 			1,
@@ -141,7 +162,12 @@ func advance_world_ticks(ticks: int = 1) -> void:
 			_trigger_and_detonate(null)
 	elif state == State.RESOLVED:
 		resolved_world_ticks += safe_ticks
-		if resolved_world_ticks >= resolved_visual_ticks and is_inside_tree():
+		_advance_resolved_particles(safe_ticks)
+		if (
+			resolved_visual_burst_count > 0
+			and resolved_particles.is_empty()
+			and is_inside_tree()
+		):
 			queue_free()
 	queue_redraw()
 
@@ -184,6 +210,86 @@ func explosion_payload() -> Dictionary:
 	}
 
 
+func add_recovered_visual_burst(
+	effect_family: int,
+	center_world_position: Vector2,
+	random_state: int = -1,
+) -> int:
+	if state not in [State.TRIGGERED, State.RESOLVED]:
+		return visual_random_state
+	var start_state := visual_random_state if random_state < 0 else random_state
+	var plan: Dictionary = EXPLOSION_VISUAL_RULES.build_burst_plan(
+		effect_family,
+		center_world_position,
+		visual_world_size,
+		start_state,
+	)
+	if plan.is_empty():
+		return visual_random_state
+	visual_random_state = int(plan.get("next_random_state", start_state))
+	resolved_visual_burst_count += 1
+	for raw_particle: Variant in plan.get("particles", []) as Array:
+		if not raw_particle is Dictionary:
+			continue
+		var particle_plan := raw_particle as Dictionary
+		var gfl_index := int(particle_plan.get("gfl_index", -1))
+		var visual_value: Variant = resolved_visual_catalog.get(gfl_index, {})
+		var visual := visual_value as Dictionary if visual_value is Dictionary else {}
+		var frames: Array[Texture2D] = []
+		var raw_frames: Variant = visual.get("frames", [])
+		if raw_frames is Array:
+			for raw_frame: Variant in raw_frames as Array:
+				if raw_frame is Texture2D:
+					frames.append(raw_frame as Texture2D)
+		var frame_count := maxi(int(particle_plan.get("frame_count", 0)), 1)
+		var frame_hold_ticks := maxi(
+			int(particle_plan.get("frame_hold_ticks", 0)),
+			1,
+		)
+		var visual_hold_ticks := int(visual.get("frame_hold_ticks", frame_hold_ticks))
+		if visual_hold_ticks == frame_hold_ticks and not frames.is_empty():
+			frame_count = frames.size()
+		resolved_particles.append({
+			"runtime_actor_type": int(particle_plan.get("runtime_actor_type", 0)),
+			"gfl_index": gfl_index,
+			"local_position": (
+				particle_plan.get("world_position", center_world_position) as Vector2
+			) - global_position,
+			"anchor": visual.get(
+				"anchor",
+				particle_plan.get("anchor", Vector2.ZERO),
+			) as Vector2,
+			"frames": frames,
+			"frame_count": frame_count,
+			"frame_hold_ticks": frame_hold_ticks,
+			"frame_index": 0,
+			"frame_elapsed_ticks": 0,
+			"completed_loops": 0,
+			"repeat_count": maxi(
+				int(particle_plan.get("repeat_count", 1)),
+				1,
+			),
+		})
+	queue_redraw()
+	return visual_random_state
+
+
+func resolved_particle_count() -> int:
+	return resolved_particles.size()
+
+
+func maximum_resolved_visual_lifetime_ticks() -> int:
+	var maximum_ticks := 0
+	for particle: Dictionary in resolved_particles:
+		maximum_ticks = maxi(
+			maximum_ticks,
+			int(particle.get("frame_count", 0))
+			* int(particle.get("frame_hold_ticks", 0))
+			* int(particle.get("repeat_count", 0)),
+		)
+	return maximum_ticks
+
+
 func snapshot() -> Dictionary:
 	return {
 		"schema_version": 1,
@@ -197,6 +303,7 @@ func snapshot() -> Dictionary:
 		"trigger_scene_index": int(trigger_target.get("scene_index")) if is_instance_valid(trigger_target) else -1,
 		"age_world_ticks": age_world_ticks,
 		"resolved_world_ticks": resolved_world_ticks,
+		"visual_random_state": visual_random_state,
 	}
 
 
@@ -209,6 +316,9 @@ func restore_runtime_state(snapshot_value: Dictionary) -> bool:
 	state = restored_state
 	age_world_ticks = maxi(int(snapshot_value.get("age_world_ticks", 0)), 0)
 	resolved_world_ticks = maxi(int(snapshot_value.get("resolved_world_ticks", 0)), 0)
+	visual_random_state = int(
+		snapshot_value.get("visual_random_state", visual_random_state)
+	)
 	original_animation_ticks = age_world_ticks
 	if not original_frames.is_empty():
 		original_frame_index = (
@@ -243,6 +353,8 @@ func _trigger_and_detonate(candidate: Node2D) -> void:
 		blast_vertical_radius,
 		faction_id,
 	)
+	if resolved_visual_burst_count == 0:
+		add_recovered_visual_burst(11, global_position, visual_random_state)
 	resolved.emit(self)
 
 
@@ -261,6 +373,40 @@ func _advance_original_animation(ticks: int) -> void:
 	original_frame_index = (
 		original_animation_ticks / original_frame_hold_ticks
 	) % original_frames.size()
+
+
+func _advance_resolved_particles(ticks: int) -> void:
+	for particle_index: int in range(resolved_particles.size() - 1, -1, -1):
+		var particle := resolved_particles[particle_index]
+		var remaining_ticks := ticks
+		while (
+			remaining_ticks > 0
+			and int(particle.get("completed_loops", 0))
+			< int(particle.get("repeat_count", 1))
+		):
+			particle["frame_elapsed_ticks"] = (
+				int(particle.get("frame_elapsed_ticks", 0)) + 1
+			)
+			if (
+				int(particle["frame_elapsed_ticks"])
+				>= int(particle.get("frame_hold_ticks", 1))
+			):
+				particle["frame_elapsed_ticks"] = 0
+				particle["frame_index"] = int(particle.get("frame_index", 0)) + 1
+				if (
+					int(particle["frame_index"])
+					>= int(particle.get("frame_count", 1))
+				):
+					particle["frame_index"] = 0
+					particle["completed_loops"] = (
+						int(particle.get("completed_loops", 0)) + 1
+					)
+			remaining_ticks -= 1
+		if (
+			int(particle.get("completed_loops", 0))
+			>= int(particle.get("repeat_count", 1))
+		):
+			resolved_particles.remove_at(particle_index)
 
 
 func _nearest_recovered_trigger_target() -> Node2D:
@@ -303,18 +449,51 @@ func _is_inside_trigger_ellipse(world_position: Vector2) -> bool:
 
 
 func _draw() -> void:
-	if not original_frames.is_empty():
+	if state in [State.ACTIVE, State.TRIGGERED] and not original_frames.is_empty():
 		var frame: Texture2D = original_frames[clampi(original_frame_index, 0, original_frames.size() - 1)]
-		var texture_size := frame.get_size()
-		draw_texture(frame, -texture_size * 0.5)
+		draw_texture(frame, -original_anchor)
 	elif state in [State.ACTIVE, State.TRIGGERED]:
 		var color := Color(0.33, 0.47, 0.24) if attack_type == 8 else Color(0.40, 0.28, 0.18)
 		draw_circle(Vector2.ZERO, 9.0, color)
 		draw_arc(Vector2.ZERO, 12.0, 0.0, TAU, 20, Color(0.92, 0.73, 0.22), 1.5)
 	elif state == State.RESOLVED:
-		_draw_ellipse(
-			Vector2(blast_horizontal_radius, blast_vertical_radius),
-			Color(1.0, 0.38, 0.08, 0.28),
+		_draw_resolved_particles()
+
+
+func _draw_resolved_particles() -> void:
+	for particle: Dictionary in resolved_particles:
+		var local_position := particle.get("local_position", Vector2.ZERO) as Vector2
+		var raw_frames: Variant = particle.get("frames", [])
+		if raw_frames is Array and not (raw_frames as Array).is_empty():
+			var frames := raw_frames as Array
+			var frame_value: Variant = frames[
+				clampi(
+					int(particle.get("frame_index", 0)),
+					0,
+					frames.size() - 1,
+				)
+			]
+			if frame_value is Texture2D:
+				draw_texture(
+					frame_value as Texture2D,
+					local_position - (particle.get("anchor", Vector2.ZERO) as Vector2),
+				)
+				continue
+		# Asset-free tests and fresh checkouts retain the recovered timing and
+		# positions while using a cheap outline instead of an invented filled
+		# blast ellipse.
+		var phase := float(int(particle.get("frame_index", 0))) / maxf(
+			float(int(particle.get("frame_count", 1))),
+			1.0,
+		)
+		draw_arc(
+			local_position,
+			8.0 + phase * 10.0,
+			0.0,
+			TAU,
+			16,
+			Color(1.0, 0.45, 0.10, 0.78 - phase * 0.45),
+			2.0,
 		)
 
 

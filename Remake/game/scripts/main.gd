@@ -38,6 +38,9 @@ const EXPLOSIVE_PROP_SCRIPT: Script = preload("res://scripts/explosive_prop.gd")
 const LAND_MINE_SCRIPT: Script = preload("res://scripts/land_mine.gd")
 const LEGACY_SPECIAL_ACTION_PROFILES: Script = preload("res://scripts/legacy_special_action_profiles.gd")
 const LEGACY_SPECIAL_WORLD_OBJECT_SCRIPT: Script = preload("res://scripts/legacy_special_world_object.gd")
+const LEGACY_EXPLOSION_VISUAL_RULES: Script = preload(
+	"res://scripts/legacy_explosion_visual_rules.gd"
+)
 const LEGACY_AI_CONTROL_EFFECT_SCRIPT: Script = preload("res://scripts/legacy_ai_control_effect.gd")
 const LEGACY_OBSERVATION_BEACON_SCRIPT: Script = preload("res://scripts/legacy_observation_beacon.gd")
 const LEGACY_BURIAL_CACHE_SCRIPT: Script = preload("res://scripts/legacy_burial_cache.gd")
@@ -272,6 +275,7 @@ var save_store: RefCounted
 var campaign_progress: Dictionary = {}
 var command_line_controls_display := false
 var media_event_seed := 0
+var legacy_crt_random_state := 1
 var field_pickups: Array[Node2D] = []
 var explosive_props: Array[Node2D] = []
 var deployed_mines: Array[Node2D] = []
@@ -2360,6 +2364,7 @@ func _spawn_legacy_special_world_object(
 	var visual := _load_legacy_special_visual(
 		int(evidence_profile.get("original_gfl_index", 0))
 	)
+	var resolved_visual_catalog := _load_legacy_explosion_visual_catalog()
 	if not bool(world_object.call(
 		"configure",
 		evidence_profile,
@@ -2367,6 +2372,9 @@ func _spawn_legacy_special_world_object(
 		attacker,
 		source_faction_id,
 		visual,
+		resolved_visual_catalog,
+		world_size,
+		legacy_crt_random_state,
 	)):
 		world_object.free()
 		return null
@@ -2461,9 +2469,23 @@ func _load_legacy_special_visual(gfl_index: int) -> Dictionary:
 									manifest_path.get_base_dir(),
 								)
 						if not frames.is_empty():
+							var primary: Variant = group.get("primary_triplet", [])
+							var anchor := frames[0].get_size() * 0.5
+							if primary is Array and (primary as Array).size() == 3:
+								anchor = Vector2(
+									float((primary as Array)[0]),
+									float((primary as Array)[2]),
+								)
+							var runtime_actor_type := 0
+							var header_values: Variant = manifest.get("header_values", [])
+							if header_values is Array and (header_values as Array).size() >= 3:
+								runtime_actor_type = int((header_values as Array)[2])
 							var visual := {
 								"frames": frames,
 								"frame_hold_ticks": maxi(int(group.get("frame_hold_ticks", 1)), 1),
+								"anchor": anchor,
+								"gfl_index": gfl_index,
+								"runtime_actor_type": runtime_actor_type,
 							}
 							imported_animation_cache[cache_key] = visual
 							return visual.duplicate()
@@ -2480,9 +2502,24 @@ func _load_legacy_special_visual(gfl_index: int) -> Dictionary:
 			return {}
 		texture = ImageTexture.create_from_image(image)
 		imported_texture_cache[preview_path] = texture
-	var fallback := {"frames": [texture], "frame_hold_ticks": 1}
+	var fallback := {
+		"frames": [texture],
+		"frame_hold_ticks": 1,
+		"anchor": texture.get_size() * 0.5,
+		"gfl_index": gfl_index,
+		"runtime_actor_type": 0,
+	}
 	imported_animation_cache[cache_key] = fallback
 	return fallback.duplicate()
+
+
+func _load_legacy_explosion_visual_catalog() -> Dictionary:
+	var result: Dictionary = {}
+	for gfl_index: int in LEGACY_EXPLOSION_VISUAL_RULES.supported_gfl_indices():
+		var visual := _load_legacy_special_visual(gfl_index)
+		if not visual.is_empty():
+			result[gfl_index] = visual
+	return result
 
 
 func _on_projectile_damage_applied(
@@ -2533,12 +2570,18 @@ func _on_world_explosion_requested(
 		)
 		if normalized_distance <= 1.0:
 			candidate.call("take_damage", damage, instigator if instigator != null else source)
-	_apply_legacy_special_damage_bands(
+	var special_visual_burst_count := _apply_legacy_special_damage_bands(
 		source,
 		instigator,
 		world_position,
 		candidates,
 	)
+	if (
+		source != null
+		and source.get_script() == LEGACY_SPECIAL_WORLD_OBJECT_SCRIPT
+		and special_visual_burst_count == 0
+	):
+		_add_legacy_special_visual_burst(source, 11, world_position)
 	var alert_source: Node2D = instigator
 	if alert_source == null or not is_instance_valid(alert_source):
 		for unit: SQUAD_UNIT in units:
@@ -2565,12 +2608,13 @@ func _apply_legacy_special_damage_bands(
 	instigator: Node2D,
 	world_position: Vector2,
 	candidates: Array[Node2D],
-) -> void:
+) -> int:
 	if source == null or source.get_script() != LEGACY_SPECIAL_WORLD_OBJECT_SCRIPT:
-		return
+		return 0
 	var raw_bands: Variant = source.get("special_damage_bands")
 	if not raw_bands is Array:
-		return
+		return 0
+	var visual_burst_count := 0
 	for raw_band: Variant in raw_bands as Array:
 		if not raw_band is Dictionary:
 			continue
@@ -2598,6 +2642,32 @@ func _apply_legacy_special_damage_bands(
 				band_damage,
 				instigator if instigator != null else source,
 			)
+			_add_legacy_special_visual_burst(
+				source,
+				int(band.get("original_visual_effect_type", 11)),
+				candidate.global_position,
+			)
+			visual_burst_count += 1
+	return visual_burst_count
+
+
+func _add_legacy_special_visual_burst(
+	source: Node2D,
+	effect_family: int,
+	center_world_position: Vector2,
+) -> void:
+	if (
+		source == null
+		or not is_instance_valid(source)
+		or not source.has_method("add_recovered_visual_burst")
+	):
+		return
+	legacy_crt_random_state = int(source.call(
+		"add_recovered_visual_burst",
+		effect_family,
+		center_world_position,
+		legacy_crt_random_state,
+	))
 
 
 static func _legacy_special_band_contains(band: Dictionary, offset: Vector2) -> bool:

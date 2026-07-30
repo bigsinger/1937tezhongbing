@@ -14,7 +14,7 @@
 
 飞镖和弹弓不会被同阵营角色拦下；手榴弹当前按 `friendly_fire = true` 伤害爆炸椭圆内的敌人、友军、投掷者和可破坏物。投射物命中、爆炸警报、战斗状态文字和原版音效事件都已回到主战斗事件链。
 
-伤害值仍由 `game/data/combat_profiles.json` 提供：飞镖 8、弹弓 1；手榴弹 16 仍明确属于重制版默认值。攻击类型 8/10 已有持久世界对象，二者创建的 actor 62 主爆炸伤害、几何、特殊对象伤害带与警报范围均已恢复；type 11 也已按原程序注意力保持及释放条件实现，不再使用臆造的定时 AI 抑制。
+伤害值仍由 `game/data/combat_profiles.json` 提供：飞镖 8、弹弓 1；手榴弹 16 仍明确属于重制版默认值。攻击类型 8/10 已有持久世界对象，二者创建的 actor 62 主爆炸伤害、几何、特殊对象伤害带、警报范围及效果粒子生命周期均已恢复；type 11 也已按原程序注意力保持及释放条件实现，不再使用臆造的定时 AI 抑制。
 
 ## 2. 武器容器、角色物品背包与切换
 
@@ -118,10 +118,10 @@ type 8/10 世界对象和汽油桶走统一的世界爆炸结算，可伤害单�
 
 - type 8 / 项目 43：选择后左击目标，在攻击命中帧部署 actor 84 / GFL 470 对象；对象创建后即进入 ACTIVE，存活 faction 1 目标进入 `32 × 16` 椭圆后触发 actor 62。
 - type 10 / 项目 45：选择后左击目标，在攻击命中帧部署 actor 85 / GFL 900 对象；从创建起按 world tick 计时，第 100 tick 触发 actor 62。
-- actor 62：在 `128 × 64` 等距椭圆内造成 128 点主伤害并发布 800 半径警报；runtime type 34/86/87/88/94/95/96/97 在 `384 × 192` 椭圆内、type 66/67/68/77/93 在严格小于 256 的欧氏半径内，各另受一次 128 点伤害。两组原视觉效果编号分别为 11 和 15。
+- actor 62：在 `128 × 64` 等距椭圆内造成 128 点主伤害并发布 800 半径警报；runtime type 34/86/87/88/94/95/96/97 在 `384 × 192` 椭圆内、type 66/67/68/77/93 在严格小于 256 的欧氏半径内，各另受一次 128 点伤害。两组原视觉效果编号分别为 11 和 15；每组尝试 1—2 个 64×32 散布粒子，使用原 MSVCRT 随机序列并完整播放 5 轮。可生成粒子的实际寿命为 90 或 150 world tick。
 - 汽油桶：选择队员后左击汽油桶下达攻击命令；当前生命 8，摧毁后造成 16 点伤害，爆炸椭圆 `128 × 64`。
 
-项目 43/45、actor 84/85/62、GFL 470/900、type 8 的 faction 1 与 `32 × 16` 触发、type 10 的 100 tick，以及上述伤害/几何/警报均来自恢复路径；当前只剩 actor 62 结束显示时长及汽油桶生命/伤害/范围仍是显式重制默认。仓库保留了早期通用 `LandMine` 状态机，但当前原版键位和 type 8 生命周期不再通过 `X` 或该状态机暴露；不要把旧测试接口写成试玩操作。
+项目 43/45、actor 84/85/62、GFL 470/900、type 8 的 faction 1 与 `32 × 16` 触发、type 10 的 100 tick，以及上述伤害/几何/警报/粒子寿命均来自恢复路径；汽油桶生命/伤害/范围仍是显式重制默认。仓库保留了早期通用 `LandMine` 状态机，但当前原版键位和 type 8 生命周期不再通过 `X` 或该状态机暴露；不要把旧测试接口写成试玩操作。
 
 ## 5. 实现边界
 
@@ -148,18 +148,19 @@ type 8/10 世界对象和汽油桶走统一的世界爆炸结算，可伤害单�
 | `game/scripts/explosive_prop.gd` | 可受伤汽油桶和爆炸请求 |
 | `game/scripts/main.gd` | 输入、原 scene 生成、背包 UI、任务与警报接线 |
 
-仍待恢复或校准的真实内容包括：全部投射物飞行和爆炸参数、actor 62 的
-残留显示时长、汽油桶数值及动画，以及爆炸对地形/
+仍待恢复或校准的真实内容包括：全部投射物飞行和爆炸参数、actor 62 与
+其他系统共享的完整全局随机调用顺序、汽油桶数值及动画，以及爆炸对地形/
 遮挡的原规则。原版物品容器 `actor+552`、武器容器 `actor+556` 的布局、
 数量模式和十二关开局内容已经恢复，不再把不存在的弹匣/装填时间或已确认的
 医药箱/西瓜/中药直接效果列为待校准项。
 
 ## 6. 验证
 
-`projectile_inventory_test.gd` 覆盖三类投射物、11 个物品 ID、兼容背包切换/快照、最后攻击帧发射、飞行碰撞、弧线、手榴弹敌我伤害和 `ProjectileWorld` 分流。`original_inventory_test.gd` 覆盖武器 mode 0/1/2、空枪保留、无换弹和 schema 1→2 迁移；`backpack_inventory_test.gd` 与 `original_item_runtime_test.gd` 覆盖独立物品容器、真实治疗/补给、A 页、丢弃、敌人拾取和死亡掉落；`real_original_inventory_test.gd` 在真实十二关逐一核对 27 名玩家/83 个武器条目以及 650 个角色/538 个物品条目。`world_interactables_test.gd` 覆盖原关卡拾取、type 8 基础世界交互、汽油桶受伤与连锁爆炸，以及七关爆破策略的 schema、真实 DBL 998 计数、成功后扣除和失败不扣除；`legacy_special_actions_test.gd` 专门覆盖 type 8/10/11 生命周期。各套件在日志中报告当前检查数，文档不固定复制计数。
+`projectile_inventory_test.gd` 覆盖三类投射物、11 个物品 ID、兼容背包切换/快照、最后攻击帧发射、飞行碰撞、弧线、手榴弹敌我伤害和 `ProjectileWorld` 分流。`original_inventory_test.gd` 覆盖武器 mode 0/1/2、空枪保留、无换弹和 schema 1→2 迁移；`backpack_inventory_test.gd` 与 `original_item_runtime_test.gd` 覆盖独立物品容器、真实治疗/补给、A 页、丢弃、敌人拾取和死亡掉落；`real_original_inventory_test.gd` 在真实十二关逐一核对 27 名玩家/83 个武器条目以及 650 个角色/538 个物品条目。`world_interactables_test.gd` 覆盖原关卡拾取、type 8 基础世界交互、汽油桶受伤与连锁爆炸，以及七关爆破策略的 schema、真实 DBL 998 计数、成功后扣除和失败不扣除；`legacy_special_actions_test.gd` 覆盖 type 8/10/11 生命周期，`legacy_explosion_visual_test.gd` 固定粒子目录、随机序列、散布、缺失 type 102 和 90/150 tick 边界。各套件在日志中报告当前检查数，文档不固定复制计数。
 
 ```powershell
 godot --headless --path Remake/game --script res://tests/projectile_inventory_test.gd
 godot --headless --path Remake/game --script res://tests/world_interactables_test.gd
 godot --headless --path Remake/game --script res://tests/legacy_special_actions_test.gd
+godot --headless --path Remake/game --script res://tests/legacy_explosion_visual_test.gd
 ```
