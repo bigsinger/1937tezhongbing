@@ -33,8 +33,8 @@ if ($catalog.summary.runtime_object_count -ne 127 -or
     $catalog.summary.runtime_dynamic_actor_count -ne 62 -or
     $catalog.summary.vwf_dynamic_actor_count -ne 62 -or
     $identities.Count -ne 62 -or
-    $resolved.Count -ne 54 -or
-    $unresolved.Count -ne 8 -or
+    $resolved.Count -ne 62 -or
+    $unresolved.Count -ne 0 -or
     $catalog.summary.resolved_count -ne $resolved.Count -or
     $catalog.summary.unresolved_count -ne $unresolved.Count) {
     throw 'The m000 runtime identity catalog coverage is invalid.'
@@ -84,6 +84,7 @@ $expectedMethods = [ordered]@{
     bounded_unambiguous_reference_drift = 2
     residual_unique_runtime_type = 1
     isolated_nearest_reference_after_exact_matches = 1
+    contiguous_runtime_and_vwf_order_between_resolved_neighbors = 8
 }
 foreach ($entry in $expectedMethods.GetEnumerator()) {
     if ($methodCounts[$entry.Key] -ne $entry.Value -or
@@ -104,14 +105,29 @@ if ($null -eq $player -or
     $player.display_name -ne $expectedPlayerName) {
     throw 'The unique m000 player identity is invalid.'
 }
-$expectedUnresolved = @(104, 105, 106, 107, 121, 122, 123, 124)
-$actualUnresolved = @($unresolved |
-    Sort-Object runtime_index |
-    Select-Object -ExpandProperty runtime_index)
-if ((Compare-Object $expectedUnresolved $actualUnresolved).Count -ne 0) {
-    throw (
-        'Only the two ambiguous scripted formations may remain unresolved. ' +
-        "Actual: $($actualUnresolved -join ', ')")
+$expectedOrderedScenes = [ordered]@{
+    104 = 1571
+    105 = 1572
+    106 = 1573
+    107 = 1574
+    121 = 1617
+    122 = 1618
+    123 = 1619
+    124 = 1620
+}
+foreach ($entry in $expectedOrderedScenes.GetEnumerator()) {
+    $identity = @($resolved |
+        Where-Object { [int]$_.runtime_index -eq [int]$entry.Key }) |
+        Select-Object -First 1
+    if ($null -eq $identity -or
+        [int]$identity.scene_index -ne [int]$entry.Value -or
+        [string]$identity.confidence -ne 'exact' -or
+        [string]$identity.method -ne
+        'contiguous_runtime_and_vwf_order_between_resolved_neighbors') {
+        throw (
+            "The bounded formation mapping for runtime actor $($entry.Key) " +
+            'is invalid.')
+    }
 }
 
 if (-not [string]::IsNullOrWhiteSpace($LevelManifest)) {

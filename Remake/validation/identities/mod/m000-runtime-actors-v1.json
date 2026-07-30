@@ -21,8 +21,8 @@
                                                "runtime_type":  "RuntimeActorV1 +0x064; historical SDK field name database_entry; this is a runtime type and never a DBL id",
                                                "vwf_runtime_type":  "entity.database_header_values[2]",
                                                "vwf_database_entry_id":  "entity.database_entry_id; the actual DBL resource identity",
-                                               "runtime_current_hit_points":  "RuntimeActorV1 +0x1C0; exact m000 correlation with entity.current_hit_points across all 54 resolved actors",
-                                               "runtime_default_attack_type":  "RuntimeActorV1 +0x20C; exact m000 correlation with entity.default_attack_type across all 54 resolved actors",
+                                               "runtime_current_hit_points":  "RuntimeActorV1 +0x1C0; exact m000 correlation with entity.current_hit_points across all 62 identity-resolved actors",
+                                               "runtime_default_attack_type":  "RuntimeActorV1 +0x20C; exact m000 correlation with entity.default_attack_type across all 62 identity-resolved actors",
                                                "patrol_world_coordinate":  "[waypoint.x * 32 + 16, waypoint.y * 16 + 8]",
                                                "runtime_index":  "capture-local actor-array index; never treated as a VWF scene index"
                                            }
@@ -31,14 +31,15 @@
                     "runtime_object_count":  127,
                     "runtime_dynamic_actor_count":  62,
                     "vwf_dynamic_actor_count":  62,
-                    "resolved_count":  54,
-                    "unresolved_count":  8,
+                    "resolved_count":  62,
+                    "unresolved_count":  0,
                     "method_counts":  {
                                           "unique_runtime_type_and_exact_reference_position":  5,
                                           "unique_runtime_type_and_exact_patrol_goal":  45,
                                           "residual_unique_runtime_type":  1,
                                           "isolated_nearest_reference_after_exact_matches":  1,
-                                          "bounded_unambiguous_reference_drift":  2
+                                          "bounded_unambiguous_reference_drift":  2,
+                                          "contiguous_runtime_and_vwf_order_between_resolved_neighbors":  8
                                       }
                 },
     "identities":  [
@@ -1539,42 +1540,29 @@
                                                          488
                                                      ]
                                         },
-                           "status":  "unresolved",
+                           "status":  "resolved",
                            "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
-                           "candidates":  [
-                                              {
-                                                  "scene_index":  1573,
-                                                  "database_entry_id":  912,
-                                                  "display_name":  "二等兵",
-                                                  "runtime_type":  6,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  131.015
-                                              },
-                                              {
-                                                  "scene_index":  1574,
-                                                  "database_entry_id":  912,
-                                                  "display_name":  "二等兵",
-                                                  "runtime_type":  6,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  125.936
-                                              },
-                                              {
-                                                  "scene_index":  1571,
-                                                  "database_entry_id":  912,
-                                                  "display_name":  "二等兵",
-                                                  "runtime_type":  6,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  138.452
-                                              },
-                                              {
-                                                  "scene_index":  1572,
-                                                  "database_entry_id":  912,
-                                                  "display_name":  "二等兵",
-                                                  "runtime_type":  6,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  127.624
-                                              }
-                                          ]
+                           "scene_index":  1571,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "contiguous_runtime_and_vwf_order_between_resolved_neighbors",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  6,
+                                            "ordinal_offset":  0,
+                                            "member_count":  4,
+                                            "runtime_bounds":  [
+                                                                   103,
+                                                                   108
+                                                               ],
+                                            "scene_bounds":  [
+                                                                 1570,
+                                                                 1575
+                                                             ]
+                                        }
                        },
                        {
                            "runtime_index":  105,
@@ -1592,42 +1580,29 @@
                                                          426
                                                      ]
                                         },
-                           "status":  "unresolved",
+                           "status":  "resolved",
                            "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
-                           "candidates":  [
-                                              {
-                                                  "scene_index":  1573,
-                                                  "database_entry_id":  912,
-                                                  "display_name":  "二等兵",
-                                                  "runtime_type":  6,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  256.478
-                                              },
-                                              {
-                                                  "scene_index":  1574,
-                                                  "database_entry_id":  912,
-                                                  "display_name":  "二等兵",
-                                                  "runtime_type":  6,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  272.25
-                                              },
-                                              {
-                                                  "scene_index":  1571,
-                                                  "database_entry_id":  912,
-                                                  "display_name":  "二等兵",
-                                                  "runtime_type":  6,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  323.903
-                                              },
-                                              {
-                                                  "scene_index":  1572,
-                                                  "database_entry_id":  912,
-                                                  "display_name":  "二等兵",
-                                                  "runtime_type":  6,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  183.358
-                                              }
-                                          ]
+                           "scene_index":  1572,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "contiguous_runtime_and_vwf_order_between_resolved_neighbors",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  6,
+                                            "ordinal_offset":  1,
+                                            "member_count":  4,
+                                            "runtime_bounds":  [
+                                                                   103,
+                                                                   108
+                                                               ],
+                                            "scene_bounds":  [
+                                                                 1570,
+                                                                 1575
+                                                             ]
+                                        }
                        },
                        {
                            "runtime_index":  106,
@@ -1645,42 +1620,29 @@
                                                          458
                                                      ]
                                         },
-                           "status":  "unresolved",
+                           "status":  "resolved",
                            "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
-                           "candidates":  [
-                                              {
-                                                  "scene_index":  1573,
-                                                  "database_entry_id":  912,
-                                                  "display_name":  "二等兵",
-                                                  "runtime_type":  6,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  182.428
-                                              },
-                                              {
-                                                  "scene_index":  1574,
-                                                  "database_entry_id":  912,
-                                                  "display_name":  "二等兵",
-                                                  "runtime_type":  6,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  190.245
-                                              },
-                                              {
-                                                  "scene_index":  1571,
-                                                  "database_entry_id":  912,
-                                                  "display_name":  "二等兵",
-                                                  "runtime_type":  6,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  227.982
-                                              },
-                                              {
-                                                  "scene_index":  1572,
-                                                  "database_entry_id":  912,
-                                                  "display_name":  "二等兵",
-                                                  "runtime_type":  6,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  128.082
-                                              }
-                                          ]
+                           "scene_index":  1573,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "contiguous_runtime_and_vwf_order_between_resolved_neighbors",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  6,
+                                            "ordinal_offset":  2,
+                                            "member_count":  4,
+                                            "runtime_bounds":  [
+                                                                   103,
+                                                                   108
+                                                               ],
+                                            "scene_bounds":  [
+                                                                 1570,
+                                                                 1575
+                                                             ]
+                                        }
                        },
                        {
                            "runtime_index":  107,
@@ -1698,42 +1660,29 @@
                                                          488
                                                      ]
                                         },
-                           "status":  "unresolved",
+                           "status":  "resolved",
                            "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
-                           "candidates":  [
-                                              {
-                                                  "scene_index":  1573,
-                                                  "database_entry_id":  912,
-                                                  "display_name":  "二等兵",
-                                                  "runtime_type":  6,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  153.792
-                                              },
-                                              {
-                                                  "scene_index":  1574,
-                                                  "database_entry_id":  912,
-                                                  "display_name":  "二等兵",
-                                                  "runtime_type":  6,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  155.708
-                                              },
-                                              {
-                                                  "scene_index":  1571,
-                                                  "database_entry_id":  912,
-                                                  "display_name":  "二等兵",
-                                                  "runtime_type":  6,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  182.483
-                                              },
-                                              {
-                                                  "scene_index":  1572,
-                                                  "database_entry_id":  912,
-                                                  "display_name":  "二等兵",
-                                                  "runtime_type":  6,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  122.053
-                                              }
-                                          ]
+                           "scene_index":  1574,
+                           "database_entry_id":  912,
+                           "display_name":  "二等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "contiguous_runtime_and_vwf_order_between_resolved_neighbors",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  6,
+                                            "ordinal_offset":  3,
+                                            "member_count":  4,
+                                            "runtime_bounds":  [
+                                                                   103,
+                                                                   108
+                                                               ],
+                                            "scene_bounds":  [
+                                                                 1570,
+                                                                 1575
+                                                             ]
+                                        }
                        },
                        {
                            "runtime_index":  108,
@@ -2190,42 +2139,29 @@
                                                          232
                                                      ]
                                         },
-                           "status":  "unresolved",
+                           "status":  "resolved",
                            "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
-                           "candidates":  [
-                                              {
-                                                  "scene_index":  1619,
-                                                  "database_entry_id":  925,
-                                                  "display_name":  "三等兵",
-                                                  "runtime_type":  5,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  160.125
-                                              },
-                                              {
-                                                  "scene_index":  1620,
-                                                  "database_entry_id":  925,
-                                                  "display_name":  "三等兵",
-                                                  "runtime_type":  5,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  277.462
-                                              },
-                                              {
-                                                  "scene_index":  1617,
-                                                  "database_entry_id":  925,
-                                                  "display_name":  "三等兵",
-                                                  "runtime_type":  5,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  341
-                                              },
-                                              {
-                                                  "scene_index":  1618,
-                                                  "database_entry_id":  925,
-                                                  "display_name":  "三等兵",
-                                                  "runtime_type":  5,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  215.39
-                                              }
-                                          ]
+                           "scene_index":  1617,
+                           "database_entry_id":  925,
+                           "display_name":  "三等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "contiguous_runtime_and_vwf_order_between_resolved_neighbors",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  5,
+                                            "ordinal_offset":  0,
+                                            "member_count":  4,
+                                            "runtime_bounds":  [
+                                                                   120,
+                                                                   125
+                                                               ],
+                                            "scene_bounds":  [
+                                                                 1616,
+                                                                 1621
+                                                             ]
+                                        }
                        },
                        {
                            "runtime_index":  122,
@@ -2243,42 +2179,29 @@
                                                          200
                                                      ]
                                         },
-                           "status":  "unresolved",
+                           "status":  "resolved",
                            "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
-                           "candidates":  [
-                                              {
-                                                  "scene_index":  1619,
-                                                  "database_entry_id":  925,
-                                                  "display_name":  "三等兵",
-                                                  "runtime_type":  5,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  222.081
-                                              },
-                                              {
-                                                  "scene_index":  1620,
-                                                  "database_entry_id":  925,
-                                                  "display_name":  "三等兵",
-                                                  "runtime_type":  5,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  341.375
-                                              },
-                                              {
-                                                  "scene_index":  1617,
-                                                  "database_entry_id":  925,
-                                                  "display_name":  "三等兵",
-                                                  "runtime_type":  5,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  406.262
-                                              },
-                                              {
-                                                  "scene_index":  1618,
-                                                  "database_entry_id":  925,
-                                                  "display_name":  "三等兵",
-                                                  "runtime_type":  5,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  277
-                                              }
-                                          ]
+                           "scene_index":  1618,
+                           "database_entry_id":  925,
+                           "display_name":  "三等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "contiguous_runtime_and_vwf_order_between_resolved_neighbors",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  5,
+                                            "ordinal_offset":  1,
+                                            "member_count":  4,
+                                            "runtime_bounds":  [
+                                                                   120,
+                                                                   125
+                                                               ],
+                                            "scene_bounds":  [
+                                                                 1616,
+                                                                 1621
+                                                             ]
+                                        }
                        },
                        {
                            "runtime_index":  123,
@@ -2296,42 +2219,29 @@
                                                          184
                                                      ]
                                         },
-                           "status":  "unresolved",
+                           "status":  "resolved",
                            "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
-                           "candidates":  [
-                                              {
-                                                  "scene_index":  1619,
-                                                  "database_entry_id":  925,
-                                                  "display_name":  "三等兵",
-                                                  "runtime_type":  5,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  254.951
-                                              },
-                                              {
-                                                  "scene_index":  1620,
-                                                  "database_entry_id":  925,
-                                                  "display_name":  "三等兵",
-                                                  "runtime_type":  5,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  374.37
-                                              },
-                                              {
-                                                  "scene_index":  1617,
-                                                  "database_entry_id":  925,
-                                                  "display_name":  "三等兵",
-                                                  "runtime_type":  5,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  439.628
-                                              },
-                                              {
-                                                  "scene_index":  1618,
-                                                  "database_entry_id":  925,
-                                                  "display_name":  "三等兵",
-                                                  "runtime_type":  5,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  309.414
-                                              }
-                                          ]
+                           "scene_index":  1619,
+                           "database_entry_id":  925,
+                           "display_name":  "三等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "contiguous_runtime_and_vwf_order_between_resolved_neighbors",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  5,
+                                            "ordinal_offset":  2,
+                                            "member_count":  4,
+                                            "runtime_bounds":  [
+                                                                   120,
+                                                                   125
+                                                               ],
+                                            "scene_bounds":  [
+                                                                 1616,
+                                                                 1621
+                                                             ]
+                                        }
                        },
                        {
                            "runtime_index":  124,
@@ -2349,42 +2259,29 @@
                                                          216
                                                      ]
                                         },
-                           "status":  "unresolved",
+                           "status":  "resolved",
                            "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
-                           "candidates":  [
-                                              {
-                                                  "scene_index":  1619,
-                                                  "database_entry_id":  925,
-                                                  "display_name":  "三等兵",
-                                                  "runtime_type":  5,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  190.263
-                                              },
-                                              {
-                                                  "scene_index":  1620,
-                                                  "database_entry_id":  925,
-                                                  "display_name":  "三等兵",
-                                                  "runtime_type":  5,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  309
-                                              },
-                                              {
-                                                  "scene_index":  1617,
-                                                  "database_entry_id":  925,
-                                                  "display_name":  "三等兵",
-                                                  "runtime_type":  5,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  373.343
-                                              },
-                                              {
-                                                  "scene_index":  1618,
-                                                  "database_entry_id":  925,
-                                                  "display_name":  "三等兵",
-                                                  "runtime_type":  5,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  245.522
-                                              }
-                                          ]
+                           "scene_index":  1620,
+                           "database_entry_id":  925,
+                           "display_name":  "三等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "contiguous_runtime_and_vwf_order_between_resolved_neighbors",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  5,
+                                            "ordinal_offset":  3,
+                                            "member_count":  4,
+                                            "runtime_bounds":  [
+                                                                   120,
+                                                                   125
+                                                               ],
+                                            "scene_bounds":  [
+                                                                 1616,
+                                                                 1621
+                                                             ]
+                                        }
                        },
                        {
                            "runtime_index":  125,

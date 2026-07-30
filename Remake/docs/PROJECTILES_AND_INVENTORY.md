@@ -57,7 +57,7 @@ actor 61 爆炸伤害/几何/警报和 SPR 发射锚点都来自原程序恢复�
 
 `BackpackInventory` 另行实现 actor `+0x228`，不与上述 `+0x22C`
 武器容器或 `field_inventory` 混用。`original_initial_item_inventory.json`
-固化十二关 650 个精确动态角色、538 条有序物品记录，其中 27 名玩家共有
+固化十二关 660 个精确动态角色、539 条有序物品记录，其中 27 名玩家共有
 74 条；A 页显示当前选中角色自己的物品。弹药箱、医药箱、西瓜、中药和
 服装的直接效果，丢弃、敌人拾取、死亡掉落及存档均已按恢复代码接线。
 完整证据与物品表见
@@ -162,7 +162,7 @@ type 8/10 世界对象和汽油桶走统一的世界爆炸结算，可伤害单�
 | `game/scripts/combat_inventory.gd` | 原版数量模式、多武器切换、旧档迁移和快照 |
 | `game/data/original_initial_weapon_inventory.json` | 十二关 27 名角色的 83 个取证开局条目 |
 | `game/scripts/backpack_inventory.gd` | actor +0x228 有序物品、mode、丢弃和快照 |
-| `game/data/original_initial_item_inventory.json` | 十二关 650 个精确角色的 538 个取证开局条目 |
+| `game/data/original_initial_item_inventory.json` | 十二关 660 个精确角色的 539 个取证开局条目 |
 | `game/data/world_pickups.json` | 真实拾取实体、地雷和汽油桶的数据配置 |
 | `tools/ResourceFormats/OriginalWorldPickupEvidence.cs` | 从 DBL 恢复并严格分类十类原版世界拾取物 |
 | `validation/baselines/mod/world-pickups-v1.json` | MOD 数据库哈希、item ID、容器和 mode 的可复现基线 |
@@ -192,7 +192,7 @@ actor 61 的 128 伤害和 `ProjectileWorld` 分流。`original_inventory_test.g
 0/1/2、空枪保留、无换弹和 schema 1→2 迁移；`backpack_inventory_test.gd`
 与 `original_item_runtime_test.gd` 覆盖独立物品容器、真实治疗/补给、A 页、
 丢弃、敌人拾取和死亡掉落；`real_original_inventory_test.gd` 在真实十二关
-逐一核对 27 名玩家/83 个武器条目以及 650 个角色/538 个物品条目。
+逐一核对 27 名玩家/83 个武器条目以及 660 个角色/539 个物品条目。
 `world_interactables_test.gd` 覆盖原关卡拾取、type 8 基础世界交互、汽油桶
 受伤与连锁爆炸，以及七关爆破策略的 schema、真实 DBL 998 计数、成功后
 扣除和失败不扣除；`legacy_special_actions_test.gd` 覆盖 type 8/10/11

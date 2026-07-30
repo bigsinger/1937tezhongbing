@@ -385,14 +385,14 @@ for ($levelIndex = 0; $levelIndex -lt 12; ++$levelIndex) {
 }
 
 $expectedTotals = @{
-    actors = 650
-    entries = 538
-    empty_actors = 307
+    actors = 660
+    entries = 539
+    empty_actors = 316
     players = 27
     player_entries = 74
     empty_players = 1
     excluded_resolved_high = 112
-    excluded_unresolved = 10
+    excluded_unresolved = 0
 }
 $actualTotals = @{
     actors = $actorTotal

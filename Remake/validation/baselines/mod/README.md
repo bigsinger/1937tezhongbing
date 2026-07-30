@@ -21,14 +21,17 @@ identity that has a recovered, reviewable mapping may be assigned a VWF
 `scene_index`; unproven enemy identities are deliberately excluded from this
 first baseline.
 
-`m000-enemy-patrol-v1.json` is a four-checkpoint, two-interval observation of
-46 enemy actors resolved by
-`validation/identities/mod/m000-runtime-actors-v1.json`. It was captured from
-the canonical isolated 1024x768 runtime after the original “Return to Mission”
-flow actually resumed world simulation. A second isolated run reproduced the
-kinematics within the documented tolerances. Exact route phase remains a
-diagnostic comparison; maximum displacement, 90th-percentile displacement,
-moving/stationary counts, and all 46 identities are strict gates.
+`m000-enemy-patrol-v1.json` through `m011-enemy-patrol-v1.json` are
+four-checkpoint, two-interval observations of all 656 identity-resolved hostile
+actors. They were captured from canonical isolated 1024x768 runtimes after the
+original “Return to Mission” flow actually resumed world simulation. A second
+isolated run reproduced the kinematics within the documented tolerances. Exact
+route phase remains diagnostic; per-actor identities and interval
+displacements, maximum/P90 displacement, and moving/stationary counts are
+strict gates. `Capture-TwelveLevelPatrolParity.ps1` reproduces the paired
+stable-MOD/Remake gate without moving, clipping, or reading the system cursor.
+The latest audited result is summarized in
+`twelve-level-patrol-parity-v1.md`.
 
 Run `Remake/tools/Run-RuntimeProbe.ps1` to generate the matching Remake trace
 and `comparison.json` / `comparison.md`.
@@ -43,7 +46,7 @@ Product data in
 identical and is checked on every build.
 
 `initial-item-inventory-v1.json` is the corresponding `RuntimeActorV1 +0x228`
-backpack baseline. Exact identity filtering produces 650 actors and 538 ordered
+backpack baseline. Exact identity filtering produces 660 actors and 539 ordered
 entries across all twelve levels; the 27 captured players account for 74
 entries and one intentionally empty backpack. Resolved/high and unresolved
 identities remain evidence-only and are never guessed into product scene IDs.

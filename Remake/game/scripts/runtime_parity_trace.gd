@@ -201,6 +201,44 @@ func _capture_actor(
 			maxf(float(_read_property(actor, "patrol_wait_remaining", 0.0)), 0.0)
 			* 1000.0
 		)
+		(record["native"] as Dictionary)["stable_mod_patrol_target_index"] = int(
+			_read_property(actor, "stable_mod_patrol_target_index", -1)
+		)
+		(record["native"] as Dictionary)["stable_mod_patrol_evidence_distance"] = float(
+			_read_property(actor, "stable_mod_patrol_last_evidence_distance", 0.0)
+		)
+		(record["native"] as Dictionary)["stable_mod_patrol_unbounded_path_distance"] = float(
+			_read_property(
+				actor,
+				"stable_mod_patrol_last_unbounded_path_distance",
+				0.0,
+			)
+		)
+		(record["native"] as Dictionary)["stable_mod_patrol_radius_guard_active"] = (
+			1
+			if bool(_read_property(
+				actor,
+				"stable_mod_patrol_radius_guard_active",
+				false,
+			))
+			else 0
+		)
+		(record["native"] as Dictionary)["stable_mod_patrol_final_relocation_active"] = (
+			1
+			if bool(_read_property(
+				actor,
+				"use_recorded_patrol_final_relocation",
+				false,
+			))
+			else 0
+		)
+		(record["native"] as Dictionary)["stable_mod_patrol_final_relocation_targets"] = (
+			_json_safe(_read_property(
+				actor,
+				"stable_mod_patrol_final_relocation_target_indices",
+				[],
+			))
+		)
 	return record
 
 

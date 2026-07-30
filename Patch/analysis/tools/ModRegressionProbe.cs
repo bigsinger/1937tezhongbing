@@ -1023,6 +1023,12 @@ internal static class ModRegressionProbe
                 }
                 if (parityPatrolOnly)
                 {
+                    int expectedPatrolActorCount =
+                        actorIdentities.Values.Count(
+                            delegate(RuntimeActorIdentity identity)
+                            {
+                                return identity.VwfFactionId == 1;
+                            });
                     CaptureParityCheckpoint(
                         parityCheckpoints,
                         process,
@@ -1064,6 +1070,7 @@ internal static class ModRegressionProbe
                             return stage.ProcessResponding;
                         });
                     bool patrolActorsReady =
+                        expectedPatrolActorCount > 0 &&
                         parityCheckpoints.Count == 4 &&
                         parityCheckpoints.All(
                             delegate(ParityCheckpoint checkpoint)
@@ -1076,7 +1083,7 @@ internal static class ModRegressionProbe
                                                    actor.SceneIndex,
                                                    out identity) &&
                                                identity.VwfFactionId == 1;
-                                    }) == 46;
+                                    }) == expectedPatrolActorCount;
                             });
                     exitCode =
                         missionStarted &&
@@ -3767,9 +3774,7 @@ internal static class ModRegressionProbe
         File.WriteAllText(
             Path.Combine(
                 outputDirectory,
-                selectorLevel == 1
-                    ? "mod-" + scenarioId + ".json"
-                    : "mod-level-smoke-v1.json"),
+                "mod-" + scenarioId + ".json"),
             json.ToString(),
             new UTF8Encoding(false));
     }

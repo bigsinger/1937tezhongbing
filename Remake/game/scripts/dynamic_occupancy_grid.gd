@@ -230,6 +230,7 @@ func find_path_for_scene(
 	scene_index: int,
 	world_start: Vector2,
 	world_destination: Vector2,
+	ignore_dynamic_actors: bool = false,
 ) -> PackedVector2Array:
 	if navigation == null or not actors.has(scene_index):
 		return PackedVector2Array()
@@ -241,10 +242,14 @@ func find_path_for_scene(
 	var query_destination_cell: Vector2i = navigation.world_to_cell(
 		world_destination
 	)
-	var prewarmed_path: Variant = _prewarmed_path(
-		scene_index,
-		world_start,
-		world_destination,
+	var prewarmed_path: Variant = (
+		null
+		if ignore_dynamic_actors
+		else _prewarmed_path(
+			scene_index,
+			world_start,
+			world_destination,
+		)
 	)
 	if prewarmed_path != null:
 		prewarmed_path_hit_count += 1
@@ -275,8 +280,11 @@ func find_path_for_scene(
 			if candidate != start_cell:
 				_mark_temporary_solid(candidate, changed_solids)
 	var include_dynamic_path_obstacles := (
-		actors.size() <= MAX_DYNAMIC_PATH_OBSTACLE_CELLS
-		or movement_owners.size() <= MAX_DYNAMIC_PATH_OBSTACLE_CELLS
+		not ignore_dynamic_actors
+		and (
+			actors.size() <= MAX_DYNAMIC_PATH_OBSTACLE_CELLS
+			or movement_owners.size() <= MAX_DYNAMIC_PATH_OBSTACLE_CELLS
+		)
 	)
 	if include_dynamic_path_obstacles:
 		for cell_value: Variant in movement_owners.keys():
@@ -295,7 +303,7 @@ func find_path_for_scene(
 				var candidate := cell - offset
 				if candidate != start_cell:
 					_mark_temporary_solid(candidate, changed_solids)
-	else:
+	elif not ignore_dynamic_actors:
 		dense_path_fallback_count += 1
 	var path: PackedVector2Array = navigation.find_path(world_start, world_destination, true)
 	for cell: Vector2i in changed_solids:
@@ -540,7 +548,11 @@ func release_goal(scene_index: int) -> void:
 	_clear_goal(scene_index)
 
 
-func try_relocate(scene_index: int, new_world_position: Vector2) -> bool:
+func try_relocate(
+	scene_index: int,
+	new_world_position: Vector2,
+	ignore_dynamic_actors: bool = false,
+) -> bool:
 	if navigation == null or not actors.has(scene_index):
 		return false
 	_sync_move_reservations()
@@ -551,15 +563,77 @@ func try_relocate(scene_index: int, new_world_position: Vector2) -> bool:
 	if absi(new_origin.x - old_origin.x) > 1 or absi(new_origin.y - old_origin.y) > 1:
 		relocation_rejection_count += 1
 		return false
-	if not _can_traverse(scene_index, actor, old_world_position, new_world_position):
+	if not _can_traverse(
+		scene_index,
+		actor,
+		old_world_position,
+		new_world_position,
+		ignore_dynamic_actors,
+	):
 		relocation_rejection_count += 1
 		return false
-	if not _keeps_actor_separation(scene_index, old_world_position, new_world_position):
+	if (
+		not ignore_dynamic_actors
+		and not _keeps_actor_separation(
+			scene_index,
+			old_world_position,
+			new_world_position,
+		)
+	):
 		relocation_rejection_count += 1
 		return false
-	if _crosses_reserved_diagonal(old_origin, new_origin):
+	if (
+		not ignore_dynamic_actors
+		and _crosses_reserved_diagonal(old_origin, new_origin)
+	):
 		relocation_rejection_count += 1
 		return false
+	return _commit_relocation(
+		scene_index,
+		actor,
+		old_origin,
+		new_origin,
+		new_world_position,
+	)
+
+
+## Replays one adjacent substep from a stable original-runtime patrol capture.
+## This deliberately bypasses only reconstructed static/dynamic occupancy:
+## the original process has already demonstrated that this short segment is
+## traversable. World bounds, one-cell-at-a-time motion and occupancy
+## bookkeeping remain enforced.
+func try_relocate_from_runtime_evidence(
+	scene_index: int,
+	new_world_position: Vector2,
+) -> bool:
+	if navigation == null or not actors.has(scene_index):
+		return false
+	var actor := actors[scene_index] as Dictionary
+	var old_origin := actor["origin"] as Vector2i
+	var new_origin: Vector2i = navigation.world_to_cell(new_world_position)
+	if (
+		not navigation.is_valid_cell(new_origin)
+		or absi(new_origin.x - old_origin.x) > 1
+		or absi(new_origin.y - old_origin.y) > 1
+	):
+		relocation_rejection_count += 1
+		return false
+	return _commit_relocation(
+		scene_index,
+		actor,
+		old_origin,
+		new_origin,
+		new_world_position,
+	)
+
+
+func _commit_relocation(
+	scene_index: int,
+	actor: Dictionary,
+	old_origin: Vector2i,
+	new_origin: Vector2i,
+	new_world_position: Vector2,
+) -> bool:
 	if new_origin != old_origin:
 		_remove_footprint(
 			movement_owners,
@@ -861,6 +935,7 @@ func _can_traverse(
 	actor: Dictionary,
 	old_world_position: Vector2,
 	new_world_position: Vector2,
+	ignore_dynamic_actors: bool = false,
 ) -> bool:
 	var old_origin := actor["origin"] as Vector2i
 	var movement_offsets := actor["movement_offsets"] as Array[Vector2i]
@@ -876,7 +951,11 @@ func _can_traverse(
 				absi(sample_origin.x - previous_origin.x) > 1
 				or absi(sample_origin.y - previous_origin.y) > 1
 				or not _diagonal_transition_is_clear(
-					scene_index, previous_origin, sample_origin, movement_offsets
+					scene_index,
+					previous_origin,
+					sample_origin,
+					movement_offsets,
+					ignore_dynamic_actors,
 				)
 			):
 				return false
@@ -887,7 +966,15 @@ func _can_traverse(
 				return false
 			if sample_origin != old_origin and _source_movement_blocked(cell):
 				return false
-			if sample_origin != old_origin and _has_other_owner(movement_owners, cell, scene_index):
+			if (
+				not ignore_dynamic_actors
+				and sample_origin != old_origin
+				and _has_other_owner(
+					movement_owners,
+					cell,
+					scene_index,
+				)
+			):
 				return false
 	return true
 
@@ -897,13 +984,17 @@ func _diagonal_transition_is_clear(
 	from_origin: Vector2i,
 	to_origin: Vector2i,
 	movement_offsets: Array[Vector2i],
+	ignore_dynamic_actors: bool = false,
 ) -> bool:
 	if (
 		absi(to_origin.x - from_origin.x) != 1
 		or absi(to_origin.y - from_origin.y) != 1
 	):
 		return true
-	if _crosses_reserved_diagonal(from_origin, to_origin):
+	if (
+		not ignore_dynamic_actors
+		and _crosses_reserved_diagonal(from_origin, to_origin)
+	):
 		return false
 	var side_origins: Array[Vector2i] = [
 		Vector2i(to_origin.x, from_origin.y),
@@ -916,7 +1007,14 @@ func _diagonal_transition_is_clear(
 			var side_cell := side_origin + offset
 			if (
 				_source_movement_blocked(side_cell)
-				or _has_other_owner(movement_owners, side_cell, scene_index)
+				or (
+					not ignore_dynamic_actors
+					and _has_other_owner(
+						movement_owners,
+						side_cell,
+						scene_index,
+					)
+				)
 			):
 				side_blocked = true
 				break

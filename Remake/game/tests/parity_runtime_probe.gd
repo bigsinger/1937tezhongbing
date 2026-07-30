@@ -5,10 +5,12 @@ const TRACE_SCRIPT: Script = preload("res://scripts/runtime_parity_trace.gd")
 
 const OUTPUT_ARGUMENT_PREFIX := "--output-dir="
 const MOVE_SPEED_ARGUMENT_PREFIX := "--move-speed="
+const LEVEL_ARGUMENT_PREFIX := "--level-id="
 const SCENARIO_ARGUMENT_PREFIX := "--scenario-id="
 const OUTBOUND_ARGUMENT_PREFIX := "--outbound-target="
 const RETURN_ARGUMENT_PREFIX := "--return-target="
 const OBSERVATION_ARGUMENT_PREFIX := "--observation-seconds="
+const PATROL_SETTLE_ARGUMENT_PREFIX := "--patrol-settle-seconds="
 const PRIMARY_DATABASE_ENTRY_ID := 924
 ## Layer-3-verified, obstacle-free cell centres: (1,3) and (5,3).
 ## The short observation window issues the return order before the first
@@ -23,15 +25,33 @@ const OBSERVATION_SECONDS := 0.75
 ## hit into the following checkpoint.
 const NATURAL_CONTACT_FIRST_DAMAGE_DEADLINE_SECONDS := 6.0
 const NATURAL_CONTACT_SECOND_DAMAGE_DEADLINE_SECONDS := 3.0
-## A frame-by-frame phase sweep against the stable-MOD patrol capture places
-## both audited one-second intervals at physics frame 543 after gameplay-ready.
-## Use simulation time so CI load cannot shift the patrol/hold phase.
-const PATROL_CAPTURE_SETTLE_SECONDS := 9.05
-const NATURAL_CONTACT_CAPTURE_SETTLE_SECONDS := 9.2
+## Every identity-resolved stable-MOD patrol trace records its comparable
+## gameplay-entry movement window from five seconds onward. Use simulation
+## time so CI load cannot shift the patrol/controller phase.
+const PATROL_CAPTURE_SETTLE_SECONDS := 5.0
+## The natural-contact reference's contact-ready positions are the same
+## gameplay-entry patrol checkpoint. The old 9.2-second value compensated for
+## the pre-evidence authored-route phase; the recovered timeline reaches the
+## corresponding MOD positions at exactly five simulated seconds.
+const NATURAL_CONTACT_CAPTURE_SETTLE_SECONDS := 5.0
 ## The read-only MOD trace has a 307 ms handoff between the outbound-observed
 ## snapshot and the replacement command. Reproduce that physics time instead
 ## of relying on host-dependent process/screenshot latency.
 const NATURAL_CONTACT_COMMAND_HANDOFF_SECONDS := 0.30
+const FORMAL_LEVEL_IDS: Array[String] = [
+	"m000",
+	"m001",
+	"m002",
+	"m003",
+	"m004",
+	"m005",
+	"m006",
+	"m007",
+	"m008",
+	"m009",
+	"m010",
+	"m011",
+]
 
 var output_directory := ""
 var failures: Array[String] = []
@@ -44,10 +64,16 @@ func _init() -> void:
 
 func _run_probe() -> void:
 	var arguments := OS.get_cmdline_user_args()
+	var level_id := _parse_level_id(arguments)
+	var level_index := FORMAL_LEVEL_IDS.find(level_id)
 	var scenario_id := _parse_string_argument(
 		arguments,
 		SCENARIO_ARGUMENT_PREFIX,
-		"m000-basic-movement-v1",
+		(
+			"m000-basic-movement-v1"
+			if level_id == "m000"
+			else _enemy_patrol_scenario_id(level_id)
+		),
 	)
 	var outbound_target := _parse_vector_argument(
 		arguments,
@@ -64,15 +90,24 @@ func _run_probe() -> void:
 		OBSERVATION_ARGUMENT_PREFIX,
 		OBSERVATION_SECONDS,
 	)
+	var patrol_settle_seconds := _parse_positive_float_argument(
+		arguments,
+		PATROL_SETTLE_ARGUMENT_PREFIX,
+		PATROL_CAPTURE_SETTLE_SECONDS,
+	)
 	var main = MAIN_SCENE.instantiate()
 	root.add_child(main)
 	await process_frame
+	if int(main.get("current_level_index")) != level_index:
+		main.call("switch_level", level_index, false, false)
+		await process_frame
 	var started := Time.get_ticks_usec()
 
 	var trace = TRACE_SCRIPT.new()
 	var scenario_description := (
-		"Observe the audited m000 enemy patrol roster in two one-second intervals."
-		if scenario_id == "m000-enemy-patrol-v1"
+		"Observe the audited %s enemy patrol roster in two one-second intervals."
+		% level_id
+		if scenario_id == _enemy_patrol_scenario_id(level_id)
 		else (
 			"Move 强子 into natural enemy contact and observe audited AI target-state transitions."
 			if scenario_id == "m000-natural-contact-v1"
@@ -81,18 +116,20 @@ func _run_probe() -> void:
 	)
 	trace.configure(
 		"remake",
-		"m000",
-		1,
-		1,
+		level_id,
+		level_index + 1,
+		level_index + 1,
 		scenario_id,
 		scenario_description,
 	)
-	if scenario_id == "m000-enemy-patrol-v1":
+	if scenario_id == _enemy_patrol_scenario_id(level_id):
 		await _run_enemy_patrol_probe(
 			main,
 			trace,
 			started,
 			observation_seconds,
+			level_id,
+			patrol_settle_seconds,
 		)
 		return
 	if scenario_id == "m000-natural-contact-v1":
@@ -195,6 +232,8 @@ func _run_enemy_patrol_probe(
 	trace: RefCounted,
 	started: int,
 	observation_seconds: float,
+	level_id: String,
+	settle_seconds: float,
 ) -> void:
 	# Let the staggered path scheduler issue every first patrol request before
 	# measuring. The reference MOD trace likewise starts only after gameplay is
@@ -203,15 +242,16 @@ func _run_enemy_patrol_probe(
 	# The isolated MOD probe resumes the original menu, waits 4.2 seconds for
 	# the gameplay capture, then observes five seconds of spawn safety. The
 	# frame sweep above identifies the matching post-ready simulation phase.
-	await _wait_physics_seconds(PATROL_CAPTURE_SETTLE_SECONDS)
+	await _wait_physics_seconds(settle_seconds)
 	var enemy_count := (main.get("enemies") as Array).size()
-	_expect(enemy_count >= 46, "m000 imported enemy roster is available")
+	_expect(enemy_count > 0, "%s imported enemy roster is available" % level_id)
+	var trace_scope := "audited_%s_enemy_identities" % level_id
 	trace.call(
 		"capture_main",
 		"patrol_interval_1_commanded",
 		main,
 		_elapsed_ms(started),
-		{"scope": "audited_m000_enemy_identities"},
+		{"scope": trace_scope},
 	)
 	await _wait_physics_seconds(observation_seconds)
 	trace.call(
@@ -219,14 +259,14 @@ func _run_enemy_patrol_probe(
 		"patrol_interval_1_observed",
 		main,
 		_elapsed_ms(started),
-		{"scope": "audited_m000_enemy_identities"},
+		{"scope": trace_scope},
 	)
 	trace.call(
 		"capture_main",
 		"patrol_interval_2_commanded",
 		main,
 		_elapsed_ms(started),
-		{"scope": "audited_m000_enemy_identities"},
+		{"scope": trace_scope},
 	)
 	await _wait_physics_seconds(observation_seconds)
 	trace.call(
@@ -234,12 +274,12 @@ func _run_enemy_patrol_probe(
 		"patrol_interval_2_observed",
 		main,
 		_elapsed_ms(started),
-		{"scope": "audited_m000_enemy_identities"},
+		{"scope": trace_scope},
 	)
 	var trace_path := ""
 	if not output_directory.is_empty():
 		trace_path = output_directory.path_join(
-			"remake-m000-enemy-patrol-v1.json"
+			"remake-%s.json" % _safe_file_component(_enemy_patrol_scenario_id(level_id))
 		)
 		_expect(
 			trace.call("write_to_file", trace_path) == OK,
@@ -257,6 +297,7 @@ func _run_enemy_patrol_probe(
 		)
 	)
 	main.queue_free()
+	await process_frame
 	if failures.is_empty():
 		quit(0)
 		return
@@ -426,6 +467,22 @@ func _parse_output_directory(arguments: PackedStringArray) -> String:
 		if argument.begins_with(OUTPUT_ARGUMENT_PREFIX):
 			return argument.trim_prefix(OUTPUT_ARGUMENT_PREFIX).simplify_path()
 	return ""
+
+
+func _parse_level_id(arguments: PackedStringArray) -> String:
+	var level_id := _parse_string_argument(
+		arguments,
+		LEVEL_ARGUMENT_PREFIX,
+		"m000",
+	).to_lower()
+	if FORMAL_LEVEL_IDS.has(level_id):
+		return level_id
+	failures.append("level argument must identify one of m000 through m011")
+	return "m000"
+
+
+func _enemy_patrol_scenario_id(level_id: String) -> String:
+	return "%s-enemy-patrol-v1" % level_id
 
 
 func _parse_move_speed(arguments: PackedStringArray) -> float:

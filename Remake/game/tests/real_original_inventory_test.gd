@@ -137,9 +137,9 @@ func _run_tests() -> void:
 		"all 27 original players and 74 backpack entries reach gameplay",
 	)
 	_expect(
-		exact_runtime_actor_count == 650
-		and exact_runtime_entry_count == 538,
-		"all 650 exact dynamic actors and 538 backpack entries reach gameplay",
+		exact_runtime_actor_count == 660
+		and exact_runtime_entry_count == 539,
+		"all 660 exact dynamic actors and 539 backpack entries reach gameplay",
 	)
 	_test_session_backpack_round_trip(main)
 	main.queue_free()

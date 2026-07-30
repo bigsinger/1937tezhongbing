@@ -24,7 +24,7 @@ static func load_catalog() -> Dictionary:
 		or str(catalog.get("catalog_id", ""))
 			!= "original-runtime-actor-catalog-v1"
 		or int(summary.get("level_count", 0)) != 12
-		or int(summary.get("resolved_actor_count", 0)) != 762
+		or int(summary.get("resolved_actor_count", 0)) != 772
 	):
 		return {}
 	_catalog_cache = catalog

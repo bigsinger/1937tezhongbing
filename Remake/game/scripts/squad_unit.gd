@@ -83,6 +83,19 @@ var scene_index := -1
 var runtime_actor_type := 0
 var dynamic_occupancy: RefCounted
 var dynamic_registered := false
+## Stable-MOD patrol timelines can opt into original-style soft actor
+## separation. Static movement layers remain authoritative; only other live
+## actors and their transient goal reservations are ignored.
+var use_soft_dynamic_occupancy := false
+## A short patrol displacement captured from the stable original runtime is
+## stronger movement evidence than the reconstructed VWF footprint at that
+## exact location. This flag is enabled only while replaying such a segment;
+## ordinary patrol, player movement, pursuit and combat never use it.
+var use_recorded_patrol_relocation := false
+## A small set of process-proven patrol legs follow reconstructed A* geometry
+## but end in a cell that the converted static overlay rejects. Only the final
+## waypoint of those explicitly catalogued legs may use runtime evidence.
+var use_recorded_patrol_final_relocation := false
 var sprite_texture: Texture2D
 var sprite_anchor := Vector2.ZERO
 var movement_groups: Array[Dictionary] = []
@@ -180,6 +193,9 @@ func configure(
 	scene_index = new_scene_index
 	runtime_actor_type = 0
 	dynamic_occupancy = new_dynamic_occupancy
+	use_soft_dynamic_occupancy = false
+	use_recorded_patrol_relocation = false
+	use_recorded_patrol_final_relocation = false
 	position = start_position
 	target_position = start_position
 	movement_path.clear()
@@ -1270,10 +1286,14 @@ func _physics_process(delta: float) -> void:
 	var next_path_index := movement_path_index
 	var component_velocity := original_component_velocity()
 	var relocation_applied_incrementally := false
+	var relocation_targets_final_waypoint := false
 	var movement_blocked := false
 	if not component_velocity.is_zero_approx():
 		var remaining_seconds := safe_delta
 		while next_path_index < movement_path.size() and remaining_seconds > 0.0:
+			relocation_targets_final_waypoint = (
+				next_path_index == movement_path.size() - 1
+			)
 			var substep_seconds := minf(
 				remaining_seconds,
 				MAX_MOVEMENT_SUBSTEP_SECONDS,
@@ -1298,9 +1318,9 @@ func _physics_process(delta: float) -> void:
 				and scene_index >= 0
 			):
 				relocation_applied_incrementally = true
-				if not dynamic_occupancy.try_relocate(
-					scene_index,
+				if not _try_relocate_runtime(
 					candidate_position,
+					relocation_targets_final_waypoint,
 				):
 					movement_blocked = true
 					break
@@ -1315,6 +1335,9 @@ func _physics_process(delta: float) -> void:
 		# triplet retain ordinary scalar movement.
 		var remaining_distance := maxf(move_speed, 0.0) * safe_delta
 		while next_path_index < movement_path.size() and remaining_distance > 0.0:
+			relocation_targets_final_waypoint = (
+				next_path_index == movement_path.size() - 1
+			)
 			var waypoint := movement_path[next_path_index]
 			var distance_to_waypoint := next_position.distance_to(waypoint)
 			if distance_to_waypoint <= remaining_distance:
@@ -1333,7 +1356,10 @@ func _physics_process(delta: float) -> void:
 		and next_position != position
 		and dynamic_occupancy != null
 		and scene_index >= 0
-		and not dynamic_occupancy.try_relocate(scene_index, next_position)
+		and not _try_relocate_runtime(
+			next_position,
+			relocation_targets_final_waypoint,
+		)
 	):
 		movement_blocked = true
 	if movement_blocked:
@@ -1345,9 +1371,7 @@ func _physics_process(delta: float) -> void:
 		blocked_elapsed += safe_delta
 		if blocked_elapsed >= maxf(blocked_replan_seconds, 0.05):
 			blocked_elapsed = 0.0
-			var replanned: PackedVector2Array = dynamic_occupancy.find_path_for_scene(
-				scene_index, position, target_position
-			)
+			var replanned := _find_movement_path_runtime(target_position)
 			if not replanned.is_empty():
 				issue_path(replanned)
 		var accepted_displacement := position - previous_position
@@ -1375,6 +1399,71 @@ func _physics_process(delta: float) -> void:
 	else:
 		_apply_idle_state()
 		_advance_original_ai_idle_animation(safe_delta)
+
+
+func _try_relocate_runtime(
+	new_world_position: Vector2,
+	targets_final_waypoint: bool = false,
+) -> bool:
+	if dynamic_occupancy == null or scene_index < 0:
+		return false
+	if (
+		use_recorded_patrol_relocation
+		or (
+			use_recorded_patrol_final_relocation
+			and targets_final_waypoint
+		)
+	):
+		return bool(
+			dynamic_occupancy.call(
+				"try_relocate_from_runtime_evidence",
+				scene_index,
+				new_world_position,
+			)
+		)
+	if use_soft_dynamic_occupancy:
+		return bool(
+			dynamic_occupancy.call(
+				"try_relocate",
+				scene_index,
+				new_world_position,
+				true,
+			)
+		)
+	return bool(
+		dynamic_occupancy.call(
+			"try_relocate",
+			scene_index,
+			new_world_position,
+		)
+	)
+
+
+func _find_movement_path_runtime(
+	destination: Vector2,
+) -> PackedVector2Array:
+	if dynamic_occupancy == null or scene_index < 0:
+		return PackedVector2Array()
+	if use_soft_dynamic_occupancy:
+		var soft_path := dynamic_occupancy.call(
+			"find_path_for_scene",
+			scene_index,
+			position,
+			destination,
+			true,
+		) as PackedVector2Array
+		if (
+			not soft_path.is_empty()
+			and soft_path[-1].distance_squared_to(destination) > 1.0
+		):
+			soft_path.append(destination)
+		return soft_path
+	return dynamic_occupancy.call(
+		"find_path_for_scene",
+		scene_index,
+		position,
+		destination,
+	) as PackedVector2Array
 
 
 func _update_auto_combat(delta: float) -> bool:

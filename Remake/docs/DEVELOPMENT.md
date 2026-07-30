@@ -149,10 +149,10 @@ Godot 端的责任分工为：
 - `original_initial_weapon_inventory.gd`：按关卡和 scene ID 读取 27 名角色的精确开局武器；
 - `backpack_inventory.gd`：独立实现 actor `+0x228` 的有序物品容器、
   mode 0/1/2、强制丢弃和存档快照；
-- `original_initial_item_inventory.gd`：按关卡和 scene ID 读取 650 个
+- `original_initial_item_inventory.gd`：按关卡和 scene ID 读取 660 个
   精确动态角色的开局背包；物品效果证据见
   [原版角色物品背包恢复](ORIGINAL_ITEM_INVENTORY.md)；
-- `original_runtime_actor_catalog.gd`：读取 762 个运行时角色身份及阵营覆盖；
+- `original_runtime_actor_catalog.gd`：读取 772 个运行时角色身份及阵营覆盖；
 - `campaign_progress.gd`：十二个正式关卡的唯一完成度/顺序解锁状态机；
   MOD/命令行自由选关不写进度，只有产品胜利入口调用 `record_victory()`；
 - `campaign_level_selector.gd`：启动页和 `Esc` 菜单共用的 3×4 原生关卡
@@ -185,8 +185,9 @@ L2/L3 分离、scene 忽略/清除、视锥前后边界、战术扇形缓存、�
 十二份导航文件，以 m004 执行高密度动态角色寻路压力回归，并运行十二关真实
 窗口性能冒烟；固定 120 个物理帧内必须有敌人实际移动，A* 请求量必须处于
 20—500 次且总寻路耗时不超过 2 秒，以防“AI 未运行”的假通过、退化巡逻点
-或拥挤重规划重新形成请求风暴。m000 的无遮挡命令、树边障碍、46 敌军巡逻
-运动学和自然接敌四条稳定 MOD 轨迹同样属于严格门禁。
+或拥挤重规划重新形成请求风暴。m000 的无遮挡命令、树边障碍、54 敌军巡逻
+运动学和自然接敌四条稳定 MOD 轨迹同样属于严格门禁；另有覆盖 m000—m011
+全部 656 名巡逻敌军的双运行时运动学门禁。
 
 ## 动画开发工作流
 
@@ -198,7 +199,7 @@ serial_id = action_index * 9 + direction_index
 
 共有 20 个动作槽和 9 个方向槽；方向 0 是“无”，1—8 才是可播放的八方向组。转换输出的每个 `sprite.json` 保存动作名、方向名、组参数、锚点、atlas 和逐帧路径。
 
-`load_action_groups(preview_path, action_key)` 是通用入口。正式关卡实体使用可保留空方向槽的 sparse 模式：204 套角色动作具有完整八方向，轿车/卡车另有 8 套原生四方向动作；请求不存在的 serial 时保留当前动作和朝向，与 `IEngineSprite::SetCurrentSerial` 的失败路径一致，不能擅自镜像或用“最近方向”补图。增加战斗动作时，应让角色状态机请求已有动作 key，并由明确的玩法事件切换动画；不要为每种武器重新写资源解析器。玩家与敌人的 `run`/`walk`、`stand`、对应武器攻击和 `death` 已接入。0.085 秒是基础 sprite tick，每组每帧实际保持 `0.085 × (parameters[2] + 1)` 秒；例如已导入强子的跑、走、匍匐分别保持 1、2、3 个 tick。真实资源门禁把 762 名运行时角色关联到 39 个原 SPR，并逐方向解码 212 套动作、1,664 组、9,896 帧，核对 serial、源组顺序、三组 triplet、绘制锚点、帧保持和帧数。
+`load_action_groups(preview_path, action_key)` 是通用入口。正式关卡实体使用可保留空方向槽的 sparse 模式：204 套角色动作具有完整八方向，轿车/卡车另有 8 套原生四方向动作；请求不存在的 serial 时保留当前动作和朝向，与 `IEngineSprite::SetCurrentSerial` 的失败路径一致，不能擅自镜像或用“最近方向”补图。增加战斗动作时，应让角色状态机请求已有动作 key，并由明确的玩法事件切换动画；不要为每种武器重新写资源解析器。玩家与敌人的 `run`/`walk`、`stand`、对应武器攻击和 `death` 已接入。0.085 秒是基础 sprite tick，每组每帧实际保持 `0.085 × (parameters[2] + 1)` 秒；例如已导入强子的跑、走、匍匐分别保持 1、2、3 个 tick。真实资源门禁把 772 名运行时角色关联到 39 个原 SPR，并逐方向解码 212 套动作、1,664 组、9,896 帧，核对 serial、源组顺序、三组 triplet、绘制锚点、帧保持和帧数。
 
 SPR 清单必须使用 schema 3 的运行时命名：文件 triplet 1/2/3 分别对应
 primary/tertiary/secondary；schema 1/2 只能由加载器迁移，不得在调用处

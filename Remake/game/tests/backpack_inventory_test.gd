@@ -69,8 +69,8 @@ func _test_real_catalog() -> void:
 	_expect(not catalog.is_empty(), "load exact original catalog")
 	var summary := catalog.get("summary", {}) as Dictionary
 	_expect(int(summary.get("level_count", 0)) == 12, "catalog has twelve levels")
-	_expect(int(summary.get("exact_actor_count", 0)) == 650, "catalog actor total")
-	_expect(int(summary.get("inventory_entry_count", 0)) == 538, "catalog entry total")
+	_expect(int(summary.get("exact_actor_count", 0)) == 660, "catalog actor total")
+	_expect(int(summary.get("inventory_entry_count", 0)) == 539, "catalog entry total")
 	_expect(int(summary.get("player_count", 0)) == 27, "catalog player total")
 	_expect(
 		int(summary.get("player_inventory_entry_count", 0)) == 74,

@@ -21,8 +21,8 @@
                                                "runtime_type":  "RuntimeActorV1 +0x064; historical SDK field name database_entry; this is a runtime type and never a DBL id",
                                                "vwf_runtime_type":  "entity.database_header_values[2]",
                                                "vwf_database_entry_id":  "entity.database_entry_id; the actual DBL resource identity",
-                                               "runtime_current_hit_points":  "RuntimeActorV1 +0x1C0; exact m000 correlation with entity.current_hit_points across all 54 resolved actors",
-                                               "runtime_default_attack_type":  "RuntimeActorV1 +0x20C; exact m000 correlation with entity.default_attack_type across all 54 resolved actors",
+                                               "runtime_current_hit_points":  "RuntimeActorV1 +0x1C0; exact m000 correlation with entity.current_hit_points across all 62 identity-resolved actors",
+                                               "runtime_default_attack_type":  "RuntimeActorV1 +0x20C; exact m000 correlation with entity.default_attack_type across all 62 identity-resolved actors",
                                                "patrol_world_coordinate":  "[waypoint.x * 32 + 16, waypoint.y * 16 + 8]",
                                                "runtime_index":  "capture-local actor-array index; never treated as a VWF scene index"
                                            }
@@ -31,12 +31,13 @@
                     "runtime_object_count":  145,
                     "runtime_dynamic_actor_count":  116,
                     "vwf_dynamic_actor_count":  116,
-                    "resolved_count":  114,
-                    "unresolved_count":  2,
+                    "resolved_count":  116,
+                    "unresolved_count":  0,
                     "method_counts":  {
                                           "unique_runtime_type_and_exact_patrol_goal":  82,
                                           "bounded_unambiguous_reference_drift":  17,
-                                          "unique_runtime_type_and_exact_reference_position":  15
+                                          "unique_runtime_type_and_exact_reference_position":  15,
+                                          "contiguous_runtime_and_vwf_order_between_resolved_neighbors":  2
                                       }
                 },
     "identities":  [
@@ -2622,26 +2623,29 @@
                                                          568
                                                      ]
                                         },
-                           "status":  "unresolved",
+                           "status":  "resolved",
                            "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
-                           "candidates":  [
-                                              {
-                                                  "scene_index":  2606,
-                                                  "database_entry_id":  925,
-                                                  "display_name":  "三等兵",
-                                                  "runtime_type":  5,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  28.653
-                                              },
-                                              {
-                                                  "scene_index":  2605,
-                                                  "database_entry_id":  925,
-                                                  "display_name":  "三等兵",
-                                                  "runtime_type":  5,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  2.236
-                                              }
-                                          ]
+                           "scene_index":  2605,
+                           "database_entry_id":  925,
+                           "display_name":  "三等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "contiguous_runtime_and_vwf_order_between_resolved_neighbors",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  5,
+                                            "ordinal_offset":  0,
+                                            "member_count":  2,
+                                            "runtime_bounds":  [
+                                                                   73,
+                                                                   76
+                                                               ],
+                                            "scene_bounds":  [
+                                                                 2604,
+                                                                 2607
+                                                             ]
+                                        }
                        },
                        {
                            "runtime_index":  75,
@@ -2659,26 +2663,29 @@
                                                          609
                                                      ]
                                         },
-                           "status":  "unresolved",
+                           "status":  "resolved",
                            "mapping_scope":  "captured-runtime-array-index-within-supported-content-profile",
-                           "candidates":  [
-                                              {
-                                                  "scene_index":  2606,
-                                                  "database_entry_id":  925,
-                                                  "display_name":  "三等兵",
-                                                  "runtime_type":  5,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  2.236
-                                              },
-                                              {
-                                                  "scene_index":  2605,
-                                                  "database_entry_id":  925,
-                                                  "display_name":  "三等兵",
-                                                  "runtime_type":  5,
-                                                  "vwf_faction_id":  1,
-                                                  "reference_distance":  30.414
-                                              }
-                                          ]
+                           "scene_index":  2606,
+                           "database_entry_id":  925,
+                           "display_name":  "三等兵",
+                           "vwf_faction_id":  1,
+                           "authored_hit_points":  8,
+                           "authored_attack_type":  2,
+                           "method":  "contiguous_runtime_and_vwf_order_between_resolved_neighbors",
+                           "confidence":  "exact",
+                           "evidence":  {
+                                            "runtime_type":  5,
+                                            "ordinal_offset":  1,
+                                            "member_count":  2,
+                                            "runtime_bounds":  [
+                                                                   73,
+                                                                   76
+                                                               ],
+                                            "scene_bounds":  [
+                                                                 2604,
+                                                                 2607
+                                                             ]
+                                        }
                        },
                        {
                            "runtime_index":  76,

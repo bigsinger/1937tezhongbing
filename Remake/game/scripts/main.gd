@@ -688,9 +688,21 @@ func spawn_imported_entities() -> int:
 				authored_faction_id,
 			)
 		)
+		var original_runtime_profile: Dictionary = (
+			ORIGINAL_RUNTIME_ACTOR_CATALOG.actor_for_scene(
+				level_id,
+				scene_index,
+			)
+		)
 		var runtime_entity := entity
-		if runtime_faction_id != authored_faction_id:
+		if runtime_faction_id != authored_faction_id or not original_runtime_profile.is_empty():
 			runtime_entity = entity.duplicate(true)
+		if not original_runtime_profile.is_empty():
+			runtime_entity["original_runtime_profile"] = original_runtime_profile
+			runtime_entity["original_runtime_profile_source"] = (
+				"stable_mod_read_only_process_snapshot"
+			)
+		if runtime_faction_id != authored_faction_id:
 			runtime_entity["faction_id"] = runtime_faction_id
 			runtime_entity["runtime_faction_override"] = true
 		var database_entry_id := int(entity.get("database_entry_id", 0))

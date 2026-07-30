@@ -59,7 +59,7 @@
                                       "m000":  {
                                                    "entry_snapshot_sha256":  "983B26679E6B5343E0FEDC3690ED3BA1BC9895280D626FF26032DB654890B1B8",
                                                    "steady_snapshot_sha256":  "983B26679E6B5343E0FEDC3690ED3BA1BC9895280D626FF26032DB654890B1B8",
-                                                   "identity_catalog_sha256":  "FDB68898B289BDECB3F59264436007BE688B0393C06EF46BCA6FB5BF3717D065",
+                                                   "identity_catalog_sha256":  "8080FCFD1F939AB7BD6B69FF96D3679F2D5E8754FAF4305092A8E6E292482438",
                                                    "player_count":  1
                                                },
                                       "m001":  {
@@ -83,7 +83,7 @@
                                       "m004":  {
                                                    "entry_snapshot_sha256":  "98798882BF647CFDDECD3B96B4673DF1DA2CB3BF1A2D9915F9E4C625542E8DE7",
                                                    "steady_snapshot_sha256":  "98798882BF647CFDDECD3B96B4673DF1DA2CB3BF1A2D9915F9E4C625542E8DE7",
-                                                   "identity_catalog_sha256":  "9DDB183120585672DC7D6D7F45C52158C90CF8480F0B1B929452298A6420D459",
+                                                   "identity_catalog_sha256":  "887D1422B052144493E0D01414B1F024035BBE441E17AD43E89322F9E3CF48C6",
                                                    "player_count":  1
                                                },
                                       "m005":  {

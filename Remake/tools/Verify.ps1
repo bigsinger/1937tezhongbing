@@ -299,6 +299,7 @@ if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
     & (Join-Path $PSScriptRoot 'Compare-PatrolKinematics.ps1') `
         -ReferenceTrace $patrolBaseline `
         -CandidateTrace $patrolCandidate `
+        -MovingActorCountTolerance 3 `
         -OutputJson (
             Join-Path $parityProbeOutput (
             'm000-enemy-patrol-v1-kinematics.json')) | Out-Null

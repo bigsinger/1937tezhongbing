@@ -110,9 +110,9 @@ static func validate_catalog(catalog: Dictionary) -> bool:
 			actor_count += 1
 	var summary := catalog.get("summary", {}) as Dictionary
 	return (
-		actor_count == 650
-		and entry_count == 538
-		and empty_actor_count == 307
+		actor_count == 660
+		and entry_count == 539
+		and empty_actor_count == 316
 		and player_count == 27
 		and player_entry_count == 74
 		and empty_player_count == 1

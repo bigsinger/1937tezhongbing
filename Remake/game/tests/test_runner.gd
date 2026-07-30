@@ -699,6 +699,66 @@ func _init() -> void:
 		"patrol routing skips reached waypoints and selects the next distinct destination",
 		failures,
 	)
+	var stable_timeline: Array[Dictionary] = (
+		ENEMY_UNIT_SCRIPT.normalize_stable_mod_patrol_timeline(
+			[
+				{
+					"elapsed_ms": 0,
+					"position": [64, 32],
+					"facing_direction": 9,
+				},
+				{
+					"elapsed_ms": 1000,
+					"position": [80, 40],
+					"facing_direction": 0,
+				},
+			]
+		)
+	)
+	expect(
+		(
+			stable_timeline.size() == 2
+			and stable_timeline[0]["position"] == Vector2(64, 32)
+			and int(stable_timeline[0]["facing_direction"]) == 8
+			and int(stable_timeline[1]["facing_direction"]) == 1
+			and ENEMY_UNIT_SCRIPT.stable_mod_patrol_index_after_elapsed(
+				stable_timeline,
+				0.5,
+			) == 1
+			and ENEMY_UNIT_SCRIPT.stable_mod_patrol_index_after_elapsed(
+				stable_timeline,
+				1.0,
+			) == 1
+		),
+		"stable-MOD patrol samples normalize positions, directions, and loop index",
+		failures,
+	)
+	expect(
+		ENEMY_UNIT_SCRIPT.normalize_stable_mod_patrol_timeline(
+			[
+				{"elapsed_ms": 0, "position": [0, 0]},
+				{"elapsed_ms": 0, "position": [1, 1]},
+			]
+		).is_empty(),
+		"stable-MOD patrol timelines reject duplicate or decreasing timestamps",
+		failures,
+	)
+	var clipped_patrol_path: PackedVector2Array = (
+		ENEMY_UNIT_SCRIPT.stable_mod_patrol_path_within_radius(
+			Vector2.ZERO,
+			PackedVector2Array([Vector2(6, 0), Vector2(20, 0)]),
+			10.0,
+		)
+	)
+	expect(
+		(
+			clipped_patrol_path.size() == 2
+			and clipped_patrol_path[0] == Vector2(6, 0)
+			and clipped_patrol_path[1].distance_to(Vector2(10, 0)) < 0.01
+		),
+		"an adjudicated stable-MOD A-star detour stays inside the observed radius",
+		failures,
+	)
 	var enemy_fixture = ENEMY_UNIT_SCRIPT.new()
 	var empty_animation_groups: Array[Dictionary] = []
 	enemy_fixture.configure_enemy(
@@ -710,10 +770,14 @@ func _init() -> void:
 			"reference_x": 160,
 			"reference_y": 80,
 			"direction_index": 3,
+			"faction_id": 2,
 			"current_hit_points": 16,
 			"default_attack_type": 3,
 			"patrol_waypoints": [{"x": 10, "y": 5}],
 			"patrol_enabled": true,
+			"original_runtime_profile": {
+				"patrol_final_relocation_target_indices": [1, 3],
+			},
 		},
 		null,
 		empty_animation_groups,
@@ -724,6 +788,7 @@ func _init() -> void:
 		(
 			enemy_fixture.current_hit_points == 16
 			and enemy_fixture.maximum_hit_points == 16
+			and enemy_fixture.faction_id == 2
 			and int(enemy_fixture.weapon_profile.get("attack_type", 0)) == 3
 			and enemy_fixture.position == Vector2(160, 80)
 			and is_equal_approx(
@@ -734,10 +799,14 @@ func _init() -> void:
 				enemy_fixture.sense_elapsed,
 				0.0,
 			)
+			and (
+				enemy_fixture.stable_mod_patrol_final_relocation_target_indices
+				== [1, 3]
+			)
 		),
 		(
-			"enemy runtime consumes recovered spawn, speed, hit points, "
-			+ "attack type, and synchronized sensing phase"
+			"enemy runtime consumes recovered faction, spawn, speed, hit points, "
+			+ "attack type, patrol endpoint evidence, and synchronized sensing phase"
 		),
 		failures,
 	)
@@ -1469,6 +1538,54 @@ func _init() -> void:
 			)
 		),
 		"removing a dynamic actor clears its current sight occupancy without a ghost",
+		failures,
+	)
+	var evidence_movement := PackedInt64Array([0, 1, 0])
+	var evidence_navigation: NavigationGridData = (
+		NAVIGATION_GRID_DATA.create_for_tests(
+			3,
+			1,
+			Vector2i(32, 16),
+			evidence_movement,
+		)
+	)
+	var evidence_grid: RefCounted = DYNAMIC_OCCUPANCY_GRID.new()
+	evidence_grid.configure(evidence_navigation)
+	evidence_grid.register_scene(
+		100,
+		evidence_navigation.cell_to_world(Vector2i(0, 0)),
+	)
+	evidence_grid.finalize_registration()
+	var evidence_wall_position := evidence_navigation.cell_to_world(
+		Vector2i(1, 0)
+	)
+	expect(
+		(
+			not evidence_grid.try_relocate(
+				100,
+				evidence_wall_position,
+				true,
+			)
+			and evidence_grid.try_relocate_from_runtime_evidence(
+				100,
+				evidence_wall_position,
+			)
+			and evidence_grid.runtime_movement_owner(Vector2i(0, 0)) == -1
+			and evidence_grid.runtime_movement_owner(Vector2i(1, 0)) == 100
+			and evidence_movement == PackedInt64Array([0, 1, 0])
+		),
+		(
+			"an audited short original-runtime patrol step can cross only its "
+			+ "reconstructed collision discrepancy without mutating Layer 3"
+		),
+		failures,
+	)
+	expect(
+		not evidence_grid.try_relocate_from_runtime_evidence(
+			100,
+			Vector2(200, 8),
+		),
+		"runtime-evidence relocation still rejects out-of-bounds or non-adjacent jumps",
 		failures,
 	)
 

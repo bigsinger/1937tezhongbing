@@ -8,9 +8,9 @@ param(
     [double]$MaximumDisplacementTolerance = 4,
     [ValidateRange(0, 100)]
     [double]$Percentile90Tolerance = 4,
-    [ValidateRange(0, 46)]
+    [ValidateRange(0, 256)]
     [int]$MovingActorCountTolerance = 2,
-    [ValidateRange(0, 46)]
+    [ValidateRange(0, 256)]
     [int]$StationaryActorCountTolerance = 1,
     [string]$OutputJson = '',
     [switch]$AllowMismatch
@@ -64,11 +64,14 @@ function Add-Mismatch {
 $reference = Read-Trace $ReferenceTrace
 $candidate = Read-Trace $CandidateTrace
 $mismatches = [Collections.Generic.List[object]]::new()
-if ($reference.scenario.id -ne 'm000-enemy-patrol-v1' -or
+$referenceLevelId = [string]$reference.level.id
+$expectedScenarioId = $referenceLevelId + '-enemy-patrol-v1'
+if ($referenceLevelId -notmatch '^m0(?:0[0-9]|1[01])$' -or
+    $reference.scenario.id -ne $expectedScenarioId -or
     $candidate.scenario.id -ne $reference.scenario.id -or
     $candidate.level.id -ne $reference.level.id -or
     $candidate.content_profile -ne $reference.content_profile) {
-    throw 'Patrol traces do not share the m000 stable-MOD identity.'
+    throw 'Patrol traces do not share one stable-MOD 12-level identity.'
 }
 
 $referenceCheckpoints = @($reference.checkpoints)
@@ -81,8 +84,10 @@ $expectedCheckpointIds = @(
 )
 if ($referenceCheckpoints.Count -ne 4 -or
     $candidateCheckpoints.Count -ne 4 -or
-    (Compare-Object $expectedCheckpointIds @($referenceCheckpoints.id)).Count -ne 0 -or
-    (Compare-Object $expectedCheckpointIds @($candidateCheckpoints.id)).Count -ne 0) {
+    @(Compare-Object `
+        $expectedCheckpointIds @($referenceCheckpoints.id)).Count -ne 0 -or
+    @(Compare-Object `
+        $expectedCheckpointIds @($candidateCheckpoints.id)).Count -ne 0) {
     throw 'Patrol traces must contain the two commanded/observed intervals.'
 }
 
@@ -91,8 +96,13 @@ $candidateByScene = @{}
 foreach ($actor in @($candidateCheckpoints[0].actors)) {
     $candidateByScene[[int]$actor.scene_index] = $actor
 }
-if ($referenceActors.Count -ne 46) {
-    throw 'The stable m000 patrol baseline must contain 46 audited enemies.'
+if ($referenceActors.Count -le 0) {
+    throw 'The stable-MOD patrol baseline contains no audited enemies.'
+}
+if (@($referenceCheckpoints | Where-Object {
+        @($_.actors).Count -ne $referenceActors.Count
+    }).Count -ne 0) {
+    throw 'The stable-MOD patrol baseline changes its audited enemy roster.'
 }
 foreach ($actor in $referenceActors) {
     $sceneIndex = [int]$actor.scene_index
@@ -134,8 +144,17 @@ foreach ($interval in 0, 1) {
     $candidateDistances = [Collections.Generic.List[double]]::new()
     foreach ($actor in $referenceActors) {
         $sceneIndex = [int]$actor.scene_index
+        if (-not $referenceStartByScene.ContainsKey($sceneIndex) -or
+            -not $referenceEndByScene.ContainsKey($sceneIndex)) {
+            throw (
+                "The stable-MOD patrol baseline loses scene $sceneIndex " +
+                "during interval $($interval + 1).")
+        }
         if (-not $candidateStartByScene.ContainsKey($sceneIndex) -or
             -not $candidateEndByScene.ContainsKey($sceneIndex)) {
+            Add-Mismatch $mismatches `
+                "interval:$($interval + 1).actors.scene:$sceneIndex" `
+                'present' 'missing' 'required audited identity'
             continue
         }
         $referenceDistances.Add(

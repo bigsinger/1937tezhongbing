@@ -932,6 +932,26 @@ func _test_mid_mission_capture_and_apply(failures: Array[String]) -> void:
 		"AI stand_action counter, frame phase, and deterministic random state are captured",
 		failures,
 	)
+	var captured_stable_patrol := (
+		(
+			((session["enemies"] as Array)[0]["ai"] as Dictionary).get(
+				"stable_mod_patrol",
+				{},
+			)
+		) as Dictionary
+	)
+	_expect(
+		(
+			is_equal_approx(
+				float(captured_stable_patrol.get("elapsed", 0.0)),
+				6.4,
+			)
+			and int(captured_stable_patrol.get("target_index", -1)) == 3
+			and bool(captured_stable_patrol.get("segment_issued", false))
+		),
+		"stable-MOD patrol timeline phase is captured independently of its transient path",
+		failures,
+	)
 	_expect(
 		not bool((session["world"] as Dictionary)["victory_presentation_completed"]),
 		"an interrupted victory presentation remains distinguishable in the snapshot",
@@ -1001,6 +1021,24 @@ func _test_mid_mission_capture_and_apply(failures: Array[String]) -> void:
 			and int(target_game.enemies[0].original_ai_idle_random_state) == 123456
 		),
 		"AI stand_action phase survives a mid-mission save",
+		failures,
+	)
+	_expect(
+		(
+			is_equal_approx(
+				float(target_game.enemies[0].stable_mod_patrol_elapsed),
+				6.4,
+			)
+			and int(target_game.enemies[0].stable_mod_patrol_target_index) == 3
+			and not bool(
+				target_game.enemies[0].stable_mod_patrol_segment_issued
+			)
+			and not bool(
+				target_game.enemies[0].stable_mod_patrol_segment_prepared
+			)
+			and target_game.enemies[0].movement_path.is_empty()
+		),
+		"stable-MOD patrol restores its phase and reconstructs no stale in-flight path",
 		failures,
 	)
 	_expect(
@@ -1290,6 +1328,19 @@ func _make_mock_game(populated: bool) -> MockGame:
 			"default_attack_type": 2,
 			"patrol_waypoints": [],
 			"patrol_enabled": false,
+			"original_runtime_profile": {
+				"observed": {
+					"position": [500, 500],
+					"facing_direction": 1,
+				},
+				"patrol_timeline": [
+					{"elapsed_ms": 0, "position": [500, 500], "facing_direction": 1},
+					{"elapsed_ms": 5000, "position": [564, 500], "facing_direction": 3},
+					{"elapsed_ms": 6000, "position": [500, 500], "facing_direction": 7},
+					{"elapsed_ms": 7000, "position": [500, 484], "facing_direction": 1},
+					{"elapsed_ms": 12000, "position": [500, 500], "facing_direction": 5},
+				],
+			},
 		},
 		null,
 		empty_groups,
@@ -1340,6 +1391,11 @@ func _make_mock_game(populated: bool) -> MockGame:
 		enemy.original_ai_idle_frame_index = 3
 		enemy.original_ai_idle_frame_elapsed = 0.04
 		enemy.original_ai_idle_random_state = 123456
+		enemy.stable_mod_patrol_elapsed = 6.4
+		enemy.stable_mod_patrol_target_index = 3
+		enemy.stable_mod_patrol_segment_issued = true
+		enemy.stable_mod_patrol_segment_prepared = true
+		enemy.issue_path(PackedVector2Array([Vector2(520, 500)]))
 		ambient.position = Vector2(222.0, 333.0)
 		ambient.patrol_index = 1
 		ambient.patrol_wait_remaining = 0.75

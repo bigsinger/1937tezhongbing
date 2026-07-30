@@ -365,13 +365,16 @@ func validate_runtime_actor_sprite_actions() -> void:
 			and int((catalog.get("summary", {}) as Dictionary).get(
 				"resolved_actor_count",
 				-1,
-			)) == 762
+			)) == 772
 		),
-		"runtime actor catalog exposes the 762 recovered stable-MOD actors",
+		"runtime actor catalog exposes the 772 recovered stable-MOD actors",
 	)
 	var catalog_levels: Dictionary = catalog.get("levels", {}) as Dictionary
 	var preview_paths: Dictionary = {}
 	var resolved_actor_count := 0
+	var patrol_timeline_actor_count := 0
+	var patrol_final_relocation_actor_count := 0
+	var runtime_faction_override_count := 0
 	for level_id: String in LEVEL_IDS:
 		var level: Dictionary = IMPORTED_LEVEL_DATA.load_level(level_id)
 		var entities_by_scene: Dictionary = {}
@@ -385,6 +388,7 @@ func validate_runtime_actor_sprite_actions() -> void:
 		)
 		for scene_key: Variant in actors.keys():
 			var scene_index := int(scene_key)
+			var runtime_profile := actors[scene_key] as Dictionary
 			expect(
 				entities_by_scene.has(scene_index),
 				"%s runtime actor scene %d still exists in its VWF" % [level_id, scene_index],
@@ -393,6 +397,68 @@ func validate_runtime_actor_sprite_actions() -> void:
 				continue
 			resolved_actor_count += 1
 			var entity := entities_by_scene[scene_index] as Dictionary
+			if (
+				int(runtime_profile.get("runtime_faction_id", 0))
+				!= int(runtime_profile.get("vwf_faction_id", 0))
+			):
+				runtime_faction_override_count += 1
+			if runtime_profile.has("patrol_timeline"):
+				var timeline := (
+					runtime_profile.get("patrol_timeline", []) as Array
+				)
+				var observed_position := (
+					(runtime_profile.get("observed", {}) as Dictionary).get(
+						"position",
+						[],
+					) as Array
+				)
+				patrol_timeline_actor_count += 1
+				expect(
+					(
+						int(runtime_profile.get("runtime_faction_id", 0)) == 1
+						and timeline.size() == 5
+						and (timeline[0] as Dictionary).get("position", [])
+						== observed_position
+						and int((timeline[0] as Dictionary).get(
+							"elapsed_ms",
+							-1,
+						)) == 0
+						and int((timeline[-1] as Dictionary).get(
+							"elapsed_ms",
+							-1,
+						)) == 12000
+					),
+					(
+						"%s runtime actor scene %d binds its audited spawn and patrol loop"
+						% [level_id, scene_index]
+					),
+				)
+			if runtime_profile.has("patrol_final_relocation_target_indices"):
+				var target_indices := (
+					runtime_profile.get(
+						"patrol_final_relocation_target_indices",
+						[],
+					) as Array
+				)
+				var normalized_target_indices: Array[int] = []
+				for target_index_value: Variant in target_indices:
+					normalized_target_indices.append(int(target_index_value))
+				patrol_final_relocation_actor_count += 1
+				expect(
+					level_id == "m004"
+					and (
+						(
+							scene_index == 2534
+							and normalized_target_indices == [2]
+						)
+						or (
+							scene_index == 2657
+							and normalized_target_indices == [1, 3]
+						)
+					),
+					"%s scene %d keeps only its audited final-endpoint correction"
+					% [level_id, scene_index],
+				)
 			var relative_preview := str(entity.get("sprite_preview", ""))
 			var preview_path := (
 				level_path
@@ -561,8 +627,20 @@ func validate_runtime_actor_sprite_actions() -> void:
 					),
 				)
 
-	expect(resolved_actor_count == 762, "all 762 recovered actors bind to formal VWF scenes")
-	expect(preview_paths.size() == 39, "the 762 actors resolve to 39 exact original SPR resources")
+	expect(resolved_actor_count == 772, "all 772 recovered actors bind to formal VWF scenes")
+	expect(
+		patrol_timeline_actor_count == 656,
+		"all 656 m000-m011 stable-MOD enemy patrol timelines bind to VWF scenes",
+	)
+	expect(
+		patrol_final_relocation_actor_count == 2,
+		"only the two audited m004 final-endpoint corrections are attached",
+	)
+	expect(
+		runtime_faction_override_count == 5,
+		"all five stable-MOD runtime faction corrections remain attached",
+	)
+	expect(preview_paths.size() == 39, "the 772 actors resolve to 39 exact original SPR resources")
 	expect(action_set_count == 212, "all 212 actor action sets load through the runtime")
 	expect(full_action_set_count == 204, "all 204 eight-direction actor actions remain complete")
 	expect(

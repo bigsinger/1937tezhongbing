@@ -222,6 +222,17 @@ static func _capture_actor(actor: Node2D, group_name: String) -> Dictionary:
 			(record["ai"] as Dictionary)["legacy_enemy_ai"] = _json_value(
 				actor.call("legacy_enemy_ai_state_snapshot")
 			)
+		if actor.has_method("stable_mod_patrol_state_snapshot"):
+			var stable_mod_patrol: Variant = actor.call(
+				"stable_mod_patrol_state_snapshot"
+			)
+			if (
+				stable_mod_patrol is Dictionary
+				and not (stable_mod_patrol as Dictionary).is_empty()
+			):
+				(record["ai"] as Dictionary)["stable_mod_patrol"] = (
+					_json_value(stable_mod_patrol)
+				)
 	elif group_name == "escorts":
 		var follow_target: Variant = actor.get("follow_target")
 		record["escort"] = {
@@ -721,6 +732,18 @@ static func _restore_actor(game: Node, actor: Node2D, record: Dictionary, group_
 			actor.call(
 				"restore_legacy_enemy_ai_state",
 				legacy_enemy_ai_value as Dictionary,
+			)
+		var stable_mod_patrol_value: Variant = ai.get(
+			"stable_mod_patrol",
+			{},
+		)
+		if (
+			stable_mod_patrol_value is Dictionary
+			and actor.has_method("restore_stable_mod_patrol_state")
+		):
+			actor.call(
+				"restore_stable_mod_patrol_state",
+				stable_mod_patrol_value as Dictionary,
 			)
 	elif group_name == "escorts" and record.get("escort") is Dictionary:
 		var escort := record["escort"] as Dictionary

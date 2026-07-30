@@ -14,8 +14,12 @@ $baselinePath = Join-Path $remakeRoot `
     'validation\baselines\mod\m000-basic-movement-v1.json'
 $obstacleBaselinePath = Join-Path $remakeRoot `
     'validation\baselines\mod\m000-obstacle-route-v1.json'
-$patrolBaselinePath = Join-Path $remakeRoot `
-    'validation\baselines\mod\m000-enemy-patrol-v1.json'
+$patrolBaselinePaths = @(
+    0..11 | ForEach-Object {
+        Join-Path $remakeRoot (
+            'validation\baselines\mod\m{0:D3}-enemy-patrol-v1.json' -f $_)
+    })
+$patrolBaselinePath = $patrolBaselinePaths[0]
 $contactBaselinePath = Join-Path $remakeRoot `
     'validation\baselines\mod\m000-natural-contact-v1.json'
 
@@ -47,25 +51,42 @@ if ($obstacleBaseline.runtime -ne 'mod' -or
     [int]$obstacleBaseline.checkpoints[0].actors[0].scene_index -ne 1436) {
     throw 'The checked-in m000 obstacle-route baseline is invalid.'
 }
-$patrolBaseline = Get-Content -LiteralPath $patrolBaselinePath `
-    -Raw -Encoding UTF8 | ConvertFrom-Json
 $patrolCheckpointIds = @(
     'patrol_interval_1_commanded',
     'patrol_interval_1_observed',
     'patrol_interval_2_commanded',
     'patrol_interval_2_observed'
 )
-if ($patrolBaseline.runtime -ne 'mod' -or
-    $patrolBaseline.scenario.id -ne 'm000-enemy-patrol-v1' -or
-    @($patrolBaseline.checkpoints).Count -ne 4 -or
-    (Compare-Object `
-        $patrolCheckpointIds `
-        @($patrolBaseline.checkpoints.id)).Count -ne 0 -or
-    @($patrolBaseline.checkpoints |
-        Where-Object { @($_.actors).Count -ne 46 }).Count -ne 0 -or
-    @($patrolBaseline.checkpoints[0].actors.scene_index |
-        Select-Object -Unique).Count -ne 46) {
-    throw 'The checked-in m000 enemy-patrol baseline is invalid.'
+$expectedPatrolActorCounts = @(54, 70, 28, 48, 96, 79, 31, 74, 26, 43, 74, 33)
+$patrolBaselineDocuments = [Collections.Generic.List[object]]::new()
+$totalPatrolActorCount = 0
+for ($levelIndex = 0; $levelIndex -lt 12; $levelIndex++) {
+    $levelId = 'm{0:D3}' -f $levelIndex
+    $patrolBaseline = Get-Content `
+        -LiteralPath $patrolBaselinePaths[$levelIndex] `
+        -Raw -Encoding UTF8 | ConvertFrom-Json
+    $expectedActorCount = $expectedPatrolActorCounts[$levelIndex]
+    if ($patrolBaseline.runtime -ne 'mod' -or
+        $patrolBaseline.scenario.id -ne "$levelId-enemy-patrol-v1" -or
+        @($patrolBaseline.checkpoints).Count -ne 4 -or
+        (Compare-Object `
+            $patrolCheckpointIds `
+            @($patrolBaseline.checkpoints.id)).Count -ne 0 -or
+        @($patrolBaseline.checkpoints |
+            Where-Object {
+                @($_.actors).Count -ne $expectedActorCount
+            }).Count -ne 0 -or
+        @($patrolBaseline.checkpoints[0].actors.scene_index |
+            Select-Object -Unique).Count -ne $expectedActorCount -or
+        @($patrolBaseline.checkpoints[0].actors |
+            Where-Object role -ne 'enemy').Count -ne 0) {
+        throw "The checked-in $levelId enemy-patrol baseline is invalid."
+    }
+    $patrolBaselineDocuments.Add($patrolBaseline)
+    $totalPatrolActorCount += $expectedActorCount
+}
+if ($totalPatrolActorCount -ne 656) {
+    throw 'The twelve-level patrol baseline roster is incomplete.'
 }
 $contactBaseline = Get-Content -LiteralPath $contactBaselinePath `
     -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -238,12 +259,9 @@ try {
         [int]$positive.mismatch_count -ne 0) {
         throw 'Tolerance-compatible runtime traces did not compare equal.'
     }
-    foreach ($checkedBaseline in @(
-        $baselinePath,
-        $obstacleBaselinePath,
-        $patrolBaselinePath,
-        $contactBaselinePath
-    )) {
+    $checkedBaselines = @($baselinePath, $obstacleBaselinePath) +
+        @($patrolBaselinePaths) + @($contactBaselinePath)
+    foreach ($checkedBaseline in $checkedBaselines) {
         $baselineSelf = & $compareScript `
             -ReferenceTrace $checkedBaseline `
             -CandidateTrace $checkedBaseline

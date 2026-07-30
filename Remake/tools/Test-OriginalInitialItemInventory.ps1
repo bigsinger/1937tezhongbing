@@ -132,9 +132,9 @@ for ($levelIndex = 0; $levelIndex -lt 12; ++$levelIndex) {
 }
 
 $expectedTotals = @{
-    actorTotal = 650
-    entryTotal = 538
-    emptyActorTotal = 307
+    actorTotal = 660
+    entryTotal = 539
+    emptyActorTotal = 316
     playerTotal = 27
     playerEntryTotal = 74
     emptyPlayerTotal = 1
@@ -162,6 +162,15 @@ if ([int]$m000Player.scene_index -ne 1436 -or
     [int]$m000Player.items[0].quantity -ne 2 -or
     [int]$m000Player.items[0].quantity_mode -ne 0) {
     throw 'm000 player backpack is not the recovered two-watermelon loadout.'
+}
+$m000FormationActor = @($gameData.levels.m000.actors |
+    Where-Object { [int]$_.scene_index -eq 1572 })[0]
+if ($null -eq $m000FormationActor -or
+    @($m000FormationActor.items).Count -ne 1 -or
+    [int]$m000FormationActor.items[0].item_id -ne 33 -or
+    [int]$m000FormationActor.items[0].quantity -ne 1 -or
+    [int]$m000FormationActor.items[0].quantity_mode -ne 0) {
+    throw 'The recovered m000 formation actor item-33 inventory is invalid.'
 }
 if ([string]$gameData.item_catalog.'47'.effect.kind -ne 'set_hit_points' -or
     [int]$gameData.item_catalog.'47'.effect.value -ne 8 -or

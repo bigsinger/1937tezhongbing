@@ -189,14 +189,14 @@
                   },
     "summary":  {
                     "level_count":  12,
-                    "exact_actor_count":  650,
-                    "inventory_entry_count":  538,
-                    "empty_actor_count":  307,
+                    "exact_actor_count":  660,
+                    "inventory_entry_count":  539,
+                    "empty_actor_count":  316,
                     "player_count":  27,
                     "player_inventory_entry_count":  74,
                     "empty_player_count":  1,
                     "excluded_resolved_high_confidence_actor_count":  112,
-                    "excluded_unresolved_actor_count":  10
+                    "excluded_unresolved_actor_count":  0
                 },
     "levels":  {
                    "m000":  {
@@ -820,6 +820,63 @@
                                                              ]
                                                },
                                                {
+                                                   "runtime_index":  104,
+                                                   "scene_index":  1571,
+                                                   "database_entry_id":  912,
+                                                   "display_name":  "二等兵",
+                                                   "runtime_type":  6,
+                                                   "captured_faction_id":  1,
+                                                   "vwf_faction_id":  1,
+                                                   "is_player_at_capture":  false,
+                                                   "items":  [
+
+                                                             ]
+                                               },
+                                               {
+                                                   "runtime_index":  105,
+                                                   "scene_index":  1572,
+                                                   "database_entry_id":  912,
+                                                   "display_name":  "二等兵",
+                                                   "runtime_type":  6,
+                                                   "captured_faction_id":  1,
+                                                   "vwf_faction_id":  1,
+                                                   "is_player_at_capture":  false,
+                                                   "items":  [
+                                                                 {
+                                                                     "inventory_index":  0,
+                                                                     "item_id":  33,
+                                                                     "quantity":  1,
+                                                                     "quantity_mode":  0
+                                                                 }
+                                                             ]
+                                               },
+                                               {
+                                                   "runtime_index":  106,
+                                                   "scene_index":  1573,
+                                                   "database_entry_id":  912,
+                                                   "display_name":  "二等兵",
+                                                   "runtime_type":  6,
+                                                   "captured_faction_id":  1,
+                                                   "vwf_faction_id":  1,
+                                                   "is_player_at_capture":  false,
+                                                   "items":  [
+
+                                                             ]
+                                               },
+                                               {
+                                                   "runtime_index":  107,
+                                                   "scene_index":  1574,
+                                                   "database_entry_id":  912,
+                                                   "display_name":  "二等兵",
+                                                   "runtime_type":  6,
+                                                   "captured_faction_id":  1,
+                                                   "vwf_faction_id":  1,
+                                                   "is_player_at_capture":  false,
+                                                   "items":  [
+
+                                                             ]
+                                               },
+                                               {
                                                    "runtime_index":  108,
                                                    "scene_index":  1575,
                                                    "database_entry_id":  896,
@@ -942,6 +999,58 @@
                                                    "database_entry_id":  926,
                                                    "display_name":  "山本",
                                                    "runtime_type":  4,
+                                                   "captured_faction_id":  1,
+                                                   "vwf_faction_id":  1,
+                                                   "is_player_at_capture":  false,
+                                                   "items":  [
+
+                                                             ]
+                                               },
+                                               {
+                                                   "runtime_index":  121,
+                                                   "scene_index":  1617,
+                                                   "database_entry_id":  925,
+                                                   "display_name":  "三等兵",
+                                                   "runtime_type":  5,
+                                                   "captured_faction_id":  1,
+                                                   "vwf_faction_id":  1,
+                                                   "is_player_at_capture":  false,
+                                                   "items":  [
+
+                                                             ]
+                                               },
+                                               {
+                                                   "runtime_index":  122,
+                                                   "scene_index":  1618,
+                                                   "database_entry_id":  925,
+                                                   "display_name":  "三等兵",
+                                                   "runtime_type":  5,
+                                                   "captured_faction_id":  1,
+                                                   "vwf_faction_id":  1,
+                                                   "is_player_at_capture":  false,
+                                                   "items":  [
+
+                                                             ]
+                                               },
+                                               {
+                                                   "runtime_index":  123,
+                                                   "scene_index":  1619,
+                                                   "database_entry_id":  925,
+                                                   "display_name":  "三等兵",
+                                                   "runtime_type":  5,
+                                                   "captured_faction_id":  1,
+                                                   "vwf_faction_id":  1,
+                                                   "is_player_at_capture":  false,
+                                                   "items":  [
+
+                                                             ]
+                                               },
+                                               {
+                                                   "runtime_index":  124,
+                                                   "scene_index":  1620,
+                                                   "database_entry_id":  925,
+                                                   "display_name":  "三等兵",
+                                                   "runtime_type":  5,
                                                    "captured_faction_id":  1,
                                                    "vwf_faction_id":  1,
                                                    "is_player_at_capture":  false,
@@ -4668,6 +4777,32 @@
                                                    "database_entry_id":  915,
                                                    "display_name":  "龟田",
                                                    "runtime_type":  12,
+                                                   "captured_faction_id":  1,
+                                                   "vwf_faction_id":  1,
+                                                   "is_player_at_capture":  false,
+                                                   "items":  [
+
+                                                             ]
+                                               },
+                                               {
+                                                   "runtime_index":  74,
+                                                   "scene_index":  2605,
+                                                   "database_entry_id":  925,
+                                                   "display_name":  "三等兵",
+                                                   "runtime_type":  5,
+                                                   "captured_faction_id":  1,
+                                                   "vwf_faction_id":  1,
+                                                   "is_player_at_capture":  false,
+                                                   "items":  [
+
+                                                             ]
+                                               },
+                                               {
+                                                   "runtime_index":  75,
+                                                   "scene_index":  2606,
+                                                   "database_entry_id":  925,
+                                                   "display_name":  "三等兵",
+                                                   "runtime_type":  5,
                                                    "captured_faction_id":  1,
                                                    "vwf_faction_id":  1,
                                                    "is_player_at_capture":  false,

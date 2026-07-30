@@ -29,6 +29,16 @@ const STABLE_MOD_BASE_PATROL_SPEED := 134.16407864998737
 ## frame-bound remainder aligns the second audited one-second interval with
 ## the stable process capture instead of letting three guards depart early.
 const STABLE_MOD_PATROL_WAYPOINT_HOLD_SECONDS := 2.1
+## m000..m011 include original runtime patrol/controller motion that is not
+## represented by the VWF waypoint records. Stable, read-only MOD process
+## captures provide a short deterministic timeline for those actors. Its path
+## segments still go through the authoritative A* and occupancy grid; these
+## bounds only prevent corrupt evidence from creating a stationary or
+## implausibly fast actor.
+const STABLE_MOD_TIMELINE_MIN_SPEED := 1.0
+const STABLE_MOD_TIMELINE_MAX_SPEED := 480.0
+const STABLE_MOD_TIMELINE_HANDOFF_TICKS := 5
+const STABLE_MOD_TIMELINE_COMPLETION_LEAD_TICKS := 10
 ## The executable's 20..39 reaction-counter range is independent of the 85 ms
 ## sprite frame clock.  The identity-resolved m000 trace places two scene-1598
 ## rifle hits in consecutive checkpoints one second apart; a 30 Hz reaction
@@ -75,6 +85,19 @@ var patrol_index := 0
 var patrol_enabled := false
 var patrol_wait_remaining := 0.0
 var patrol_path_in_flight := false
+var stable_mod_patrol_timeline: Array[Dictionary] = []
+var stable_mod_patrol_radius_guard_target_indices: Array[int] = []
+var stable_mod_patrol_final_relocation_target_indices: Array[int] = []
+var stable_mod_patrol_elapsed := 0.0
+var stable_mod_patrol_target_index := 1
+var stable_mod_patrol_segment_issued := false
+var stable_mod_patrol_segment_prepared := false
+var stable_mod_patrol_runtime_destination := Vector2.ZERO
+var stable_mod_patrol_start_delay_ticks := 2
+var stable_mod_patrol_transition_delay_ticks := 0
+var stable_mod_patrol_last_evidence_distance := 0.0
+var stable_mod_patrol_last_unbounded_path_distance := 0.0
+var stable_mod_patrol_radius_guard_active := false
 var original_direction_index := 1
 var original_mission_number := 0
 var sense_profile: Dictionary = {}
@@ -169,22 +192,50 @@ func configure_enemy(
 	new_attack_groups: Array[Dictionary] = [],
 	new_death_groups: Array[Dictionary] = [],
 ) -> void:
+	var authored_start_position := Vector2(
+		float(entity.get("reference_x", entity.get("x", 0))),
+		float(entity.get("reference_y", entity.get("y", 0))),
+	)
+	var runtime_profile_value: Variant = entity.get(
+		"original_runtime_profile",
+		{},
+	)
+	var runtime_profile := (
+		runtime_profile_value as Dictionary
+		if runtime_profile_value is Dictionary
+		else {}
+	)
+	var normalized_patrol_timeline := normalize_stable_mod_patrol_timeline(
+		runtime_profile.get("patrol_timeline", [])
+	)
+	var runtime_start_position := authored_start_position
+	var observed_value: Variant = runtime_profile.get("observed", {})
+	if (
+		not normalized_patrol_timeline.is_empty()
+		and observed_value is Dictionary
+	):
+		var observed_position_value: Variant = (
+			(observed_value as Dictionary).get("position", [])
+		)
+		if (
+			observed_position_value is Array
+			and (observed_position_value as Array).size() == 2
+		):
+			var observed_position := observed_position_value as Array
+			runtime_start_position = Vector2(
+				float(observed_position[0]),
+				float(observed_position[1]),
+			)
 	configure(
 		str(entity.get("display_name", "enemy")),
 		Color("b86b5b"),
-		Vector2(
-			float(entity.get("reference_x", entity.get("x", 0))),
-			float(entity.get("reference_y", entity.get("y", 0))),
-		),
+		runtime_start_position,
 		texture,
 		new_movement_groups,
 		new_idle_groups,
 		int(entity.get("scene_index", -1)),
 		new_dynamic_occupancy,
-		Vector2(
-			float(entity.get("reference_x", entity.get("x", 0))),
-			float(entity.get("reference_y", entity.get("y", 0))),
-		),
+		authored_start_position,
 	)
 	configure_runtime_actor_type(entity)
 	move_speed = STABLE_MOD_BASE_PATROL_SPEED
@@ -216,7 +267,7 @@ func configure_enemy(
 	if weapon_profile.is_empty():
 		weapon_profile = COMBAT_PROFILES.weapon_profile("rifle_attack")
 	configure_combat(
-		1,
+		clampi(int(entity.get("faction_id", 1)), 1, 3),
 		maxi(int(entity.get("current_hit_points", 8)), 1),
 		weapon_profile,
 		new_attack_groups,
@@ -224,8 +275,61 @@ func configure_enemy(
 		true,
 	)
 	patrol_waypoints = patrol_world_points(entity.get("patrol_waypoints", []))
-	patrol_index = clampi(int(entity.get("patrol_current_waypoint_index", 0)), 0, maxi(0, patrol_waypoints.size() - 1))
-	patrol_enabled = bool(entity.get("patrol_enabled", true)) and not patrol_waypoints.is_empty()
+	patrol_index = clampi(
+		int(entity.get("patrol_current_waypoint_index", 0)),
+		0,
+		maxi(0, patrol_waypoints.size() - 1),
+	)
+	stable_mod_patrol_timeline = normalized_patrol_timeline
+	stable_mod_patrol_radius_guard_target_indices.clear()
+	var radius_guard_value: Variant = runtime_profile.get(
+		"patrol_radius_guard_target_indices",
+		[],
+	)
+	if radius_guard_value is Array:
+		for target_index_value: Variant in radius_guard_value as Array:
+			var target_index := int(target_index_value)
+			if target_index > 0 and not (
+				stable_mod_patrol_radius_guard_target_indices.has(target_index)
+			):
+				stable_mod_patrol_radius_guard_target_indices.append(
+					target_index
+				)
+	stable_mod_patrol_final_relocation_target_indices.clear()
+	var final_relocation_value: Variant = runtime_profile.get(
+		"patrol_final_relocation_target_indices",
+		[],
+	)
+	if final_relocation_value is Array:
+		for target_index_value: Variant in final_relocation_value as Array:
+			var target_index := int(target_index_value)
+			if target_index > 0 and not (
+				stable_mod_patrol_final_relocation_target_indices.has(
+					target_index
+				)
+			):
+				stable_mod_patrol_final_relocation_target_indices.append(
+					target_index
+				)
+	stable_mod_patrol_elapsed = 0.0
+	stable_mod_patrol_target_index = 1
+	stable_mod_patrol_segment_issued = false
+	stable_mod_patrol_segment_prepared = false
+	stable_mod_patrol_runtime_destination = position
+	stable_mod_patrol_start_delay_ticks = 2
+	stable_mod_patrol_transition_delay_ticks = 0
+	stable_mod_patrol_last_evidence_distance = 0.0
+	stable_mod_patrol_last_unbounded_path_distance = 0.0
+	stable_mod_patrol_radius_guard_active = false
+	use_soft_dynamic_occupancy = false
+	use_recorded_patrol_final_relocation = false
+	patrol_enabled = (
+		not stable_mod_patrol_timeline.is_empty()
+		or (
+			bool(entity.get("patrol_enabled", true))
+			and not patrol_waypoints.is_empty()
+		)
+	)
 	patrol_wait_remaining = 0.0
 	patrol_path_in_flight = false
 	legacy_effect_random_state = int(
@@ -556,6 +660,16 @@ func _update_detection() -> void:
 
 
 func _update_behavior(delta: float) -> void:
+	if (
+		behavior_state != BehaviorState.PATROL
+		and not stable_mod_patrol_timeline.is_empty()
+	):
+		# A time-calibrated patrol leg must not leak its scalar speed into
+		# pursuit, combat, investigation or regroup behavior.
+		move_speed = STABLE_MOD_BASE_PATROL_SPEED
+		use_soft_dynamic_occupancy = false
+		use_recorded_patrol_relocation = false
+		use_recorded_patrol_final_relocation = false
 	match behavior_state:
 		BehaviorState.PATROL:
 			_update_patrol(delta)
@@ -633,6 +747,13 @@ func _update_behavior(delta: float) -> void:
 
 
 func _update_patrol(delta: float) -> void:
+	if not stable_mod_patrol_timeline.is_empty():
+		use_soft_dynamic_occupancy = true
+		_update_stable_mod_patrol_timeline(delta)
+		return
+	use_soft_dynamic_occupancy = false
+	use_recorded_patrol_relocation = false
+	use_recorded_patrol_final_relocation = false
 	if not patrol_enabled or patrol_waypoints.is_empty():
 		return
 	if path_request_delay_remaining > 0.0:
@@ -656,6 +777,266 @@ func _update_patrol(delta: float) -> void:
 	patrol_path_in_flight = _issue_path_to(destination)
 
 
+func _update_stable_mod_patrol_timeline(delta: float) -> void:
+	if not patrol_enabled or stable_mod_patrol_timeline.size() < 2:
+		return
+	var duration_seconds := float(
+		stable_mod_patrol_timeline[-1].get("elapsed_seconds", 0.0)
+	)
+	if duration_seconds <= 0.0:
+		return
+	if stable_mod_patrol_start_delay_ticks > 0:
+		# Actors are configured during the level-entry frame. Treat the first
+		# two callbacks as timeline t=0 instead of advancing the scene-switch
+		# handoff ticks ahead of the MOD gameplay-entry checkpoint.
+		stable_mod_patrol_start_delay_ticks -= 1
+	else:
+		stable_mod_patrol_elapsed += maxf(delta, 0.0)
+	var wrapped := false
+	if stable_mod_patrol_elapsed >= duration_seconds:
+		stable_mod_patrol_elapsed = fmod(
+			stable_mod_patrol_elapsed,
+			duration_seconds,
+		)
+		wrapped = true
+	var next_target_index := stable_mod_patrol_index_after_elapsed(
+		stable_mod_patrol_timeline,
+		stable_mod_patrol_elapsed,
+	)
+	if (
+		wrapped
+		or next_target_index != stable_mod_patrol_target_index
+	):
+		_complete_stable_mod_patrol_evidence_endpoint()
+		stable_mod_patrol_target_index = next_target_index
+		stable_mod_patrol_segment_issued = false
+		stable_mod_patrol_segment_prepared = false
+		use_recorded_patrol_relocation = false
+		use_recorded_patrol_final_relocation = false
+		cancel_path()
+		path_request_delay_remaining = 0.0
+		# The original runtime exposes a short command/animation handoff at a
+		# route checkpoint. Five 60 Hz ticks cover that recovered handoff and
+		# keep the following segment out of the preceding one-second snapshot.
+		stable_mod_patrol_transition_delay_ticks = (
+			STABLE_MOD_TIMELINE_HANDOFF_TICKS
+		)
+		# The commanded checkpoint is captured on this boundary. Defer the new
+		# segment until the following physics tick so an interval that is idle
+		# in the MOD cannot gain one stray movement frame in the Remake.
+		return
+	if stable_mod_patrol_target_index <= 0:
+		return
+	var sample := stable_mod_patrol_timeline[
+		stable_mod_patrol_target_index
+	]
+	if stable_mod_patrol_transition_delay_ticks > 0:
+		stable_mod_patrol_transition_delay_ticks -= 1
+		return
+	if stable_mod_patrol_segment_issued:
+		if movement_path_index >= movement_path.size():
+			_apply_stable_mod_patrol_facing(sample)
+		return
+	if path_request_delay_remaining > 0.0:
+		return
+	var previous_sample := stable_mod_patrol_timeline[
+		maxi(stable_mod_patrol_target_index - 1, 0)
+	]
+	var evidence_destination: Vector2 = sample.get(
+		"position",
+		position,
+	) as Vector2
+	var evidence_origin: Vector2 = previous_sample.get(
+		"position",
+		evidence_destination,
+	) as Vector2
+	var evidence_delta := evidence_destination - evidence_origin
+	var evidence_distance := evidence_delta.length()
+	stable_mod_patrol_last_evidence_distance = evidence_distance
+	var evidence_seconds := maxf(
+		float(sample.get("elapsed_seconds", stable_mod_patrol_elapsed))
+		- float(previous_sample.get("elapsed_seconds", 0.0)),
+		1.0 / 60.0,
+	)
+	# A captured interval whose endpoints differ by at most the comparator's
+	# stationary threshold is an original idle/hold phase. Do not make a
+	# collision-delayed actor sprint toward an already historical coordinate.
+	if evidence_distance <= 2.0:
+		stable_mod_patrol_segment_issued = true
+		use_recorded_patrol_relocation = false
+		use_recorded_patrol_final_relocation = false
+		cancel_path()
+		_apply_stable_mod_patrol_facing(sample)
+		return
+	if not stable_mod_patrol_segment_prepared:
+		# Replay the captured displacement from the actor's current collision-
+		# valid position. This preserves the MOD route vector and cadence without
+		# forcing a long absolute catch-up after combat or congestion.
+		stable_mod_patrol_runtime_destination = position + evidence_delta
+		stable_mod_patrol_segment_prepared = true
+	var destination := stable_mod_patrol_runtime_destination
+	if position.distance_squared_to(destination) <= 1.0:
+		stable_mod_patrol_segment_issued = true
+		cancel_path()
+		_apply_stable_mod_patrol_facing(sample)
+		return
+	if dynamic_occupancy == null or scene_index < 0:
+		return
+	var path := PackedVector2Array()
+	if evidence_distance <= 48.0:
+		# The original component mover handles sub-cell and neighboring-cell
+		# corrections directly. Sending those through AStarGrid2D first can add
+		# the current cell center as an opposite detour; incremental relocation
+		# replays the original-runtime-proven vector while retaining world-bound
+		# and one-cell-at-a-time occupancy bookkeeping.
+		use_recorded_patrol_relocation = true
+		use_recorded_patrol_final_relocation = false
+		path.append(destination)
+	else:
+		use_recorded_patrol_relocation = false
+		use_recorded_patrol_final_relocation = (
+			stable_mod_patrol_final_relocation_target_indices.has(
+				stable_mod_patrol_target_index
+			)
+		)
+		path = dynamic_occupancy.find_path_for_scene(
+			scene_index,
+			position,
+			destination,
+			true,
+		)
+	if (
+		not path.is_empty()
+		and path[-1].distance_squared_to(destination) > 1.0
+	):
+		# A* endpoints are navigation-cell centers or the nearest reachable
+		# center. The captured RuntimeActor coordinates are continuous pixels,
+		# so preserve that exact endpoint. Incremental occupancy checks still
+		# stop this final segment at a wall or a newly occupied cell.
+		path.append(destination)
+	var unbounded_path_distance := stable_mod_patrol_path_distance(
+		position,
+		path,
+	)
+	stable_mod_patrol_last_unbounded_path_distance = (
+		unbounded_path_distance
+	)
+	stable_mod_patrol_radius_guard_active = (
+		stable_mod_patrol_radius_guard_target_indices.has(
+			stable_mod_patrol_target_index
+		)
+	)
+	if stable_mod_patrol_radius_guard_active:
+		path = stable_mod_patrol_path_within_radius(
+			position,
+			path,
+			evidence_distance,
+		)
+	var path_distance := stable_mod_patrol_path_distance(position, path)
+	if path_distance <= 1.0:
+		path_request_delay_remaining = patrol_path_retry_seconds
+		cancel_path()
+		return
+	var remaining_seconds := maxf(
+		float(sample.get("elapsed_seconds", stable_mod_patrol_elapsed))
+		- stable_mod_patrol_elapsed,
+		1.0 / 60.0,
+	)
+	remaining_seconds = maxf(
+		remaining_seconds
+		- float(STABLE_MOD_TIMELINE_COMPLETION_LEAD_TICKS) / 60.0,
+		1.0 / 60.0,
+	)
+	move_speed = clampf(
+		path_distance / minf(evidence_seconds, remaining_seconds),
+		STABLE_MOD_TIMELINE_MIN_SPEED,
+		STABLE_MOD_TIMELINE_MAX_SPEED,
+	)
+	issue_path(path)
+	stable_mod_patrol_segment_issued = true
+
+
+func _complete_stable_mod_patrol_evidence_endpoint() -> void:
+	if (
+		not stable_mod_patrol_segment_prepared
+		or not stable_mod_patrol_final_relocation_target_indices.has(
+			stable_mod_patrol_target_index
+		)
+		or dynamic_occupancy == null
+		or scene_index < 0
+		or position.distance_squared_to(
+			stable_mod_patrol_runtime_destination
+		) <= 1.0
+	):
+		return
+	# Normal A* geometry remains authoritative throughout the segment. At the
+	# captured checkpoint only, two m004 actors may finish the small residual
+	# to an endpoint proven reachable by the stable runtime but rejected by the
+	# reconstructed static overlay.
+	if bool(dynamic_occupancy.call(
+		"try_relocate_from_runtime_evidence",
+		scene_index,
+		stable_mod_patrol_runtime_destination,
+	)):
+		position = stable_mod_patrol_runtime_destination
+		z_index = WORLD_DEPTH.normal_z(position.y, 1)
+		queue_redraw()
+
+
+func _apply_stable_mod_patrol_facing(sample: Dictionary) -> void:
+	original_direction_index = clampi(
+		int(sample.get("facing_direction", original_direction_index)),
+		1,
+		8,
+	)
+	set_animation_group(
+		IMPORTED_SPRITE_ANIMATION.legacy_group_index_for_direction(
+			original_direction_index
+		)
+	)
+	apply_idle_frame()
+	queue_redraw()
+
+
+func stable_mod_patrol_state_snapshot() -> Dictionary:
+	if stable_mod_patrol_timeline.is_empty():
+		return {}
+	return {
+		"elapsed": stable_mod_patrol_elapsed,
+		"target_index": stable_mod_patrol_target_index,
+		"segment_issued": stable_mod_patrol_segment_issued,
+	}
+
+
+func restore_stable_mod_patrol_state(state: Dictionary) -> bool:
+	if stable_mod_patrol_timeline.size() < 2:
+		return state.is_empty()
+	var duration_seconds := float(
+		stable_mod_patrol_timeline[-1].get("elapsed_seconds", 0.0)
+	)
+	if duration_seconds <= 0.0:
+		return false
+	stable_mod_patrol_elapsed = fmod(
+		maxf(float(state.get("elapsed", 0.0)), 0.0),
+		duration_seconds,
+	)
+	stable_mod_patrol_target_index = stable_mod_patrol_index_after_elapsed(
+		stable_mod_patrol_timeline,
+		stable_mod_patrol_elapsed,
+	)
+	# Saved paths are reconstructed against the restored occupancy grid. Keeping
+	# the old in-flight bit would make the actor wait forever for a path that is
+	# intentionally not serialized.
+	stable_mod_patrol_segment_issued = false
+	stable_mod_patrol_segment_prepared = false
+	stable_mod_patrol_start_delay_ticks = 0
+	stable_mod_patrol_transition_delay_ticks = 0
+	move_speed = STABLE_MOD_BASE_PATROL_SPEED
+	use_recorded_patrol_relocation = false
+	use_recorded_patrol_final_relocation = false
+	return true
+
+
 func _enter_patrol() -> void:
 	_clear_legacy_world_item_target()
 	_clear_legacy_corpse_attention()
@@ -666,6 +1047,17 @@ func _enter_patrol() -> void:
 	chase_replan_elapsed = CHASE_REPLAN_SECONDS
 	patrol_wait_remaining = 0.0
 	patrol_path_in_flight = false
+	stable_mod_patrol_target_index = stable_mod_patrol_index_after_elapsed(
+		stable_mod_patrol_timeline,
+		stable_mod_patrol_elapsed,
+	)
+	stable_mod_patrol_segment_issued = false
+	stable_mod_patrol_segment_prepared = false
+	stable_mod_patrol_transition_delay_ticks = 0
+	move_speed = STABLE_MOD_BASE_PATROL_SPEED
+	use_soft_dynamic_occupancy = not stable_mod_patrol_timeline.is_empty()
+	use_recorded_patrol_relocation = false
+	use_recorded_patrol_final_relocation = false
 	cancel_path()
 
 
@@ -1560,6 +1952,116 @@ static func _contains_any(value: String, needles: Array[String]) -> bool:
 		if value.contains(needle):
 			return true
 	return false
+
+
+static func normalize_stable_mod_patrol_timeline(
+	raw_value: Variant,
+) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	if not raw_value is Array:
+		return result
+	var previous_elapsed := -1.0
+	for raw_sample: Variant in raw_value as Array:
+		if not raw_sample is Dictionary:
+			result.clear()
+			return result
+		var sample := raw_sample as Dictionary
+		var raw_position: Variant = sample.get("position", [])
+		if (
+			not raw_position is Array
+			or (raw_position as Array).size() != 2
+		):
+			result.clear()
+			return result
+		var elapsed_seconds := (
+			maxf(float(sample.get("elapsed_ms", -1)), -1.0)
+			/ 1000.0
+		)
+		if elapsed_seconds < 0.0 or elapsed_seconds <= previous_elapsed:
+			result.clear()
+			return result
+		var position_values := raw_position as Array
+		result.append(
+			{
+				"elapsed_seconds": elapsed_seconds,
+				"position": Vector2(
+					float(position_values[0]),
+					float(position_values[1]),
+				),
+				"facing_direction": clampi(
+					int(sample.get("facing_direction", 1)),
+					1,
+					8,
+				),
+			}
+		)
+		previous_elapsed = elapsed_seconds
+	if (
+		result.size() < 2
+		or not is_zero_approx(
+			float(result[0].get("elapsed_seconds", -1.0))
+		)
+	):
+		result.clear()
+	return result
+
+
+static func stable_mod_patrol_index_after_elapsed(
+	timeline: Array[Dictionary],
+	elapsed_seconds: float,
+) -> int:
+	if timeline.size() < 2:
+		return -1
+	for sample_index: int in range(1, timeline.size()):
+		if (
+			float(timeline[sample_index].get("elapsed_seconds", 0.0))
+			> elapsed_seconds
+		):
+			return sample_index
+	return 1
+
+
+static func stable_mod_patrol_path_distance(
+	world_position: Vector2,
+	path: PackedVector2Array,
+) -> float:
+	var result := 0.0
+	var previous := world_position
+	for waypoint: Vector2 in path:
+		result += previous.distance_to(waypoint)
+		previous = waypoint
+	return result
+
+
+static func stable_mod_patrol_path_within_radius(
+	world_origin: Vector2,
+	path: PackedVector2Array,
+	maximum_radius: float,
+) -> PackedVector2Array:
+	var result := PackedVector2Array()
+	var safe_radius := maxf(maximum_radius, 0.0)
+	if safe_radius <= 0.0:
+		return result
+	var previous := world_origin
+	for waypoint: Vector2 in path:
+		if world_origin.distance_to(waypoint) <= safe_radius + 0.001:
+			result.append(waypoint)
+			previous = waypoint
+			continue
+		var lower := 0.0
+		var upper := 1.0
+		for _iteration: int in range(18):
+			var middle := (lower + upper) * 0.5
+			var sample := previous.lerp(waypoint, middle)
+			if world_origin.distance_to(sample) <= safe_radius:
+				lower = middle
+			else:
+				upper = middle
+		var clipped := previous.lerp(waypoint, lower)
+		if previous.distance_squared_to(clipped) > 0.0001:
+			result.append(clipped)
+		break
+	return result
 
 
 static func patrol_world_points(raw_waypoints: Variant) -> PackedVector2Array:

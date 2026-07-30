@@ -337,6 +337,98 @@ foreach ($observation in $observations) {
         })
 }
 
+# Compact formations whose members share one runtime type can already have
+# moved far from their VWF spawn coordinates. They are nevertheless exactly
+# identifiable when the runtime and VWF residual runs are both contiguous and
+# are bounded on both sides by already resolved neighbours. This is an order
+# proof, not a nearest-position guess.
+$remainingRuntimeTypes = @($observations |
+    Where-Object { -not $mappings.ContainsKey([int]$_.index) } |
+    ForEach-Object { Get-ObservationRuntimeType $_ } |
+    Sort-Object -Unique)
+foreach ($runtimeType in $remainingRuntimeTypes) {
+    $remainingObservations = @($observations |
+        Where-Object {
+            -not $mappings.ContainsKey([int]$_.index) -and
+            (Get-ObservationRuntimeType $_) -eq $runtimeType
+        } |
+        Sort-Object { [int]$_.index })
+    $remainingEntities = @($entities |
+        Where-Object {
+            -not $assignedScenes.ContainsKey([int]$_.scene_index) -and
+            (Get-EntityRuntimeType $_) -eq $runtimeType
+        } |
+        Sort-Object { [int]$_.scene_index })
+    if ($remainingObservations.Count -lt 2 -or
+        $remainingObservations.Count -ne $remainingEntities.Count) {
+        continue
+    }
+
+    $runtimeContiguous = $true
+    $sceneContiguous = $true
+    for ($index = 1; $index -lt $remainingObservations.Count; $index++) {
+        if ([int]$remainingObservations[$index].index -ne
+            [int]$remainingObservations[$index - 1].index + 1) {
+            $runtimeContiguous = $false
+        }
+        if ([int]$remainingEntities[$index].scene_index -ne
+            [int]$remainingEntities[$index - 1].scene_index + 1) {
+            $sceneContiguous = $false
+        }
+    }
+    if (-not $runtimeContiguous -or -not $sceneContiguous) {
+        continue
+    }
+
+    $firstRuntimeIndex = [int]$remainingObservations[0].index
+    $lastRuntimeIndex = [int]$remainingObservations[-1].index
+    $firstSceneIndex = [int]$remainingEntities[0].scene_index
+    $lastSceneIndex = [int]$remainingEntities[-1].scene_index
+    $previousObservation = @($observations |
+        Where-Object { [int]$_.index -lt $firstRuntimeIndex } |
+        Sort-Object { [int]$_.index } -Descending |
+        Select-Object -First 1)
+    $nextObservation = @($observations |
+        Where-Object { [int]$_.index -gt $lastRuntimeIndex } |
+        Sort-Object { [int]$_.index } |
+        Select-Object -First 1)
+    if ($previousObservation.Count -ne 1 -or
+        $nextObservation.Count -ne 1 -or
+        [int]$previousObservation[0].index -ne $firstRuntimeIndex - 1 -or
+        [int]$nextObservation[0].index -ne $lastRuntimeIndex + 1 -or
+        -not $mappings.ContainsKey([int]$previousObservation[0].index) -or
+        -not $mappings.ContainsKey([int]$nextObservation[0].index)) {
+        continue
+    }
+    $previousSceneIndex = [int](
+        $mappings[[int]$previousObservation[0].index].Entity.scene_index)
+    $nextSceneIndex = [int](
+        $mappings[[int]$nextObservation[0].index].Entity.scene_index)
+    if ($previousSceneIndex -ne $firstSceneIndex - 1 -or
+        $nextSceneIndex -ne $lastSceneIndex + 1) {
+        continue
+    }
+
+    for ($index = 0; $index -lt $remainingObservations.Count; $index++) {
+        Add-IdentityMapping `
+            $remainingObservations[$index] `
+            $remainingEntities[$index] `
+            'contiguous_runtime_and_vwf_order_between_resolved_neighbors' `
+            'exact' `
+            ([ordered]@{
+                runtime_type = $runtimeType
+                ordinal_offset = $index
+                member_count = $remainingObservations.Count
+                runtime_bounds = @(
+                    [int]$previousObservation[0].index,
+                    [int]$nextObservation[0].index)
+                scene_bounds = @(
+                    $previousSceneIndex,
+                    $nextSceneIndex)
+            })
+    }
+}
+
 $identities = foreach ($observation in $observations) {
     $runtimeIndex = [int]$observation.index
     $base = [ordered]@{
@@ -442,10 +534,10 @@ $catalog = [ordered]@{
                 'entity.database_entry_id; the actual DBL resource identity')
             runtime_current_hit_points = (
                 'RuntimeActorV1 +0x1C0; exact m000 correlation with ' +
-                'entity.current_hit_points across all 54 resolved actors')
+                'entity.current_hit_points across all 62 identity-resolved actors')
             runtime_default_attack_type = (
                 'RuntimeActorV1 +0x20C; exact m000 correlation with ' +
-                'entity.default_attack_type across all 54 resolved actors')
+                'entity.default_attack_type across all 62 identity-resolved actors')
             patrol_world_coordinate = (
                 '[waypoint.x * 32 + 16, waypoint.y * 16 + 8]')
             runtime_index = (

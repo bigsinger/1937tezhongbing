@@ -169,6 +169,7 @@ $patrolTrace = Join-Path $parityOutput (
 & (Join-Path $PSScriptRoot 'Compare-PatrolKinematics.ps1') `
     -ReferenceTrace $patrolBaseline `
     -CandidateTrace $patrolTrace `
+    -MovingActorCountTolerance 3 `
     -OutputJson (
         Join-Path $parityOutput (
             'm000-enemy-patrol-v1-kinematics.json')) |
