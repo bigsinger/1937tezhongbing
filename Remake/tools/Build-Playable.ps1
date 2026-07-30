@@ -87,6 +87,64 @@ function Assert-SafeOutputDirectory {
     return $full
 }
 
+function Remove-SafeOutputDirectory {
+    param([string]$Candidate)
+
+    $full = Assert-SafeOutputDirectory -Candidate $Candidate
+    if (-not (Test-Path -LiteralPath $full)) {
+        return
+    }
+    $rootItem = Get-Item -LiteralPath $full -Force
+    if (($rootItem.Attributes -band
+            [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "Refusing to replace a reparse-point output directory: $full"
+    }
+
+    # Walk ordinary directories ourselves and never descend into a junction or
+    # symbolic link. Remove each link object with the matching .NET API before
+    # recursively deleting the now self-contained build tree. This prevents an
+    # old Junction-mode build from making Remove-Item traverse into LocalAssets.
+    $rootPrefix =
+        $full.TrimEnd('\', '/') +
+        [System.IO.Path]::DirectorySeparatorChar
+    $directories =
+        [System.Collections.Generic.Stack[System.IO.DirectoryInfo]]::new()
+    $reparsePoints =
+        [System.Collections.Generic.List[System.IO.FileSystemInfo]]::new()
+    $directories.Push([System.IO.DirectoryInfo]$rootItem)
+    while ($directories.Count -gt 0) {
+        $directory = $directories.Pop()
+        foreach ($entry in $directory.EnumerateFileSystemInfos()) {
+            if (($entry.Attributes -band
+                    [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                $reparsePoints.Add($entry)
+                continue
+            }
+            if (($entry.Attributes -band
+                    [System.IO.FileAttributes]::Directory) -ne 0) {
+                $directories.Push([System.IO.DirectoryInfo]$entry)
+            }
+        }
+    }
+    foreach ($entry in $reparsePoints) {
+        $entryPath = [System.IO.Path]::GetFullPath($entry.FullName)
+        if (-not $entryPath.StartsWith(
+                $rootPrefix,
+                [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Refusing to unlink a reparse point outside the build: $entryPath"
+        }
+        if (($entry.Attributes -band
+                [System.IO.FileAttributes]::Directory) -ne 0) {
+            [System.IO.Directory]::Delete($entryPath, $false)
+        }
+        else {
+            [System.IO.File]::Delete($entryPath)
+        }
+        Write-Host "Detached old build reparse point: $entryPath"
+    }
+    Remove-Item -LiteralPath $full -Recurse -Force
+}
+
 $assetManifestPath = Join-Path $sourceAssets 'manifest.json'
 $assetProfile = ''
 if (Test-Path -LiteralPath $assetManifestPath -PathType Leaf) {
@@ -135,11 +193,7 @@ Write-Host "Output: $outputRoot"
 Write-Host "Assets: $AssetMode"
 
 if (Test-Path -LiteralPath $outputRoot) {
-    $attributes = (Get-Item -LiteralPath $outputRoot -Force).Attributes
-    if (($attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-        throw "Refusing to replace a reparse-point output directory: $outputRoot"
-    }
-    Remove-Item -LiteralPath $outputRoot -Recurse -Force
+    Remove-SafeOutputDirectory -Candidate $outputRoot
 }
 New-Item -ItemType Directory -Path $outputGame -Force | Out-Null
 
