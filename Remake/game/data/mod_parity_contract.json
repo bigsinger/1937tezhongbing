@@ -61,7 +61,7 @@
     {
       "id": "mission_state_machines",
       "status": "partial",
-      "evidence": ["12 data-driven mission graphs from sub_404BB0/sub_405410", "five recovered player-global identities", "scene bindings", "dependency/count/time/failure/victory runtime", "exact per-level required player and escort death routing", "12 stable-MOD real-content product-world-action victory closures", "m006/m008/m009/m011 stable-MOD and repaired dual-profile closures", "12-level viewport-input primary-failure and focused-keyboard-restart journey", "m006 scene 1457 item-101 drop plus Qiangzi-only ownership", "m008 stable path without invented manual detonation", "m010 four-zone recovered existence test without invented identity constraint", "m011 overwritten scenes 1348-1352 rejection, scene 1353 effective target and Old Zhao/Qiangzi scene 1359 exit", "m001/m007/m010 time-limit failures", "m008 repaired-only premature-detonation failure"],
+      "evidence": ["12 data-driven mission graphs from sub_404BB0/sub_405410", "five recovered player-global identities", "scene bindings", "dependency/count/time/failure/victory runtime", "exact per-level required player and escort death routing", "12 stable-MOD real-content product-world-action victory closures", "749-check mission gate with physical initial and every-required-objective disk resume", "m006/m008/m009/m011 stable-MOD and repaired dual-profile closures", "12-level viewport-input primary-failure and focused-keyboard-restart journey", "m006 scene 1457 item-101 drop plus Qiangzi-only ownership", "m008 stable path without invented manual detonation", "m010 four-zone recovered existence test without invented identity constraint", "m011 overwritten scenes 1348-1352 rejection, scene 1353 effective target and Old Zhao/Qiangzi scene 1359 exit", "m001/m007/m010 time-limit failures", "m008 repaired-only premature-detonation failure"],
       "gaps": ["12 MOD-matched human-input victory traces", "remaining level-specific secondary failure traces", "source-backed dialogue/camera/tutorial timing"]
     },
     {
@@ -79,8 +79,8 @@
     {
       "id": "save_load_settings_and_progression",
       "status": "partial",
-      "evidence": ["10 slots", "quick/autosave", "atomic JSON with backup", "remapping and channel volumes", "stable-MOD/repaired mission-rule setting and per-session identity", "actor-78 cache and pending B worker/target/counter persistence while ephemeral actor 90 is deliberately excluded", "door open state, corpse claim/global alarm/dynamic reinforcement identity and five-point coordinate-search persistence", "Gu Ming runtime actor/GFL variant, faction exposure and clothing/recovery counters", "12 real-content heterogeneous mid-mission capture/rebuild hash round-trips", "12-level physical-disk Ctrl+F5/Ctrl+F9 resume gate after movement, contextual targeting and burial"],
-      "gaps": ["physical-disk slot save before and after every required objective", "cross-version migration policy", "campaign progression parity"]
+      "evidence": ["10 slots", "quick/autosave", "atomic JSON with backup", "remapping and channel volumes", "stable-MOD/repaired mission-rule setting and per-session identity", "actor-78 cache and pending B worker/target/counter persistence while ephemeral actor 90 is deliberately excluded", "door open state, corpse claim/global alarm/dynamic reinforcement identity and five-point coordinate-search persistence", "Gu Ming runtime actor/GFL variant, faction exposure and clothing/recovery counters", "12 real-content heterogeneous mid-mission capture/rebuild hash round-trips", "12-level physical-disk Ctrl+F5/Ctrl+F9 resume gate after movement, contextual targeting and burial", "physical-disk initial and every-required-objective checkpoints with exact normalized product-world rebuild across m000-m011"],
+      "gaps": ["cross-version migration policy", "campaign progression parity"]
     },
     {
       "id": "audio_and_media",
@@ -96,7 +96,7 @@
     }
   ],
   "levels": [
-    {"id": "m000", "number": 1, "title": "营救行动", "status": "partial", "gaps": ["post-attack inventory and mission differential traces", "exact scripted and ambient patrol phases for unresolved formations", "door/foreground obstacle-path parity", "save/reload at each objective"]},
+    {"id": "m000", "number": 1, "title": "营救行动", "status": "partial", "gaps": ["post-attack inventory and mission differential traces", "exact scripted and ambient patrol phases for unresolved formations", "door/foreground obstacle-path parity"]},
     {"id": "m001", "number": 2, "title": "奇袭火车站", "status": "partial", "gaps": ["victory/failure traces", "train interaction parity", "difficulty calibration"]},
     {"id": "m002", "number": 3, "title": "劫狱", "status": "partial", "gaps": ["victory/failure traces", "prison interaction parity", "difficulty calibration"]},
     {"id": "m003", "number": 4, "title": "铁路桥", "status": "partial", "gaps": ["victory/failure traces", "bridge explosion parity", "difficulty calibration"]},

@@ -5,6 +5,7 @@ const GAME_SESSION_STATE: Script = preload("res://scripts/game_session_state.gd"
 const RUNTIME_STATE_SNAPSHOT: Script = preload(
 	"res://scripts/runtime_state_snapshot.gd"
 )
+const GAME_SAVE_STORE: Script = preload("res://scripts/game_save_store.gd")
 const LEVEL_IDS: Array[String] = [
 	"m000",
 	"m001",
@@ -23,6 +24,13 @@ const LEVEL_IDS: Array[String] = [
 var failures: Array[String] = []
 var check_count := 0
 var committed_world_actions := 0
+var disk_store: RefCounted
+var disk_test_root := ""
+var disk_capture_enabled := true
+var pending_completed_objectives: Array[String] = []
+var expected_objective_records: Dictionary = {}
+var objective_disk_records: Dictionary = {}
+var initial_disk_records: Dictionary = {}
 
 
 func _init() -> void:
@@ -34,11 +42,16 @@ func _run() -> void:
 	root.add_child(main)
 	main.set_process(false)
 	main.set_physics_process(false)
+	disk_test_root = "user://real-mission-objective-disk-%d" % OS.get_process_id()
+	_cleanup_disk_test_root()
+	disk_store = GAME_SAVE_STORE.new(disk_test_root)
 
 	for level_index: int in range(LEVEL_IDS.size()):
 		var level_id := LEVEL_IDS[level_index]
 		main.switch_level(level_index, false, false)
 		_prepare_level_for_deterministic_world_actions(main)
+		_register_required_objective_records(main, level_id)
+		_save_initial_disk_checkpoint(main, level_id)
 		_expect(
 			str(main.current_mission.get("id", "")) == level_id,
 			"%s loads the matching real mission graph" % level_id,
@@ -104,6 +117,7 @@ func _run() -> void:
 	# world-action closure under the opt-in repaired rules.
 	for level_id: String in ["m006", "m008", "m009", "m011"]:
 		var level_index := LEVEL_IDS.find(level_id)
+		disk_capture_enabled = false
 		main.runtime_settings["mission_rule_mode"] = "repaired"
 		main.switch_level(level_index, false, false)
 		_prepare_level_for_deterministic_world_actions(main)
@@ -138,18 +152,33 @@ func _run() -> void:
 				% level_id,
 		)
 	main.runtime_settings["mission_rule_mode"] = "stable_mod"
+	disk_capture_enabled = false
+	_validate_all_objective_disk_checkpoints(main)
 
 	root.remove_child(main)
 	main.free()
 	await process_frame
+	_cleanup_disk_test_root()
 	_expect(
 		committed_world_actions >= 100,
 		"the twelve-level gate exercised a substantial real interaction sequence",
 	)
+	_expect(
+		objective_disk_records.size() == expected_objective_records.size(),
+		"every stable-MOD required objective owns a physical disk checkpoint",
+	)
 	if failures.is_empty():
 		print(
-			"Real twelve-level mission world loops passed (%d checks, %d committed world actions)."
-				% [check_count, committed_world_actions]
+			(
+				"Real twelve-level mission world loops passed "
+				+ "(%d checks, %d committed world actions, "
+				+ "%d physical objective resumes)."
+			)
+			% [
+				check_count,
+				committed_world_actions,
+				objective_disk_records.size(),
+			]
 		)
 		quit(0)
 		return
@@ -185,6 +214,13 @@ func _prepare_level_for_deterministic_world_actions(main: Node) -> void:
 		var actor := actor_value as Node
 		actor.set_process(false)
 		actor.set_physics_process(false)
+	if disk_capture_enabled:
+		var disk_callable := Callable(
+			self,
+			"_on_required_objective_completed",
+		).bind(main)
+		if not runtime.is_connected("objective_completed", disk_callable):
+			runtime.connect("objective_completed", disk_callable)
 
 
 func _perform_checkpoint_world_action(main: Node, level_id: String) -> void:
@@ -408,6 +444,7 @@ func _rescue_scene(main: Node, scene_index: int) -> void:
 		bool(target.get("rescued_state")),
 		"scene %d is rescued through the E/world interaction path" % scene_index,
 	)
+	_flush_completed_objective_saves(main)
 
 
 func _collect_field_scene(main: Node, scene_index: int) -> void:
@@ -458,6 +495,7 @@ func _collect_database_pickups(
 func _collect_specific_field_pickup(main: Node, pickup: Node2D) -> void:
 	for _attempt: int in range(8):
 		if bool(pickup.get("consumed")):
+			_flush_completed_objective_saves(main)
 			return
 		_select_and_move_player(main, pickup.position)
 		main.interact_with_mission_world()
@@ -467,6 +505,7 @@ func _collect_specific_field_pickup(main: Node, pickup: Node2D) -> void:
 		str(main.mission_runtime.get("last_error")).is_empty(),
 		"ordinary inventory pickup does not pollute mission-event validation",
 	)
+	_flush_completed_objective_saves(main)
 
 
 func _eliminate_scene(main: Node, scene_index: int) -> void:
@@ -487,6 +526,7 @@ func _eliminate_scene(main: Node, scene_index: int) -> void:
 		target.call("take_damage", 1_000_000, attacker)
 		committed_world_actions += 1
 	_expect(not bool(target.get("is_alive")), "combat damage eliminates scene %d" % scene_index)
+	_flush_completed_objective_saves(main)
 
 
 func _collect_role_item(
@@ -516,6 +556,7 @@ func _collect_role_item(
 		main.current_mission_state.is_objective_complete(objective_id),
 		"%s role drop is acquired through the ground-pickup path" % item_role,
 	)
+	_flush_completed_objective_saves(main)
 
 
 func _place_all_charges(main: Node) -> void:
@@ -554,6 +595,7 @@ func _interact_bound_scene(main: Node, scene_index: int) -> void:
 			or main.current_mission_state.is_victory(),
 		"bound scene %d commits through proximity interaction" % scene_index,
 	)
+	_flush_completed_objective_saves(main)
 
 
 func _use_exit(main: Node, scene_index: int) -> void:
@@ -607,6 +649,7 @@ func _eliminate_all_hostiles(main: Node) -> void:
 		committed_world_actions += 1
 	_expect(eliminated > 0, "m009 clears remaining live enemies through combat damage")
 	_expect(main._living_enemy_count() == 0, "m009 has no live hostile after the clear action")
+	_flush_completed_objective_saves(main)
 
 
 func _move_first_simultaneous_zone_actor(main: Node) -> void:
@@ -658,6 +701,239 @@ func _occupy_simultaneous_zones(main: Node) -> void:
 			committed_world_actions += 1
 	main._evaluate_transient_mission_zones()
 	committed_world_actions += 1
+	_flush_completed_objective_saves(main)
+
+
+func _register_required_objective_records(main: Node, level_id: String) -> void:
+	pending_completed_objectives.clear()
+	var required_index := 0
+	for objective_value: Variant in main.current_mission.get("objectives", []) as Array:
+		if not objective_value is Dictionary:
+			continue
+		var objective := objective_value as Dictionary
+		if not bool(objective.get("required", false)):
+			continue
+		var objective_id := str(objective.get("id", ""))
+		var record_key := "%s:%s" % [level_id, objective_id]
+		expected_objective_records[record_key] = {
+			"level_id": level_id,
+			"objective_id": objective_id,
+			"slot_id": "%s_o%02d" % [level_id, required_index],
+		}
+		required_index += 1
+
+
+func _save_initial_disk_checkpoint(main: Node, level_id: String) -> void:
+	var slot_id := "%s_initial" % level_id
+	var session: Dictionary = GAME_SESSION_STATE.capture(main)
+	var result: Dictionary = disk_store.save_slot(
+		slot_id,
+		session,
+		GAME_SAVE_STORE.default_campaign(),
+	)
+	_expect(
+		bool(result.get("ok", false)),
+		"%s writes its initial physical-disk checkpoint" % level_id,
+	)
+	if not bool(result.get("ok", false)):
+		return
+	var loaded: Dictionary = disk_store.load_slot(slot_id)
+	_expect(
+		bool(loaded.get("ok", false)),
+		"%s reads its initial physical-disk checkpoint" % level_id,
+	)
+	if not bool(loaded.get("ok", false)):
+		return
+	var loaded_session := (
+		(loaded.get("data", {}) as Dictionary).get("session", {}) as Dictionary
+	)
+	initial_disk_records[level_id] = {
+		"level_id": level_id,
+		"objective_id": "",
+		"slot_id": slot_id,
+		"session_hash": RUNTIME_STATE_SNAPSHOT.snapshot_hash(
+			{"session": loaded_session}
+		),
+	}
+
+
+func _on_required_objective_completed(
+	objective_id: String,
+	main: Node,
+) -> void:
+	if not disk_capture_enabled:
+		return
+	var level_id := str(main.current_mission.get("id", ""))
+	var record_key := "%s:%s" % [level_id, objective_id]
+	if (
+		not expected_objective_records.has(record_key)
+		or objective_disk_records.has(record_key)
+		or pending_completed_objectives.has(objective_id)
+	):
+		return
+	pending_completed_objectives.append(objective_id)
+
+
+func _flush_completed_objective_saves(main: Node) -> void:
+	if not disk_capture_enabled or pending_completed_objectives.is_empty():
+		return
+	var level_id := str(main.current_mission.get("id", ""))
+	var completed_now := pending_completed_objectives.duplicate()
+	pending_completed_objectives.clear()
+	var session: Dictionary = GAME_SESSION_STATE.capture(main)
+	for objective_id: String in completed_now:
+		var record_key := "%s:%s" % [level_id, objective_id]
+		if not expected_objective_records.has(record_key):
+			_expect(false, "%s emitted unknown required objective %s" % [level_id, objective_id])
+			continue
+		var expected := expected_objective_records[record_key] as Dictionary
+		var slot_id := str(expected.get("slot_id", ""))
+		var result: Dictionary = disk_store.save_slot(
+			slot_id,
+			session,
+			GAME_SAVE_STORE.default_campaign(),
+		)
+		_expect(
+			bool(result.get("ok", false)),
+			"%s objective %s writes a physical-disk checkpoint"
+				% [level_id, objective_id],
+		)
+		if not bool(result.get("ok", false)):
+			continue
+		var loaded: Dictionary = disk_store.load_slot(slot_id)
+		_expect(
+			bool(loaded.get("ok", false)),
+			"%s objective %s immediately reads from physical disk"
+				% [level_id, objective_id],
+		)
+		if not bool(loaded.get("ok", false)):
+			continue
+		var loaded_session := (
+			(loaded.get("data", {}) as Dictionary).get("session", {}) as Dictionary
+		)
+		var completed := (
+			(loaded_session.get("mission", {}) as Dictionary).get(
+				"completed",
+				{},
+			) as Dictionary
+		)
+		_expect(
+			bool(completed.get(objective_id, false)),
+			"%s objective %s is complete in the disk document"
+				% [level_id, objective_id],
+		)
+		objective_disk_records[record_key] = {
+			"level_id": level_id,
+			"objective_id": objective_id,
+			"slot_id": slot_id,
+			"session_hash": RUNTIME_STATE_SNAPSHOT.snapshot_hash(
+				{"session": loaded_session}
+			),
+		}
+
+
+func _validate_all_objective_disk_checkpoints(main: Node) -> void:
+	_expect(
+		initial_disk_records.size() == LEVEL_IDS.size(),
+		"all twelve stable-MOD missions own an initial physical checkpoint",
+	)
+	var records: Array[Dictionary] = []
+	for level_id: String in LEVEL_IDS:
+		if initial_disk_records.has(level_id):
+			records.append(
+				(initial_disk_records[level_id] as Dictionary).duplicate(true)
+			)
+	var objective_keys: Array = objective_disk_records.keys()
+	objective_keys.sort()
+	for record_key_value: Variant in objective_keys:
+		records.append(
+			(objective_disk_records[str(record_key_value)] as Dictionary)
+			.duplicate(true)
+		)
+	for record: Dictionary in records:
+		var level_id := str(record.get("level_id", ""))
+		var slot_id := str(record.get("slot_id", ""))
+		var load_result: Dictionary = disk_store.load_slot(slot_id)
+		_expect(
+			bool(load_result.get("ok", false)),
+			"%s checkpoint %s remains readable after the full campaign"
+				% [level_id, slot_id],
+		)
+		if not bool(load_result.get("ok", false)):
+			continue
+		var document := load_result.get("data", {}) as Dictionary
+		var session := document.get("session", {}) as Dictionary
+		var level_index := LEVEL_IDS.find(level_id)
+		_expect(level_index >= 0, "disk checkpoint references a formal level")
+		if level_index < 0:
+			continue
+		main.runtime_settings["mission_rule_mode"] = str(
+			session.get("mission_rule_mode", "stable_mod")
+		)
+		main.switch_level(level_index, false, false)
+		_prepare_level_for_deterministic_world_actions(main)
+		var apply_result: Dictionary = GAME_SESSION_STATE.apply_after_level_loaded(
+			main,
+			session,
+		)
+		_expect(
+			bool(apply_result.get("ok", false))
+				and (apply_result.get("warnings", []) as Array).is_empty(),
+			"%s checkpoint %s rebuilds the product world without warnings"
+				% [level_id, slot_id],
+		)
+		var restored: Dictionary = GAME_SESSION_STATE.capture(main)
+		var normalize_result: Dictionary = disk_store.save_slot(
+			"resume_probe",
+			restored,
+			GAME_SAVE_STORE.default_campaign(),
+		)
+		_expect(
+			bool(normalize_result.get("ok", false)),
+			"%s checkpoint %s can be written again after resume"
+				% [level_id, slot_id],
+		)
+		var normalized_restore_result: Dictionary = disk_store.load_slot(
+			"resume_probe"
+		)
+		var normalized_restored := (
+			(
+				normalized_restore_result.get("data", {}) as Dictionary
+			).get("session", {}) as Dictionary
+		)
+		_expect(
+			bool(normalized_restore_result.get("ok", false))
+				and RUNTIME_STATE_SNAPSHOT.snapshot_hash(
+					{"session": normalized_restored}
+				)
+				== str(record.get("session_hash", "")),
+			"%s checkpoint %s resumes with an exact normalized world-state hash"
+				% [level_id, slot_id],
+		)
+
+
+func _cleanup_disk_test_root() -> void:
+	var absolute_root := ProjectSettings.globalize_path(disk_test_root)
+	if absolute_root.is_empty() or not DirAccess.dir_exists_absolute(absolute_root):
+		return
+	_remove_disk_tree(absolute_root)
+
+
+func _remove_disk_tree(absolute_path: String) -> void:
+	var directory := DirAccess.open(absolute_path)
+	if directory == null:
+		return
+	directory.list_dir_begin()
+	var child_name := directory.get_next()
+	while not child_name.is_empty():
+		var child_path := absolute_path.path_join(child_name)
+		if directory.current_is_dir():
+			_remove_disk_tree(child_path)
+		else:
+			DirAccess.remove_absolute(child_path)
+		child_name = directory.get_next()
+	directory.list_dir_end()
+	DirAccess.remove_absolute(absolute_path)
 
 
 func _expect(condition: bool, description: String) -> void:
