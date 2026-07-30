@@ -41,6 +41,9 @@ const LEGACY_SPECIAL_WORLD_OBJECT_SCRIPT: Script = preload("res://scripts/legacy
 const LEGACY_EXPLOSION_VISUAL_RULES: Script = preload(
 	"res://scripts/legacy_explosion_visual_rules.gd"
 )
+const LEGACY_EXPLOSION_EFFECT_SCRIPT: Script = preload(
+	"res://scripts/legacy_explosion_effect.gd"
+)
 const LEGACY_AI_CONTROL_EFFECT_SCRIPT: Script = preload("res://scripts/legacy_ai_control_effect.gd")
 const LEGACY_OBSERVATION_BEACON_SCRIPT: Script = preload("res://scripts/legacy_observation_beacon.gd")
 const LEGACY_BURIAL_CACHE_SCRIPT: Script = preload("res://scripts/legacy_burial_cache.gd")
@@ -280,6 +283,7 @@ var field_pickups: Array[Node2D] = []
 var explosive_props: Array[Node2D] = []
 var deployed_mines: Array[Node2D] = []
 var legacy_special_world_objects: Array[Node2D] = []
+var legacy_explosion_effects: Array[Node2D] = []
 var legacy_ai_control_effects: Array[Node] = []
 var legacy_deployment_targets: Array[Node2D] = []
 var legacy_burial_caches: Array[Node2D] = []
@@ -454,6 +458,10 @@ func load_imported_level(level_id: String = LEVEL_VIEW.DEFAULT_LEVEL_ID) -> bool
 		if is_instance_valid(world_object):
 			world_object.queue_free()
 	legacy_special_world_objects.clear()
+	for explosion_effect: Node2D in legacy_explosion_effects:
+		if is_instance_valid(explosion_effect):
+			explosion_effect.queue_free()
+	legacy_explosion_effects.clear()
 	for effect: Node in legacy_ai_control_effects:
 		if is_instance_valid(effect):
 			effect.queue_free()
@@ -817,8 +825,16 @@ func spawn_squad() -> void:
 	projectile_world = PROJECTILE_WORLD_SCRIPT.new()
 	projectile_world.name = "ProjectileWorld"
 	add_child(projectile_world)
+	projectile_world.configure_runtime(
+		navigation_grid,
+		dynamic_occupancy,
+		_load_legacy_projectile_visual_catalog(),
+	)
 	projectile_world.projectile_damage_applied.connect(_on_projectile_damage_applied)
 	projectile_world.projectile_exploded.connect(_on_projectile_exploded)
+	projectile_world.projectile_explosion_actor_requested.connect(
+		_on_projectile_explosion_actor_requested
+	)
 	for unit: SQUAD_UNIT in units:
 		unit.queue_free()
 	for enemy: ENEMY_UNIT in enemies:
@@ -2522,6 +2538,95 @@ func _load_legacy_explosion_visual_catalog() -> Dictionary:
 	return result
 
 
+func _load_legacy_projectile_visual(gfl_index: int) -> Dictionary:
+	if converted_root.is_empty() or gfl_index <= 0:
+		return {}
+	var cache_key := "legacy-projectile-visual:%04d" % gfl_index
+	if imported_animation_cache.has(cache_key):
+		return (imported_animation_cache[cache_key] as Dictionary).duplicate()
+	var stem := "%04d" % gfl_index
+	var manifest_relative := "sprite-frames/%s/sprite.json" % stem
+	var manifest_path := _contained_converted_path(
+		converted_root,
+		manifest_relative,
+	)
+	if manifest_path.is_empty() or not FileAccess.file_exists(manifest_path):
+		return _load_legacy_special_visual(gfl_index)
+	var file := FileAccess.open(manifest_path, FileAccess.READ)
+	if file == null:
+		return {}
+	var json := JSON.new()
+	if json.parse(file.get_as_text()) != OK or not json.data is Dictionary:
+		return {}
+	var manifest := json.data as Dictionary
+	var raw_groups: Variant = manifest.get("groups", [])
+	if not raw_groups is Array:
+		return {}
+	var loaded_groups: Array[Dictionary] = []
+	for raw_group: Variant in raw_groups as Array:
+		if not raw_group is Dictionary:
+			continue
+		var group := raw_group as Dictionary
+		var frames: Array[Texture2D] = (
+			IMPORTED_SPRITE_ANIMATION.load_group_atlas(
+				group,
+				manifest_path.get_base_dir(),
+			)
+		)
+		if frames.is_empty():
+			var raw_frames: Variant = group.get("frames", [])
+			if raw_frames is Array:
+				frames = IMPORTED_SPRITE_ANIMATION.load_individual_frames(
+					raw_frames as Array,
+					manifest_path.get_base_dir(),
+				)
+		if frames.is_empty():
+			continue
+		var primary := group.get("primary_triplet", []) as Array
+		var anchor := frames[0].get_size() * 0.5
+		if primary.size() == 3:
+			anchor = Vector2(float(primary[0]), float(primary[2]))
+		loaded_groups.append({
+			"group_index": int(group.get("group_index", loaded_groups.size())),
+			"direction_index": int(group.get("direction_index", 0)),
+			"direction_key": String(group.get("direction_key", "none")),
+			"frames": frames,
+			"frame_hold_ticks": maxi(
+				int(group.get("frame_hold_ticks", 1)),
+				1,
+			),
+			"anchor": anchor,
+		})
+	if loaded_groups.is_empty():
+		return _load_legacy_special_visual(gfl_index)
+	loaded_groups.sort_custom(
+		func(first: Dictionary, second: Dictionary) -> bool:
+			return int(first["group_index"]) < int(second["group_index"])
+	)
+	var header_values := manifest.get("header_values", []) as Array
+	var visual := {
+		"groups": loaded_groups,
+		"frames": loaded_groups[0].get("frames", []),
+		"frame_hold_ticks": int(loaded_groups[0].get("frame_hold_ticks", 1)),
+		"anchor": loaded_groups[0].get("anchor", Vector2.ZERO),
+		"gfl_index": gfl_index,
+		"runtime_actor_type": (
+			int(header_values[2]) if header_values.size() >= 3 else 0
+		),
+	}
+	imported_animation_cache[cache_key] = visual
+	return visual.duplicate()
+
+
+func _load_legacy_projectile_visual_catalog() -> Dictionary:
+	var result := _load_legacy_explosion_visual_catalog()
+	for gfl_index: int in [19, 251, 528, 635]:
+		var visual := _load_legacy_projectile_visual(gfl_index)
+		if not visual.is_empty():
+			result[gfl_index] = visual
+	return result
+
+
 func _on_projectile_damage_applied(
 	attacker: Node2D,
 	target: Node2D,
@@ -2529,6 +2634,86 @@ func _on_projectile_damage_applied(
 	damage: int,
 ) -> void:
 	_on_attack_hit(attacker, target, attack_type, damage)
+
+
+func _on_projectile_explosion_actor_requested(
+	_attacker: Node2D,
+	world_position: Vector2,
+	runtime_actor_type: int,
+	special_bursts: Array[Dictionary],
+) -> void:
+	_spawn_legacy_explosion_effect(
+		world_position,
+		runtime_actor_type,
+		special_bursts,
+		legacy_crt_random_state,
+		true,
+	)
+
+
+func _spawn_legacy_explosion_effect(
+	world_position: Vector2,
+	runtime_actor_type: int,
+	special_bursts: Array[Dictionary] = [],
+	initial_random_state: int = 1,
+	update_global_random_state: bool = true,
+) -> Node2D:
+	var effect: Node2D = LEGACY_EXPLOSION_EFFECT_SCRIPT.new()
+	effect.name = "LegacyExplosionActor%d" % runtime_actor_type
+	add_child(effect)
+	var next_random_state := int(effect.call(
+		"configure",
+		world_position,
+		runtime_actor_type,
+		_load_legacy_projectile_visual_catalog(),
+		world_size,
+		initial_random_state,
+		special_bursts,
+	))
+	if not bool(effect.get("configured")):
+		effect.queue_free()
+		return null
+	if update_global_random_state:
+		legacy_crt_random_state = next_random_state
+	legacy_explosion_effects.append(effect)
+	effect.tree_exited.connect(
+		Callable(self, "_on_legacy_explosion_effect_exited").bind(effect)
+	)
+	return effect
+
+
+func _spawn_legacy_explosion_effect_from_snapshot(
+	snapshot_value: Dictionary,
+) -> Node2D:
+	var runtime_actor_type := int(
+		snapshot_value.get("runtime_actor_type", 0)
+	)
+	var effect := _spawn_legacy_explosion_effect(
+		Vector2(
+			float(snapshot_value.get("x", 0.0)),
+			float(snapshot_value.get("y", 0.0)),
+		),
+		runtime_actor_type,
+		[],
+		int(snapshot_value.get("random_state", 1)),
+		false,
+	)
+	if (
+		effect == null
+		or not effect.has_method("restore_runtime_state")
+		or not bool(effect.call(
+			"restore_runtime_state",
+			snapshot_value,
+		))
+	):
+		if effect != null and is_instance_valid(effect):
+			effect.queue_free()
+		return null
+	return effect
+
+
+func _on_legacy_explosion_effect_exited(effect: Node2D) -> void:
+	legacy_explosion_effects.erase(effect)
 
 
 func _on_world_explosion_requested(

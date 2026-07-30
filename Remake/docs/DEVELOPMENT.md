@@ -108,13 +108,15 @@ Godot 端的责任分工为：
   精确动态角色的开局背包；物品效果证据见
   [原版角色物品背包恢复](ORIGINAL_ITEM_INVENTORY.md)；
 - `original_runtime_actor_catalog.gd`：读取 762 个运行时角色身份及阵营覆盖；
-- `projectile_world.gd` / `combat_projectile.gd`：type 6/7/9 世界飞行、段碰撞、落地和椭圆爆炸；
+- `legacy_projectile_rules.gd` / `projectile_world.gd` / `combat_projectile.gd`：
+  type 6/7/9 的原版整数 Bresenham 路径、逐 world-tick 步长、SPR
+  primary/tertiary 发射锚点、L3→L2 碰撞顺序、手榴弹抛物线及终点 actor 61；
 - `legacy_special_world_object.gd` / `legacy_explosion_visual_rules.gd` / `legacy_ai_control_effect.gd`：type 8/10 世界对象、actor 62 原粒子计划与 type 11 状态的建立、推进、释放和快照；
 - `world_depth.gd`：地面、正常深度、固定前景和顶层四渲染队列；
 - `imported_level_data.gd`：读取并校验 `database_header_values`，不能再次在导入链中丢弃 DBL `header[0]`；
 - `world_pickup_catalog.gd`、`field_pickup.gd`、`land_mine.gd`、`explosive_prop.gd`：真实场景拾取、地雷和油桶。
 
-`combat_profiles.json` 当前的普通敌人/军犬感知、11 类攻击距离、普通伤害、连发次数、弹药物品 ID、每次消耗和末帧提交语义来自 `M1937.exe` 字段级逆向，不能随意当作手感参数改写。每个新战斗字段都必须标记 `recovered`、`recovered_with_unresolved_override` 或 `unresolved_remake_default`。原版已确认不存在弹匣/备弹/装填抽象；正式关卡必须使用 `original_initial_weapon_inventory.json` 的直接数量和模式，profile 中旧字段只供 schema 1 迁移及合成测试兼容。十类场景拾取的 DBL `header[2]` 物品 ID、`sub_45AE10` 容器/mode 和 `sub_453F70` 单件数量已经恢复；仍为重制默认的是交互半径、投射物速度/弧高/碰撞半径及手榴弹、地雷、油桶的爆炸参数。听觉遮挡、尸体发现和更高层走廊会车尚未完成。
+`combat_profiles.json` 当前的普通敌人/军犬感知、11 类攻击距离、普通伤害、连发次数、弹药物品 ID、每次消耗和末帧提交语义来自 `M1937.exe` 字段级逆向，不能随意当作手感参数改写。每个新战斗字段都必须标记 `recovered`、`recovered_with_unresolved_override` 或 `unresolved_remake_default`。原版已确认不存在弹匣/备弹/装填抽象；正式关卡必须使用 `original_initial_weapon_inventory.json` 的直接数量和模式，profile 中旧字段只供 schema 1 迁移及合成测试兼容。十类场景拾取的 DBL `header[2]` 物品 ID、`sub_45AE10` 容器/mode 和 `sub_453F70` 单件数量已经恢复；type 6/7/9 的 delivery mode、逐 tick 步长、actor/GFL、碰撞顺序、伤害、手榴弹抛物线/终点爆炸和 SPR 发射锚点也已恢复，不再使用速度、弧高、碰撞半径或落地延时等重制参数。仍为重制默认的是拾取交互半径和汽油桶数值；爆炸对地形/遮挡的原规则、更高层走廊会车仍待恢复。普通警戒听觉已确认不做障碍遮挡，尸体发现也已进入原版生命周期。
 
 type 8/10/11 已由专用运行时接管：type 8 创建 actor 84 / GFL 470、消费物品 43，并由存活 faction 1 进入 32×16 椭圆触发；type 10 创建 actor 85 / GFL 900、消费物品 45，在第 100 个 world tick 爆炸；二者随后创建 actor 62，主爆炸在 128×64 等距椭圆内造成 128 伤害并传播 800 半径警报，另按运行时 actor type 执行两组已恢复的 128 伤害带。效果 11/15 会按默认状态 1 的 MSVCRT LCG 尝试 1—2 个 64×32 散布粒子，首匹配 GFL 动画完整播放 5 轮并在 90/150 tick 清理；全局随机状态进入 `GameSessionState`。type 11 不直接结算伤害、不消费物品 99；它设置目标 `+656/+0x290` 为注意力保持，暂停普通空闲移动并面向专用来源，来源开始移动或目标进入战斗状态时释放，不存在 180 tick 超时。活跃对象与状态均进入 `GameSessionState`。其他尚未恢复的 `rand()` 调用点仍可能移动特定实机时刻的随机变体。详见 [原版行为取证摘要](ORIGINAL_BEHAVIOR_FORENSICS.md)。
 

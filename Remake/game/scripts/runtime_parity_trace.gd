@@ -8,6 +8,7 @@ const SCHEMA_VERSION := 1
 const CONTENT_PROFILE := "repository-mod-12-level-20260729"
 
 var document: Dictionary = {}
+var _property_names_by_instance: Dictionary = {}
 
 
 func configure(
@@ -289,9 +290,16 @@ func _read_property(source: Variant, field: String, default_value: Variant) -> V
 		return (source as Dictionary).get(field, default_value)
 	if not source is Object:
 		return default_value
-	for property: Dictionary in (source as Object).get_property_list():
-		if str(property.get("name", "")) == field:
-			return (source as Object).get(field)
+	var source_object := source as Object
+	var instance_id := source_object.get_instance_id()
+	if not _property_names_by_instance.has(instance_id):
+		var property_names: Dictionary = {}
+		for property: Dictionary in source_object.get_property_list():
+			property_names[str(property.get("name", ""))] = true
+		_property_names_by_instance[instance_id] = property_names
+	var cached_names := _property_names_by_instance[instance_id] as Dictionary
+	if cached_names.has(field):
+		return source_object.get(field)
 	return default_value
 
 

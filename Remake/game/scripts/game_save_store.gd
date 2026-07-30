@@ -48,6 +48,7 @@ static func empty_session(level_id: String = "m000") -> Dictionary:
 			"field_inventory": {},
 			"deployed_mines": [],
 			"legacy_special_world_objects": [],
+			"legacy_explosion_effects": [],
 			"legacy_ai_control_effects": [],
 			"legacy_burial_caches": [],
 			"pending_burial_command": {},
@@ -310,6 +311,7 @@ func _is_valid_session(session: Dictionary) -> bool:
 	for optional_key: String in [
 		"buried_enemy_scene_indices",
 		"legacy_special_world_objects",
+		"legacy_explosion_effects",
 		"legacy_ai_control_effects",
 		"legacy_burial_caches",
 	]:

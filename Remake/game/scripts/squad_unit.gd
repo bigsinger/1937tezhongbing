@@ -1098,6 +1098,59 @@ func apply_idle_frame() -> void:
 	sprite_anchor = group["anchor"] as Vector2
 
 
+func legacy_projectile_launch_offset() -> Vector2:
+	var triplets := _active_legacy_sprite_triplets()
+	if triplets.is_empty():
+		return Vector2.ZERO
+	var primary := triplets["primary"] as Array
+	var tertiary := triplets["tertiary"] as Array
+	# M1937.exe sub_463290 starts the Bresenham path at:
+	# world_x + actor(+0x50) - actor(+0x44), world_y.
+	return Vector2(float(int(tertiary[0]) - int(primary[0])), 0.0)
+
+
+func legacy_projectile_vertical_baseline() -> float:
+	var triplets := _active_legacy_sprite_triplets()
+	if triplets.is_empty():
+		return 0.0
+	var primary := triplets["primary"] as Array
+	var tertiary := triplets["tertiary"] as Array
+	# sub_463290 stores (+0x58)-(+0x4c), then subtracts that value
+	# from the projectile actor's visual Z. Godot draws positive height
+	# upward, hence the equivalent primary_z-tertiary_z result.
+	return float(int(primary[2]) - int(tertiary[2]))
+
+
+func _active_legacy_sprite_triplets() -> Dictionary:
+	var groups: Array[Dictionary] = []
+	if combat_action == CombatAction.ATTACK and attack_groups.size() >= 8:
+		groups = attack_groups
+	elif combat_action == CombatAction.DEATH and death_groups.size() >= 8:
+		groups = death_groups
+	elif was_moving and movement_groups.size() >= 8:
+		groups = movement_groups
+	elif idle_groups.size() >= 8:
+		groups = idle_groups
+	elif movement_groups.size() >= 8:
+		groups = movement_groups
+	if groups.size() < 8:
+		return {}
+	var group := groups[clampi(animation_group_index, 0, 7)]
+	var primary_value: Variant = group.get("primary_triplet", [])
+	var tertiary_value: Variant = group.get("tertiary_triplet", [])
+	if (
+		not primary_value is Array
+		or (primary_value as Array).size() != 3
+		or not tertiary_value is Array
+		or (tertiary_value as Array).size() != 3
+	):
+		return {}
+	return {
+		"primary": (primary_value as Array),
+		"tertiary": (tertiary_value as Array),
+	}
+
+
 func _draw() -> void:
 	draw_flat_ellipse(Vector2(0.0, 8.0), Vector2(20.0, 10.0), Color(0.0, 0.0, 0.0, 0.35))
 	if sprite_texture != null:

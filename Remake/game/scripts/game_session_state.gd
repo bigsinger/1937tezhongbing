@@ -249,6 +249,7 @@ static func _capture_world(game: Node) -> Dictionary:
 		"field_inventory": _json_dictionary(game.get("field_inventory")),
 		"deployed_mines": [],
 		"legacy_special_world_objects": [],
+		"legacy_explosion_effects": [],
 		"legacy_ai_control_effects": [],
 		"legacy_burial_caches": [],
 		"legacy_doors": [],
@@ -316,12 +317,45 @@ static func _capture_world(game: Node) -> Dictionary:
 		if (
 			world_object_value is Node
 			and is_instance_valid(world_object_value)
-			and (world_object_value as Node).has_method("is_active")
-			and bool((world_object_value as Node).call("is_active"))
+			and (
+				(
+					(world_object_value as Node).has_method(
+						"is_persistable"
+					)
+					and bool((world_object_value as Node).call(
+						"is_persistable"
+					))
+				)
+				or (
+					not (world_object_value as Node).has_method(
+						"is_persistable"
+					)
+					and (world_object_value as Node).has_method(
+						"is_active"
+					)
+					and bool((world_object_value as Node).call(
+						"is_active"
+					))
+				)
+			)
 			and (world_object_value as Node).has_method("snapshot")
 		):
 			(world["legacy_special_world_objects"] as Array).append(
 				_json_value((world_object_value as Node).call("snapshot"))
+			)
+	for explosion_value: Variant in _array_property(
+		game,
+		"legacy_explosion_effects",
+	):
+		if (
+			explosion_value is Node
+			and is_instance_valid(explosion_value)
+			and (explosion_value as Node).has_method("is_persistable")
+			and bool((explosion_value as Node).call("is_persistable"))
+			and (explosion_value as Node).has_method("snapshot")
+		):
+			(world["legacy_explosion_effects"] as Array).append(
+				_json_value((explosion_value as Node).call("snapshot"))
 			)
 	for effect_value: Variant in _array_property(game, "legacy_ai_control_effects"):
 		if (
@@ -431,6 +465,11 @@ static func _capture_projectile(projectile: Node2D) -> Dictionary:
 		"flight_elapsed": float(projectile.get("flight_elapsed")),
 		"landed_elapsed": float(projectile.get("landed_elapsed")),
 		"state": int(projectile.get("state")),
+		"runtime_state": _json_dictionary(
+			projectile.call("snapshot_runtime_state")
+			if projectile.has_method("snapshot_runtime_state")
+			else {}
+		),
 		"weapon_profile": _json_dictionary(projectile.get("weapon_profile")),
 	}
 
@@ -856,6 +895,11 @@ static func _restore_world(game: Node, world: Dictionary, warnings: Array[String
 		world.get("legacy_special_world_objects", []) as Array,
 		warnings,
 	)
+	_restore_legacy_explosion_effects(
+		game,
+		world.get("legacy_explosion_effects", []) as Array,
+		warnings,
+	)
 	_restore_legacy_ai_control_effects(
 		game,
 		world.get("legacy_ai_control_effects", []) as Array,
@@ -1104,6 +1148,35 @@ static func _restore_legacy_ai_control_effects(
 			warnings.append("a legacy AI control effect could not be restored")
 
 
+static func _restore_legacy_explosion_effects(
+	game: Node,
+	records: Array,
+	warnings: Array[String],
+) -> void:
+	var effect_array := _array_property(game, "legacy_explosion_effects")
+	for effect_value: Variant in effect_array.duplicate():
+		if effect_value is Node and is_instance_valid(effect_value):
+			(effect_value as Node).queue_free()
+	effect_array.clear()
+	if not game.has_method("_spawn_legacy_explosion_effect_from_snapshot"):
+		if not records.is_empty():
+			warnings.append(
+				"legacy explosion effects are unsupported by this runtime"
+			)
+		return
+	for record_value: Variant in records:
+		if not record_value is Dictionary:
+			continue
+		var restored: Variant = game.call(
+			"_spawn_legacy_explosion_effect_from_snapshot",
+			record_value as Dictionary,
+		)
+		if not restored is Node2D:
+			warnings.append(
+				"a legacy explosion effect could not be restored"
+			)
+
+
 static func _restore_legacy_burial_caches(
 	game: Node,
 	records: Array,
@@ -1220,18 +1293,63 @@ static func _restore_projectiles(game: Node, records: Array, warnings: Array[Str
 			warnings.append("an in-flight projectile lost its source")
 			continue
 		var destination := Vector2(float(record.get("destination_x", 0.0)), float(record.get("destination_y", 0.0)))
-		var projectile: Variant = projectile_world.call("launch_for_weapon", source, target, record.get("weapon_profile", {}) as Dictionary, destination)
+		var saved_start := Vector2(
+			float(record.get("start_x", source.position.x)),
+			float(record.get("start_y", source.position.y)),
+		)
+		var projectile: Variant = projectile_world.call(
+			"launch_for_weapon",
+			source,
+			target,
+			record.get("weapon_profile", {}) as Dictionary,
+			destination,
+			saved_start,
+		)
 		if not projectile is Node2D:
 			warnings.append("an in-flight projectile could not be restored")
 			continue
 		var projectile_node := projectile as Node2D
-		projectile_node.set("start_world_position", Vector2(float(record.get("start_x", source.position.x)), float(record.get("start_y", source.position.y))))
-		projectile_node.set("flight_duration", maxf(float(record.get("flight_duration", 0.05)), 0.05))
-		projectile_node.set("flight_elapsed", maxf(float(record.get("flight_elapsed", 0.0)), 0.0))
-		projectile_node.set("landed_elapsed", maxf(float(record.get("landed_elapsed", 0.0)), 0.0))
-		projectile_node.set("state", int(record.get("state", 0)))
-		var progress: float = clampf(float(projectile_node.get("flight_elapsed")) / float(projectile_node.get("flight_duration")), 0.0, 1.0)
-		projectile_node.global_position = (projectile_node.get("start_world_position") as Vector2).lerp(destination, progress)
+		var runtime_value: Variant = record.get("runtime_state", {})
+		if (
+			runtime_value is Dictionary
+			and projectile_node.has_method("restore_runtime_state")
+			and bool(projectile_node.call(
+				"restore_runtime_state",
+				runtime_value as Dictionary,
+			))
+		):
+			continue
+		# Schema-1 migration: preserve approximate travelled distance, then use
+		# the recovered discrete path from the next world tick onward.
+		var old_duration := maxf(
+			float(record.get("flight_duration", 0.05)),
+			0.05,
+		)
+		var old_elapsed := maxf(
+			float(record.get("flight_elapsed", 0.0)),
+			0.0,
+		)
+		var old_progress := clampf(old_elapsed / old_duration, 0.0, 1.0)
+		var path_points := projectile_node.get("path_points") as PackedVector2Array
+		var migrated_path_index := (
+			roundi(old_progress * float(path_points.size() - 1))
+			if not path_points.is_empty()
+			else 0
+		)
+		var step := maxi(int(projectile_node.get("world_step_pixels")), 1)
+		projectile_node.call(
+			"restore_runtime_state",
+			{
+				"schema_version": 2,
+				"path_index": migrated_path_index,
+				"arc_tick": migrated_path_index / step,
+				"physics_tick_accumulator": 0.0,
+				"flight_elapsed": old_elapsed,
+				"state": 0,
+				"visual_frame_index": 0,
+				"visual_frame_elapsed_ticks": 0,
+			},
+		)
 
 
 static func _sync_projectile_combatants(game: Node) -> void:

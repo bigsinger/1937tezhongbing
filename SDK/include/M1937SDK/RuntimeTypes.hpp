@@ -13,7 +13,19 @@ struct RuntimeActorV1 final {
     std::byte unknown_000[60];
     // sub_4527E0(1) sets this when burial replaces the source corpse.
     std::int32_t hidden_or_removed;        // +0x03C
-    std::byte unknown_040[36];
+    // Runtime world-array index used by the L3 grid (stored as index+1000).
+    std::int32_t world_scene_index;        // +0x040
+    // IEngineSprite::SetCurrentSerial (sub_41C060/sub_41C190) copies the
+    // current SPR group's primary triplet to +0x44 and tertiary triplet to
+    // +0x50. sub_463290 uses tertiary_x-primary_x for projectile path X and
+    // tertiary_z-primary_z for the engine sprite-Z correction.
+    std::int32_t sprite_primary_x;          // +0x044
+    std::int32_t sprite_primary_middle;     // +0x048
+    std::int32_t sprite_primary_z;          // +0x04C
+    std::int32_t sprite_tertiary_x;         // +0x050
+    std::int32_t sprite_tertiary_middle;    // +0x054
+    std::int32_t sprite_tertiary_z;         // +0x058
+    std::byte unknown_05c[8];
     // Matches VWF database_header_values[2]. This is a runtime actor type,
     // not the authored DBL database_entry_id.
     std::int32_t runtime_type;            // +0x064
@@ -143,6 +155,13 @@ struct RuntimeViewportControllerV1 final {
 #pragma pack(pop)
 
 static_assert(offsetof(RuntimeActorV1, runtime_type) == 0x064);
+static_assert(offsetof(RuntimeActorV1, world_scene_index) == 0x040);
+static_assert(offsetof(RuntimeActorV1, sprite_primary_x) == 0x044);
+static_assert(offsetof(RuntimeActorV1, sprite_primary_middle) == 0x048);
+static_assert(offsetof(RuntimeActorV1, sprite_primary_z) == 0x04C);
+static_assert(offsetof(RuntimeActorV1, sprite_tertiary_x) == 0x050);
+static_assert(offsetof(RuntimeActorV1, sprite_tertiary_middle) == 0x054);
+static_assert(offsetof(RuntimeActorV1, sprite_tertiary_z) == 0x058);
 static_assert(offsetof(RuntimeActorV1, hidden_or_removed) == 0x03C);
 static_assert(offsetof(RuntimeActorV1, world_object_state) == 0x070);
 static_assert(offsetof(RuntimeActorV1, faction_id) == 0x074);

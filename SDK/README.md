@@ -23,6 +23,9 @@ PE 指纹和原始指令字节。
   `(640*cos(a), 320*sin(a))`、type 91 排除、只传播坐标而不传播目标
   指针，以及五次 `±31×±15` 局部搜索、40—79/40—199 计数区间和
   16 像素世界边界；
+- `Projectiles.hpp` 固定 type 6/7/9 的 effect/mode、16/5/8 步长、
+  actor/GFL、直接伤害、L3→L2 碰撞顺序、0x44 运行时投射物布局、
+  Bresenham/抛物线公式和 SPR primary/tertiary 发射锚点；
 - `address-catalog.json` 是地址的唯一机器源；生成器同时产出 C++ 头文件
   和 C# 探针常量；
 - `mission-routes.json` 统一描述 1—12 关的选择器编号、原引擎任务和
@@ -136,6 +139,14 @@ DBL 1003/物品 53 仍明确归入可受伤汽油桶生命周期，不会误作�
 固定；runtime type 102 无匹配 SPR，必须保留“消费随机数但不生成粒子”的
 语义。相关函数入口和 `SpecialAttentionSource` 全局量均由
 `address-catalog.json` 生成到 C++/C# 常量，补丁和 Remake 不再各自复制魔数。
+
+`Projectiles.hpp` 固化 type 6 飞镖、type 7 弹弓和 type 9 手榴弹：
+0x44 字节投射对象、12 字节路径点、含首尾点 Bresenham、逐 world-tick
+步长、原抛物线、actor/GFL 和终点 actor 61。`RuntimeActorV1` 的
+`+0x44..+0x58` 现在按 current SPR serial 的 primary/tertiary triplet
+命名；公共 helper 直接计算 `tertiary.x-primary.x` 发射偏移和
+`primary.z-tertiary.z` 视觉高度。相关七个投射管理函数 RVA 同样来自
+`address-catalog.json`，可供补丁探针与 Remake 使用同一证据源。
 
 `Commands.hpp` 固化 S/B 命令：S 只直接选择存活 faction 1 敌军，空地使用
 唯一 actor 90 / GFL 341 并按当前扇区、LOS 和 CRT `rand()%2` 检测后消费；

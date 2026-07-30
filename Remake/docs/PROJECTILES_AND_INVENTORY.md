@@ -6,15 +6,30 @@
 
 攻击动作仍在最后一帧复核目标、射程和视线。类型 1—5 保持即时命中；类型 6、7、9 在最后攻击帧发出 `projectile_requested`，由 `ProjectileWorld` 生成世界对象，飞行或爆炸后才结算伤害。
 
-| 攻击 | 类型 | 当前路径 | 已确认与未确认边界 |
-|---|---:|---|---|
-| 飞镖 | 6 | 直线飞行，沿线命中首个敌对目标或可爆物 | 世界对象路径已恢复；速度 640、碰撞半径 10 为重制默认 |
-| 弹弓 | 7 | 世界坐标飞行并显示弧线 | 世界对象路径已恢复；速度 520、弧高 28、碰撞半径 12 为重制默认 |
-| 手榴弹 | 9 | 抛物线飞行、落地延时、椭圆爆炸 | 世界对象路径已恢复；速度 480、弧高 64、0.35 秒延时、`128 × 64` 爆炸椭圆和敌我伤害均为重制默认 |
+| 攻击 | 类型 | 原版投射生命周期 |
+|---|---:|---|
+| 飞镖 | 6 | effect 13 创建 actor 80 / 首匹配 GFL 251；沿含首尾点的整数 Bresenham 路径每个 world tick 前进 16 像素，先命中 L3 当前格的第一个有效 actor，再检查 L2 障碍，直接伤害 8 |
+| 弹弓 | 7 | effect 14 创建 actor 81 / 首匹配 GFL 635；同一整数路径每 tick 前进 5 像素，碰撞顺序与飞镖一致，直接伤害 1；原版这里是直线模式 4，不是人为添加的弧线 |
+| 手榴弹 | 9 | effect 2 创建 actor 57 / 首匹配 GFL 528；每 tick 前进 8 像素，以 `8t - trunc((8 / floor(path_count / 8)) × t²)` 修正视觉高度；飞行中忽略 L3 actor 和 L2 障碍，到终点后的下一次更新立即创建 actor 61 / 首匹配 GFL 19，不存在 0.35 秒落地延时 |
 
-飞镖和弹弓不会被同阵营角色拦下；手榴弹当前按 `friendly_fire = true` 伤害爆炸椭圆内的敌人、友军、投掷者和可破坏物。投射物命中、爆炸警报、战斗状态文字和原版音效事件都已回到主战斗事件链。
+三类投射物的起点也不再使用角色节点中心。`IEngineSprite::SetCurrentSerial`
+会把当前攻击方向 SPR 组的 primary triplet 写入 actor `+0x44..+0x4c`，
+tertiary triplet 写入 `+0x50..+0x58`；原版路径起始 X 为
+`world_x + tertiary.x - primary.x`，直线投射物的等价视觉高度为
+`primary.z - tertiary.z`。转换器、通用动作加载器和角色运行时现在共同保留
+并使用这两组值，因此武器从当前动作精灵的原锚点发出。
 
-伤害值仍由 `game/data/combat_profiles.json` 提供：飞镖 8、弹弓 1；手榴弹 16 仍明确属于重制版默认值。攻击类型 8/10 已有持久世界对象，二者创建的 actor 62 主爆炸伤害、几何、特殊对象伤害带、警报范围及效果粒子生命周期均已恢复；type 11 也已按原程序注意力保持及释放条件实现，不再使用臆造的定时 AI 抑制。
+飞镖和弹弓会被路径上第一个有效 actor 拦下，原程序没有先做阵营过滤，所以
+友军同样可以挡弹。actor 61 在 `128 × 64` 等距椭圆内造成 128 点伤害，
+包括敌人、友军和投掷者；并发布 800 半径警报。其 GFL 19 主动画为 10 帧、
+每帧 3 tick。投射物命中、爆炸警报、战斗状态文字和原版音效事件均接入主
+战斗事件链；未结算路径索引、弧线 tick、SPR 高度和视觉帧会进入存档。
+
+以上 delivery mode、步长、actor/GFL、直接伤害、碰撞顺序、抛物线公式、
+actor 61 爆炸伤害/几何/警报和 SPR 发射锚点都来自原程序恢复结果，不再是
+速度、碰撞半径、弧高或延时等重制默认。攻击类型 8/10 另有持久世界对象，
+二者创建的 actor 62 主爆炸伤害、几何、特殊对象伤害带、警报范围及效果
+粒子生命周期也已恢复；type 11 已按原程序注意力保持及释放条件实现。
 
 ## 2. 武器容器、角色物品背包与切换
 
@@ -130,7 +145,9 @@ type 8/10 世界对象和汽油桶走统一的世界爆炸结算，可伤害单�
 | 文件 | 职责 |
 |---|---|
 | `game/data/projectile_profiles.json` | 6/7/9 三类投射物配置及逐字段证据状态 |
-| `game/scripts/combat_projectile.gd` | 飞行、弧线、段碰撞、落地延时和椭圆伤害 |
+| `game/scripts/legacy_projectile_rules.gd` | 原版含首尾点 Bresenham、步进 tick、格坐标与抛物线公式 |
+| `game/scripts/legacy_explosion_rules.gd` | actor 61/62 的共同爆炸伤害、范围、警报和视觉身份 |
+| `game/scripts/combat_projectile.gd` | 原版离散路径、L3→L2 碰撞、终点 actor 61、动画和版本化快照 |
 | `game/scripts/projectile_world.gd` | 投射物生成、战斗候选与命中/爆炸信号 |
 | `game/scripts/combat_inventory.gd` | 原版数量模式、多武器切换、旧档迁移和快照 |
 | `game/data/original_initial_weapon_inventory.json` | 十二关 27 名角色的 83 个取证开局条目 |
@@ -140,6 +157,7 @@ type 8/10 世界对象和汽油桶走统一的世界爆炸结算，可伤害单�
 | `tools/ResourceFormats/OriginalWorldPickupEvidence.cs` | 从 DBL 恢复并严格分类十类原版世界拾取物 |
 | `validation/baselines/mod/world-pickups-v1.json` | MOD 数据库哈希、item ID、容器和 mode 的可复现基线 |
 | `../SDK/include/M1937SDK/Inventory.hpp` | MOD/工具可共用的原版物品容器路由与拾取物常量 |
+| `../SDK/include/M1937SDK/Projectiles.hpp` | 0x44 投射物布局、三类规则、路径/弧线/SPR 锚点公式及 RVA 配套接口 |
 | `game/scripts/field_pickup.gd` | 一次性场景拾取物 |
 | `game/scripts/legacy_special_world_object.gd` | type 8/10 部署、触发/计时、爆炸、清理和快照 |
 | `game/scripts/legacy_ai_control_effect.gd` | type 11 应用、刷新、解除和快照 |
@@ -148,15 +166,29 @@ type 8/10 世界对象和汽油桶走统一的世界爆炸结算，可伤害单�
 | `game/scripts/explosive_prop.gd` | 可受伤汽油桶和爆炸请求 |
 | `game/scripts/main.gd` | 输入、原 scene 生成、背包 UI、任务与警报接线 |
 
-仍待恢复或校准的真实内容包括：全部投射物飞行和爆炸参数、actor 62 与
-其他系统共享的完整全局随机调用顺序、汽油桶数值及动画，以及爆炸对地形/
-遮挡的原规则。原版物品容器 `actor+552`、武器容器 `actor+556` 的布局、
+仍待恢复或校准的相邻内容包括：actor 61/62 与其他系统共享的完整全局随机
+调用顺序、汽油桶数值及动画，以及爆炸对地形/遮挡的原规则。三类投射物自身
+的路径、步长、碰撞、伤害、终点爆炸和 SPR 发射锚点已经恢复。原版物品容器
+`actor+552`、武器容器 `actor+556` 的布局、
 数量模式和十二关开局内容已经恢复，不再把不存在的弹匣/装填时间或已确认的
 医药箱/西瓜/中药直接效果列为待校准项。
 
 ## 6. 验证
 
-`projectile_inventory_test.gd` 覆盖三类投射物、11 个物品 ID、兼容背包切换/快照、最后攻击帧发射、飞行碰撞、弧线、手榴弹敌我伤害和 `ProjectileWorld` 分流。`original_inventory_test.gd` 覆盖武器 mode 0/1/2、空枪保留、无换弹和 schema 1→2 迁移；`backpack_inventory_test.gd` 与 `original_item_runtime_test.gd` 覆盖独立物品容器、真实治疗/补给、A 页、丢弃、敌人拾取和死亡掉落；`real_original_inventory_test.gd` 在真实十二关逐一核对 27 名玩家/83 个武器条目以及 650 个角色/538 个物品条目。`world_interactables_test.gd` 覆盖原关卡拾取、type 8 基础世界交互、汽油桶受伤与连锁爆炸，以及七关爆破策略的 schema、真实 DBL 998 计数、成功后扣除和失败不扣除；`legacy_special_actions_test.gd` 覆盖 type 8/10/11 生命周期，`legacy_explosion_visual_test.gd` 固定粒子目录、随机序列、散布、缺失 type 102 和 90/150 tick 边界。各套件在日志中报告当前检查数，文档不固定复制计数。
+`projectile_inventory_test.gd` 覆盖三类投射物、11 个物品 ID、兼容背包切换/
+快照、最后攻击帧发射、整数路径、逐 tick 步长、L3→L2 顺序、友军拦截、
+SPR primary/tertiary 发射锚点、手榴弹终点 tick、actor 61 的 128 伤害和
+`ProjectileWorld` 分流。`original_inventory_test.gd` 覆盖武器 mode
+0/1/2、空枪保留、无换弹和 schema 1→2 迁移；`backpack_inventory_test.gd`
+与 `original_item_runtime_test.gd` 覆盖独立物品容器、真实治疗/补给、A 页、
+丢弃、敌人拾取和死亡掉落；`real_original_inventory_test.gd` 在真实十二关
+逐一核对 27 名玩家/83 个武器条目以及 650 个角色/538 个物品条目。
+`world_interactables_test.gd` 覆盖原关卡拾取、type 8 基础世界交互、汽油桶
+受伤与连锁爆炸，以及七关爆破策略的 schema、真实 DBL 998 计数、成功后
+扣除和失败不扣除；`legacy_special_actions_test.gd` 覆盖 type 8/10/11
+生命周期，`legacy_explosion_visual_test.gd` 固定 actor 61/62 主动画、粒子
+目录、随机序列、散布、缺失 type 102 和 90/150 tick 边界。各套件在日志中
+报告当前检查数，文档不固定复制计数。
 
 ```powershell
 godot --headless --path Remake/game --script res://tests/projectile_inventory_test.gd

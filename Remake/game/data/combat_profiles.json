@@ -271,7 +271,7 @@
       "horizontal_range": 480.0,
       "vertical_range": 240.0,
       "requires_line_of_sight": true,
-      "damage": 16,
+      "damage": 128,
       "burst_count": 1,
       "ammo_item_id": 44,
       "ammo_per_attack": 1,
@@ -282,18 +282,18 @@
       "reload_seconds": 1.8,
       "recovery_seconds": 0.8,
       "source_status": {
-        "damage": "unresolved_remake_default",
+        "damage": "recovered",
         "burst_count": "recovered",
         "ammo_item_id": "recovered",
         "ammo_per_attack": "recovered",
         "hit_frame_mode": "recovered",
-        "alert_radius": "unresolved_remake_default",
+        "alert_radius": "recovered",
         "magazine_capacity": "unresolved_remake_default",
         "starting_reserve_ammo": "unresolved_remake_default",
         "reload_seconds": "unresolved_remake_default",
         "recovery_seconds": "unresolved_remake_default"
       },
-      "damage_notes": "The original projectile delegates damage to an explosion object whose final damage path is not recovered. Sixteen damage and the extended alert radius are playable remake defaults."
+      "damage_notes": "Recovered: attack type 9 creates delivery-mode 1 actor 57, which creates actor 61 at the destination; actor 61 shares the exact 128-damage, 128x64 ellipse and 800-coordinate alert handler used by actor 62."
     },
     "active_action_alt": {
       "attack_type": 10,

@@ -1,15 +1,39 @@
 class_name ProjectileProfiles
 extends RefCounted
 
-const SCHEMA_VERSION := 1
+const SCHEMA_VERSION := 2
 const CATALOG_PATH := "res://data/projectile_profiles.json"
 const PROJECTILE_ATTACK_TYPES := {6: true, 7: true, 9: true}
-const VALID_MOTIONS := {"linear": true, "arc": true}
-const REQUIRED_SOURCE_FIELDS := ["delivery", "speed", "arc_height", "collision_radius"]
-const VALID_SOURCE_STATUSES := {
-	"recovered_world_object_path": true,
-	"unresolved_remake_default": true,
+const VALID_MOTIONS := {
+	"linear_bresenham": true,
+	"original_path_parabola": true,
 }
+const VALID_COLLISION_SEMANTICS := {
+	"layer3_actor_then_layer2_obstruction": true,
+	"ignore_actor_and_layer2_until_destination": true,
+}
+const VALID_SOURCE_STATUSES := {
+	"recovered": true,
+	"recovered_first_match": true,
+}
+const COMMON_SOURCE_FIELDS := [
+	"delivery_mode",
+	"motion",
+	"world_step_pixels",
+	"runtime_actor_type",
+	"original_gfl_index",
+	"direct_damage",
+	"collision_semantics",
+	"friendly_fire",
+]
+const EXPLOSION_SOURCE_FIELDS := [
+	"explosion_actor_type",
+	"explosion_gfl_index",
+	"blast_damage",
+	"blast_horizontal_radius",
+	"blast_vertical_radius",
+	"alert_radius",
+]
 
 static var catalog_cache: Dictionary = {}
 
@@ -80,21 +104,22 @@ static func _is_valid_profile(profile: Dictionary) -> bool:
 	var attack_type := int(profile.get("attack_type", 0))
 	if not PROJECTILE_ATTACK_TYPES.has(attack_type):
 		return false
+	var delivery_mode := int(profile.get("delivery_mode", 0))
+	if delivery_mode not in [1, 3, 4]:
+		return false
 	if not VALID_MOTIONS.has(String(profile.get("motion", ""))):
 		return false
-	if float(profile.get("speed", 0.0)) <= 0.0:
+	if int(profile.get("world_step_pixels", 0)) <= 0:
 		return false
-	if float(profile.get("arc_height", -1.0)) < 0.0:
+	if int(profile.get("runtime_actor_type", 0)) <= 0:
 		return false
-	if float(profile.get("collision_radius", 0.0)) <= 0.0:
+	if int(profile.get("original_gfl_index", 0)) <= 0:
 		return false
-	if float(profile.get("detonation_delay_seconds", -1.0)) < 0.0:
+	if int(profile.get("direct_damage", -1)) < 0:
 		return false
-	var horizontal_radius := float(profile.get("blast_horizontal_radius", -1.0))
-	var vertical_radius := float(profile.get("blast_vertical_radius", -1.0))
-	if horizontal_radius < 0.0 or vertical_radius < 0.0:
-		return false
-	if (horizontal_radius == 0.0) != (vertical_radius == 0.0):
+	if not VALID_COLLISION_SEMANTICS.has(
+		String(profile.get("collision_semantics", ""))
+	):
 		return false
 	if not profile.get("friendly_fire") is bool:
 		return false
@@ -102,16 +127,40 @@ static func _is_valid_profile(profile: Dictionary) -> bool:
 	if not source_value is Dictionary:
 		return false
 	var source := source_value as Dictionary
-	for field: String in REQUIRED_SOURCE_FIELDS:
+	for field: String in COMMON_SOURCE_FIELDS:
 		if not VALID_SOURCE_STATUSES.has(String(source.get(field, ""))):
 			return false
-	if horizontal_radius > 0.0:
-		for field: String in [
-			"detonation_delay_seconds",
-			"blast_horizontal_radius",
-			"blast_vertical_radius",
-			"friendly_fire",
-		]:
+	var explosion_actor_type := int(profile.get("explosion_actor_type", 0))
+	var horizontal_radius := float(profile.get("blast_horizontal_radius", -1.0))
+	var vertical_radius := float(profile.get("blast_vertical_radius", -1.0))
+	if delivery_mode == 1:
+		if (
+			attack_type != 9
+			or String(profile["motion"]) != "original_path_parabola"
+			or String(profile["collision_semantics"])
+				!= "ignore_actor_and_layer2_until_destination"
+			or explosion_actor_type != 61
+			or int(profile.get("explosion_gfl_index", 0)) != 19
+			or int(profile.get("blast_damage", 0)) != 128
+			or horizontal_radius != 128.0
+			or vertical_radius != 64.0
+			or float(profile.get("alert_radius", 0.0)) != 800.0
+		):
+			return false
+		for field: String in EXPLOSION_SOURCE_FIELDS:
 			if not VALID_SOURCE_STATUSES.has(String(source.get(field, ""))):
 				return false
-	return true
+		return true
+	return (
+		explosion_actor_type == 0
+		and String(profile["motion"]) == "linear_bresenham"
+		and String(profile["collision_semantics"])
+			== "layer3_actor_then_layer2_obstruction"
+		and horizontal_radius == 0.0
+		and vertical_radius == 0.0
+		and (
+			(attack_type == 6 and delivery_mode == 3 and int(profile["world_step_pixels"]) == 16 and int(profile["runtime_actor_type"]) == 80 and int(profile["original_gfl_index"]) == 251 and int(profile["direct_damage"]) == 8)
+			or
+			(attack_type == 7 and delivery_mode == 4 and int(profile["world_step_pixels"]) == 5 and int(profile["runtime_actor_type"]) == 81 and int(profile["original_gfl_index"]) == 635 and int(profile["direct_damage"]) == 1)
+		)
+	)

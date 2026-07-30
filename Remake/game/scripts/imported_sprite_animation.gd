@@ -102,8 +102,15 @@ static func load_action_groups(preview_path: String, action_key: String) -> Arra
 		if not groups[legacy_group_index].is_empty():
 			return []
 		var primary: Variant = group.get("primary_triplet")
+		var tertiary: Variant = group.get("tertiary_triplet")
 		var raw_frames: Variant = group.get("frames")
-		if not primary is Array or (primary as Array).size() != 3 or not raw_frames is Array:
+		if (
+			not primary is Array
+			or (primary as Array).size() != 3
+			or not tertiary is Array
+			or (tertiary as Array).size() != 3
+			or not raw_frames is Array
+		):
 			return []
 		var timing := group_timing(group)
 		if timing.is_empty():
@@ -119,6 +126,14 @@ static func load_action_groups(preview_path: String, action_key: String) -> Arra
 			"action_key": str(semantic["action_key"]),
 			"direction_key": str(semantic["direction_key"]),
 			"anchor": Vector2(float((primary as Array)[0]), float((primary as Array)[2])),
+			# IEngineSprite::SetCurrentSerial copies the SPR frame-group
+			# primary triplet into actor +0x44/+0x48/+0x4c and the tertiary
+			# triplet into +0x50/+0x54/+0x58. The original projectile manager
+			# reads both sets when it creates a dart, slingshot pellet or
+			# grenade, so these are runtime data rather than converter-only
+			# metadata.
+			"primary_triplet": (primary as Array).duplicate(),
+			"tertiary_triplet": (tertiary as Array).duplicate(),
 			"frame_tick_threshold": int(timing["frame_tick_threshold"]),
 			"frame_hold_ticks": int(timing["frame_hold_ticks"]),
 			"frames": frames,

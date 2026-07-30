@@ -4,11 +4,30 @@ extends Node2D
 signal projectile_launched(projectile: Node2D, attacker: Node2D, attack_type: int)
 signal projectile_damage_applied(attacker: Node2D, victim: Node2D, attack_type: int, damage: int)
 signal projectile_exploded(attacker: Node2D, world_position: Vector2, horizontal_radius: float, vertical_radius: float)
+signal projectile_explosion_actor_requested(
+	attacker: Node2D,
+	world_position: Vector2,
+	runtime_actor_type: int,
+	special_bursts: Array[Dictionary],
+)
 
 const COMBAT_PROJECTILE_SCRIPT: Script = preload("res://scripts/combat_projectile.gd")
 const PROJECTILE_PROFILES: Script = preload("res://scripts/projectile_profiles.gd")
 
 var combatants: Array[Node2D] = []
+var navigation_grid: Variant
+var dynamic_occupancy: Variant
+var visual_catalog: Dictionary = {}
+
+
+func configure_runtime(
+	new_navigation_grid: Variant,
+	new_dynamic_occupancy: Variant,
+	new_visual_catalog: Dictionary = {},
+) -> void:
+	navigation_grid = new_navigation_grid
+	dynamic_occupancy = new_dynamic_occupancy
+	visual_catalog = new_visual_catalog.duplicate()
 
 
 func set_combatants(new_combatants: Array[Node2D]) -> void:
@@ -29,6 +48,7 @@ func launch_for_weapon(
 	target: Node2D,
 	weapon_profile: Dictionary,
 	target_world_position: Variant = null,
+	start_world_position: Variant = null,
 ) -> Node2D:
 	var attack_type := int(weapon_profile.get("attack_type", 0))
 	var projectile_profile: Dictionary = PROJECTILE_PROFILES.profile_for_attack_type(attack_type)
@@ -50,6 +70,13 @@ func launch_for_weapon(
 		weapon_profile,
 		projectile_profile,
 		combatants,
+		navigation_grid,
+		dynamic_occupancy,
+		visual_catalog.get(
+			int(projectile_profile.get("original_gfl_index", 0)),
+			{},
+		) as Dictionary,
+		start_world_position,
 	):
 		projectile.queue_free()
 		return null
@@ -66,6 +93,21 @@ func launch_for_weapon(
 		) -> void:
 			projectile_exploded.emit(
 				attacker, world_position, horizontal_radius, vertical_radius
+			)
+	)
+	projectile.explosion_actor_requested.connect(
+		func(
+			_projectile: Node2D,
+			explosion_attacker: Node2D,
+			world_position: Vector2,
+			runtime_actor_type: int,
+			special_bursts: Array[Dictionary],
+		) -> void:
+			projectile_explosion_actor_requested.emit(
+				explosion_attacker,
+				world_position,
+				runtime_actor_type,
+				special_bursts,
 			)
 	)
 	projectile_launched.emit(projectile, attacker, attack_type)

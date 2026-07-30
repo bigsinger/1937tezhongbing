@@ -34,6 +34,7 @@ var faction_id := 0
 var age_world_ticks := 0
 var resolved_world_ticks := 0
 var trigger_target: Node2D
+var restored_trigger_scene_index := -1
 var potential_targets: Array[Node2D] = []
 var trigger_faction_id := 0
 var trigger_horizontal_radius := 0.0
@@ -124,6 +125,7 @@ func configure(
 	age_world_ticks = 0
 	resolved_world_ticks = 0
 	trigger_target = null
+	restored_trigger_scene_index = -1
 	visible = true
 	z_index = WORLD_DEPTH.normal_z(position.y, 1)
 	_transition_to(State.ACTIVE)
@@ -145,6 +147,16 @@ func is_active() -> bool:
 
 func is_resolved() -> bool:
 	return state in [State.RESOLVED, State.DISARMED]
+
+
+func is_persistable() -> bool:
+	return (
+		state == State.ACTIVE
+		or (
+			state == State.RESOLVED
+			and not resolved_particles.is_empty()
+		)
+	)
 
 
 func advance_world_ticks(ticks: int = 1) -> void:
@@ -291,8 +303,37 @@ func maximum_resolved_visual_lifetime_ticks() -> int:
 
 
 func snapshot() -> Dictionary:
+	var particle_snapshots: Array[Dictionary] = []
+	for particle: Dictionary in resolved_particles:
+		var local_position := particle.get(
+			"local_position",
+			Vector2.ZERO,
+		) as Vector2
+		var anchor := particle.get("anchor", Vector2.ZERO) as Vector2
+		particle_snapshots.append({
+			"runtime_actor_type": int(
+				particle.get("runtime_actor_type", 0)
+			),
+			"gfl_index": int(particle.get("gfl_index", -1)),
+			"local_x": local_position.x,
+			"local_y": local_position.y,
+			"anchor_x": anchor.x,
+			"anchor_y": anchor.y,
+			"frame_count": int(particle.get("frame_count", 1)),
+			"frame_hold_ticks": int(
+				particle.get("frame_hold_ticks", 1)
+			),
+			"frame_index": int(particle.get("frame_index", 0)),
+			"frame_elapsed_ticks": int(
+				particle.get("frame_elapsed_ticks", 0)
+			),
+			"completed_loops": int(
+				particle.get("completed_loops", 0)
+			),
+			"repeat_count": int(particle.get("repeat_count", 1)),
+		})
 	return {
-		"schema_version": 1,
+		"schema_version": 2,
 		"attack_type": attack_type,
 		"state": state,
 		"x": position.x,
@@ -300,10 +341,16 @@ func snapshot() -> Dictionary:
 		"source_faction_id": faction_id,
 		"owner_scene_index": int(owner_actor.get("scene_index")) if is_instance_valid(owner_actor) else -1,
 		"owner_display_name": str(owner_actor.get("display_name")) if is_instance_valid(owner_actor) else "",
-		"trigger_scene_index": int(trigger_target.get("scene_index")) if is_instance_valid(trigger_target) else -1,
+		"trigger_scene_index": (
+			int(trigger_target.get("scene_index"))
+			if is_instance_valid(trigger_target)
+			else restored_trigger_scene_index
+		),
 		"age_world_ticks": age_world_ticks,
 		"resolved_world_ticks": resolved_world_ticks,
 		"visual_random_state": visual_random_state,
+		"resolved_visual_burst_count": resolved_visual_burst_count,
+		"resolved_particles": particle_snapshots,
 	}
 
 
@@ -314,17 +361,93 @@ func restore_runtime_state(snapshot_value: Dictionary) -> bool:
 	if restored_state < State.ACTIVE or restored_state > State.DISARMED:
 		return false
 	state = restored_state
+	position = Vector2(
+		float(snapshot_value.get("x", position.x)),
+		float(snapshot_value.get("y", position.y)),
+	)
 	age_world_ticks = maxi(int(snapshot_value.get("age_world_ticks", 0)), 0)
 	resolved_world_ticks = maxi(int(snapshot_value.get("resolved_world_ticks", 0)), 0)
 	visual_random_state = int(
 		snapshot_value.get("visual_random_state", visual_random_state)
 	)
+	restored_trigger_scene_index = int(
+		snapshot_value.get("trigger_scene_index", -1)
+	)
+	resolved_visual_burst_count = maxi(
+		int(snapshot_value.get("resolved_visual_burst_count", 0)),
+		0,
+	)
+	resolved_particles.clear()
+	var raw_particles: Variant = snapshot_value.get(
+		"resolved_particles",
+		[],
+	)
+	if not raw_particles is Array:
+		return false
+	for raw_particle: Variant in raw_particles as Array:
+		if not raw_particle is Dictionary:
+			return false
+		var saved := raw_particle as Dictionary
+		var frame_count := maxi(int(saved.get("frame_count", 0)), 1)
+		var frame_hold_ticks := maxi(
+			int(saved.get("frame_hold_ticks", 0)),
+			1,
+		)
+		var repeat_count := maxi(int(saved.get("repeat_count", 0)), 1)
+		var gfl_index := int(saved.get("gfl_index", -1))
+		var frames: Array[Texture2D] = []
+		var visual_value: Variant = resolved_visual_catalog.get(
+			gfl_index,
+			{},
+		)
+		var visual := (
+			visual_value as Dictionary
+			if visual_value is Dictionary
+			else {}
+		)
+		for raw_frame: Variant in visual.get("frames", []) as Array:
+			if raw_frame is Texture2D:
+				frames.append(raw_frame as Texture2D)
+		resolved_particles.append({
+			"runtime_actor_type": int(
+				saved.get("runtime_actor_type", 0)
+			),
+			"gfl_index": gfl_index,
+			"local_position": Vector2(
+				float(saved.get("local_x", 0.0)),
+				float(saved.get("local_y", 0.0)),
+			),
+			"anchor": Vector2(
+				float(saved.get("anchor_x", 0.0)),
+				float(saved.get("anchor_y", 0.0)),
+			),
+			"frames": frames,
+			"frame_count": frame_count,
+			"frame_hold_ticks": frame_hold_ticks,
+			"frame_index": clampi(
+				int(saved.get("frame_index", 0)),
+				0,
+				frame_count - 1,
+			),
+			"frame_elapsed_ticks": clampi(
+				int(saved.get("frame_elapsed_ticks", 0)),
+				0,
+				frame_hold_ticks - 1,
+			),
+			"completed_loops": clampi(
+				int(saved.get("completed_loops", 0)),
+				0,
+				repeat_count - 1,
+			),
+			"repeat_count": repeat_count,
+		})
 	original_animation_ticks = age_world_ticks
 	if not original_frames.is_empty():
 		original_frame_index = (
 			original_animation_ticks / original_frame_hold_ticks
 		) % original_frames.size()
 	visible = state not in [State.DISARMED]
+	z_index = WORLD_DEPTH.normal_z(position.y, 1)
 	queue_redraw()
 	return true
 
@@ -340,6 +463,11 @@ func _trigger_and_detonate(candidate: Node2D) -> void:
 	if state != State.ACTIVE:
 		return
 	trigger_target = candidate
+	restored_trigger_scene_index = (
+		int(candidate.get("scene_index"))
+		if candidate != null
+		else -1
+	)
 	_transition_to(State.TRIGGERED)
 	triggered.emit(self, candidate)
 	_transition_to(State.RESOLVED)

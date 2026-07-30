@@ -265,6 +265,70 @@ int main(int argc, char** argv) {
                 m1937::sdk::rva::special_attack_dispatch !=
                     m1937::sdk::rva::explosion_actor_update,
             "special-action RVA catalog mismatch", checks);
+        {
+        using namespace m1937::sdk::projectile;
+        const auto* dart = find_attack_rule(6);
+        const auto* slingshot = find_attack_rule(7);
+        const auto* grenade = find_attack_rule(9);
+        require(
+            dart && dart->effect_type == 13 &&
+                dart->delivery_mode == DeliveryMode::dart_linear &&
+                dart->world_step_pixels == 16 &&
+                dart->runtime_actor_type == 80 &&
+                dart->first_match_gfl_index == 251 &&
+                dart->direct_damage == 8 &&
+                slingshot && slingshot->effect_type == 14 &&
+                slingshot->delivery_mode ==
+                    DeliveryMode::slingshot_linear &&
+                slingshot->world_step_pixels == 5 &&
+                slingshot->runtime_actor_type == 81 &&
+                slingshot->first_match_gfl_index == 635 &&
+                slingshot->direct_damage == 1,
+            "linear projectile dispatch table mismatch", checks);
+        require(
+            grenade && grenade->effect_type == 2 &&
+                grenade->delivery_mode ==
+                    DeliveryMode::grenade_parabola &&
+                grenade->world_step_pixels == 8 &&
+                grenade->runtime_actor_type == 57 &&
+                grenade->first_match_gfl_index == 528 &&
+                grenade->direct_damage == 0 &&
+                grenade->explosion_actor_type == 61 &&
+                grenade->explosion_first_match_gfl_index == 19 &&
+                explosion_damage == 128 &&
+                explosion_ellipse.width == 128 &&
+                explosion_ellipse.height == 64 &&
+                explosion_alert_radius == 800,
+            "grenade actor-61 delivery table mismatch", checks);
+        require(
+            find_attack_rule(8) == nullptr &&
+                inclusive_path_point_count({0, 0}, {100, 40}) == 101 &&
+                inclusive_path_point_count({0, 0}, {40, 100}) == 101 &&
+                resolution_world_ticks(101, 16) == 8 &&
+                resolution_world_ticks(101, 5) == 21 &&
+                resolution_world_ticks(201, 8) == 26 &&
+                original_arc_coefficient(201, 8) == 0.32F &&
+                original_arc_height(8, 12, 0.32F) == 50 &&
+                owner_launch_x_offset(
+                    SpriteTriplet{17, 0, 150},
+                    SpriteTriplet{4, 2, 2}) == -13 &&
+                owner_visual_height(
+                    SpriteTriplet{17, 0, 150},
+                    SpriteTriplet{4, 2, 2}) == 148,
+            "projectile path/tick/parabola/SPR-anchor formulas mismatch",
+            checks);
+        require(
+            m1937::sdk::rva::create_projectile_effect != 0 &&
+                m1937::sdk::rva::configure_projectile_path != 0 &&
+                m1937::sdk::rva::advance_projectile_visual != 0 &&
+                m1937::sdk::rva::current_projectile_path_point != 0 &&
+                m1937::sdk::rva::projectile_at_destination != 0 &&
+                m1937::sdk::rva::update_projectile_collision != 0 &&
+                m1937::sdk::rva::update_projectile_manager != 0 &&
+                m1937::sdk::rva::configure_projectile_path !=
+                    m1937::sdk::rva::update_projectile_collision,
+            "projectile RVA catalog mismatch", checks);
+        }
         require(
             m1937::sdk::rva::enable_sight_observation_mode != 0 &&
                 m1937::sdk::rva::enable_burial_mode != 0 &&
