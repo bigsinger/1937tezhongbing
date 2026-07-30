@@ -3,6 +3,12 @@ extends RefCounted
 
 const SCHEMA_VERSION := 1
 const CATALOG_PATH := "res://data/missions.json"
+const DEFAULT_RULE_MODE := "stable_mod"
+const RULE_MODES: Array[String] = ["stable_mod", "repaired"]
+const RULE_PROFILE_SOURCES: Array[String] = [
+	"recovered_stable_mod_control_flow",
+	"repaired_briefing_intent",
+]
 const TRIGGER_FIELDS: Array[String] = ["markers", "explosion", "exit", "spawns", "entrances"]
 const CHARGE_POLICY_MODES: Array[String] = ["preplanted", "inventory_required"]
 const CHARGE_POLICY_SOURCE := "remake_policy_from_recovered_map_inventory"
@@ -28,18 +34,57 @@ static func load_catalog(resource_path: String = CATALOG_PATH) -> Dictionary:
 
 
 static func load_mission(mission_id: String, resource_path: String = CATALOG_PATH) -> Dictionary:
+	return load_mission_for_rule_mode(mission_id, DEFAULT_RULE_MODE, resource_path)
+
+
+static func load_mission_for_rule_mode(
+	mission_id: String,
+	rule_mode: String,
+	resource_path: String = CATALOG_PATH,
+) -> Dictionary:
 	var catalog := load_catalog(resource_path)
 	if catalog.is_empty():
 		return {}
 	for raw_mission: Variant in catalog["missions"] as Array:
 		var mission := raw_mission as Dictionary
 		if str(mission["id"]) == mission_id:
-			return mission
+			return apply_rule_mode(mission, rule_mode)
 	return {}
+
+
+static func apply_rule_mode(mission: Dictionary, rule_mode: String) -> Dictionary:
+	if mission.is_empty():
+		return {}
+	var resolved_mode := rule_mode if rule_mode in RULE_MODES else DEFAULT_RULE_MODE
+	var resolved := mission.duplicate(true)
+	var raw_profiles: Variant = resolved.get("rule_profiles")
+	if raw_profiles is Dictionary and (raw_profiles as Dictionary).has(resolved_mode):
+		var profile := (
+			(raw_profiles as Dictionary)[resolved_mode] as Dictionary
+		).duplicate(true)
+		resolved["objectives"] = (profile.get("objectives", []) as Array).duplicate(true)
+		if profile.has("required_survivors"):
+			resolved["required_survivors"] = (
+				profile.get("required_survivors", []) as Array
+			).duplicate(true)
+		elif resolved.has("required_survivors"):
+			resolved.erase("required_survivors")
+		resolved["rule_source_status"] = str(profile.get("source_status", ""))
+		resolved["disable_editorial_direction"] = bool(
+			profile.get("disable_editorial_direction", false)
+		)
+	else:
+		resolved["rule_source_status"] = "shared_control_flow"
+		resolved["disable_editorial_direction"] = false
+	resolved["rule_mode"] = resolved_mode
+	resolved["available_rule_modes"] = RULE_MODES.duplicate()
+	return resolved
 
 
 static func is_valid_catalog(catalog: Dictionary) -> bool:
 	if int(catalog.get("schema_version", 0)) != SCHEMA_VERSION:
+		return false
+	if str(catalog.get("default_rule_mode", "")) != DEFAULT_RULE_MODE:
 		return false
 	var raw_missions: Variant = catalog.get("missions")
 	if not raw_missions is Array or (raw_missions as Array).is_empty():
@@ -65,6 +110,8 @@ static func is_valid_catalog(catalog: Dictionary) -> bool:
 			return false
 		if not is_valid_objectives(mission.get("objectives")):
 			return false
+		if mission.has("rule_profiles") and not is_valid_rule_profiles(mission):
+			return false
 		if not mission.get("failure_conditions") is Array:
 			return false
 		if mission.has("exit_party") and not is_valid_exit_party(mission):
@@ -80,6 +127,45 @@ static func is_valid_catalog(catalog: Dictionary) -> bool:
 		if mission.has("charge_policy") and not is_valid_charge_policy(mission):
 			return false
 		if mission.has("media_cues") and not is_valid_media_cues(mission):
+			return false
+	return true
+
+
+static func is_valid_rule_profiles(mission: Dictionary) -> bool:
+	var raw_profiles: Variant = mission.get("rule_profiles")
+	if not raw_profiles is Dictionary:
+		return false
+	var profiles := raw_profiles as Dictionary
+	if profiles.size() != RULE_MODES.size():
+		return false
+	for mode: String in RULE_MODES:
+		if not profiles.has(mode) or not profiles[mode] is Dictionary:
+			return false
+		var profile := profiles[mode] as Dictionary
+		if (
+			str(profile.get("source_status", "")) not in RULE_PROFILE_SOURCES
+			or not is_valid_objectives(profile.get("objectives"))
+		):
+			return false
+		if (
+			profile.has("required_survivors")
+			and not _is_unique_nonempty_string_array(profile["required_survivors"])
+		):
+			return false
+		if (
+			profile.has("disable_editorial_direction")
+			and not profile["disable_editorial_direction"] is bool
+		):
+			return false
+		var resolved := mission.duplicate(true)
+		resolved["objectives"] = (profile["objectives"] as Array).duplicate(true)
+		if profile.has("required_survivors"):
+			resolved["required_survivors"] = (
+				profile["required_survivors"] as Array
+			).duplicate(true)
+		elif resolved.has("required_survivors"):
+			resolved.erase("required_survivors")
+		if resolved.has("media_cues") and not is_valid_media_cues(resolved):
 			return false
 	return true
 

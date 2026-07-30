@@ -4,7 +4,7 @@ extends RefCounted
 const ATOMIC_JSON_STORE: Script = preload("res://scripts/atomic_json_store.gd")
 const GAME_INPUT_BINDINGS: Script = preload("res://scripts/game_input_bindings.gd")
 
-const SCHEMA_VERSION := 3
+const SCHEMA_VERSION := 4
 const DEFAULT_PATH := "user://settings.json"
 const DISPLAY_MODES: Array[String] = ["windowed", "fullscreen", "borderless"]
 const RESOLUTION_POLICIES: Array[String] = ["desktop", "custom"]
@@ -12,6 +12,7 @@ const AUDIO_CHANNELS: Array[String] = ["master", "music", "sfx", "voice"]
 const HINT_KEYS: Array[String] = ["controls", "objectives", "interactions"]
 const INTERFACE_KEYS: Array[String] = ["subtitles", "show_briefings", "edge_scroll"]
 const DIFFICULTY_MODES: Array[String] = ["original", "easy", "normal", "hard"]
+const MISSION_RULE_MODES: Array[String] = ["stable_mod", "repaired"]
 
 var values: Dictionary = default_document()
 var last_result: Dictionary = {}
@@ -50,6 +51,10 @@ static func default_document() -> Dictionary:
 			# "original" is the auditable MOD/reference contract.  The other
 			# modes are explicitly optional Remake balancing profiles.
 			"difficulty_mode": "original",
+			# Task control-flow is independent from combat difficulty. The
+			# shipped default reproduces what the stable MOD actually evaluates;
+			# repaired restores briefing intent for known m009/m011 defects.
+			"mission_rule_mode": "stable_mod",
 		},
 		"controls": GAME_INPUT_BINDINGS.default_bindings(),
 	}
@@ -172,6 +177,20 @@ func difficulty_mode() -> String:
 	return mode if mode in DIFFICULTY_MODES else "original"
 
 
+func set_mission_rule_mode(mode: String) -> bool:
+	if not mode in MISSION_RULE_MODES:
+		return false
+	(values["gameplay"] as Dictionary)["mission_rule_mode"] = mode
+	return true
+
+
+func mission_rule_mode() -> String:
+	var mode := str(
+		(values["gameplay"] as Dictionary).get("mission_rule_mode", "stable_mod")
+	)
+	return mode if mode in MISSION_RULE_MODES else "stable_mod"
+
+
 func controls_snapshot() -> Dictionary:
 	return (values.get("controls", {}) as Dictionary).duplicate(true)
 
@@ -268,7 +287,7 @@ func _is_loadable_document(value: Variant) -> bool:
 		)
 	if not _is_number(document["schema_version"]):
 		return false
-	return int(document["schema_version"]) in [0, 1, 2, SCHEMA_VERSION]
+	return int(document["schema_version"]) in [0, 1, 2, 3, SCHEMA_VERSION]
 
 
 func _normalize_document(document: Dictionary) -> Dictionary:
@@ -323,6 +342,14 @@ func _normalize_document(document: Dictionary) -> Dictionary:
 	var difficulty_mode := str(raw_gameplay.get("difficulty_mode", gameplay["difficulty_mode"]))
 	gameplay["difficulty_mode"] = (
 		difficulty_mode if difficulty_mode in DIFFICULTY_MODES else gameplay["difficulty_mode"]
+	)
+	var mission_rule_mode := str(
+		raw_gameplay.get("mission_rule_mode", gameplay["mission_rule_mode"])
+	)
+	gameplay["mission_rule_mode"] = (
+		mission_rule_mode
+		if mission_rule_mode in MISSION_RULE_MODES
+		else gameplay["mission_rule_mode"]
 	)
 	defaults["controls"] = GAME_INPUT_BINDINGS.normalize_bindings(document.get("controls", {}))
 	return defaults

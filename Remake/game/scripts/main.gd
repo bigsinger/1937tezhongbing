@@ -300,6 +300,7 @@ var selected_backpack_item_id := 0
 var runtime_settings: Dictionary = {
 	"fullscreen": false,
 	"difficulty_mode": "original",
+	"mission_rule_mode": "stable_mod",
 	"subtitles": true,
 	"show_briefings": true,
 	"edge_scroll": true,
@@ -449,7 +450,17 @@ func _is_runtime_probe() -> bool:
 
 
 func _load_mission_graph(level_id: String) -> void:
-	current_mission = MISSION_DATA.load_mission(level_id)
+	var mission_rule_mode := (
+		"stable_mod"
+		if _is_runtime_probe()
+		else str(runtime_settings.get("mission_rule_mode", "stable_mod"))
+	)
+	if mission_rule_mode not in MISSION_DATA.RULE_MODES:
+		mission_rule_mode = MISSION_DATA.DEFAULT_RULE_MODE
+	current_mission = MISSION_DATA.load_mission_for_rule_mode(
+		level_id,
+		mission_rule_mode,
+	)
 	current_mission_state = MISSION_STATE.new(current_mission)
 	if objective_label != null:
 		objective_label.text = "\n".join(current_mission_state.display_lines())
@@ -3971,6 +3982,12 @@ func _configure_mission_direction() -> void:
 	if mission_ai_coordinator != null:
 		mission_ai_coordinator.free()
 		mission_ai_coordinator = null
+	# m009/m011 have recovered stable-MOD control-flow profiles whose actual
+	# objective set conflicts with the later Remake editorial sequences. Keep
+	# those sequences available in repaired mode, but never narrate repaired
+	# goals while the player selected strict stable-MOD behaviour.
+	if bool(current_mission.get("disable_editorial_direction", false)):
+		return
 	mission_direction_runtime = MISSION_DIRECTION_RUNTIME_SCRIPT.new()
 	mission_direction_runtime.name = "MissionDirectionRuntime"
 	add_child(mission_direction_runtime)
@@ -4247,6 +4264,7 @@ func _initialize_persistence() -> void:
 		"show_briefings": bool(game_settings.interface_enabled("show_briefings")),
 		"edge_scroll": bool(game_settings.interface_enabled("edge_scroll")),
 		"difficulty_mode": str(game_settings.difficulty_mode()),
+		"mission_rule_mode": str(game_settings.mission_rule_mode()),
 		"master_volume": float(game_settings.audio_volume("master")),
 		"music_volume": float(game_settings.audio_volume("music")),
 		"sfx_volume": float(game_settings.audio_volume("sfx")),
@@ -4302,6 +4320,9 @@ func _quit_game() -> void:
 
 func _on_shell_settings_changed(new_settings: Dictionary) -> void:
 	var previous_difficulty := str(runtime_settings.get("difficulty_mode", "original"))
+	var previous_mission_rule := str(
+		runtime_settings.get("mission_rule_mode", "stable_mod")
+	)
 	var merged_settings := runtime_settings.duplicate(true)
 	merged_settings.merge(new_settings, true)
 	var fullscreen := bool(merged_settings.get("fullscreen", true))
@@ -4346,11 +4367,18 @@ func _on_shell_settings_changed(new_settings: Dictionary) -> void:
 		game_settings.set_difficulty_mode(
 			str(runtime_settings.get("difficulty_mode", "original"))
 		)
+		game_settings.set_mission_rule_mode(
+			str(runtime_settings.get("mission_rule_mode", "stable_mod"))
+		)
 		settings_save_result = game_settings.save_to_disk()
 	_apply_runtime_settings(runtime_settings)
 	if bool(settings_save_result.get("ok", false)):
-		if str(runtime_settings.get("difficulty_mode", "original")) != previous_difficulty:
-			update_status("难度已保存，将在重新开始、下一关或读取存档时生效")
+		if (
+			str(runtime_settings.get("difficulty_mode", "original")) != previous_difficulty
+			or str(runtime_settings.get("mission_rule_mode", "stable_mod"))
+				!= previous_mission_rule
+		):
+			update_status("玩法规则已保存，将在重新开始、下一关或读取存档时生效")
 		else:
 			update_status("设置已应用并保存")
 	else:
@@ -5043,6 +5071,19 @@ func _load_game(slot_id: String = "") -> bool:
 		return false
 	if game_shell != null:
 		game_shell.close_for_state_change()
+	# A save owns the mission graph under which objective progress was
+	# recorded. Resolve it before switch_level() creates MissionState, or an
+	# m009/m011 checkpoint could be restored against the other rule profile.
+	var saved_mission_rule := str(
+		session.get(
+			"mission_rule_mode",
+			runtime_settings.get("mission_rule_mode", "stable_mod"),
+		)
+	)
+	if saved_mission_rule in MISSION_DATA.RULE_MODES:
+		runtime_settings["mission_rule_mode"] = saved_mission_rule
+		if game_settings != null:
+			game_settings.set_mission_rule_mode(saved_mission_rule)
 	var saved_direction_state: Variant = (
 		(session.get("world", {}) as Dictionary).get("mission_direction", {})
 	)
@@ -5060,9 +5101,12 @@ func _load_game(slot_id: String = "") -> bool:
 			runtime_settings["difficulty_mode"] = saved_mode
 			if game_settings != null:
 				game_settings.set_difficulty_mode(saved_mode)
-				game_settings.save_to_disk()
 			if game_shell != null:
 				game_shell.set_settings(runtime_settings)
+	if game_settings != null:
+		game_settings.save_to_disk()
+	if game_shell != null:
+		game_shell.set_settings(runtime_settings)
 	switch_level(level_index, false, false)
 	var applied: Dictionary = GAME_SESSION_STATE_SCRIPT.apply_after_level_loaded(self, session)
 	if not bool(applied.get("ok", false)):

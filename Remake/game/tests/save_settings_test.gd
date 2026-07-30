@@ -147,6 +147,11 @@ func _test_settings_defaults_and_round_trip(failures: Array[String]) -> void:
 	_expect(settings.display_settings()["resolution_policy"] == "desktop", "fullscreen follows desktop resolution", failures)
 	_expect(settings.hint_enabled("controls"), "control hints default on", failures)
 	_expect(settings.difficulty_mode() == "original", "MOD parity is the default difficulty", failures)
+	_expect(
+		settings.mission_rule_mode() == "stable_mod",
+		"stable MOD mission control flow is the default",
+		failures,
+	)
 
 	settings.set_audio_volume("master", 0.35)
 	settings.set_audio_volume("sfx", 0.55)
@@ -157,6 +162,7 @@ func _test_settings_defaults_and_round_trip(failures: Array[String]) -> void:
 	settings.set_interface_enabled("subtitles", false)
 	settings.set_interface_enabled("edge_scroll", false)
 	settings.set_difficulty_mode("hard")
+	settings.set_mission_rule_mode("repaired")
 	_expect(bool(settings.save_to_disk(path)["ok"]), "first settings write succeeds", failures)
 	settings.set_audio_volume("master", 0.75)
 	settings.set_display_mode("borderless")
@@ -171,6 +177,11 @@ func _test_settings_defaults_and_round_trip(failures: Array[String]) -> void:
 	_expect(not loaded.interface_enabled("subtitles"), "subtitle choice persists", failures)
 	_expect(not loaded.interface_enabled("edge_scroll"), "edge-scroll choice persists", failures)
 	_expect(loaded.difficulty_mode() == "hard", "difficulty choice persists", failures)
+	_expect(
+		loaded.mission_rule_mode() == "repaired",
+		"mission rule profile persists independently from difficulty",
+		failures,
+	)
 
 	_write_text(path, "{broken json")
 	var recovered = GAME_SETTINGS.new()
@@ -187,11 +198,16 @@ func _test_settings_migration_and_validation(failures: Array[String]) -> void:
 	var migrated = GAME_SETTINGS.new()
 	var result: Dictionary = migrated.load_from_disk(legacy_path)
 	_expect(bool(result["ok"]), "legacy settings shape is loadable", failures)
-	_expect(int(migrated.values["schema_version"]) == 3, "legacy settings migrate to current schema", failures)
+	_expect(int(migrated.values["schema_version"]) == 4, "legacy settings migrate to current schema", failures)
 	_expect(is_equal_approx(migrated.audio_volume("master"), 0.42), "legacy volume migrates", failures)
 	_expect(migrated.display_settings()["mode"] == "windowed", "legacy fullscreen flag migrates", failures)
 	_expect(not migrated.hint_enabled("objectives"), "legacy hint flag migrates", failures)
 	_expect(migrated.difficulty_mode() == "original", "legacy settings migrate to original parity", failures)
+	_expect(
+		migrated.mission_rule_mode() == "stable_mod",
+		"legacy settings migrate to stable MOD mission rules",
+		failures,
+	)
 
 	var malformed_path := test_root + "/normalized-settings.json"
 	_write_json(
@@ -214,6 +230,11 @@ func _test_settings_migration_and_validation(failures: Array[String]) -> void:
 	_expect(normalized.hint_enabled("controls"), "wrong hint type falls back", failures)
 	_expect(normalized.interface_enabled("subtitles"), "wrong interface section type falls back", failures)
 	_expect(normalized.difficulty_mode() == "original", "missing gameplay settings use original parity", failures)
+	_expect(
+		normalized.mission_rule_mode() == "stable_mod",
+		"missing mission rule settings fail closed to stable MOD",
+		failures,
+	)
 
 	var schema_two_path := test_root + "/schema-two-settings.json"
 	_write_json(
@@ -230,7 +251,17 @@ func _test_settings_migration_and_validation(failures: Array[String]) -> void:
 	var schema_two = GAME_SETTINGS.new()
 	_expect(bool(schema_two.load_from_disk(schema_two_path)["ok"]), "schema-2 settings remain loadable", failures)
 	_expect(schema_two.difficulty_mode() == "original", "schema-2 settings gain original difficulty", failures)
+	_expect(
+		schema_two.mission_rule_mode() == "stable_mod",
+		"schema-2 settings gain stable MOD mission rules",
+		failures,
+	)
 	_expect(not schema_two.set_difficulty_mode("impossible"), "unknown difficulty is rejected", failures)
+	_expect(
+		not schema_two.set_mission_rule_mode("impossible"),
+		"unknown mission rule mode is rejected",
+		failures,
+	)
 
 	var future_path := test_root + "/future-settings.json"
 	_write_json(future_path, {"schema_version": 99, "audio": {}})
@@ -471,6 +502,11 @@ func _test_save_round_trip_and_recovery(failures: Array[String]) -> void:
 	)
 	_expect(bool(loaded["ok"]) and loaded["source"] == "primary", "save loads from primary", failures)
 	_expect(is_equal_approx(float(loaded_session["elapsed_seconds"]), 48.5), "elapsed mission time persists", failures)
+	_expect(
+		str(loaded_session["mission_rule_mode"]) == "stable_mod",
+		"save sessions persist their mission-rule identity",
+		failures,
+	)
 	_expect(int((loaded_session["squad"] as Array)[0]["current_hit_points"]) == 5, "actor health persists", failures)
 	_expect(
 		bool(loaded_presence["field_pickups"])

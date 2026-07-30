@@ -99,6 +99,46 @@ func _run() -> void:
 		_trigger_primary_failure(main, level_id)
 		await process_frame
 
+	# The shipped/default pass above exercises stable-MOD control flow. The two
+	# missions with recovered original defects also need a full world-action
+	# closure under the explicitly opt-in repaired rules.
+	for level_id: String in ["m009", "m011"]:
+		var level_index := LEVEL_IDS.find(level_id)
+		main.runtime_settings["mission_rule_mode"] = "repaired"
+		main.switch_level(level_index, false, false)
+		_prepare_level_for_deterministic_world_actions(main)
+		_expect(
+			str(main.current_mission.get("rule_mode", "")) == "repaired",
+			"%s loads the repaired mission profile on explicit request" % level_id,
+		)
+		_perform_checkpoint_world_action(main, level_id)
+		var checkpoint: Dictionary = GAME_SESSION_STATE.capture(main)
+		_expect(
+			str(checkpoint.get("mission_rule_mode", "")) == "repaired",
+			"%s repaired checkpoint owns its mission-rule identity" % level_id,
+		)
+		main.runtime_settings["mission_rule_mode"] = str(
+			checkpoint.get("mission_rule_mode", "stable_mod")
+		)
+		main.switch_level(level_index, false, false)
+		_prepare_level_for_deterministic_world_actions(main)
+		var restore_result: Dictionary = GAME_SESSION_STATE.apply_after_level_loaded(
+			main,
+			checkpoint,
+		)
+		_expect(
+			bool(restore_result.get("ok", false))
+				and (restore_result.get("warnings", []) as Array).is_empty(),
+			"%s restores a repaired-profile checkpoint without warnings" % level_id,
+		)
+		_complete_level_after_checkpoint(main, level_id)
+		_expect(
+			main.current_mission_state.is_victory(),
+			"%s repaired profile reaches victory through product world actions"
+				% level_id,
+		)
+	main.runtime_settings["mission_rule_mode"] = "stable_mod"
+
 	root.remove_child(main)
 	main.free()
 	await process_frame
@@ -168,11 +208,21 @@ func _perform_checkpoint_world_action(main: Node, level_id: String) -> void:
 		"m008":
 			_collect_database_pickups(main, 998, 1)
 		"m009":
-			_eliminate_scene(main, 1610)
+			if str(main.current_mission.get("rule_mode", "")) == "repaired":
+				_eliminate_scene(main, 1610)
+			else:
+				_collect_database_pickups(main, 998, 1)
 		"m010":
 			_move_first_simultaneous_zone_actor(main)
 		"m011":
-			_eliminate_scene(main, 759)
+			if str(main.current_mission.get("rule_mode", "")) == "repaired":
+				_eliminate_scene(main, 759)
+			else:
+				_interact_bound_scene(main, 1348)
+				_expect(
+					not main.current_mission_state.is_victory(),
+					"m011 stable profile ignores an overwritten explosion target",
+				)
 		_:
 			_expect(false, "unsupported real mission checkpoint %s" % level_id)
 
@@ -215,16 +265,27 @@ func _complete_level_after_checkpoint(main: Node, level_id: String) -> void:
 			committed_world_actions += 1
 			_use_exit(main, 802)
 		"m009":
-			_collect_database_pickups(main, 998, 4)
-			_eliminate_scene(main, 1611)
-			_collect_role_item(main, "m009_transfer_document", "obtain_documents")
+			if str(main.current_mission.get("rule_mode", "")) == "repaired":
+				_collect_database_pickups(main, 998, 4)
+				_eliminate_scene(main, 1611)
+				_collect_role_item(
+					main,
+					"m009_transfer_document",
+					"obtain_documents",
+				)
+			else:
+				_collect_database_pickups(main, 998, 3)
 			_place_all_charges(main)
-			_eliminate_all_hostiles(main)
+			if str(main.current_mission.get("rule_mode", "")) == "repaired":
+				_eliminate_all_hostiles(main)
 		"m010":
 			_occupy_simultaneous_zones(main)
 		"m011":
-			_place_all_charges(main)
-			_use_exit(main, 1359)
+			if str(main.current_mission.get("rule_mode", "")) == "repaired":
+				_place_all_charges(main)
+				_use_exit(main, 1359)
+			else:
+				_interact_bound_scene(main, 1353)
 		_:
 			_expect(false, "unsupported real mission remainder %s" % level_id)
 

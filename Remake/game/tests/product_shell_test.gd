@@ -31,6 +31,7 @@ func _run() -> void:
 		"show_briefings": false,
 		"edge_scroll": false,
 		"difficulty_mode": "hard",
+		"mission_rule_mode": "repaired",
 		"master_volume": 0.35,
 		"music_volume": 0.25,
 		"sfx_volume": 0.55,
@@ -50,6 +51,7 @@ func _run() -> void:
 		and not bool(settings["show_briefings"])
 		and not bool(settings["edge_scroll"])
 		and str(settings["difficulty_mode"]) == "hard"
+		and str(settings["mission_rule_mode"]) == "repaired"
 		and is_equal_approx(float(settings["master_volume"]), 0.35)
 		and is_equal_approx(float(settings["music_volume"]), 0.25)
 		and is_equal_approx(float(settings["sfx_volume"]), 0.55)
@@ -67,6 +69,7 @@ func _run() -> void:
 		and int(updated_settings["window_height"]) == 900
 		and not bool(updated_settings["vsync"])
 		and str(updated_settings["difficulty_mode"]) == "hard"
+		and str(updated_settings["mission_rule_mode"]) == "repaired"
 		and is_equal_approx(float(updated_settings["music_volume"]), 0.30),
 		"editing an unrelated slider preserves borderless and muted settings",
 		failures,
@@ -89,8 +92,10 @@ func _run() -> void:
 		and shell._muted_toggle.button_pressed
 		and shell._difficulty_option != null
 		and shell._selected_difficulty_mode() == "hard"
+		and shell._mission_rule_option != null
+		and shell._selected_mission_rule_mode() == "repaired"
 		and shell._control_buttons.size() == GAME_INPUT_BINDINGS.action_ids().size(),
-		"settings expose difficulty, mute, four audio channels, and every remappable command",
+		"settings expose difficulty, mission rules, mute, four audio channels, and every remappable command",
 		failures,
 	)
 	shell._on_rebind_pressed("minimap")

@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "mission_count": 12,
+  "default_rule_mode": "stable_mod",
   "recovery_method": "VWF trigger extraction plus original EXE control-flow recovery",
   "unused_menu_titles": ["雷区伏击战", "内讧", "最后任务"],
   "missions": [
@@ -179,7 +180,26 @@
       "scene_bindings": {"m009_transfer_document_sources": [1610, 1611], "explosion": [1714, 1715, 1716, 1717]},
       "charge_policy": {"mode": "inventory_required", "inventory_item_key": "explosives", "inventory_item_id": 45, "quantity_per_target": 1, "map_pickup_count": 9, "target_count": 4, "source_status": "remake_policy_from_recovered_map_inventory", "evidence_note": "地图有 9 个 DBL 998 炸药供 4 个列车爆破目标使用，拾取后进入角色武器容器，数量足以形成完整任务闭环。"},
       "role_drops": {"m009_transfer_document_sources": {"item_role": "m009_transfer_document", "original_item_id": 101}},
-      "restoration_notes": "原版 case 10 的全场 faction 1 存活扫描结果因控制流缺陷未被使用。重制按任务简报恢复设计意图：全关日军清零、取得两份文件并炸毁四个列车目标；strict-original 可只保留列车目标和老赵存活。",
+      "restoration_notes": "原版 case 10 的全场 faction 1 存活扫描结果因控制流缺陷未被使用。stable_mod 忠实保留实际生效的四个列车目标和老赵存活判定；repaired 按任务简报恢复两份文件、全关清敌和四处爆破的设计意图。",
+      "rule_profiles": {
+        "stable_mod": {
+          "source_status": "recovered_stable_mod_control_flow",
+          "disable_editorial_direction": true,
+          "required_survivors": ["老赵"],
+          "objectives": [
+            {"id": "destroy_train", "label": "炸毁军火列车的四个目标（稳定 MOD 原始判定）", "required": true, "condition": {"event": "trigger_activated", "where": {"display_name": "检测爆炸精灵"}, "required_count": 4, "unique_by": "scene_index"}}
+          ]
+        },
+        "repaired": {
+          "source_status": "repaired_briefing_intent",
+          "disable_editorial_direction": false,
+          "objectives": [
+            {"id": "obtain_documents", "label": "取得两名日军军官携带的交接文件", "required": true, "condition": {"event": "item_acquired", "where": {"item_role": "m009_transfer_document"}, "required_count": 2, "unique_by": "source_scene_index"}},
+            {"id": "clear_station", "label": "清剿临时车站守军（按全关日军清零判定）", "required": true, "condition": {"event": "area_hostiles_cleared", "where": {"area_role": "m009_station"}, "required_count": 1}},
+            {"id": "destroy_train", "label": "炸毁军火列车的四个目标", "required": true, "condition": {"event": "trigger_activated", "where": {"display_name": "检测爆炸精灵"}, "required_count": 4, "unique_by": "scene_index"}}
+          ]
+        }
+      },
       "time_limit_seconds": 0,
       "trigger_inventory": {"markers": 4, "explosion": 4, "exit": 0, "spawns": 3, "entrances": 11},
       "objectives": [
@@ -213,7 +233,25 @@
       "briefing_image_index": 1059,
       "scene_bindings": {"m011_air_commander": [759], "explosion": [1348, 1349, 1350, 1351, 1352, 1353], "exit": [1359]},
       "charge_policy": {"mode": "preplanted", "inventory_item_key": "explosives", "inventory_item_id": 45, "quantity_per_target": 1, "map_pickup_count": 4, "target_count": 6, "source_status": "remake_policy_from_recovered_map_inventory", "evidence_note": "地图仅有 4 个 DBL 998 炸药，少于重制修复后的 6 个目标；目标按预置炸药处理，不消耗角色武器容器。"},
-      "original_quirk": "原版初始化反复覆盖爆破目标指针，实际只检查 scene 1353；重制默认修复为六目标，可另设 strict-original 兼容模式。",
+      "original_quirk": "原版初始化反复覆盖爆破目标指针，实际只检查 scene 1353。stable_mod 忠实保留该实际控制流；repaired 按简报要求指挥官、六个爆破目标和西北撤离。",
+      "rule_profiles": {
+        "stable_mod": {
+          "source_status": "recovered_stable_mod_control_flow",
+          "disable_editorial_direction": true,
+          "objectives": [
+            {"id": "destroy_last_airfield_target", "label": "炸毁最后一处机场目标（稳定 MOD 原始判定）", "required": true, "condition": {"event": "trigger_activated", "where": {"display_name": "检测爆炸精灵", "scene_index": 1353}, "required_count": 1, "unique_by": "scene_index"}}
+          ]
+        },
+        "repaired": {
+          "source_status": "repaired_briefing_intent",
+          "disable_editorial_direction": false,
+          "objectives": [
+            {"id": "eliminate_commander", "label": "刺杀日军空军指挥官", "required": true, "condition": {"event": "role_eliminated", "where": {"role_id": "m011_air_commander"}, "required_count": 1}},
+            {"id": "destroy_airfield", "label": "炸毁军机、指挥塔和油库共六处目标", "required": true, "condition": {"event": "trigger_activated", "where": {"display_name": "检测爆炸精灵"}, "required_count": 6, "unique_by": "scene_index"}},
+            {"id": "evacuate_northwest", "label": "沿西北方向撤离机场", "required": true, "depends_on": ["eliminate_commander", "destroy_airfield"], "condition": {"event": "trigger_activated", "where": {"display_name": "检测出口精灵"}, "required_count": 1, "unique_by": "scene_index"}}
+          ]
+        }
+      },
       "media_cues": {
         "on_victory": {"kind": "ending", "fallback_text": "十二关任务全部完成", "source_status": "recovered_media_mapping"}
       },

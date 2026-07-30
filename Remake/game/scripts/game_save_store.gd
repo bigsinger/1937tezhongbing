@@ -5,6 +5,7 @@ const ATOMIC_JSON_STORE: Script = preload("res://scripts/atomic_json_store.gd")
 
 const SCHEMA_VERSION := 1
 const GAME_ID := "1937-remake"
+const MISSION_RULE_MODES: Array[String] = ["stable_mod", "repaired"]
 const DEFAULT_DIRECTORY := "user://saves"
 const VALID_SLOT_CHARACTERS := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
 
@@ -19,6 +20,7 @@ func _init(directory: String = DEFAULT_DIRECTORY) -> void:
 static func empty_session(level_id: String = "m000") -> Dictionary:
 	return {
 		"level_id": level_id,
+		"mission_rule_mode": "stable_mod",
 		"elapsed_seconds": 0.0,
 		"camera": {"x": 0.0, "y": 0.0, "zoom": 1.0},
 		"mission": {
@@ -274,6 +276,10 @@ func _is_valid_campaign(campaign: Dictionary) -> bool:
 func _is_valid_session(session: Dictionary) -> bool:
 	if (
 		not is_valid_level_id(str(session.get("level_id", "")))
+		or (
+			session.has("mission_rule_mode")
+			and str(session.get("mission_rule_mode", "")) not in MISSION_RULE_MODES
+		)
 		or not _is_number(session.get("elapsed_seconds"))
 		or float(session.get("elapsed_seconds", -1.0)) < 0.0
 		or not session.get("camera") is Dictionary
@@ -333,6 +339,10 @@ func _is_valid_session(session: Dictionary) -> bool:
 
 func _normalize_session(session: Dictionary) -> Dictionary:
 	var normalized := empty_session(str(session.get("level_id", "m000")))
+	var mission_rule_mode := str(session.get("mission_rule_mode", "stable_mod"))
+	normalized["mission_rule_mode"] = (
+		mission_rule_mode if mission_rule_mode in MISSION_RULE_MODES else "stable_mod"
+	)
 	normalized["elapsed_seconds"] = maxf(float(session.get("elapsed_seconds", 0.0)), 0.0)
 	normalized["camera"] = (session.get("camera", normalized["camera"]) as Dictionary).duplicate(true)
 	normalized["mission"] = (session.get("mission", normalized["mission"]) as Dictionary).duplicate(true)

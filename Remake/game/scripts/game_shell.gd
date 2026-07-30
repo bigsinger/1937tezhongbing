@@ -23,6 +23,7 @@ const ORIGINAL_INVENTORY_POPUP_SIZE := Vector2(276.0, 421.0)
 const ORIGINAL_BOTTOM_HUD_HEIGHT := 62.0
 const TACTICAL_MAP_PANEL_CHROME := Vector2(44.0, 77.0)
 const DIFFICULTY_MODES: Array[String] = ["original", "easy", "normal", "hard"]
+const MISSION_RULE_MODES: Array[String] = ["stable_mod", "repaired"]
 
 enum OverlayMode { NONE, PAUSE_MENU, TACTICAL_MAP, INVENTORY, FAILURE, SLOT_SELECTOR, SETTINGS, HELP }
 
@@ -42,6 +43,7 @@ var _save_button: Button
 var _load_button: Button
 var _restart_button: Button
 var _difficulty_option: OptionButton
+var _mission_rule_option: OptionButton
 var _fullscreen_toggle: CheckButton
 var _subtitles_toggle: CheckButton
 var _briefings_toggle: CheckButton
@@ -95,6 +97,9 @@ func set_settings(new_settings: Dictionary) -> void:
 	var difficulty_mode := str(new_settings.get("difficulty_mode", "original"))
 	if difficulty_mode not in DIFFICULTY_MODES:
 		difficulty_mode = "original"
+	var mission_rule_mode := str(new_settings.get("mission_rule_mode", "stable_mod"))
+	if mission_rule_mode not in MISSION_RULE_MODES:
+		mission_rule_mode = "stable_mod"
 	settings = {
 		"fullscreen": display_mode != "windowed",
 		"display_mode": display_mode,
@@ -107,6 +112,7 @@ func set_settings(new_settings: Dictionary) -> void:
 		"show_briefings": bool(new_settings.get("show_briefings", true)),
 		"edge_scroll": bool(new_settings.get("edge_scroll", true)),
 		"difficulty_mode": difficulty_mode,
+		"mission_rule_mode": mission_rule_mode,
 		"master_volume": clampf(float(new_settings.get("master_volume", 0.8)), 0.0, 1.0),
 		"music_volume": clampf(float(new_settings.get("music_volume", 0.8)), 0.0, 1.0),
 		"sfx_volume": clampf(float(new_settings.get("sfx_volume", 0.9)), 0.0, 1.0),
@@ -121,6 +127,7 @@ func set_settings(new_settings: Dictionary) -> void:
 	_briefings_toggle.button_pressed = bool(settings["show_briefings"])
 	_edge_scroll_toggle.button_pressed = bool(settings["edge_scroll"])
 	_select_difficulty_mode(str(settings["difficulty_mode"]))
+	_select_mission_rule_mode(str(settings["mission_rule_mode"]))
 	_muted_toggle.button_pressed = bool(settings["muted"])
 	for channel: String in ["master", "music", "sfx", "voice"]:
 		if _audio_sliders.has(channel):
@@ -596,6 +603,7 @@ func _on_setting_changed(_value: Variant = null) -> void:
 		"show_briefings": _briefings_toggle.button_pressed,
 		"edge_scroll": _edge_scroll_toggle.button_pressed,
 		"difficulty_mode": _selected_difficulty_mode(),
+		"mission_rule_mode": _selected_mission_rule_mode(),
 		"master_volume": _audio_slider_value("master", 0.8),
 		"music_volume": _audio_slider_value("music", 0.8),
 		"sfx_volume": _audio_slider_value("sfx", 0.9),
@@ -629,6 +637,27 @@ func _select_difficulty_mode(mode: String) -> void:
 			_difficulty_option.select(index)
 			return
 	_difficulty_option.select(0)
+
+
+func _selected_mission_rule_mode() -> String:
+	if _mission_rule_option == null or _mission_rule_option.selected < 0:
+		return str(settings.get("mission_rule_mode", "stable_mod"))
+	var metadata: Variant = _mission_rule_option.get_item_metadata(
+		_mission_rule_option.selected
+	)
+	var mode := str(metadata)
+	return mode if mode in MISSION_RULE_MODES else "stable_mod"
+
+
+func _select_mission_rule_mode(mode: String) -> void:
+	if _mission_rule_option == null:
+		return
+	var normalized := mode if mode in MISSION_RULE_MODES else "stable_mod"
+	for index: int in range(_mission_rule_option.item_count):
+		if str(_mission_rule_option.get_item_metadata(index)) == normalized:
+			_mission_rule_option.select(index)
+			return
+	_mission_rule_option.select(0)
 
 
 func _update_volume_labels() -> void:
@@ -680,7 +709,7 @@ func _build_interface() -> void:
 func _build_menu_panel() -> void:
 	_menu_panel = PanelContainer.new()
 	_menu_panel.name = "GameMenuPanel"
-	_center_control(_menu_panel, Vector2(590.0, 650.0))
+	_center_control(_menu_panel, Vector2(620.0, 700.0))
 	_menu_panel.add_theme_stylebox_override("panel", _panel_style(Color(0.09, 0.115, 0.09, 0.98)))
 	_root.add_child(_menu_panel)
 
@@ -740,6 +769,34 @@ func _build_menu_panel() -> void:
 	difficulty_hint.add_theme_font_size_override("font_size", 13)
 	difficulty_hint.add_theme_color_override("font_color", Color(0.75, 0.77, 0.66))
 	content.add_child(difficulty_hint)
+
+	var mission_rule_row := HBoxContainer.new()
+	var mission_rule_label := Label.new()
+	mission_rule_label.text = "任务规则"
+	mission_rule_label.custom_minimum_size.x = 115.0
+	mission_rule_row.add_child(mission_rule_label)
+	_mission_rule_option = OptionButton.new()
+	_mission_rule_option.name = "MissionRuleMode"
+	_mission_rule_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var mission_rule_labels := {
+		"stable_mod": "稳定 MOD（忠实保留实际判定）",
+		"repaired": "修复增强（按任务简报补全）",
+	}
+	for mode: String in MISSION_RULE_MODES:
+		_mission_rule_option.add_item(str(mission_rule_labels[mode]))
+		_mission_rule_option.set_item_metadata(
+			_mission_rule_option.item_count - 1,
+			mode,
+		)
+	_mission_rule_option.item_selected.connect(_on_setting_changed)
+	mission_rule_row.add_child(_mission_rule_option)
+	content.add_child(mission_rule_row)
+	var mission_rule_hint := Label.new()
+	mission_rule_hint.text = "影响第 10/12 关已确认的原版控制流缺陷；变更在重开、下一关或读档时生效"
+	mission_rule_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	mission_rule_hint.add_theme_font_size_override("font_size", 13)
+	mission_rule_hint.add_theme_color_override("font_color", Color(0.75, 0.77, 0.66))
+	content.add_child(mission_rule_hint)
 
 	_fullscreen_toggle = CheckButton.new()
 	_fullscreen_toggle.text = "全屏（使用当前桌面分辨率）"

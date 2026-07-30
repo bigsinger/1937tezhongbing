@@ -31,7 +31,7 @@
     {
       "id": "input_and_hotkeys",
       "status": "partial",
-      "evidence": ["complete DirectInput DIK matrix for Esc/F1/F2-F8/W/A/B/R/S/C/M/1-0/Ctrl/Up", "per-action press/release/held phases", "left world command on press and right drag/cancel on release", "exact client-edge classification and limit/8 velocity ramp", "remapping and conflict handling", "recovered S living-faction-1 direct target and singleton actor-90 ground marker command", "recovered B dead-faction-1 command kind 4, path-first 32x16 adjacent-cell range and strict >100 completion counter", "96-check deterministic input suite and pointer-control source guard", "m000 basic and obstacle-route zero-mismatch MOD/Remake differential traces"],
+      "evidence": ["complete DirectInput DIK matrix for Esc/F1/F2-F8/W/A/B/R/S/C/M/1-0/Ctrl/Up", "per-action press/release/held phases", "left world command on press and right drag/cancel on release", "exact client-edge classification and limit/8 velocity ramp", "remapping and conflict handling", "recovered S living-faction-1 direct target and singleton actor-90 ground marker command", "recovered B dead-faction-1 command kind 4, path-first 32x16 adjacent-cell range and strict >100 completion counter", "96-check deterministic input suite and pointer-control source guard", "headless target-viewport F2/left-click/M/E frame-input world gate with no global pointer control", "m000 basic and obstacle-route zero-mismatch MOD/Remake differential traces"],
       "gaps": ["physical stable-MOD/Remake frame traces for every menu and contextual S/B target case"]
     },
     {
@@ -61,7 +61,7 @@
     {
       "id": "mission_state_machines",
       "status": "partial",
-      "evidence": ["12 data-driven mission graphs", "scene bindings", "dependency/count/time/failure/victory runtime", "12 real-content product-world-action victory closures", "combat-driven required-character failures", "m001/m007/m010 time-limit failures", "m008 premature-detonation failure"],
+      "evidence": ["12 data-driven mission graphs", "scene bindings", "dependency/count/time/failure/victory runtime", "12 stable-MOD real-content product-world-action victory closures", "m009/m011 stable-MOD and repaired dual-profile closures", "m011 overwritten scenes 1348-1352 rejection and scene 1353 effective-check assertion", "combat-driven required-character failures", "m001/m007/m010 time-limit failures", "m008 premature-detonation failure"],
       "gaps": ["12 MOD-matched human-input victory traces", "remaining level-specific major failure traces", "original control-flow decisions for every mission"]
     },
     {
@@ -79,7 +79,7 @@
     {
       "id": "save_load_settings_and_progression",
       "status": "partial",
-      "evidence": ["10 slots", "quick/autosave", "atomic JSON with backup", "remapping and channel volumes", "actor-78 cache and pending B worker/target/counter persistence while ephemeral actor 90 is deliberately excluded", "door open state, corpse claim/global alarm/dynamic reinforcement identity and five-point coordinate-search persistence", "12 real-content heterogeneous mid-mission capture/rebuild hash round-trips"],
+      "evidence": ["10 slots", "quick/autosave", "atomic JSON with backup", "remapping and channel volumes", "stable-MOD/repaired mission-rule setting and per-session identity", "actor-78 cache and pending B worker/target/counter persistence while ephemeral actor 90 is deliberately excluded", "door open state, corpse claim/global alarm/dynamic reinforcement identity and five-point coordinate-search persistence", "12 real-content heterogeneous mid-mission capture/rebuild hash round-trips"],
       "gaps": ["physical-disk slot save at every mission phase", "cross-version migration policy", "campaign progression parity"]
     },
     {
@@ -105,8 +105,8 @@
     {"id": "m006", "number": 7, "title": "惩罚", "status": "partial", "gaps": ["contact/event order parity", "victory/failure traces", "difficulty calibration"]},
     {"id": "m007", "number": 8, "title": "脱困", "status": "partial", "gaps": ["escort behavior parity", "victory/failure traces", "difficulty calibration"]},
     {"id": "m008", "number": 9, "title": "暗战矿坑", "status": "partial", "gaps": ["charge/detonation timing parity", "victory/failure traces", "difficulty calibration"]},
-    {"id": "m009", "number": 10, "title": "夺宝奇兵", "status": "partial", "gaps": ["strict-original versus repaired rule switch", "victory/failure traces", "difficulty calibration"]},
+    {"id": "m009", "number": 10, "title": "夺宝奇兵", "status": "partial", "gaps": ["stable-MOD/Remake human-input victory traces", "remaining failure traces", "difficulty calibration"]},
     {"id": "m010", "number": 11, "title": "血色渡口", "status": "partial", "gaps": ["four-zone simultaneous occupation trace", "victory/failure traces", "difficulty calibration"]},
-    {"id": "m011", "number": 12, "title": "破袭机场", "status": "partial", "gaps": ["strict-original versus six-target rule switch", "victory/failure traces", "difficulty calibration"]}
+    {"id": "m011", "number": 12, "title": "破袭机场", "status": "partial", "gaps": ["stable-MOD/Remake human-input victory traces", "remaining failure traces", "difficulty calibration"]}
   ]
 }

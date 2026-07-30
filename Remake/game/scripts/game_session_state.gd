@@ -26,6 +26,9 @@ static func capture(game: Node) -> Dictionary:
 	if not SAVE_STORE.is_valid_level_id(level_id):
 		level_id = "m000"
 	var session: Dictionary = SAVE_STORE.empty_session(level_id)
+	session["mission_rule_mode"] = str(
+		current_mission.get("rule_mode", "stable_mod")
+	)
 	var mission_state: Variant = game.get("current_mission_state")
 	if mission_state != null:
 		session["elapsed_seconds"] = maxf(float(mission_state.get("elapsed_seconds")), 0.0)

@@ -142,6 +142,7 @@ func _run_tests() -> void:
 	_test_m000_world_event_closure(failures)
 	_test_m008_manual_explosion_sequence(failures)
 	_test_m010_simultaneous_high_ground(failures)
+	_test_mission_rule_profiles(failures)
 	_test_mission_media_cues(failures)
 	_test_all_mission_world_event_closures(failures)
 
@@ -850,6 +851,95 @@ func _test_m010_simultaneous_high_ground(failures: Array[String]) -> void:
 	main.mission_runtime = null
 	main.free()
 	runtime.free()
+
+
+func _test_mission_rule_profiles(failures: Array[String]) -> void:
+	var catalog: Dictionary = MISSION_DATA.load_catalog()
+	_expect(
+		str(catalog.get("default_rule_mode", "")) == "stable_mod",
+		"mission catalog explicitly defaults to the stable MOD control flow",
+		failures,
+	)
+	var m009_stable: Dictionary = MISSION_DATA.load_mission("m009")
+	var m009_repaired: Dictionary = MISSION_DATA.load_mission_for_rule_mode(
+		"m009",
+		"repaired",
+	)
+	_expect(
+		str(m009_stable.get("rule_mode", "")) == "stable_mod"
+		and (m009_stable.get("objectives", []) as Array).size() == 1
+		and (m009_stable.get("required_survivors", []) as Array) == ["老赵"]
+		and bool(m009_stable.get("disable_editorial_direction", false)),
+		"m009 stable profile preserves only the effective train/Lao Zhao path",
+		failures,
+	)
+	_expect(
+		str(m009_repaired.get("rule_mode", "")) == "repaired"
+		and (m009_repaired.get("objectives", []) as Array).size() == 3
+		and not m009_repaired.has("required_survivors")
+		and not bool(m009_repaired.get("disable_editorial_direction", true)),
+		"m009 repaired profile restores documents, hostile clear, and train objectives",
+		failures,
+	)
+
+	var m011_stable: Dictionary = MISSION_DATA.load_mission("m011")
+	var stable_state = MISSION_STATE.new(m011_stable)
+	for scene_index: int in range(1348, 1353):
+		stable_state.record_event(
+			"trigger_activated",
+			{"display_name": "检测爆炸精灵", "scene_index": scene_index},
+		)
+	_expect(
+		not stable_state.is_victory(),
+		"m011 stable profile ignores the first five overwritten explosion pointers",
+		failures,
+	)
+	stable_state.record_event(
+		"trigger_activated",
+		{"display_name": "检测爆炸精灵", "scene_index": 1353},
+	)
+	_expect(
+		stable_state.is_victory(),
+		"m011 stable profile reproduces scene 1353 as the effective original check",
+		failures,
+	)
+
+	var m011_repaired: Dictionary = MISSION_DATA.load_mission_for_rule_mode(
+		"m011",
+		"repaired",
+	)
+	var repaired_state = MISSION_STATE.new(m011_repaired)
+	repaired_state.record_event(
+		"trigger_activated",
+		{"display_name": "检测爆炸精灵", "scene_index": 1353},
+	)
+	_expect(
+		not repaired_state.is_victory()
+		and int(repaired_state.progress.get("destroy_airfield", 0)) == 1,
+		"m011 repaired profile still requires commander, six targets, and evacuation",
+		failures,
+	)
+	var unknown_mode: Dictionary = MISSION_DATA.load_mission_for_rule_mode(
+		"m011",
+		"unsupported",
+	)
+	_expect(
+		str(unknown_mode.get("rule_mode", "")) == "stable_mod",
+		"unknown mission rule modes fail closed to stable MOD parity",
+		failures,
+	)
+
+	var invalid_catalog := catalog.duplicate(true)
+	var invalid_profiles := (
+		((invalid_catalog["missions"] as Array)[9] as Dictionary)["rule_profiles"]
+		as Dictionary
+	)
+	invalid_profiles.erase("stable_mod")
+	_expect(
+		not MISSION_DATA.is_valid_catalog(invalid_catalog),
+		"catalog validation rejects incomplete dual-rule mission profiles",
+		failures,
+	)
 
 
 func _test_mission_media_cues(failures: Array[String]) -> void:
