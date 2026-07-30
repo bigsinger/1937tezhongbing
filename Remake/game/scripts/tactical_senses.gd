@@ -194,7 +194,36 @@ static func is_within_hearing_range(observer_position: Vector2, target_position:
 	var radius := float(sense_profile.get("hearing_radius", 0.0))
 	if radius <= 0.0:
 		radius = maxf(float(sense_profile.get("horizontal_radius", 0.0)), float(sense_profile.get("vertical_radius", 0.0)))
-	return radius > 0.0 and observer_position.distance_squared_to(target_position) <= radius * radius
+	if radius <= 0.0:
+		return false
+	var vertical_radius := float(
+		sense_profile.get("hearing_vertical_radius", radius * 0.5)
+	)
+	return is_within_parametric_directional_boundary(
+		observer_position,
+		target_position,
+		radius,
+		vertical_radius,
+	)
+
+
+static func is_within_parametric_directional_boundary(
+	origin: Vector2,
+	target: Vector2,
+	horizontal_radius: float,
+	vertical_radius: float,
+) -> bool:
+	if horizontal_radius <= 0.0 or vertical_radius <= 0.0:
+		return false
+	var delta := target - origin
+	var distance_squared := delta.length_squared()
+	if distance_squared <= 0.0:
+		return true
+	var boundary_squared := (
+		horizontal_radius * horizontal_radius * delta.x * delta.x
+		+ vertical_radius * vertical_radius * delta.y * delta.y
+	) / distance_squared
+	return distance_squared < boundary_squared
 
 
 static func is_within_attack_range(

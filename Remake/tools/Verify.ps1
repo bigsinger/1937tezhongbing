@@ -131,6 +131,26 @@ if ($LASTEXITCODE -ne 0) {
     throw "Godot original item runtime tests failed with exit code $LASTEXITCODE."
 }
 
+& $GodotExecutable --headless --path $game --script 'res://tests/legacy_world_items_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot legacy world-item tests failed with exit code $LASTEXITCODE."
+}
+
+& $GodotExecutable --headless --path $game --script 'res://tests/legacy_corpse_discovery_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot legacy corpse-discovery tests failed with exit code $LASTEXITCODE."
+}
+
+& $GodotExecutable --headless --path $game --script 'res://tests/legacy_enemy_ai_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot legacy enemy-AI tests failed with exit code $LASTEXITCODE."
+}
+
+& $GodotExecutable --headless --path $game --script 'res://tests/legacy_doors_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot legacy door tests failed with exit code $LASTEXITCODE."
+}
+
 & $GodotExecutable --headless --path $game --script 'res://tests/world_interactables_test.gd'
 if ($LASTEXITCODE -ne 0) {
     throw "Godot world interactable tests failed with exit code $LASTEXITCODE."
@@ -295,6 +315,18 @@ if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
         --script 'res://tests/real_original_inventory_test.gd'
     if ($LASTEXITCODE -ne 0) {
         throw "Godot real 12-level original inventory tests failed with exit code $LASTEXITCODE."
+    }
+
+    & $GodotExecutable --headless --path $game `
+        --script 'res://tests/real_corpse_reinforcement_test.gd' -- --skip-briefing
+    if ($LASTEXITCODE -ne 0) {
+        throw "Godot real corpse-reinforcement tests failed with exit code $LASTEXITCODE."
+    }
+
+    & $GodotExecutable --headless --path $game `
+        --script 'res://tests/real_door_runtime_test.gd' -- --skip-briefing
+    if ($LASTEXITCODE -ne 0) {
+        throw "Godot real 12-level door runtime tests failed with exit code $LASTEXITCODE."
     }
 
     & $GodotExecutable --headless --path $game `

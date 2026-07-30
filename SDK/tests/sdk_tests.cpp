@@ -295,6 +295,130 @@ int main(int argc, char** argv) {
                 !burial_counter_has_completed(100) &&
                 burial_counter_has_completed(101),
             "B range/counter semantics mismatch", checks);
+        require(
+            m1937::sdk::rva::create_world_actor != 0 &&
+                m1937::sdk::rva::complete_actor_interaction != 0 &&
+                m1937::sdk::rva::apply_world_item_effect != 0 &&
+                m1937::sdk::rva::complete_world_item_drop != 0 &&
+                m1937::sdk::rva::populate_world_item_acceptance != 0 &&
+                m1937::sdk::rva::scan_live_targets != 0 &&
+                m1937::sdk::rva::scan_corpses != 0 &&
+                m1937::sdk::rva::spawn_corpse_reinforcements != 0 &&
+                m1937::sdk::rva::scan_world_items != 0 &&
+                m1937::sdk::rva::original_directional_visibility_band != 0 &&
+                m1937::sdk::rva::global_corpse_alarm != 0,
+            "world-item RVA catalog mismatch", checks);
+        require(
+            m1937::sdk::world_item::accepts(4, 52) &&
+                !m1937::sdk::world_item::accepts(4, 48) &&
+                m1937::sdk::world_item::accepts(5, 33) &&
+                m1937::sdk::world_item::accepts(5, 48) &&
+                m1937::sdk::world_item::accepts(6, 49) &&
+                !m1937::sdk::world_item::accepts(6, 33) &&
+                m1937::sdk::world_item::accepts(11, 83) &&
+                !m1937::sdk::world_item::accepts(11, 48) &&
+                m1937::sdk::world_item::accepts(15, 48) &&
+                !m1937::sdk::world_item::accepts(15, 49) &&
+                m1937::sdk::world_item::accepts(56, 82) &&
+                !m1937::sdk::world_item::accepts(56, 83),
+            "world-item runtime-type acceptance mismatch", checks);
+        require(
+            m1937::sdk::world_item::effect(49).kind ==
+                    m1937::sdk::world_item::EffectKind::hypnosis &&
+                m1937::sdk::world_item::effect(49)
+                    .consume_after_collection &&
+                m1937::sdk::world_item::effect(52).kind ==
+                    m1937::sdk::world_item::EffectKind::
+                        poison_and_distraction &&
+                m1937::sdk::world_item::effect(52)
+                    .consume_after_collection &&
+                m1937::sdk::world_item::effect(83).kind ==
+                    m1937::sdk::world_item::EffectKind::distraction &&
+                !m1937::sdk::world_item::effect(83)
+                    .consume_after_collection,
+            "world-item effect semantics mismatch", checks);
+        require(
+            !m1937::sdk::world_item::counter_has_completed(600, 600) &&
+                m1937::sdk::world_item::counter_has_completed(601, 600) &&
+                !m1937::sdk::world_item::counter_has_completed(80, 80) &&
+                m1937::sdk::world_item::counter_has_completed(81, 80),
+            "world-item counter thresholds mismatch", checks);
+        require(
+            m1937::sdk::corpse_discovery::is_candidate(1, 1, 0) &&
+                !m1937::sdk::corpse_discovery::is_candidate(1, 0, 0) &&
+                !m1937::sdk::corpse_discovery::is_candidate(1, 1, 1) &&
+                m1937::sdk::corpse_discovery::required_visibility_band == 2 &&
+                m1937::sdk::corpse_discovery::reinforcement_marker_actor_type ==
+                    93 &&
+                m1937::sdk::corpse_discovery::reinforcement_actor_type == 6 &&
+                m1937::sdk::corpse_discovery::reinforcement_count == 2,
+            "corpse-discovery candidate/reinforcement semantics mismatch",
+            checks);
+        const auto corpse_reaction_limit =
+            m1937::sdk::corpse_discovery::reaction_limit(0x1937u);
+        require(
+            corpse_reaction_limit >= 40 &&
+                corpse_reaction_limit <= 79 &&
+                !m1937::sdk::corpse_discovery::reaction_has_completed(
+                    corpse_reaction_limit,
+                    corpse_reaction_limit) &&
+                m1937::sdk::corpse_discovery::reaction_has_completed(
+                    corpse_reaction_limit + 1,
+                    corpse_reaction_limit),
+            "corpse-discovery reaction counter mismatch", checks);
+        {
+        using namespace m1937::sdk::original_enemy_ai;
+        require(
+            m1937::sdk::rva::actor_distance != 0 &&
+                m1937::sdk::rva::alert_effective_radius != 0 &&
+                m1937::sdk::rva::alert_propagation != 0 &&
+                m1937::sdk::rva::original_local_search_point != 0 &&
+                m1937::sdk::rva::original_local_search_continue != 0,
+            "original enemy-AI RVA catalog mismatch", checks);
+        require(
+            is_within_alert_ellipse({0, 0}, {639, 0}) &&
+                !is_within_alert_ellipse({0, 0}, {640, 0}) &&
+                is_within_alert_ellipse({0, 0}, {0, 319}) &&
+                !is_within_alert_ellipse({0, 0}, {0, 320}) &&
+                is_within_alert_ellipse({0, 0}, {320, 320}),
+            "original coordinate-alert strict ellipse mismatch", checks);
+        require(
+            alert_recipient_is_eligible(1, 6, true, false) &&
+                !alert_recipient_is_eligible(1, 91, true, false) &&
+                !alert_recipient_is_eligible(3, 6, true, false) &&
+                !alert_recipient_is_eligible(1, 6, false, false) &&
+                !alert_recipient_is_eligible(1, 6, true, true),
+            "original coordinate-alert recipient filter mismatch", checks);
+        auto original_random_state = 0x1937u;
+        for (int sample_index = 0; sample_index < 512; ++sample_index) {
+            const auto reaction =
+                sample_reaction_limit(original_random_state);
+            require(
+                reaction.limit >= 40 && reaction.limit <= 79,
+                "original AI reaction limit escaped 40..79", checks);
+            const auto point = sample_local_search_point(
+                reaction.random_state,
+                {500, 500},
+                {0, 0, 3200, 1600});
+            require(
+                point.point.x >= 469 && point.point.x <= 531 &&
+                    point.point.y >= 485 && point.point.y <= 515 &&
+                    point.next_wait_limit >= 40 &&
+                    point.next_wait_limit <= 199,
+                "original AI local-search sample escaped recovered bounds",
+                checks);
+            original_random_state = point.random_state;
+        }
+        const auto edge_search = sample_local_search_point(
+            1u, {0, 0}, {0, 0, 3200, 1600});
+        require(
+            edge_search.point.x >= 16 &&
+                edge_search.point.y >= 16 &&
+                search_point_count == 5 &&
+                !counter_has_completed(40, 40) &&
+                counter_has_completed(41, 40),
+            "original AI local-search clamp/count/counter mismatch", checks);
+        }
         const auto& triggered =
             m1937::sdk::triggered_special_action;
         const auto& timed =

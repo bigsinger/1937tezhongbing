@@ -7,6 +7,9 @@ var item_payload: Dictionary = {}
 var collected := false
 var original_texture: Texture2D
 var original_sprite: Sprite2D
+var original_actor_type := 0
+var original_target_status := 3
+var world_item_serial := 0
 
 
 func configure(
@@ -17,6 +20,26 @@ func configure(
 	item_payload = payload.duplicate(true)
 	position = world_position
 	z_index = WORLD_DEPTH.normal_z(position.y, 2)
+	original_actor_type = int(
+		item_payload.get(
+			"original_actor_type",
+			item_payload.get("item_id", 0)
+			if not str(item_payload.get("original_inventory_kind", "")).is_empty()
+			else 0,
+		)
+	)
+	original_target_status = int(
+		item_payload.get("original_target_status", 3)
+	)
+	world_item_serial = maxi(
+		int(item_payload.get("world_item_serial", 0)),
+		0,
+	)
+	if original_actor_type > 0:
+		item_payload["original_actor_type"] = original_actor_type
+		item_payload["original_target_status"] = original_target_status
+	if world_item_serial > 0:
+		item_payload["world_item_serial"] = world_item_serial
 	original_texture = texture
 	if original_texture != null:
 		original_sprite = Sprite2D.new()
@@ -31,6 +54,26 @@ func collect() -> Dictionary:
 	collected = true
 	visible = false
 	return item_payload.duplicate(true)
+
+
+func is_available_original_world_item() -> bool:
+	return (
+		not collected
+		and visible
+		and original_actor_type > 0
+		and original_target_status == 3
+	)
+
+
+func snapshot() -> Dictionary:
+	return {
+		"x": position.x,
+		"y": position.y,
+		"payload": item_payload.duplicate(true),
+		"original_actor_type": original_actor_type,
+		"original_target_status": original_target_status,
+		"world_item_serial": world_item_serial,
+	}
 
 
 func _draw() -> void:

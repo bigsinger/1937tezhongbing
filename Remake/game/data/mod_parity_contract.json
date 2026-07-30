@@ -19,8 +19,8 @@
     {
       "id": "map_layers_and_rendering",
       "status": "partial",
-      "evidence": ["VWF L1-L5 import", "DBL four render queues", "twelve-level structural and artifact-hash fidelity baseline"],
-      "gaps": ["1024x768 and 1920x1080 pixel baselines", "all wall/door/foreground occlusion cases", "multi-layer SPR baseline calibration"]
+      "evidence": ["VWF L1-L5 import", "DBL four render queues", "twelve-level structural and artifact-hash fidelity baseline", "seven recovered closed/open door sprite pairs with original-anchor alignment"],
+      "gaps": ["1024x768 and 1920x1080 pixel baselines", "remaining wall/door/foreground occlusion pixel cases", "multi-layer SPR baseline calibration"]
     },
     {
       "id": "actors_and_animation",
@@ -37,8 +37,8 @@
     {
       "id": "inventory_items_and_world_pickups",
       "status": "partial",
-      "evidence": ["five-column inventory", "real map pickups", "drop/lure interaction", "B completion actor 78/GFL 64 cache with independent copies of both corpse inventory containers and player recovery interaction", "27 exact player identities and 83 ordered initial weapon-container entries across all 12 levels", "650 exact actor+552 item containers with 538 ordered entries", "ten exact DBL world-pickup item/container/mode/quantity mappings"],
-      "gaps": ["exact effects and ownership rules for remaining world-interaction items 33/48/49/52/82/83"]
+      "evidence": ["five-column inventory", "real map pickups", "B completion actor 78/GFL 64 cache with independent copies of both corpse inventory containers and player recovery interaction", "27 exact player identities and 83 ordered initial weapon-container entries across all 12 levels", "650 exact actor+552 item containers with 538 ordered entries", "ten exact DBL world-pickup item/container/mode/quantity mappings", "recovered runtime-type acceptance matrix and insertion-order scan for items 33/48/49/52/82/83", "directional inner-band plus L2 LOS filtering and 32x16 adjacent-cell pickup", "exact item 49 hypnosis, item 52 poison, item 82/83 distraction and save/load counters"],
+      "gaps": ["stable-MOD post-pickup differential traces for every accepted runtime-type family"]
     },
     {
       "id": "weapons_ammo_and_combat",
@@ -49,14 +49,14 @@
     {
       "id": "navigation_routes_and_doors",
       "status": "partial",
-      "evidence": ["L3 A*", "516 patrol routes", "dynamic occupancy and replanning", "m000 obstacle-free command replacement and movement-vector parity at 260 px/s", "m000 tree-edge one-open-side diagonal and early corridor recovery parity", "m000 46-enemy two-interval patrol kinematics gate from stable MOD runtime"],
-      "gaps": ["all non-character footprints", "all open/closed door state transitions", "exact patrol phase for scripted and blocked routes", "remaining foreground route-shape parity", "corridor coordination parity"]
+      "evidence": ["L3 A*", "516 patrol routes", "dynamic occupancy and replanning", "m000 obstacle-free command replacement and movement-vector parity at 260 px/s", "m000 tree-edge one-open-side diagonal and early corridor recovery parity", "m000 46-enemy two-interval patrol kinematics gate from stable MOD runtime", "96 real door instances across 12 levels with closed/open alpha-difference source-cell release, including 94 navigation-changing and 2 decorative instances", "door A*, LOS and save/load lifecycle with 201 real-content checks"],
+      "gaps": ["remaining non-character footprints", "exact patrol phase for scripted and blocked routes", "remaining foreground route-shape parity", "corridor coordination parity"]
     },
     {
       "id": "vision_hearing_and_ai",
       "status": "partial",
-      "evidence": ["directional near/far perception", "L2 occlusion", "actor 90/GFL 341 observation marker uses enemy current recovered fan plus LOS, original rand()%2 gate, selects the first detecting enemy and is consumed without persistence", "recovered 640-pixel ordinary-enemy hearing radius", "event-driven noise investigation without omniscient live-target tracking", "alert sharing and last-known search", "m000 natural-contact MOD/Remake differential gate with exact scene 1598 to scene 1436 live-target identity and at most one checkpoint onset drift"],
-      "gaps": ["special-actor hearing overrides", "corpse discovery cascade", "original search/return timing and cooperation rules"]
+      "evidence": ["directional near/far perception", "L2 occlusion", "actor 90/GFL 341 observation marker uses enemy current recovered fan plus LOS, original rand()%2 gate, selects the first detecting enemy and is consumed without persistence", "sub_45A7C0 strict 640-parameter directional alert boundary without sound occlusion", "coordinate-only alert propagation with faction/type/dead/live-contact recipient filters and runtime type 91 exclusion", "five local search points with recovered +/-31x15 offsets, strict counters, 40..79 reaction and 40..199 wait limits", "outer-band plus L2 corpse discovery, insertion-order claim, global alarm and two type-6 reinforcements at nearest type-93 marker", "coordinate search, corpse claim, dynamic reinforcement and alarm save/load", "m000 natural-contact MOD/Remake differential gate with exact scene 1598 to scene 1436 live-target identity and at most one checkpoint onset drift"],
+      "gaps": ["special-actor alert overrides", "exact same-tick arbitration between ordinary enemy gunshot alerts and persistent patrol scripts", "higher-level corridor coordination parity"]
     },
     {
       "id": "mission_state_machines",
@@ -79,7 +79,7 @@
     {
       "id": "save_load_settings_and_progression",
       "status": "partial",
-      "evidence": ["10 slots", "quick/autosave", "atomic JSON with backup", "remapping and channel volumes", "actor-78 cache and pending B worker/target/counter persistence while ephemeral actor 90 is deliberately excluded", "12 real-content heterogeneous mid-mission capture/rebuild hash round-trips"],
+      "evidence": ["10 slots", "quick/autosave", "atomic JSON with backup", "remapping and channel volumes", "actor-78 cache and pending B worker/target/counter persistence while ephemeral actor 90 is deliberately excluded", "door open state, corpse claim/global alarm/dynamic reinforcement identity and five-point coordinate-search persistence", "12 real-content heterogeneous mid-mission capture/rebuild hash round-trips"],
       "gaps": ["physical-disk slot save at every mission phase", "cross-version migration policy", "campaign progression parity"]
     },
     {

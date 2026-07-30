@@ -65,6 +65,11 @@ static func apply_after_level_loaded(game: Node, session: Dictionary) -> Diction
 		"escorts": session.get("escorts", []),
 		"ambient_units": session.get("ambient", []),
 	}
+	if game.has_method("prepare_legacy_reinforcements_for_restore"):
+		game.call(
+			"prepare_legacy_reinforcements_for_restore",
+			records_by_group["enemies"] as Array,
+		)
 	for group_name: String in records_by_group:
 		_restore_actor_group(
 			game,
@@ -73,13 +78,26 @@ static func apply_after_level_loaded(game: Node, session: Dictionary) -> Diction
 			warnings,
 		)
 	_restore_enemy_targets(game, records_by_group["enemies"] as Array)
-	_restore_selection(game)
 	var occupancy: Variant = game.get("dynamic_occupancy")
 	if occupancy != null and occupancy.has_method("finalize_registration"):
 		occupancy.call("finalize_registration")
+	for enemy_value: Variant in _array_property(game, "enemies"):
+		if (
+			enemy_value is Node
+			and is_instance_valid(enemy_value)
+			and (enemy_value as Node).has_method(
+				"resume_restored_legacy_search"
+			)
+		):
+			(enemy_value as Node).call("resume_restored_legacy_search")
 	var world_restore: Dictionary = _restore_world(
 		game, session.get("world", {}) as Dictionary, warnings
 	)
+	if game.has_method("_bind_restored_enemy_world_item_targets"):
+		game.call("_bind_restored_enemy_world_item_targets")
+	if game.has_method("_bind_restored_enemy_corpse_targets"):
+		game.call("_bind_restored_enemy_corpse_targets")
+	_restore_selection(game)
 	_sync_projectile_combatants(game)
 	_restore_camera(game, session.get("camera", {}) as Dictionary)
 	if game.has_method("_refresh_mission_ui"):
@@ -136,7 +154,11 @@ static func _capture_actor(actor: Node2D, group_name: String) -> Dictionary:
 		"is_alive": bool(actor.get("is_alive")),
 		"is_crawling": bool(actor.get("is_crawling")),
 		"is_running": bool(actor.get("is_running")),
-		"selected": bool(actor.get("selected")) if group_name == "units" else false,
+		"selected": (
+			bool(actor.get("selected"))
+			if group_name in ["units", "enemies"]
+			else false
+		),
 	}
 	if actor.has_method("inventory_snapshot"):
 		record["inventory"] = _json_value(actor.call("inventory_snapshot"))
@@ -168,6 +190,18 @@ static func _capture_actor(actor: Node2D, group_name: String) -> Dictionary:
 			),
 			"current_target_display_name": _actor_display_name(current_target),
 		}
+		if actor.has_method("legacy_world_item_state_snapshot"):
+			(record["ai"] as Dictionary)["legacy_world_item"] = _json_value(
+				actor.call("legacy_world_item_state_snapshot")
+			)
+		if actor.has_method("legacy_corpse_state_snapshot"):
+			(record["ai"] as Dictionary)["legacy_corpse"] = _json_value(
+				actor.call("legacy_corpse_state_snapshot")
+			)
+		if actor.has_method("legacy_enemy_ai_state_snapshot"):
+			(record["ai"] as Dictionary)["legacy_enemy_ai"] = _json_value(
+				actor.call("legacy_enemy_ai_state_snapshot")
+			)
 	elif group_name == "escorts":
 		var follow_target: Variant = actor.get("follow_target")
 		record["escort"] = {
@@ -217,7 +251,13 @@ static func _capture_world(game: Node) -> Dictionary:
 		"legacy_special_world_objects": [],
 		"legacy_ai_control_effects": [],
 		"legacy_burial_caches": [],
+		"legacy_doors": [],
 		"pending_burial_command": {},
+		"legacy_global_alarm_active": (
+			bool(game.get("legacy_global_alarm_active"))
+			if _has_property(game, "legacy_global_alarm_active")
+			else false
+		),
 		"projectiles": [],
 		"mission_direction": {},
 		"mission_ai_coordinator": {},
@@ -247,13 +287,20 @@ static func _capture_world(game: Node) -> Dictionary:
 	for pickup_value: Variant in _array_property(game, "mission_pickups"):
 		if pickup_value is Node2D and is_instance_valid(pickup_value) and not bool((pickup_value as Node2D).get("collected")):
 			var pickup := pickup_value as Node2D
-			(world["mission_pickups"] as Array).append(
-				{
-					"x": pickup.position.x,
-					"y": pickup.position.y,
-					"payload": _json_dictionary(pickup.get("item_payload")),
-				}
-			)
+			if pickup.has_method("snapshot"):
+				(world["mission_pickups"] as Array).append(
+					_json_value(pickup.call("snapshot"))
+				)
+			else:
+				(world["mission_pickups"] as Array).append(
+					{
+						"x": pickup.position.x,
+						"y": pickup.position.y,
+						"payload": _json_dictionary(
+							pickup.get("item_payload")
+						),
+					}
+				)
 	for mine_value: Variant in _array_property(game, "deployed_mines"):
 		if mine_value is Node2D and is_instance_valid(mine_value):
 			var mine := mine_value as Node2D
@@ -290,6 +337,15 @@ static func _capture_world(game: Node) -> Dictionary:
 		):
 			(world["legacy_burial_caches"] as Array).append(
 				_json_value((cache_value as Node).call("snapshot"))
+			)
+	for door_value: Variant in _array_property(game, "legacy_doors"):
+		if (
+			door_value is Node
+			and is_instance_valid(door_value)
+			and (door_value as Node).has_method("snapshot")
+		):
+			(world["legacy_doors"] as Array).append(
+				_json_value((door_value as Node).call("snapshot"))
 			)
 	var burial_target: Variant = (
 		game.get("burial_target")
@@ -473,7 +529,12 @@ static func _restore_actor(game: Node, actor: Node2D, record: Dictionary, group_
 	actor.set("is_running", bool(record.get("is_running", true)))
 	if actor.has_method("_apply_movement_mode"):
 		actor.call("_apply_movement_mode")
-	actor.set("selected", bool(record.get("selected", false)) and alive and group_name == "units")
+	actor.set(
+		"selected",
+		bool(record.get("selected", false))
+		and alive
+		and group_name in ["units", "enemies"],
+	)
 	actor.set("auto_combat_enabled", false)
 	actor.set("combat_target", null)
 	if group_name == "units":
@@ -518,6 +579,42 @@ static func _restore_actor(game: Node, actor: Node2D, record: Dictionary, group_
 		actor.set("search_elapsed", float(ai.get("search_elapsed", 0.0)))
 		actor.set("attack_count", int(ai.get("attack_count", 0)))
 		actor.set("regroup_remaining", maxf(float(ai.get("regroup_remaining", 0.0)), 0.0))
+		var legacy_world_item_value: Variant = ai.get(
+			"legacy_world_item",
+			{},
+		)
+		if (
+			legacy_world_item_value is Dictionary
+			and actor.has_method("restore_legacy_world_item_state")
+		):
+			actor.call(
+				"restore_legacy_world_item_state",
+				legacy_world_item_value as Dictionary,
+			)
+		var legacy_corpse_value: Variant = ai.get(
+			"legacy_corpse",
+			{},
+		)
+		if (
+			legacy_corpse_value is Dictionary
+			and actor.has_method("restore_legacy_corpse_state")
+		):
+			actor.call(
+				"restore_legacy_corpse_state",
+				legacy_corpse_value as Dictionary,
+			)
+		var legacy_enemy_ai_value: Variant = ai.get(
+			"legacy_enemy_ai",
+			{},
+		)
+		if (
+			legacy_enemy_ai_value is Dictionary
+			and actor.has_method("restore_legacy_enemy_ai_state")
+		):
+			actor.call(
+				"restore_legacy_enemy_ai_state",
+				legacy_enemy_ai_value as Dictionary,
+			)
 	elif group_name == "escorts" and record.get("escort") is Dictionary:
 		var escort := record["escort"] as Dictionary
 		actor.set("rescued_state", bool(escort.get("rescued", false)))
@@ -593,14 +690,23 @@ static func _restore_enemy_targets(game: Node, records: Array) -> void:
 static func _restore_selection(game: Node) -> void:
 	var selected := _array_property(game, "selected_units")
 	selected.clear()
-	for actor_value: Variant in _array_property(game, "units"):
-		if (
-			actor_value is Node2D
-			and is_instance_valid(actor_value)
-			and bool((actor_value as Node2D).get("is_alive"))
-			and bool((actor_value as Node2D).get("selected"))
-		):
-			selected.append(actor_value)
+	for group_name: String in ["units", "enemies"]:
+		for actor_value: Variant in _array_property(game, group_name):
+			if (
+				actor_value is Node2D
+				and is_instance_valid(actor_value)
+				and bool((actor_value as Node2D).get("is_alive"))
+				and bool((actor_value as Node2D).get("selected"))
+				and (
+					group_name == "units"
+					or bool(
+						(actor_value as Node2D).get(
+							"legacy_hypnosis_active"
+						)
+					)
+				)
+			):
+				selected.append(actor_value)
 
 
 static func _restore_inventory(game: Node, actor: Node2D, record: Dictionary) -> void:
@@ -672,6 +778,10 @@ static func _restore_world(game: Node, world: Dictionary, warnings: Array[String
 		"victory_presentation_completed",
 		bool(world.get("victory_presentation_completed", true)),
 	)
+	game.set(
+		"legacy_global_alarm_active",
+		bool(world.get("legacy_global_alarm_active", false)),
+	)
 	var buried: Dictionary = {}
 	for value: Variant in world.get("buried_enemy_scene_indices", []) as Array:
 		buried[int(value)] = true
@@ -681,6 +791,8 @@ static func _restore_world(game: Node, world: Dictionary, warnings: Array[String
 			continue
 		var enemy := enemy_value as Node2D
 		if buried.has(int(enemy.get("scene_index"))):
+			if enemy.has_method("mark_legacy_corpse_buried"):
+				enemy.call("mark_legacy_corpse_buried", true)
 			enemy.visible = false
 			enemy.process_mode = Node.PROCESS_MODE_DISABLED
 	var snapshot_presence: Dictionary = {}
@@ -744,6 +856,11 @@ static func _restore_world(game: Node, world: Dictionary, warnings: Array[String
 		world.get("legacy_burial_caches", []) as Array,
 		warnings,
 	)
+	if game.has_method("restore_legacy_door_states"):
+		game.call(
+			"restore_legacy_door_states",
+			world.get("legacy_doors", []) as Array,
+		)
 	_restore_pending_burial_command(
 		game,
 		world.get("pending_burial_command", {}) as Dictionary,
@@ -782,11 +899,16 @@ static func _restore_mission_pickups(game: Node, records: Array) -> void:
 		if pickup_value is Node and is_instance_valid(pickup_value):
 			(pickup_value as Node).queue_free()
 	existing.clear()
+	if _has_property(game, "next_mission_pickup_serial"):
+		game.set("next_mission_pickup_serial", 1)
 	for record_value: Variant in records:
 		if not record_value is Dictionary:
 			continue
 		var record := record_value as Dictionary
-		var payload := record.get("payload", {}) as Dictionary
+		# apply_after_level_loaded must not mutate the caller's checkpoint.
+		var payload := (
+			record.get("payload", {}) as Dictionary
+		).duplicate(true)
 		var texture: Texture2D
 		if (
 			not str(payload.get("original_inventory_kind", "")).is_empty()
@@ -810,8 +932,21 @@ static func _restore_mission_pickups(game: Node, records: Array) -> void:
 			),
 			texture,
 		)
+		# Metadata is serialized beside the payload. Assigning it after configure
+		# preserves the original payload shape, including mission-only drops that
+		# intentionally have actor type 0.
+		for field: String in [
+			"original_actor_type",
+			"original_target_status",
+			"world_item_serial",
+		]:
+			if record.has(field):
+				pickup.set(field, int(record[field]))
 		game.add_child(pickup)
-		existing.append(pickup)
+		if game.has_method("_register_mission_pickup"):
+			game.call("_register_mission_pickup", pickup)
+		else:
+			existing.append(pickup)
 
 
 static func _restore_mines(game: Node, records: Array, warnings: Array[String]) -> void:

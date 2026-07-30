@@ -29,7 +29,11 @@ struct RuntimeActorV1 final {
     std::int32_t navigation_cell_x;       // +0x108
     std::int32_t navigation_height_cell;  // +0x10C
     std::int32_t navigation_cell_y;       // +0x110
-    std::byte unknown_114[100];
+    std::byte unknown_114[84];
+    // sub_458270 sets this while item 49 temporarily exposes the enemy to
+    // player commands. sub_45C710 clears it with the hypnosis state.
+    std::int32_t world_item_player_selected; // +0x168
+    std::byte unknown_16c[12];
     std::int32_t facing_direction;        // +0x178, 1..8
     std::byte unknown_17c[12];
     std::int32_t dead_or_disabled;         // +0x188
@@ -70,14 +74,23 @@ struct RuntimeActorV1 final {
     // Points to RuntimeInventoryContainerV1. This is the same container
     // searched by sub_452E40 and rendered by the original inventory HUD.
     std::uint32_t inventory_address;         // +0x22C
-    std::byte unknown_230[24];
+    std::byte unknown_230[8];
+    std::int32_t hypnosis_active;           // +0x238
+    std::byte unknown_23c[12];
     std::int32_t search_delay_limit;        // +0x248
     std::int32_t search_delay_counter;      // +0x24C
     std::int32_t contact_state;             // +0x250
     std::int32_t target_lost;               // +0x254
-    std::byte unknown_258[4];
+    std::int32_t corpse_discovered;          // +0x258
     std::int32_t reaction_state;            // +0x25C
-    std::byte unknown_260[40];
+    std::byte unknown_260[4];
+    std::int32_t poison_active;              // +0x264
+    std::int32_t poison_counter;             // +0x268
+    std::int32_t poison_counter_limit;       // +0x26C
+    std::byte unknown_270[8];
+    std::int32_t hypnosis_counter_limit;     // +0x278
+    std::int32_t hypnosis_counter;           // +0x27C
+    std::byte unknown_280[8];
     // Set after the worker reaches the corpse and the 100-limit counter starts.
     std::int32_t burial_action_started;     // +0x288
     std::byte unknown_28c[4];
@@ -139,6 +152,7 @@ static_assert(offsetof(RuntimeActorV1, world_y) == 0x0E0);
 static_assert(offsetof(RuntimeActorV1, navigation_cell_x) == 0x108);
 static_assert(offsetof(RuntimeActorV1, navigation_height_cell) == 0x10C);
 static_assert(offsetof(RuntimeActorV1, navigation_cell_y) == 0x110);
+static_assert(offsetof(RuntimeActorV1, world_item_player_selected) == 0x168);
 static_assert(offsetof(RuntimeActorV1, facing_direction) == 0x178);
 static_assert(offsetof(RuntimeActorV1, dead_or_disabled) == 0x188);
 static_assert(offsetof(RuntimeActorV1, goal_kind) == 0x194);
@@ -161,10 +175,17 @@ static_assert(offsetof(RuntimeActorV1, resolved_goal_x) == 0x218);
 static_assert(offsetof(RuntimeActorV1, resolved_goal_y) == 0x220);
 static_assert(offsetof(RuntimeActorV1, item_inventory_address) == 0x228);
 static_assert(offsetof(RuntimeActorV1, inventory_address) == 0x22C);
+static_assert(offsetof(RuntimeActorV1, hypnosis_active) == 0x238);
 static_assert(offsetof(RuntimeActorV1, search_delay_limit) == 0x248);
 static_assert(offsetof(RuntimeActorV1, contact_state) == 0x250);
 static_assert(offsetof(RuntimeActorV1, target_lost) == 0x254);
+static_assert(offsetof(RuntimeActorV1, corpse_discovered) == 0x258);
 static_assert(offsetof(RuntimeActorV1, reaction_state) == 0x25C);
+static_assert(offsetof(RuntimeActorV1, poison_active) == 0x264);
+static_assert(offsetof(RuntimeActorV1, poison_counter) == 0x268);
+static_assert(offsetof(RuntimeActorV1, poison_counter_limit) == 0x26C);
+static_assert(offsetof(RuntimeActorV1, hypnosis_counter_limit) == 0x278);
+static_assert(offsetof(RuntimeActorV1, hypnosis_counter) == 0x27C);
 static_assert(offsetof(RuntimeActorV1, burial_action_started) == 0x288);
 static_assert(offsetof(RuntimeActorV1, path_override_active) == 0x290);
 static_assert(offsetof(RuntimeActorV1, special_attention_hold) == 0x290);

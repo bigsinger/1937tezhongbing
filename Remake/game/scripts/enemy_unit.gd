@@ -4,6 +4,15 @@ extends "res://scripts/squad_unit.gd"
 const TACTICAL_SENSES: Script = preload("res://scripts/tactical_senses.gd")
 const COMBAT_PROFILES: Script = preload("res://scripts/combat_profiles.gd")
 const IMPORTED_SPRITE_ANIMATION: Script = preload("res://scripts/imported_sprite_animation.gd")
+const LEGACY_WORLD_ITEM_RULES: Script = preload(
+	"res://scripts/legacy_world_item_rules.gd"
+)
+const LEGACY_CORPSE_DISCOVERY_RULES: Script = preload(
+	"res://scripts/legacy_corpse_discovery_rules.gd"
+)
+const LEGACY_ENEMY_AI_RULES: Script = preload(
+	"res://scripts/legacy_enemy_ai_rules.gd"
+)
 const SENSE_INTERVAL_SECONDS := 0.20
 const CHASE_REPLAN_SECONDS := 0.50
 const SEARCH_TIMEOUT_SECONDS := 2.50
@@ -31,9 +40,26 @@ const ATTACK_RECHECK_MAX_SECONDS := 39.0 * ORIGINAL_ATTACK_REACTION_TICK_SECONDS
 ## aim-error curve affect real hit resolution without pretending otherwise.
 const EDITORIAL_BASE_AIM_MISS_CHANCE := 0.10
 
-enum BehaviorState { PATROL, CHASE, ATTACK, SEARCH, REGROUP }
+enum BehaviorState {
+	PATROL,
+	CHASE,
+	ATTACK,
+	SEARCH,
+	REGROUP,
+	WORLD_ITEM,
+	CORPSE_DISCOVERY,
+}
 
 signal attack_committed(attacker: EnemyUnit, target: Node2D, attack_type: int)
+signal legacy_world_item_interaction_requested(
+	enemy: EnemyUnit,
+	world_item: Node2D,
+)
+signal legacy_hypnosis_changed(enemy: EnemyUnit, active: bool)
+signal legacy_corpse_discovery_triggered(
+	observer: EnemyUnit,
+	corpse: EnemyUnit,
+)
 
 var behavior_state := BehaviorState.PATROL
 var patrol_waypoints := PackedVector2Array()
@@ -44,11 +70,45 @@ var patrol_path_in_flight := false
 var original_direction_index := 1
 var sense_profile: Dictionary = {}
 var potential_targets: Array[Node2D] = []
+var potential_world_items: Array[Node2D] = []
+var potential_corpses: Array[Node2D] = []
 var current_target: Node2D
+var legacy_world_item_target: Node2D
+var legacy_world_item_interaction_pending := false
+var legacy_world_item_replan_elapsed := 0.0
+var pending_legacy_world_item_serial := 0
+var legacy_hypnosis_active := false
+var legacy_hypnosis_counter := 0
+var legacy_poison_active := false
+var legacy_poison_counter := 0
+var legacy_distraction_active := false
+var legacy_distraction_counter := 0
+var legacy_distraction_limit := 0
+var legacy_effect_random_state := 1
+var legacy_corpse_discovered := false
+var legacy_corpse_buried := false
+var legacy_corpse_target: Node2D
+var pending_legacy_corpse_scene_index := -1
+var legacy_corpse_reaction_counter := 0
+var legacy_corpse_reaction_limit := 0
+var legacy_corpse_reaction_elapsed := 0.0
+var legacy_corpse_random_state := 1
+var legacy_reinforcement_spawned := false
+var legacy_reinforcement_source_marker_scene_index := -1
+var legacy_reinforcement_serial := 0
+var legacy_reinforcement_leader_scene_index := -1
 var last_known_target_position := Vector2.ZERO
 var sense_elapsed := 0.0
 var chase_replan_elapsed := 0.0
 var search_elapsed := 0.0
+var legacy_search_active := false
+var legacy_search_finishing := false
+var legacy_search_origin := Vector2.ZERO
+var legacy_search_point_index := 0
+var legacy_search_wait_counter := 0
+var legacy_search_wait_limit := 0
+var legacy_search_tick_elapsed := 0.0
+var legacy_search_random_state := 1
 var attack_recheck_elapsed := 0.0
 var attack_recheck_seconds := ATTACK_RECHECK_MIN_SECONDS
 var attack_count := 0
@@ -143,12 +203,50 @@ func configure_enemy(
 	patrol_enabled = bool(entity.get("patrol_enabled", true)) and not patrol_waypoints.is_empty()
 	patrol_wait_remaining = 0.0
 	patrol_path_in_flight = false
+	legacy_effect_random_state = int(
+		(scene_index * 1103515245 + 12345) & 0x7fffffff
+	)
+	if legacy_effect_random_state == 0:
+		legacy_effect_random_state = 1
+	legacy_corpse_random_state = int(
+		(scene_index * 1664525 + 1013904223) & 0x7fffffff
+	)
+	if legacy_corpse_random_state == 0:
+		legacy_corpse_random_state = 1
+	legacy_search_random_state = int(
+		(scene_index * 22695477 + 1) & 0x7fffffff
+	)
+	if legacy_search_random_state == 0:
+		legacy_search_random_state = 1
+	_clear_legacy_coordinate_search()
+	legacy_corpse_discovered = false
+	legacy_corpse_buried = false
+	_clear_legacy_corpse_attention()
+	legacy_reinforcement_spawned = false
+	legacy_reinforcement_source_marker_scene_index = -1
+	legacy_reinforcement_serial = 0
+	legacy_reinforcement_leader_scene_index = -1
+	_clear_all_legacy_world_item_runtime()
 	attack_recheck_seconds = _deterministic_attack_interval()
 	queue_redraw()
 
 
 func set_potential_targets(targets: Array[Node2D]) -> void:
 	potential_targets = targets.duplicate()
+
+
+func set_potential_world_items(items: Array) -> void:
+	potential_world_items.clear()
+	for item_value: Variant in items:
+		if item_value is Node2D and is_instance_valid(item_value):
+			potential_world_items.append(item_value as Node2D)
+
+
+func set_potential_corpses(corpses: Array) -> void:
+	potential_corpses.clear()
+	for corpse_value: Variant in corpses:
+		if corpse_value is Node2D and is_instance_valid(corpse_value):
+			potential_corpses.append(corpse_value as Node2D)
 
 
 func configure_editorial_ai(
@@ -247,6 +345,20 @@ func _physics_process(delta: float) -> void:
 	var safe_delta := maxf(delta, 0.0)
 	if not is_alive or combat_action != CombatAction.NONE or hurt_remaining > 0.0:
 		super._physics_process(safe_delta)
+		return
+	var legacy_effect_blocked_at_start := (
+		legacy_hypnosis_active
+		or legacy_poison_active
+		or legacy_distraction_active
+	)
+	if legacy_effect_blocked_at_start:
+		advance_legacy_world_item_effect_ticks(1)
+		super._physics_process(safe_delta)
+		original_direction_index = (
+			IMPORTED_SPRITE_ANIMATION.direction_index_for_legacy_group(
+				animation_group_index
+			)
+		)
 		return
 	path_request_delay_remaining = maxf(path_request_delay_remaining - safe_delta, 0.0)
 	sense_elapsed += safe_delta
@@ -365,6 +477,8 @@ func _update_detection() -> void:
 			nearest_distance_squared = distance_squared
 			nearest_visible = target
 	if nearest_visible != null:
+		_clear_legacy_world_item_target()
+		_clear_legacy_corpse_attention()
 		_release_special_control_for_combat()
 		var already_tracking := (
 			current_target == nearest_visible
@@ -383,9 +497,31 @@ func _update_detection() -> void:
 			)
 	elif current_target != null and behavior_state in [BehaviorState.CHASE, BehaviorState.ATTACK]:
 		_release_special_control_for_combat()
-		behavior_state = BehaviorState.SEARCH
-		search_elapsed = 0.0
-		_issue_path_to(last_known_target_position)
+		if mission_ai_coordinator == null:
+			_begin_legacy_coordinate_search(last_known_target_position)
+		else:
+			current_target = null
+			behavior_state = BehaviorState.SEARCH
+			search_elapsed = 0.0
+			_issue_path_to(last_known_target_position)
+	elif (
+		behavior_state in [
+			BehaviorState.PATROL,
+			BehaviorState.WORLD_ITEM,
+			BehaviorState.CORPSE_DISCOVERY,
+		]
+		and not is_special_controlled()
+		and not has_active_legacy_world_item_effect()
+	):
+		if behavior_state != BehaviorState.CORPSE_DISCOVERY:
+			var visible_corpse := _first_visible_legacy_corpse()
+			if visible_corpse != null:
+				_begin_legacy_corpse_discovery(visible_corpse)
+				return
+		if behavior_state == BehaviorState.PATROL:
+			var visible_world_item := _first_visible_allowed_world_item()
+			if visible_world_item != null:
+				_begin_legacy_world_item_investigation(visible_world_item)
 
 
 func _update_behavior(delta: float) -> void:
@@ -439,6 +575,9 @@ func _update_behavior(delta: float) -> void:
 						self, current_target, int(weapon_profile.get("attack_type", 0))
 					)
 		BehaviorState.SEARCH:
+			if legacy_search_active or legacy_search_finishing:
+				_update_legacy_coordinate_search(delta)
+				return
 			if movement_path_index < movement_path.size():
 				return
 			search_elapsed += delta
@@ -453,6 +592,10 @@ func _update_behavior(delta: float) -> void:
 			if regroup_remaining <= 0.0:
 				behavior_state = BehaviorState.CHASE
 				chase_replan_elapsed = CHASE_REPLAN_SECONDS
+		BehaviorState.WORLD_ITEM:
+			_update_legacy_world_item_investigation(delta)
+		BehaviorState.CORPSE_DISCOVERY:
+			_update_legacy_corpse_discovery(delta)
 
 
 func _update_patrol(delta: float) -> void:
@@ -480,6 +623,9 @@ func _update_patrol(delta: float) -> void:
 
 
 func _enter_patrol() -> void:
+	_clear_legacy_world_item_target()
+	_clear_legacy_corpse_attention()
+	_clear_legacy_coordinate_search()
 	behavior_state = BehaviorState.PATROL
 	search_elapsed = 0.0
 	regroup_remaining = 0.0
@@ -526,6 +672,9 @@ func _can_attack_current_target() -> bool:
 func receive_alert(target: Node2D, world_position: Vector2) -> bool:
 	if not is_alive or not _is_hostile_target(target):
 		return false
+	_clear_legacy_world_item_target()
+	_clear_legacy_corpse_attention()
+	_clear_legacy_coordinate_search()
 	_release_special_control_for_combat()
 	current_target = target
 	last_known_target_position = world_position
@@ -545,14 +694,759 @@ func receive_alert(target: Node2D, world_position: Vector2) -> bool:
 func investigate_position(world_position: Vector2) -> bool:
 	if not is_alive:
 		return false
+	return _begin_legacy_coordinate_search(world_position)
+
+
+func receive_original_coordinate_alert(world_position: Vector2) -> bool:
+	if (
+		not is_alive
+		or (
+			current_target != null
+			and is_instance_valid(current_target)
+			and behavior_state in [
+				BehaviorState.CHASE,
+				BehaviorState.ATTACK,
+			]
+		)
+	):
+		return false
+	return _begin_legacy_coordinate_search(world_position)
+
+
+func _begin_legacy_coordinate_search(world_position: Vector2) -> bool:
+	if not is_alive:
+		return false
+	_clear_legacy_world_item_target()
+	_clear_legacy_corpse_attention()
 	_release_special_control_for_combat()
 	current_target = null
+	clear_combat_target()
 	last_known_target_position = world_position
+	legacy_search_origin = world_position
+	legacy_search_active = true
+	legacy_search_finishing = false
+	legacy_search_point_index = 0
+	legacy_search_wait_counter = 0
+	legacy_search_tick_elapsed = 0.0
+	var sampled: Dictionary = (
+		LEGACY_ENEMY_AI_RULES.reaction_limit_from_state(
+			legacy_search_random_state
+		)
+	)
+	legacy_search_random_state = int(sampled.get("state", 1))
+	legacy_search_wait_limit = int(
+		sampled.get(
+			"limit",
+			LEGACY_ENEMY_AI_RULES.REACTION_MINIMUM_LIMIT,
+		)
+	)
 	search_elapsed = 0.0
 	chase_replan_elapsed = CHASE_REPLAN_SECONDS
 	behavior_state = BehaviorState.SEARCH
 	_issue_path_to(world_position)
 	return true
+
+
+func _update_legacy_coordinate_search(delta: float) -> void:
+	if legacy_search_finishing:
+		if movement_path_index >= movement_path.size():
+			_enter_patrol()
+		return
+	# The initial coordinate command must be allowed to arrive before the local
+	# five-point sub_45E4B0 sweep begins. This preserves playable path intent
+	# while retaining the recovered counter ranges and search geometry.
+	if movement_path_index < movement_path.size():
+		return
+	legacy_search_tick_elapsed += maxf(delta, 0.0)
+	while (
+		legacy_search_tick_elapsed
+		>= ORIGINAL_ATTACK_REACTION_TICK_SECONDS
+	):
+		legacy_search_tick_elapsed -= ORIGINAL_ATTACK_REACTION_TICK_SECONDS
+		legacy_search_wait_counter += 1
+		if not LEGACY_ENEMY_AI_RULES.counter_has_completed(
+			legacy_search_wait_counter,
+			legacy_search_wait_limit,
+		):
+			continue
+		if (
+			legacy_search_point_index
+			>= LEGACY_ENEMY_AI_RULES.SEARCH_POINT_COUNT
+		):
+			_enter_patrol()
+			return
+		var sampled: Dictionary = (
+			LEGACY_ENEMY_AI_RULES.local_search_point_from_state(
+				legacy_search_random_state,
+				position,
+				_legacy_search_world_bounds(),
+			)
+		)
+		legacy_search_random_state = int(sampled.get("state", 1))
+		legacy_search_wait_counter = 0
+		legacy_search_wait_limit = int(
+			sampled.get(
+				"next_wait_limit",
+				LEGACY_ENEMY_AI_RULES.SEARCH_WAIT_MINIMUM_LIMIT,
+			)
+		)
+		legacy_search_point_index += 1
+		var search_point := sampled.get("point", position) as Vector2
+		last_known_target_position = search_point
+		_issue_path_to(search_point)
+		if (
+			legacy_search_point_index
+			>= LEGACY_ENEMY_AI_RULES.SEARCH_POINT_COUNT
+		):
+			# The original clears its search flag on the tick after the fifth
+			# coordinate is issued, but the already-issued movement survives.
+			legacy_search_active = false
+			legacy_search_finishing = true
+		return
+		if movement_path_index < movement_path.size():
+			return
+
+
+func _clear_legacy_coordinate_search() -> void:
+	legacy_search_active = false
+	legacy_search_finishing = false
+	legacy_search_origin = Vector2.ZERO
+	legacy_search_point_index = 0
+	legacy_search_wait_counter = 0
+	legacy_search_wait_limit = 0
+	legacy_search_tick_elapsed = 0.0
+
+
+func _legacy_search_world_bounds() -> Rect2:
+	if dynamic_occupancy != null:
+		var source_navigation: Variant = dynamic_occupancy.get("navigation")
+		if source_navigation is RefCounted:
+			var dimensions: Vector2i = source_navigation.get("dimensions")
+			var cell_size: Vector2i = source_navigation.get("cell_size")
+			var size := Vector2(dimensions * cell_size)
+			if size.x > 0.0 and size.y > 0.0:
+				return Rect2(Vector2.ZERO, size)
+	return Rect2(Vector2.ZERO, Vector2(65535.0, 65535.0))
+
+
+func can_discover_legacy_corpse(corpse: Node2D) -> bool:
+	if (
+		not is_alive
+		or faction_id != LEGACY_CORPSE_DISCOVERY_RULES.ENEMY_FACTION_ID
+		or corpse == null
+		or corpse == self
+		or not is_instance_valid(corpse)
+		or not LEGACY_CORPSE_DISCOVERY_RULES.is_candidate(
+			int(corpse.get("faction_id")),
+			bool(corpse.get("is_alive")),
+			bool(corpse.get("legacy_corpse_discovered")),
+			bool(corpse.get("legacy_corpse_buried")),
+		)
+	):
+		return false
+	if TACTICAL_SENSES.original_visibility_band(
+		position,
+		corpse.position,
+		original_direction_index,
+		sense_profile,
+		false,
+	) != LEGACY_CORPSE_DISCOVERY_RULES.REQUIRED_VISIBILITY_BAND:
+		return false
+	if not bool(sense_profile.get("requires_line_of_sight", true)):
+		return true
+	if (
+		dynamic_occupancy == null
+		or not dynamic_occupancy.has_method("has_line_of_sight")
+	):
+		return false
+	var ignored: Array = []
+	if scene_index >= 0:
+		ignored.append(scene_index)
+	var corpse_scene_index := int(corpse.get("scene_index"))
+	if corpse_scene_index >= 0:
+		ignored.append(corpse_scene_index)
+	return bool(
+		dynamic_occupancy.has_line_of_sight(
+			position,
+			corpse.position,
+			ignored,
+		)
+	)
+
+
+func _first_visible_legacy_corpse() -> Node2D:
+	# sub_45C4C0 returns the first eligible world actor. It never chooses the
+	# nearest corpse, and the +0x258 claim prevents a second observer.
+	for corpse: Node2D in potential_corpses:
+		if can_discover_legacy_corpse(corpse):
+			return corpse
+	return null
+
+
+func _begin_legacy_corpse_discovery(corpse: Node2D) -> bool:
+	if not can_discover_legacy_corpse(corpse):
+		return false
+	_clear_legacy_world_item_target()
+	legacy_corpse_target = corpse
+	pending_legacy_corpse_scene_index = -1
+	corpse.set("legacy_corpse_discovered", true)
+	legacy_corpse_reaction_counter = 0
+	legacy_corpse_reaction_elapsed = 0.0
+	var sampled: Dictionary = (
+		LEGACY_CORPSE_DISCOVERY_RULES.reaction_limit_from_state(
+			legacy_corpse_random_state
+		)
+	)
+	legacy_corpse_random_state = int(sampled.get("state", 1))
+	legacy_corpse_reaction_limit = int(
+		sampled.get(
+			"limit",
+			LEGACY_CORPSE_DISCOVERY_RULES.REACTION_MINIMUM_LIMIT,
+		)
+	)
+	current_target = null
+	clear_combat_target()
+	behavior_state = BehaviorState.CORPSE_DISCOVERY
+	last_known_target_position = corpse.position
+	cancel_path()
+	_issue_path_to(corpse.position)
+	legacy_corpse_discovery_triggered.emit(self, corpse)
+	return true
+
+
+func _update_legacy_corpse_discovery(delta: float) -> void:
+	if (
+		legacy_corpse_target == null
+		or not is_instance_valid(legacy_corpse_target)
+		or bool(legacy_corpse_target.get("legacy_corpse_buried"))
+	):
+		_enter_patrol()
+		return
+	if movement_path_index < movement_path.size():
+		return
+	legacy_corpse_reaction_elapsed += maxf(delta, 0.0)
+	while (
+		legacy_corpse_reaction_elapsed
+		>= ORIGINAL_ATTACK_REACTION_TICK_SECONDS
+	):
+		legacy_corpse_reaction_elapsed -= ORIGINAL_ATTACK_REACTION_TICK_SECONDS
+		legacy_corpse_reaction_counter += 1
+		if LEGACY_CORPSE_DISCOVERY_RULES.reaction_has_completed(
+			legacy_corpse_reaction_counter,
+			legacy_corpse_reaction_limit,
+		):
+			var corpse_position := legacy_corpse_target.position
+			_begin_legacy_coordinate_search(corpse_position)
+			return
+	if movement_path_index >= movement_path.size():
+		var facing := legacy_corpse_target.position - position
+		if not facing.is_zero_approx():
+			set_animation_group(direction_group_index(facing))
+			apply_idle_frame()
+
+
+func mark_legacy_corpse_buried(value: bool = true) -> void:
+	legacy_corpse_buried = value
+	if value:
+		legacy_corpse_discovered = true
+	queue_redraw()
+
+
+func receive_legacy_corpse_reinforcement_order(
+	corpse: Node2D,
+	leader_scene_index: int = -1,
+) -> bool:
+	if not is_alive or corpse == null or not is_instance_valid(corpse):
+		return false
+	legacy_reinforcement_leader_scene_index = leader_scene_index
+	return investigate_position(corpse.position)
+
+
+func can_consider_legacy_world_item(world_item: Node2D) -> bool:
+	if (
+		not is_alive
+		or faction_id != LEGACY_WORLD_ITEM_RULES.ENEMY_FACTION_ID
+		or world_item == null
+		or not is_instance_valid(world_item)
+		or not world_item.has_method("is_available_original_world_item")
+		or not bool(world_item.call("is_available_original_world_item"))
+	):
+		return false
+	var item_id := int(world_item.get("original_actor_type"))
+	if not LEGACY_WORLD_ITEM_RULES.accepts_item(
+		runtime_actor_type,
+		item_id,
+		faction_id,
+	):
+		return false
+	if TACTICAL_SENSES.original_visibility_band(
+		position,
+		world_item.position,
+		original_direction_index,
+		sense_profile,
+		false,
+	) != 1:
+		return false
+	if not bool(sense_profile.get("requires_line_of_sight", true)):
+		return true
+	if (
+		dynamic_occupancy == null
+		or not dynamic_occupancy.has_method("has_line_of_sight")
+	):
+		return false
+	var ignored: Array = []
+	if scene_index >= 0:
+		ignored.append(scene_index)
+	return bool(
+		dynamic_occupancy.has_line_of_sight(
+			position,
+			world_item.position,
+			ignored,
+		)
+	)
+
+
+func apply_legacy_world_item_effect(
+	item_id: int,
+	forced_distraction_limit: int = -1,
+) -> Dictionary:
+	var profile: Dictionary = LEGACY_WORLD_ITEM_RULES.effect_profile(item_id)
+	if profile.is_empty() or not is_alive:
+		return {}
+	var kind := str(profile.get("kind", ""))
+	var result := profile.duplicate(true)
+	_clear_legacy_world_item_target()
+	_clear_legacy_corpse_attention()
+	current_target = null
+	clear_combat_target()
+	auto_combat_enabled = false
+	cancel_path()
+	behavior_state = BehaviorState.PATROL
+	match kind:
+		"hypnosis":
+			legacy_hypnosis_active = true
+			legacy_hypnosis_counter = 0
+			set_selected(true)
+			legacy_hypnosis_changed.emit(self, true)
+		"poison_and_distraction":
+			_start_legacy_distraction(forced_distraction_limit)
+			legacy_poison_active = true
+			legacy_poison_counter = 0
+			result["distraction_limit"] = legacy_distraction_limit
+		"distraction":
+			_start_legacy_distraction(forced_distraction_limit)
+			result["distraction_limit"] = legacy_distraction_limit
+		"carry":
+			pass
+		_:
+			return {}
+	queue_redraw()
+	return result
+
+
+func advance_legacy_world_item_effect_ticks(ticks: int = 1) -> Dictionary:
+	var result := {
+		"hypnosis_finished": false,
+		"distraction_finished": false,
+		"poison_damage": 0,
+	}
+	for unused_tick: int in range(maxi(ticks, 0)):
+		# sub_45C710 returns immediately from both hypnosis and poison branches.
+		# This means a simultaneous poison/distraction effect does not advance its
+		# ordinary distraction counter before the poison branch resolves.
+		if legacy_hypnosis_active:
+			legacy_hypnosis_counter += 1
+			if (
+				legacy_hypnosis_counter
+				> LEGACY_WORLD_ITEM_RULES.HYPNOSIS_COUNTER_LIMIT
+			):
+				legacy_hypnosis_active = false
+				legacy_hypnosis_counter = 0
+				set_selected(false)
+				result["hypnosis_finished"] = true
+				legacy_hypnosis_changed.emit(self, false)
+			continue
+		if legacy_poison_active:
+			legacy_poison_counter += 1
+			if (
+				legacy_poison_counter
+				> LEGACY_WORLD_ITEM_RULES.POISON_COUNTER_LIMIT
+			):
+				result["poison_damage"] = (
+					int(result["poison_damage"])
+					+ take_damage(LEGACY_WORLD_ITEM_RULES.POISON_DAMAGE, null)
+				)
+			continue
+		if legacy_distraction_active:
+			legacy_distraction_counter += 1
+			if legacy_distraction_counter > legacy_distraction_limit:
+				legacy_distraction_active = false
+				legacy_distraction_counter = 0
+				legacy_distraction_limit = 0
+				result["distraction_finished"] = true
+	queue_redraw()
+	return result
+
+
+func has_active_legacy_world_item_effect() -> bool:
+	return (
+		legacy_hypnosis_active
+		or legacy_poison_active
+		or legacy_distraction_active
+	)
+
+
+func complete_legacy_world_item_interaction(
+	world_item: Node2D,
+	success: bool,
+) -> void:
+	if world_item != legacy_world_item_target:
+		return
+	_clear_legacy_world_item_target()
+	if behavior_state == BehaviorState.WORLD_ITEM:
+		_enter_patrol()
+	if not success:
+		path_request_delay_remaining = patrol_path_retry_seconds
+
+
+func legacy_enemy_ai_state_snapshot() -> Dictionary:
+	return {
+		"search_active": legacy_search_active,
+		"search_finishing": legacy_search_finishing,
+		"search_origin_x": legacy_search_origin.x,
+		"search_origin_y": legacy_search_origin.y,
+		"search_point_index": legacy_search_point_index,
+		"search_wait_counter": legacy_search_wait_counter,
+		"search_wait_limit": legacy_search_wait_limit,
+		"search_tick_elapsed": legacy_search_tick_elapsed,
+		"search_random_state": legacy_search_random_state,
+	}
+
+
+func restore_legacy_enemy_ai_state(state: Dictionary) -> bool:
+	if state.is_empty():
+		return false
+	legacy_search_active = bool(state.get("search_active", false))
+	legacy_search_finishing = bool(
+		state.get("search_finishing", false)
+	)
+	legacy_search_origin = Vector2(
+		float(state.get("search_origin_x", 0.0)),
+		float(state.get("search_origin_y", 0.0)),
+	)
+	legacy_search_point_index = clampi(
+		int(state.get("search_point_index", 0)),
+		0,
+		LEGACY_ENEMY_AI_RULES.SEARCH_POINT_COUNT,
+	)
+	legacy_search_wait_counter = maxi(
+		int(state.get("search_wait_counter", 0)),
+		0,
+	)
+	legacy_search_wait_limit = maxi(
+		int(state.get("search_wait_limit", 0)),
+		0,
+	)
+	legacy_search_tick_elapsed = maxf(
+		float(state.get("search_tick_elapsed", 0.0)),
+		0.0,
+	)
+	legacy_search_random_state = maxi(
+		int(state.get("search_random_state", legacy_search_random_state)),
+		1,
+	)
+	return true
+
+
+func resume_restored_legacy_search() -> bool:
+	if (
+		not is_alive
+		or behavior_state != BehaviorState.SEARCH
+		or (not legacy_search_active and not legacy_search_finishing)
+	):
+		return false
+	return _issue_path_to(last_known_target_position)
+
+
+func legacy_world_item_state_snapshot() -> Dictionary:
+	return {
+		"target_serial": (
+			int(legacy_world_item_target.get("world_item_serial"))
+			if (
+				legacy_world_item_target != null
+				and is_instance_valid(legacy_world_item_target)
+			)
+			else pending_legacy_world_item_serial
+		),
+		"interaction_pending": legacy_world_item_interaction_pending,
+		"replan_elapsed": legacy_world_item_replan_elapsed,
+		"hypnosis_active": legacy_hypnosis_active,
+		"hypnosis_counter": legacy_hypnosis_counter,
+		"poison_active": legacy_poison_active,
+		"poison_counter": legacy_poison_counter,
+		"distraction_active": legacy_distraction_active,
+		"distraction_counter": legacy_distraction_counter,
+		"distraction_limit": legacy_distraction_limit,
+		"random_state": legacy_effect_random_state,
+	}
+
+
+func restore_legacy_world_item_state(state: Dictionary) -> bool:
+	if state.is_empty():
+		return false
+	pending_legacy_world_item_serial = maxi(
+		int(state.get("target_serial", 0)),
+		0,
+	)
+	legacy_world_item_interaction_pending = false
+	legacy_world_item_replan_elapsed = maxf(
+		float(state.get("replan_elapsed", 0.0)),
+		0.0,
+	)
+	legacy_hypnosis_active = bool(state.get("hypnosis_active", false))
+	legacy_hypnosis_counter = maxi(
+		int(state.get("hypnosis_counter", 0)),
+		0,
+	)
+	legacy_poison_active = bool(state.get("poison_active", false))
+	legacy_poison_counter = maxi(int(state.get("poison_counter", 0)), 0)
+	legacy_distraction_active = bool(
+		state.get("distraction_active", false)
+	)
+	legacy_distraction_counter = maxi(
+		int(state.get("distraction_counter", 0)),
+		0,
+	)
+	legacy_distraction_limit = maxi(
+		int(state.get("distraction_limit", 0)),
+		0,
+	)
+	legacy_effect_random_state = maxi(
+		int(state.get("random_state", legacy_effect_random_state)),
+		1,
+	)
+	if legacy_hypnosis_active:
+		set_selected(true)
+	return true
+
+
+func bind_restored_legacy_world_item_target(items: Array) -> bool:
+	if pending_legacy_world_item_serial <= 0:
+		return true
+	for item_value: Variant in items:
+		if (
+			item_value is Node2D
+			and is_instance_valid(item_value)
+			and int((item_value as Node2D).get("world_item_serial"))
+				== pending_legacy_world_item_serial
+		):
+			legacy_world_item_target = item_value as Node2D
+			legacy_world_item_interaction_pending = false
+			pending_legacy_world_item_serial = 0
+			if behavior_state == BehaviorState.WORLD_ITEM:
+				_issue_path_to(legacy_world_item_target.position)
+			return true
+	pending_legacy_world_item_serial = 0
+	if behavior_state == BehaviorState.WORLD_ITEM:
+		_enter_patrol()
+	return false
+
+
+func legacy_corpse_state_snapshot() -> Dictionary:
+	return {
+		"discovered": legacy_corpse_discovered,
+		"buried": legacy_corpse_buried,
+		"target_scene_index": (
+			int(legacy_corpse_target.get("scene_index"))
+			if (
+				legacy_corpse_target != null
+				and is_instance_valid(legacy_corpse_target)
+			)
+			else pending_legacy_corpse_scene_index
+		),
+		"reaction_counter": legacy_corpse_reaction_counter,
+		"reaction_limit": legacy_corpse_reaction_limit,
+		"reaction_elapsed": legacy_corpse_reaction_elapsed,
+		"random_state": legacy_corpse_random_state,
+		"reinforcement_spawned": legacy_reinforcement_spawned,
+		"reinforcement_source_marker_scene_index": (
+			legacy_reinforcement_source_marker_scene_index
+		),
+		"reinforcement_serial": legacy_reinforcement_serial,
+		"reinforcement_leader_scene_index": (
+			legacy_reinforcement_leader_scene_index
+		),
+	}
+
+
+func restore_legacy_corpse_state(state: Dictionary) -> bool:
+	if state.is_empty():
+		return false
+	legacy_corpse_discovered = bool(state.get("discovered", false))
+	legacy_corpse_buried = bool(state.get("buried", false))
+	pending_legacy_corpse_scene_index = int(
+		state.get("target_scene_index", -1)
+	)
+	legacy_corpse_target = null
+	legacy_corpse_reaction_counter = maxi(
+		int(state.get("reaction_counter", 0)),
+		0,
+	)
+	legacy_corpse_reaction_limit = maxi(
+		int(state.get("reaction_limit", 0)),
+		0,
+	)
+	legacy_corpse_reaction_elapsed = maxf(
+		float(state.get("reaction_elapsed", 0.0)),
+		0.0,
+	)
+	legacy_corpse_random_state = maxi(
+		int(state.get("random_state", legacy_corpse_random_state)),
+		1,
+	)
+	legacy_reinforcement_spawned = bool(
+		state.get("reinforcement_spawned", false)
+	)
+	legacy_reinforcement_source_marker_scene_index = int(
+		state.get("reinforcement_source_marker_scene_index", -1)
+	)
+	legacy_reinforcement_serial = maxi(
+		int(state.get("reinforcement_serial", 0)),
+		0,
+	)
+	legacy_reinforcement_leader_scene_index = int(
+		state.get("reinforcement_leader_scene_index", -1)
+	)
+	return true
+
+
+func bind_restored_legacy_corpse_target(corpses: Array) -> bool:
+	if pending_legacy_corpse_scene_index < 0:
+		return true
+	for corpse_value: Variant in corpses:
+		if (
+			corpse_value is Node2D
+			and is_instance_valid(corpse_value)
+			and int((corpse_value as Node2D).get("scene_index"))
+				== pending_legacy_corpse_scene_index
+		):
+			legacy_corpse_target = corpse_value as Node2D
+			pending_legacy_corpse_scene_index = -1
+			if behavior_state == BehaviorState.CORPSE_DISCOVERY:
+				_issue_path_to(legacy_corpse_target.position)
+			return true
+	pending_legacy_corpse_scene_index = -1
+	if behavior_state == BehaviorState.CORPSE_DISCOVERY:
+		_enter_patrol()
+	return false
+
+
+func _first_visible_allowed_world_item() -> Node2D:
+	for world_item: Node2D in potential_world_items:
+		if can_consider_legacy_world_item(world_item):
+			return world_item
+	return null
+
+
+func _begin_legacy_world_item_investigation(world_item: Node2D) -> bool:
+	if not can_consider_legacy_world_item(world_item):
+		return false
+	legacy_world_item_target = world_item
+	legacy_world_item_interaction_pending = false
+	legacy_world_item_replan_elapsed = CHASE_REPLAN_SECONDS
+	current_target = null
+	behavior_state = BehaviorState.WORLD_ITEM
+	cancel_path()
+	if LEGACY_WORLD_ITEM_RULES.is_adjacent_navigation_cell(
+		position,
+		world_item.position,
+	):
+		return true
+	_issue_path_to(world_item.position)
+	return true
+
+
+func _update_legacy_world_item_investigation(delta: float) -> void:
+	if (
+		legacy_world_item_target == null
+		or not is_instance_valid(legacy_world_item_target)
+		or not legacy_world_item_target.has_method(
+			"is_available_original_world_item"
+		)
+		or not bool(
+			legacy_world_item_target.call(
+				"is_available_original_world_item"
+			)
+		)
+	):
+		_clear_legacy_world_item_target()
+		_enter_patrol()
+		return
+	if LEGACY_WORLD_ITEM_RULES.is_adjacent_navigation_cell(
+		position,
+		legacy_world_item_target.position,
+	):
+		cancel_path()
+		if not legacy_world_item_interaction_pending:
+			legacy_world_item_interaction_pending = true
+			legacy_world_item_interaction_requested.emit(
+				self,
+				legacy_world_item_target,
+			)
+		return
+	if movement_path_index < movement_path.size():
+		return
+	legacy_world_item_replan_elapsed += maxf(delta, 0.0)
+	if legacy_world_item_replan_elapsed < CHASE_REPLAN_SECONDS:
+		return
+	legacy_world_item_replan_elapsed = 0.0
+	_issue_path_to(legacy_world_item_target.position)
+
+
+func _start_legacy_distraction(forced_limit: int = -1) -> void:
+	legacy_distraction_active = true
+	legacy_distraction_counter = 0
+	if forced_limit >= LEGACY_WORLD_ITEM_RULES.DISTRACTION_MINIMUM_LIMIT:
+		legacy_distraction_limit = forced_limit
+		return
+	var sample: Dictionary = (
+		LEGACY_WORLD_ITEM_RULES.distraction_limit_from_state(
+			legacy_effect_random_state
+		)
+	)
+	legacy_effect_random_state = int(sample.get("state", 1))
+	legacy_distraction_limit = int(
+		sample.get(
+			"limit",
+			LEGACY_WORLD_ITEM_RULES.DISTRACTION_MINIMUM_LIMIT,
+		)
+	)
+
+
+func _clear_legacy_world_item_target() -> void:
+	legacy_world_item_target = null
+	legacy_world_item_interaction_pending = false
+	legacy_world_item_replan_elapsed = 0.0
+	pending_legacy_world_item_serial = 0
+
+
+func _clear_legacy_corpse_attention() -> void:
+	legacy_corpse_target = null
+	pending_legacy_corpse_scene_index = -1
+	legacy_corpse_reaction_counter = 0
+	legacy_corpse_reaction_limit = 0
+	legacy_corpse_reaction_elapsed = 0.0
+
+
+func _clear_all_legacy_world_item_runtime() -> void:
+	_clear_legacy_world_item_target()
+	legacy_hypnosis_active = false
+	legacy_hypnosis_counter = 0
+	legacy_poison_active = false
+	legacy_poison_counter = 0
+	legacy_distraction_active = false
+	legacy_distraction_counter = 0
+	legacy_distraction_limit = 0
 
 
 func _is_hostile_target(target: Node2D) -> bool:

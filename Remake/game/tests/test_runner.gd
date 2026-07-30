@@ -756,6 +756,32 @@ func _init() -> void:
 	)
 	expect(
 		(
+			TACTICAL_SENSES.is_within_hearing_range(
+				Vector2.ZERO,
+				Vector2(639, 0),
+				{"hearing_radius": 640.0},
+			)
+			and not TACTICAL_SENSES.is_within_hearing_range(
+				Vector2.ZERO,
+				Vector2(640, 0),
+				{"hearing_radius": 640.0},
+			)
+			and TACTICAL_SENSES.is_within_hearing_range(
+				Vector2.ZERO,
+				Vector2(320, 320),
+				{"hearing_radius": 640.0},
+			)
+			and not TACTICAL_SENSES.is_within_hearing_range(
+				Vector2.ZERO,
+				Vector2(0, 320),
+				{"hearing_radius": 640.0},
+			)
+		),
+		"original hearing uses the strict parametric directional boundary",
+		failures,
+	)
+	expect(
+		(
 			int(parsed_entity["faction_id"]) == 1
 			and int(parsed_entity["direction_index"]) == 7
 			and int(parsed_entity["current_hit_points"]) == 8

@@ -41,6 +41,16 @@ const LEGACY_SPECIAL_WORLD_OBJECT_SCRIPT: Script = preload("res://scripts/legacy
 const LEGACY_AI_CONTROL_EFFECT_SCRIPT: Script = preload("res://scripts/legacy_ai_control_effect.gd")
 const LEGACY_OBSERVATION_BEACON_SCRIPT: Script = preload("res://scripts/legacy_observation_beacon.gd")
 const LEGACY_BURIAL_CACHE_SCRIPT: Script = preload("res://scripts/legacy_burial_cache.gd")
+const LEGACY_CORPSE_DISCOVERY_RULES: Script = preload(
+	"res://scripts/legacy_corpse_discovery_rules.gd"
+)
+const LEGACY_ENEMY_AI_RULES: Script = preload(
+	"res://scripts/legacy_enemy_ai_rules.gd"
+)
+const LEGACY_DOOR_CATALOG: Script = preload(
+	"res://scripts/legacy_door_catalog.gd"
+)
+const LEGACY_DOOR_SCRIPT: Script = preload("res://scripts/legacy_door.gd")
 const WORLD_DEPTH: Script = preload("res://scripts/world_depth.gd")
 const NAVIGATION_GRID_DATA: Script = preload("res://scripts/navigation_grid_data.gd")
 const DYNAMIC_OCCUPANCY_GRID: Script = preload("res://scripts/dynamic_occupancy_grid.gd")
@@ -196,6 +206,10 @@ var enemies: Array[ENEMY_UNIT] = []
 var escorts: Array[ESCORT_UNIT] = []
 var ambient_units: Array[AMBIENT_UNIT] = []
 var mission_pickups: Array[MISSION_PICKUP] = []
+var next_mission_pickup_serial := 1
+var next_legacy_reinforcement_scene_index := 1000000
+var next_legacy_reinforcement_serial := 1
+var legacy_global_alarm_active := false
 var selected_units: Array[SQUAD_UNIT] = []
 var status_label: Label
 var badge_label: Label
@@ -265,6 +279,7 @@ var legacy_special_world_objects: Array[Node2D] = []
 var legacy_ai_control_effects: Array[Node] = []
 var legacy_deployment_targets: Array[Node2D] = []
 var legacy_burial_caches: Array[Node2D] = []
+var legacy_doors: Array[Node2D] = []
 var buried_enemy_scene_indices: Dictionary = {}
 var field_inventory: Dictionary = {}
 var selected_backpack_item_id := 0
@@ -447,6 +462,7 @@ func load_imported_level(level_id: String = LEVEL_VIEW.DEFAULT_LEVEL_ID) -> bool
 		if is_instance_valid(burial_cache):
 			burial_cache.queue_free()
 	legacy_burial_caches.clear()
+	legacy_doors.clear()
 	field_pickups.clear()
 	explosive_props.clear()
 	field_inventory.clear()
@@ -462,6 +478,10 @@ func load_imported_level(level_id: String = LEVEL_VIEW.DEFAULT_LEVEL_ID) -> bool
 	world_entities_by_scene.clear()
 	activated_mission_scenes.clear()
 	mission_pickups.clear()
+	next_mission_pickup_serial = 1
+	next_legacy_reinforcement_scene_index = 1000000
+	next_legacy_reinforcement_serial = 1
+	legacy_global_alarm_active = false
 	imported_entity_count = 0
 	navigation_grid = null
 	dynamic_occupancy = null
@@ -595,6 +615,35 @@ func spawn_imported_entities() -> int:
 			runtime_entity["faction_id"] = runtime_faction_id
 			runtime_entity["runtime_faction_override"] = true
 		var database_entry_id := int(entity.get("database_entry_id", 0))
+		var door_profile: Dictionary = LEGACY_DOOR_CATALOG.profile_for_entity(
+			entity
+		)
+		if not door_profile.is_empty():
+			var closed_door_texture := load_entity_texture(entity)
+			var open_door_texture := _load_converted_texture(
+				str(door_profile.get("open_sprite_relative_path", ""))
+			)
+			var door: Node2D = LEGACY_DOOR_SCRIPT.new()
+			if bool(
+				door.call(
+					"configure",
+					entity,
+					door_profile,
+					closed_door_texture,
+					open_door_texture,
+					imported_entity_z_index(entity),
+				)
+			):
+				door.name = "LegacyDoor_%04d" % scene_index
+				container.add_child(door)
+				door.connect(
+					"state_changed",
+					Callable(self, "_on_legacy_door_state_changed"),
+				)
+				legacy_doors.append(door)
+				spawned += 1
+				continue
+			door.free()
 		var interactable_profile: Dictionary = (
 			WORLD_PICKUP_CATALOG.profile_for_database_entry_id(database_entry_id)
 		)
@@ -786,6 +835,11 @@ func spawn_squad() -> void:
 	if navigation_grid != null:
 		dynamic_occupancy = DYNAMIC_OCCUPANCY_GRID.new()
 		dynamic_occupancy.configure(navigation_grid)
+		for door: Node2D in legacy_doors:
+			if is_instance_valid(door) and door.has_method(
+				"bind_dynamic_occupancy"
+			):
+				door.call("bind_dynamic_occupancy", dynamic_occupancy)
 
 	var specifications: Array[Dictionary] = []
 	if terrain_loaded and not playable_entities.is_empty():
@@ -933,15 +987,9 @@ func spawn_squad() -> void:
 		target_nodes.append(escort)
 	for enemy: ENEMY_UNIT in enemies:
 		enemy.set_potential_targets(target_nodes)
-	var projectile_combatants: Array[Node2D] = target_nodes.duplicate()
-	for enemy: ENEMY_UNIT in enemies:
-		projectile_combatants.append(enemy)
-	for ambient: AMBIENT_UNIT in ambient_units:
-		projectile_combatants.append(ambient)
-	for prop: Node2D in explosive_props:
-		if is_instance_valid(prop):
-			projectile_combatants.append(prop)
-	projectile_world.set_combatants(projectile_combatants)
+	_refresh_enemy_corpse_candidates()
+	_refresh_enemy_world_items()
+	_refresh_projectile_world_combatants()
 	if not units.is_empty():
 		select_only(units[0])
 
@@ -1090,7 +1138,6 @@ func _spawn_ambient_units() -> void:
 
 func _process(delta: float) -> void:
 	_update_context_cursor()
-	_process_enemy_ground_pickups()
 	_update_tactical_sight_visibility()
 	if mission_direction_runtime != null:
 		mission_direction_runtime.advance_time(maxf(delta, 0.0))
@@ -1147,6 +1194,8 @@ func _update_context_cursor() -> void:
 		Input.set_default_cursor_shape(Input.CURSOR_POINTING_HAND)
 	elif sight_target_pending:
 		Input.set_default_cursor_shape(Input.CURSOR_HELP)
+	elif legacy_door_at_world_point(_mouse_world_position()) != null:
+		Input.set_default_cursor_shape(Input.CURSOR_POINTING_HAND)
 	elif not selected_units.is_empty() and enemy_at_world_point(_mouse_world_position()) != null:
 		Input.set_default_cursor_shape(Input.CURSOR_CROSS)
 	else:
@@ -1338,6 +1387,8 @@ func _handle_original_left_click(world_position: Vector2, additive: bool) -> voi
 			handle_selection(world_position, additive)
 			return
 	if _try_interact_burial_cache_at(world_position):
+		return
+	if _try_open_legacy_door_at(world_position):
 		return
 	if _try_issue_legacy_world_object_deployment(world_position):
 		return
@@ -1537,6 +1588,7 @@ func _finish_burial() -> void:
 	)
 	if scene_index >= 0:
 		buried_enemy_scene_indices[scene_index] = true
+	burial_target.mark_legacy_corpse_buried(true)
 	burial_target.visible = false
 	burial_target.process_mode = Node.PROCESS_MODE_DISABLED
 	update_status("掩埋完成：已生成原版藏尸处，尸体物品保留其中")
@@ -1736,6 +1788,61 @@ func _try_interact_burial_cache_at(world_position: Vector2) -> bool:
 	collector.issue_path(path)
 	update_status("队员正在接近藏尸处；到达后再次点击或按 E 取物")
 	return true
+
+
+func legacy_door_at_world_point(world_position: Vector2) -> Node2D:
+	for door: Node2D in legacy_doors:
+		if (
+			is_instance_valid(door)
+			and not bool(door.get("is_open"))
+			and bool(door.call("contains_parent_point", world_position))
+		):
+			return door
+	return null
+
+
+func _try_open_legacy_door_at(world_position: Vector2) -> bool:
+	var door := legacy_door_at_world_point(world_position)
+	if door == null:
+		return false
+	if bool(door.call("open")):
+		update_status(
+			"已打开%s；原 VWF 移动与视线足印已同步释放"
+			% str(door.get("original_display_name"))
+		)
+	return true
+
+
+func _on_legacy_door_state_changed(door: Node2D, open: bool) -> void:
+	if door == null or not is_instance_valid(door):
+		return
+	if open:
+		# Existing actor paths may have resolved to a nearby partial endpoint
+		# while the door was closed. Wake their next normal replan immediately.
+		for unit: SQUAD_UNIT in units:
+			unit.blocked_elapsed = unit.blocked_replan_seconds
+		for enemy: ENEMY_UNIT in enemies:
+			enemy.path_request_delay_remaining = 0.0
+			enemy.chase_replan_elapsed = enemy.CHASE_REPLAN_SECONDS
+
+
+func restore_legacy_door_states(records: Array) -> int:
+	var records_by_scene: Dictionary = {}
+	for record_value: Variant in records:
+		if record_value is Dictionary:
+			var record := record_value as Dictionary
+			records_by_scene[int(record.get("scene_index", -1))] = record
+	var restored := 0
+	for door: Node2D in legacy_doors:
+		if not is_instance_valid(door):
+			continue
+		var scene_index := int(door.get("scene_index"))
+		if not records_by_scene.has(scene_index):
+			continue
+		var record := records_by_scene[scene_index] as Dictionary
+		door.call("set_open", bool(record.get("is_open", false)), false)
+		restored += 1
+	return restored
 
 
 func _toggle_selected_run_walk() -> void:
@@ -2189,6 +2296,17 @@ func _connect_combatant(combatant: Node2D) -> void:
 	combatant.ammo_changed.connect(_on_ammo_changed)
 	combatant.projectile_requested.connect(_on_projectile_requested)
 	combatant.special_action_requested.connect(_on_legacy_special_action_requested)
+	if combatant is ENEMY_UNIT:
+		var enemy := combatant as ENEMY_UNIT
+		enemy.legacy_world_item_interaction_requested.connect(
+			_on_enemy_legacy_world_item_interaction_requested
+		)
+		enemy.legacy_hypnosis_changed.connect(
+			_on_enemy_legacy_hypnosis_changed
+		)
+		enemy.legacy_corpse_discovery_triggered.connect(
+			_on_enemy_legacy_corpse_discovered
+		)
 
 
 func _on_projectile_requested(
@@ -2527,7 +2645,13 @@ func _on_projectile_exploded(
 		if alert_radius_override > 0.0
 		else COMBAT_PROFILES.alert_radius("attack_extended")
 	)
-	_queue_or_broadcast_alert(attacker, alert_target, world_position, alert_radius)
+	_queue_or_broadcast_alert(
+		attacker,
+		alert_target,
+		world_position,
+		alert_radius,
+		true,
+	)
 
 
 func _on_attack_started(
@@ -2581,30 +2705,57 @@ func _queue_or_broadcast_alert(
 	target: Node2D,
 	world_position: Vector2,
 	alert_radius: float,
+	allow_enemy_source_in_original: bool = false,
 ) -> int:
 	if mission_ai_coordinator != null:
 		var recipients: Array[int] = mission_ai_coordinator.queue_shared_alert(
 			source, target, world_position, alert_radius
 		)
 		return recipients.size()
-	# In the stable original m000 contact capture, scene 1598 fires twice while
-	# adjacent scene 1433 keeps its patrol goal and both native target pointers
-	# remain null.  Therefore an enemy-originated attack sound is not a direct
-	# ally-alert channel in original-parity mode.  Editorial cooperation modes
-	# may still opt into delayed shared alerts through the coordinator above.
-	if source is ENEMY_UNIT:
+	# sub_456DF0 contains a call to sub_45DDA0 for ordinary ranged attacks, but
+	# the stable m000 process trace proves that the adjacent patrolling scene
+	# 1433 retains its authored route while scene 1598 fires twice. The missing
+	# route-controller arbitration has not yet been recovered. Preserve that
+	# verified observable outcome for normal enemy fire; explosion/death call
+	# sites opt in because their 800/256 pulses are independently recovered.
+	if source is ENEMY_UNIT and not allow_enemy_source_in_original:
 		return 0
+	# sub_45DDA0 writes a coordinate command and never assigns a live target
+	# pointer. Player-faction sources expose their own location; enemy sources
+	# that already own a target share that target's current coordinate.
+	var alert_coordinate := world_position
+	if (
+		int(source.get("faction_id")) != 3
+		and target != null
+		and is_instance_valid(target)
+	):
+		alert_coordinate = target.position
 	var alerted_count := 0
 	for enemy: ENEMY_UNIT in enemies:
+		var has_unlost_live_contact := (
+			enemy.current_target != null
+			and is_instance_valid(enemy.current_target)
+			and enemy.behavior_state in [
+				ENEMY_UNIT.BehaviorState.CHASE,
+				ENEMY_UNIT.BehaviorState.ATTACK,
+			]
+		)
 		if (
 			enemy == source
-			or not enemy.is_alive
-			or enemy.position.distance_to(world_position) > alert_radius
+			or not LEGACY_ENEMY_AI_RULES.alert_recipient_is_eligible(
+				enemy.faction_id,
+				enemy.runtime_actor_type,
+				enemy.is_alive,
+				has_unlost_live_contact,
+			)
+			or not LEGACY_ENEMY_AI_RULES.is_within_alert_ellipse(
+				world_position,
+				enemy.position,
+				alert_radius,
+			)
 		):
 			continue
-		# A player-originated shot exposes that player directly because the
-		# audible source and hostile target are identical.
-		if enemy.receive_alert(target, world_position):
+		if enemy.receive_original_coordinate_alert(alert_coordinate):
 			alerted_count += 1
 	return alerted_count
 
@@ -2624,10 +2775,10 @@ func emit_noise_at(world_position: Vector2, radius: float = 640.0) -> int:
 		var effective_radius := minf(maxf(radius, 0.0), recovered_hearing_radius)
 		if (
 			effective_radius > 0.0
-			and TACTICAL_SENSES.is_within_hearing_range(
-				enemy.position,
+			and LEGACY_ENEMY_AI_RULES.is_within_alert_ellipse(
 				world_position,
-				{"hearing_radius": effective_radius},
+				enemy.position,
+				effective_radius,
 			)
 			and enemy.investigate_position(world_position)
 		):
@@ -2677,36 +2828,485 @@ func drop_selected_item_at(world_position: Vector2) -> bool:
 		world_position,
 		_inventory_icon_for("", item_id, ""),
 	)
-	mission_pickups.append(pickup)
-	for enemy: ENEMY_UNIT in enemies:
-		if enemy.is_alive and enemy.position.distance_to(world_position) <= 640.0:
-			enemy.investigate_position(world_position)
+	_register_mission_pickup(pickup)
 	if not actor.backpack_inventory.has_item(item_id):
 		selected_backpack_item_id = 0
 	_refresh_inventory_ui()
-	update_status("已将 %s 丢到地面，附近敌人会前往查看" % item_name)
+	update_status(
+		"已将 %s 丢到地面；仅能识别它的敌人会在近距视线内前往查看"
+		% item_name
+	)
 	return true
 
-func _process_enemy_ground_pickups() -> void:
-	for pickup: MISSION_PICKUP in mission_pickups.duplicate():
-		if pickup == null or not is_instance_valid(pickup) or pickup.collected:
+func _on_enemy_legacy_world_item_interaction_requested(
+	enemy: ENEMY_UNIT,
+	pickup: Node2D,
+) -> void:
+	if (
+		enemy == null
+		or not is_instance_valid(enemy)
+		or not enemy.is_alive
+		or not pickup is MISSION_PICKUP
+		or not is_instance_valid(pickup)
+		or not mission_pickups.has(pickup as MISSION_PICKUP)
+	):
+		if enemy != null and is_instance_valid(enemy):
+			enemy.complete_legacy_world_item_interaction(pickup, false)
+		return
+	var mission_pickup := pickup as MISSION_PICKUP
+	var payload: Dictionary = mission_pickup.collect()
+	if payload.is_empty():
+		enemy.complete_legacy_world_item_interaction(pickup, false)
+		return
+	var item_id := int(
+		payload.get("item_id", mission_pickup.original_actor_type)
+	)
+	var quantity := maxi(int(payload.get("quantity", 1)), 1)
+	var quantity_mode := int(payload.get("quantity_mode", 0))
+	var transferred := 0
+	if str(payload.get("original_inventory_kind", "")) == "backpack":
+		transferred = enemy.add_backpack_item(
+			item_id,
+			quantity,
+			quantity_mode,
+		)
+	enemy.complete_legacy_world_item_interaction(pickup, true)
+	_unregister_mission_pickup(mission_pickup)
+	var effect: Dictionary = enemy.apply_legacy_world_item_effect(item_id)
+	if bool(effect.get("consume_after_collection", false)):
+		enemy.consume_backpack_item(item_id, true, 1)
+	var item_name := str(
+		payload.get(
+			"item_name",
+			ORIGINAL_INITIAL_ITEM_INVENTORY.item_display_name(item_id),
+		)
+	)
+	update_status(
+		"%s 拾取 %s%s"
+		% [
+			enemy.display_name,
+			item_name,
+			"" if transferred > 0 else "（物品栏保持原状）",
+		]
+	)
+	_refresh_inventory_ui()
+
+
+func _on_enemy_legacy_hypnosis_changed(
+	enemy: ENEMY_UNIT,
+	active: bool,
+) -> void:
+	if enemy == null or not is_instance_valid(enemy):
+		return
+	if active and enemy.is_alive:
+		select_only(enemy)
+		update_status("%s 暂时受降头木偶控制" % enemy.display_name)
+		return
+	if selected_units.has(enemy):
+		selected_units.erase(enemy)
+	enemy.set_selected(false)
+	_refresh_inventory_ui()
+
+
+func _register_mission_pickup(pickup: MISSION_PICKUP) -> void:
+	if pickup == null or not is_instance_valid(pickup):
+		return
+	if pickup.world_item_serial <= 0:
+		pickup.world_item_serial = next_mission_pickup_serial
+		pickup.item_payload["world_item_serial"] = pickup.world_item_serial
+	next_mission_pickup_serial = maxi(
+		next_mission_pickup_serial,
+		pickup.world_item_serial + 1,
+	)
+	if not mission_pickups.has(pickup):
+		mission_pickups.append(pickup)
+	_refresh_enemy_world_items()
+
+
+func _unregister_mission_pickup(pickup: MISSION_PICKUP) -> void:
+	mission_pickups.erase(pickup)
+	_refresh_enemy_world_items()
+
+
+func _refresh_enemy_world_items() -> void:
+	for enemy: ENEMY_UNIT in enemies:
+		if enemy != null and is_instance_valid(enemy):
+			enemy.set_potential_world_items(mission_pickups)
+
+
+func _refresh_enemy_corpse_candidates() -> void:
+	var corpses: Array[Node2D] = []
+	for enemy: ENEMY_UNIT in enemies:
+		if enemy != null and is_instance_valid(enemy):
+			corpses.append(enemy)
+	for enemy: ENEMY_UNIT in enemies:
+		if enemy != null and is_instance_valid(enemy):
+			enemy.set_potential_corpses(corpses)
+
+
+func _refresh_projectile_world_combatants() -> void:
+	if projectile_world == null:
+		return
+	var combatants: Array[Node2D] = []
+	for unit: SQUAD_UNIT in units:
+		if is_instance_valid(unit):
+			combatants.append(unit)
+	for escort: ESCORT_UNIT in escorts:
+		if is_instance_valid(escort):
+			combatants.append(escort)
+	for enemy: ENEMY_UNIT in enemies:
+		if is_instance_valid(enemy):
+			combatants.append(enemy)
+	for ambient: AMBIENT_UNIT in ambient_units:
+		if is_instance_valid(ambient):
+			combatants.append(ambient)
+	for prop: Node2D in explosive_props:
+		if is_instance_valid(prop):
+			combatants.append(prop)
+	projectile_world.set_combatants(combatants)
+
+
+func _bind_restored_enemy_world_item_targets() -> void:
+	_refresh_enemy_world_items()
+	for enemy: ENEMY_UNIT in enemies:
+		if enemy != null and is_instance_valid(enemy):
+			enemy.bind_restored_legacy_world_item_target(mission_pickups)
+
+
+func _bind_restored_enemy_corpse_targets() -> void:
+	_refresh_enemy_corpse_candidates()
+	for enemy: ENEMY_UNIT in enemies:
+		if enemy != null and is_instance_valid(enemy):
+			enemy.bind_restored_legacy_corpse_target(enemies)
+
+
+func _on_enemy_legacy_corpse_discovered(
+	observer: ENEMY_UNIT,
+	corpse: ENEMY_UNIT,
+) -> void:
+	if (
+		observer == null
+		or corpse == null
+		or not is_instance_valid(observer)
+		or not is_instance_valid(corpse)
+	):
+		return
+	legacy_global_alarm_active = true
+	var marker: Dictionary = _nearest_legacy_reinforcement_marker(observer.position)
+	if marker.is_empty():
+		update_status("%s 发现尸体并拉响警报" % observer.display_name)
+		return
+	var template: Dictionary = _first_runtime_actor_template(
+		LEGACY_CORPSE_DISCOVERY_RULES.REINFORCEMENT_ACTOR_TYPE
+	)
+	if template.is_empty():
+		update_status("%s 发现尸体；缺少二等兵生成模板" % observer.display_name)
+		return
+	var leader_scene_index := -1
+	var spawned := 0
+	for ordinal: int in range(
+		LEGACY_CORPSE_DISCOVERY_RULES.REINFORCEMENT_COUNT
+	):
+		var dynamic_scene_index := next_legacy_reinforcement_scene_index
+		next_legacy_reinforcement_scene_index += 1
+		var serial := next_legacy_reinforcement_serial
+		next_legacy_reinforcement_serial += 1
+		var spawn_position := _legacy_reinforcement_spawn_position(
+			marker,
+			ordinal,
+		)
+		var reinforcement := _spawn_legacy_reinforcement(
+			template,
+			spawn_position,
+			dynamic_scene_index,
+			int(marker.get("scene_index", -1)),
+			serial,
+			leader_scene_index,
+		)
+		if reinforcement == null:
 			continue
-		for enemy: ENEMY_UNIT in enemies:
-			if enemy.is_alive and enemy.position.distance_to(pickup.position) <= 24.0:
-				var payload := pickup.collect()
-				if payload.is_empty():
-					break
-				if str(payload.get("original_inventory_kind", "")) == "backpack":
-					enemy.add_backpack_item(
-						int(payload.get("item_id", 0)),
-						maxi(int(payload.get("quantity", 1)), 1),
-						int(payload.get("quantity_mode", 0)),
-					)
-				mission_pickups.erase(pickup)
-				enemy.last_known_target_position = enemy.position
-				enemy.behavior_state = ENEMY_UNIT.BehaviorState.PATROL
-				update_status("敌人拾取了地面物品")
-				break
+		if leader_scene_index < 0:
+			leader_scene_index = reinforcement.scene_index
+		reinforcement.receive_legacy_corpse_reinforcement_order(
+			corpse,
+			-1 if spawned == 0 else leader_scene_index,
+		)
+		spawned += 1
+	_refresh_enemy_corpse_candidates()
+	_refresh_enemy_world_items()
+	_refresh_projectile_world_combatants()
+	update_status(
+		"%s 发现尸体：警报已触发，%d 名增援出动"
+		% [observer.display_name, spawned]
+	)
+
+
+func prepare_legacy_reinforcements_for_restore(records: Array) -> int:
+	var reinforcement_records: Array[Dictionary] = []
+	for record_value: Variant in records:
+		if not record_value is Dictionary:
+			continue
+		var record := record_value as Dictionary
+		var ai_value: Variant = record.get("ai", {})
+		if not ai_value is Dictionary:
+			continue
+		var corpse_state_value: Variant = (
+			(ai_value as Dictionary).get("legacy_corpse", {})
+		)
+		if (
+			corpse_state_value is Dictionary
+			and bool(
+				(corpse_state_value as Dictionary).get(
+					"reinforcement_spawned",
+					false,
+				)
+			)
+		):
+			reinforcement_records.append(record)
+	reinforcement_records.sort_custom(
+		func(first: Dictionary, second: Dictionary) -> bool:
+			return (
+				int(
+					(first.get("ai", {}) as Dictionary)
+					. get("legacy_corpse", {})
+					. get("reinforcement_serial", 0)
+				)
+				< int(
+					(second.get("ai", {}) as Dictionary)
+					. get("legacy_corpse", {})
+					. get("reinforcement_serial", 0)
+				)
+			)
+	)
+	var template: Dictionary = _first_runtime_actor_template(
+		LEGACY_CORPSE_DISCOVERY_RULES.REINFORCEMENT_ACTOR_TYPE
+	)
+	if template.is_empty():
+		return 0
+	var spawned := 0
+	for record: Dictionary in reinforcement_records:
+		var scene_index := int(record.get("scene_index", -1))
+		if scene_index < 0 or _enemy_by_scene_index(scene_index) != null:
+			continue
+		var corpse_state := (
+			(record.get("ai", {}) as Dictionary)
+			. get("legacy_corpse", {}) as Dictionary
+		)
+		var serial := maxi(
+			int(corpse_state.get("reinforcement_serial", 0)),
+			1,
+		)
+		var reinforcement := _spawn_legacy_reinforcement(
+			template,
+			Vector2(
+				float(record.get("x", 0.0)),
+				float(record.get("y", 0.0)),
+			),
+			scene_index,
+			int(
+				corpse_state.get(
+					"reinforcement_source_marker_scene_index",
+					-1,
+				)
+			),
+			serial,
+			int(
+				corpse_state.get(
+					"reinforcement_leader_scene_index",
+					-1,
+				)
+			),
+		)
+		if reinforcement == null:
+			continue
+		next_legacy_reinforcement_scene_index = maxi(
+			next_legacy_reinforcement_scene_index,
+			scene_index + 1,
+		)
+		next_legacy_reinforcement_serial = maxi(
+			next_legacy_reinforcement_serial,
+			serial + 1,
+		)
+		spawned += 1
+	if spawned > 0:
+		_refresh_enemy_corpse_candidates()
+		_refresh_enemy_world_items()
+		_refresh_projectile_world_combatants()
+	return spawned
+
+
+func _spawn_legacy_reinforcement(
+	template: Dictionary,
+	spawn_position: Vector2,
+	dynamic_scene_index: int,
+	source_marker_scene_index: int,
+	serial: int,
+	leader_scene_index: int,
+) -> ENEMY_UNIT:
+	if dynamic_occupancy == null or template.is_empty():
+		return null
+	var entity := template.duplicate(true)
+	entity["scene_index"] = dynamic_scene_index
+	entity["x"] = int(round(spawn_position.x))
+	entity["y"] = int(round(spawn_position.y))
+	entity["reference_x"] = int(round(spawn_position.x))
+	entity["reference_y"] = int(round(spawn_position.y))
+	entity["faction_id"] = LEGACY_CORPSE_DISCOVERY_RULES.ENEMY_FACTION_ID
+	entity["team_id"] = LEGACY_CORPSE_DISCOVERY_RULES.ENEMY_FACTION_ID
+	entity["patrol_enabled"] = false
+	entity["patrol_waypoints"] = []
+	entity["patrol_current_waypoint_index"] = 0
+	var texture := load_entity_texture(entity)
+	if texture == null:
+		return null
+	var movement_groups := load_entity_action_groups(entity, "walk")
+	if movement_groups.is_empty():
+		movement_groups = load_entity_action_groups(entity, "run")
+	var idle_groups := load_entity_action_groups(entity, "stand")
+	var weapon_profile: Dictionary = COMBAT_PROFILES.weapon_profile_for_attack_type(
+		int(entity.get("default_attack_type", 2))
+	)
+	if weapon_profile.is_empty():
+		weapon_profile = COMBAT_PROFILES.weapon_profile("rifle_attack")
+	var attack_groups := load_entity_action_groups(
+		entity,
+		str(weapon_profile.get("action_key", "rifle_attack")),
+	)
+	var death_groups := load_entity_action_groups(entity, "death")
+	var reinforcement: ENEMY_UNIT = ENEMY_UNIT.new()
+	add_child(reinforcement)
+	reinforcement.configure_enemy(
+		entity,
+		texture,
+		movement_groups,
+		idle_groups,
+		dynamic_occupancy,
+		attack_groups,
+		death_groups,
+	)
+	if not reinforcement.dynamic_registered:
+		reinforcement.queue_free()
+		return null
+	reinforcement.legacy_reinforcement_spawned = true
+	reinforcement.legacy_reinforcement_source_marker_scene_index = (
+		source_marker_scene_index
+	)
+	reinforcement.legacy_reinforcement_serial = serial
+	reinforcement.legacy_reinforcement_leader_scene_index = leader_scene_index
+	_connect_combatant(reinforcement)
+	var targets: Array[Node2D] = []
+	for unit: SQUAD_UNIT in units:
+		targets.append(unit)
+	for escort: ESCORT_UNIT in escorts:
+		targets.append(escort)
+	reinforcement.set_potential_targets(targets)
+	enemies.append(reinforcement)
+	world_entities_by_scene[dynamic_scene_index] = entity
+	return reinforcement
+
+
+func _nearest_legacy_reinforcement_marker(
+	observer_position: Vector2,
+) -> Dictionary:
+	var result: Dictionary = {}
+	var nearest_distance_squared := INF
+	for entity_value: Variant in world_entities_by_scene.values():
+		if not entity_value is Dictionary:
+			continue
+		var entity := entity_value as Dictionary
+		if (
+			_entity_runtime_actor_type(entity)
+			!= LEGACY_CORPSE_DISCOVERY_RULES.REINFORCEMENT_MARKER_ACTOR_TYPE
+		):
+			continue
+		var marker_position := Vector2(
+			float(entity.get("reference_x", entity.get("x", 0))),
+			float(entity.get("reference_y", entity.get("y", 0))),
+		)
+		var distance_squared := observer_position.distance_squared_to(
+			marker_position
+		)
+		if distance_squared < nearest_distance_squared:
+			nearest_distance_squared = distance_squared
+			result = entity
+	return result
+
+
+func _first_runtime_actor_template(runtime_actor_type: int) -> Dictionary:
+	var scene_indices: Array[int] = []
+	for scene_key: Variant in world_entities_by_scene.keys():
+		scene_indices.append(int(scene_key))
+	scene_indices.sort()
+	for scene_index: int in scene_indices:
+		var entity_value: Variant = world_entities_by_scene.get(scene_index)
+		if (
+			entity_value is Dictionary
+			and _entity_runtime_actor_type(entity_value as Dictionary)
+				== runtime_actor_type
+		):
+			return entity_value as Dictionary
+	return {}
+
+
+static func _entity_runtime_actor_type(entity: Dictionary) -> int:
+	var header_values: Variant = entity.get("database_header_values", [])
+	if header_values is Array and (header_values as Array).size() > 2:
+		return int((header_values as Array)[2])
+	return 0
+
+
+func _legacy_reinforcement_spawn_position(
+	marker: Dictionary,
+	ordinal: int,
+) -> Vector2:
+	var marker_position := Vector2(
+		float(marker.get("reference_x", marker.get("x", 0))),
+		float(marker.get("reference_y", marker.get("y", 0))),
+	)
+	if navigation_grid == null:
+		return marker_position + Vector2(float(ordinal * 24), 0.0)
+	var marker_cell := navigation_grid.world_to_cell(marker_position)
+	var offsets: Array[Vector2i] = [
+		Vector2i(-1, 0),
+		Vector2i(1, 0),
+		Vector2i(0, -1),
+		Vector2i(0, 1),
+		Vector2i(-1, -1),
+		Vector2i(1, -1),
+		Vector2i(-1, 1),
+		Vector2i(1, 1),
+		Vector2i(-2, 0),
+		Vector2i(2, 0),
+		Vector2i(0, -2),
+		Vector2i(0, 2),
+	]
+	var start_index := posmod(ordinal, offsets.size())
+	for offset_index: int in range(offsets.size()):
+		var offset := offsets[(start_index + offset_index) % offsets.size()]
+		var candidate := marker_cell + offset
+		if (
+			not navigation_grid.is_valid_cell(candidate)
+			or navigation_grid.is_movement_blocked(candidate)
+		):
+			continue
+		if (
+			dynamic_occupancy != null
+			and dynamic_occupancy.runtime_movement_owner(candidate) >= 0
+		):
+			continue
+		return navigation_grid.cell_to_world(candidate)
+	return marker_position + Vector2(float(ordinal * 24), 0.0)
+
+
+func _enemy_by_scene_index(target_scene_index: int) -> ENEMY_UNIT:
+	for enemy: ENEMY_UNIT in enemies:
+		if (
+			enemy != null
+			and is_instance_valid(enemy)
+			and enemy.scene_index == target_scene_index
+		):
+			return enemy
+	return null
 
 
 func _on_attack_hit(
@@ -2840,13 +3440,18 @@ func _on_combatant_died(unit: Node2D, killer: Node2D) -> void:
 	_play_media_audio("death", death_actor)
 	var death_alert_radius: float = COMBAT_PROFILES.alert_radius("ally_death")
 	if unit is ENEMY_UNIT:
+		# sub_4585F0 sends a 256-radius coordinate pulse for a faction-1 death.
+		# This coexists with the later directional corpse-discovery alarm and
+		# its type-6 reinforcement pair.
 		if killer != null:
 			_queue_or_broadcast_alert(
 				unit,
 				killer,
 				unit.position,
 				death_alert_radius,
+				true,
 			)
+		_refresh_enemy_corpse_candidates()
 		_publish_role_eliminations(unit)
 		_spawn_role_drops(unit)
 		if _living_enemy_count() == 0:
@@ -2928,7 +3533,7 @@ func _spawn_original_inventory_pickup(
 		world_position,
 		_inventory_icon_for("", item_id, ""),
 	)
-	mission_pickups.append(pickup)
+	_register_mission_pickup(pickup)
 
 
 func _publish_role_eliminations(unit: Node2D) -> void:
@@ -2978,7 +3583,7 @@ func _spawn_role_drops(unit: Node2D) -> void:
 		var pickup: MISSION_PICKUP = MISSION_PICKUP.new()
 		add_child(pickup)
 		pickup.configure(payload, unit.position)
-		mission_pickups.append(pickup)
+		_register_mission_pickup(pickup)
 
 
 func _find_original_inventory_pickup(
@@ -3565,6 +4170,25 @@ func _load_external_texture(path: String) -> Texture2D:
 		return null
 	var texture := ImageTexture.create_from_image(image)
 	imported_texture_cache[path] = texture
+	return texture
+
+
+func _load_converted_texture(relative_path: String) -> Texture2D:
+	if relative_path.is_empty() or converted_root.is_empty():
+		return null
+	var absolute_path := _contained_converted_path(
+		converted_root,
+		relative_path,
+	)
+	if absolute_path.is_empty():
+		return null
+	if imported_texture_cache.has(absolute_path):
+		return imported_texture_cache[absolute_path] as Texture2D
+	var image := Image.new()
+	if image.load(absolute_path) != OK or image.is_empty():
+		return null
+	var texture := ImageTexture.create_from_image(image)
+	imported_texture_cache[absolute_path] = texture
 	return texture
 
 
@@ -4448,7 +5072,7 @@ func interact_with_mission_world() -> void:
 				nearest_pickup_collector = origin
 	if nearest_pickup != null and nearest_distance <= MISSION_INTERACTION_RADIUS:
 		var payload := nearest_pickup.collect()
-		mission_pickups.erase(nearest_pickup)
+		_unregister_mission_pickup(nearest_pickup)
 		if (
 			nearest_pickup_collector != null
 			and _collect_original_inventory_pickup(

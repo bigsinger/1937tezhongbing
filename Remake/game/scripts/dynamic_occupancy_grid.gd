@@ -13,6 +13,7 @@ const MAX_SOURCE_ANCHOR_DISTANCE := 1
 var navigation: RefCounted
 var actors: Dictionary = {}
 var disabled_source_scenes: Dictionary = {}
+var source_scene_footprints: Dictionary = {}
 var movement_owners: Dictionary = {}
 var sight_owners: Dictionary = {}
 var goal_owners: Dictionary = {}
@@ -27,6 +28,7 @@ func configure(source_navigation: RefCounted) -> void:
 	navigation = source_navigation
 	actors.clear()
 	disabled_source_scenes.clear()
+	source_scene_footprints.clear()
 	movement_owners.clear()
 	sight_owners.clear()
 	goal_owners.clear()
@@ -80,7 +82,62 @@ func finalize_registration() -> void:
 	for scene_index: Variant in disabled_source_scenes.keys():
 		scene_indices.append(int(scene_index))
 	scene_indices.sort()
-	navigation.prepare_astar(scene_indices)
+	var movement_release_lookup: Dictionary = {}
+	var sight_release_lookup: Dictionary = {}
+	for scene_index: int in scene_indices:
+		if not source_scene_footprints.has(scene_index):
+			continue
+		var footprint := source_scene_footprints[scene_index] as Dictionary
+		for cell: Vector2i in footprint.get("movement", []) as Array[Vector2i]:
+			movement_release_lookup[cell] = true
+		for cell: Vector2i in footprint.get("sight", []) as Array[Vector2i]:
+			sight_release_lookup[cell] = true
+	var movement_cells: Array[Vector2i] = []
+	for cell_value: Variant in movement_release_lookup.keys():
+		movement_cells.append(cell_value as Vector2i)
+	movement_cells.sort()
+	var sight_cells: Array[Vector2i] = []
+	for cell_value: Variant in sight_release_lookup.keys():
+		sight_cells.append(cell_value as Vector2i)
+	sight_cells.sort()
+	navigation.prepare_astar(scene_indices, movement_cells, sight_cells)
+
+
+func register_source_scene_footprint(
+	scene_index: int,
+	movement_cells: Array[Vector2i],
+	sight_cells: Array[Vector2i],
+) -> bool:
+	if navigation == null or scene_index < 0:
+		return false
+	source_scene_footprints[scene_index] = {
+		"movement": movement_cells.duplicate(),
+		"sight": sight_cells.duplicate(),
+	}
+	return not movement_cells.is_empty() or not sight_cells.is_empty()
+
+
+func set_source_scene_disabled(scene_index: int, disabled: bool) -> bool:
+	if navigation == null or scene_index < 0:
+		return false
+	var was_disabled := disabled_source_scenes.has(scene_index)
+	if disabled == was_disabled:
+		return false
+	if disabled:
+		disabled_source_scenes[scene_index] = true
+	else:
+		# A live runtime actor must continue to suppress its serialized source
+		# footprint. This guard lets static doors be closed again without
+		# accidentally restoring an actor's stale VWF obstacle cells.
+		if actors.has(scene_index):
+			return false
+		disabled_source_scenes.erase(scene_index)
+	finalize_registration()
+	return true
+
+
+func is_source_scene_disabled(scene_index: int) -> bool:
+	return disabled_source_scenes.has(scene_index)
 
 
 func unregister_scene(scene_index: int, keep_source_disabled: bool = true) -> void:
@@ -434,10 +491,7 @@ func _mark_temporary_solid(cell: Vector2i, changed_solids: Array[Vector2i]) -> v
 
 
 func _source_movement_blocked(cell: Vector2i) -> bool:
-	var value: int = navigation.movement_value(cell)
-	if value == 0:
-		return false
-	return value < 1000 or not disabled_source_scenes.has(value - 1000)
+	return navigation.is_movement_blocked(cell, disabled_source_scenes)
 
 
 func _has_other_owner(owner_map: Dictionary, cell: Vector2i, scene_index: int) -> bool:
@@ -495,7 +549,13 @@ func _sight_blocked(cell: Vector2i, ignored: Dictionary) -> bool:
 	var source_value: int = navigation.source_value(
 		NAVIGATION_GRID_DATA.LINE_OF_SIGHT_LAYER_ID, cell
 	)
-	if source_value != 0:
+	if (
+		source_value != 0
+		and not navigation.is_source_cell_released(
+			NAVIGATION_GRID_DATA.LINE_OF_SIGHT_LAYER_ID,
+			cell,
+		)
+	):
 		var source_scene: int = source_value - 1000
 		if (
 			source_value < 1000

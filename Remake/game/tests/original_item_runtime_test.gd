@@ -4,6 +4,9 @@ const MAIN_SCENE: PackedScene = preload("res://scenes/main.tscn")
 const ORIGINAL_ITEMS: Script = preload(
 	"res://scripts/original_initial_item_inventory.gd"
 )
+const LEGACY_WORLD_ITEM_RULES: Script = preload(
+	"res://scripts/legacy_world_item_rules.gd"
+)
 
 var failures: Array[String] = []
 var checks := 0
@@ -147,7 +150,14 @@ func _test_drop_enemy_pickup_and_death_loot(main: Node) -> void:
 	for enemy_value: Variant in main.enemies as Array:
 		var enemy := enemy_value as Node2D
 		var inventory: Variant = enemy.get("backpack_inventory")
-		if inventory != null:
+		if (
+			inventory != null
+			and LEGACY_WORLD_ITEM_RULES.accepts_item(
+				int(enemy.get("runtime_actor_type")),
+				48,
+				int(enemy.get("faction_id")),
+			)
+		):
 			carrier = enemy
 			break
 	_expect(source != null and carrier != null, "drop test actors exist")
@@ -155,6 +165,7 @@ func _test_drop_enemy_pickup_and_death_loot(main: Node) -> void:
 		return
 	var carrier_inventory: Variant = carrier.get("backpack_inventory")
 	var before_count := int(carrier_inventory.call("item_count", 48))
+	var before_behavior := int(carrier.get("behavior_state"))
 	main.call("select_only", source)
 	main.set("selected_backpack_item_id", 48)
 	_expect(
@@ -162,7 +173,21 @@ func _test_drop_enemy_pickup_and_death_loot(main: Node) -> void:
 		"selected actor drops exact backpack item",
 	)
 	_expect((main.mission_pickups as Array).size() == 1, "ground pickup is created")
-	main.call("_process_enemy_ground_pickups")
+	_expect(
+		int(carrier.get("behavior_state")) == before_behavior,
+		"drop does not broadcast a synthetic 640-pixel hearing alert",
+	)
+	var dropped_pickup := (main.mission_pickups as Array)[0] as Node2D
+	_expect(
+		bool(
+			carrier.call(
+				"_begin_legacy_world_item_investigation",
+				dropped_pickup,
+			)
+		),
+		"eligible enemy begins original world-item route",
+	)
+	carrier.call("_update_legacy_world_item_investigation", 0.0)
 	_expect((main.mission_pickups as Array).is_empty(), "enemy consumes ground pickup")
 	_expect(
 		int(carrier_inventory.call("item_count", 48)) == before_count + 1,

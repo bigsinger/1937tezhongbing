@@ -17,6 +17,7 @@ var layers: Dictionary = {}
 var astar: AStarGrid2D
 var ignored_scene_indices: Dictionary = {}
 var source_scene_cells_by_layer: Dictionary = {}
+var released_source_cells_by_layer: Dictionary = {}
 
 
 static func load_file(path: String, metadata: Dictionary) -> NavigationGridData:
@@ -105,11 +106,19 @@ static func _zero_layer(size: int) -> PackedInt64Array:
 	return values
 
 
-func prepare_astar(scene_indices_to_ignore: Array[int] = []) -> void:
+func prepare_astar(
+	scene_indices_to_ignore: Array[int] = [],
+	movement_cells_to_release: Array[Vector2i] = [],
+	sight_cells_to_release: Array[Vector2i] = [],
+) -> void:
 	ignored_scene_indices.clear()
 	for scene_index in scene_indices_to_ignore:
 		if scene_index >= 0:
 			ignored_scene_indices[scene_index] = true
+	released_source_cells_by_layer = {
+		MOVEMENT_LAYER_ID: _cell_lookup(movement_cells_to_release),
+		LINE_OF_SIGHT_LAYER_ID: _cell_lookup(sight_cells_to_release),
+	}
 	astar = AStarGrid2D.new()
 	astar.region = Rect2i(Vector2i.ZERO, dimensions)
 	astar.cell_size = Vector2(cell_size)
@@ -123,8 +132,15 @@ func prepare_astar(scene_indices_to_ignore: Array[int] = []) -> void:
 	astar.update()
 	var movement_values := layers[MOVEMENT_LAYER_ID] as PackedInt64Array
 	for cell_index in range(movement_values.size()):
-		if is_blocking_value(movement_values[cell_index], ignored_scene_indices):
-			astar.set_point_solid(index_to_cell(cell_index), true)
+		var cell := index_to_cell(cell_index)
+		if (
+			not is_source_cell_released(MOVEMENT_LAYER_ID, cell)
+			and is_blocking_value(
+				movement_values[cell_index],
+				ignored_scene_indices,
+			)
+		):
+			astar.set_point_solid(cell, true)
 
 
 func find_path(
@@ -346,13 +362,25 @@ func has_line_of_sight(
 func is_line_of_sight_blocked(cell: Vector2i, ignored: Dictionary = {}) -> bool:
 	if not is_valid_cell(cell):
 		return true
+	if is_source_cell_released(LINE_OF_SIGHT_LAYER_ID, cell):
+		return false
 	return is_blocking_value(source_value(LINE_OF_SIGHT_LAYER_ID, cell), ignored)
 
 
 func is_movement_blocked(cell: Vector2i, ignored: Dictionary = {}) -> bool:
 	if not is_valid_cell(cell):
 		return true
+	if is_source_cell_released(MOVEMENT_LAYER_ID, cell):
+		return false
 	return is_blocking_value(movement_value(cell), ignored)
+
+
+func is_source_cell_released(layer_id: int, cell: Vector2i) -> bool:
+	if not released_source_cells_by_layer.has(layer_id):
+		return false
+	return (
+		released_source_cells_by_layer[layer_id] as Dictionary
+	).has(cell)
 
 
 func movement_value(cell: Vector2i) -> int:
@@ -403,6 +431,13 @@ static func is_blocking_value(value: int, ignored: Dictionary) -> bool:
 	if value >= 1000 and ignored.has(value - 1000):
 		return false
 	return true
+
+
+static func _cell_lookup(cells: Array[Vector2i]) -> Dictionary:
+	var result: Dictionary = {}
+	for cell: Vector2i in cells:
+		result[cell] = true
+	return result
 
 
 func world_to_cell(world_position: Vector2) -> Vector2i:

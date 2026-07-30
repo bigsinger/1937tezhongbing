@@ -38,6 +38,16 @@ namespace Mission1937.SDK.Generated
         public const long AlertRadiusOperand4 = 0x00057187L;
         public const long ActorDistance = 0x0005A040L;
         public const long AlertEffectiveRadius = 0x0005A7C0L;
+        public const long CreateWorldActor = 0x0004A350L;
+        public const long CompleteActorInteraction = 0x00056AB0L;
+        public const long ApplyWorldItemEffect = 0x00058270L;
+        public const long CompleteWorldItemDrop = 0x000583F0L;
+        public const long PopulateWorldItemAcceptance = 0x0005B080L;
+        public const long ScanLiveTargets = 0x0005C390L;
+        public const long ScanCorpses = 0x0005C4C0L;
+        public const long SpawnCorpseReinforcements = 0x0005E2A0L;
+        public const long ScanWorldItems = 0x0005C550L;
+        public const long OriginalDirectionalVisibilityBand = 0x00068D40L;
         public const long SpecialActorUpdateDispatch = 0x00054960L;
         public const long TimedSpecialUpdate = 0x000553B0L;
         public const long ExplosionActorUpdate = 0x000554A0L;
@@ -59,7 +69,9 @@ namespace Mission1937.SDK.Generated
         public const long ObservationMarkerScan = 0x0005C320L;
         public const long PlayerGroundCommandResetCall = 0x00058B81L;
         public const long EnemyAiUpdate = 0x0005C710L;
+        public const long OriginalLocalSearchPoint = 0x0005D060L;
         public const long AlertPropagation = 0x0005DDA0L;
+        public const long OriginalLocalSearchContinue = 0x0005E4B0L;
         public const long LoadGameFile = 0x0004BB00L;
         public const long SaveGameFile = 0x0004BEA0L;
         public const long ScreenWidth = 0x000E6E0CL;
@@ -78,6 +90,7 @@ namespace Mission1937.SDK.Generated
         public const long MouseLeftReleased = 0x000E6FB0L;
         public const long CurrentActionId = 0x000E7048L;
         public const long SpecialAttentionSource = 0x000E70B4L;
+        public const long GlobalCorpseAlarm = 0x000E709CL;
         public const long CurrentMission = 0x000E7060L;
         public const long SelectedSaveSlot = 0x000E705CL;
         public const long WorldRoot = 0x000E700CL;

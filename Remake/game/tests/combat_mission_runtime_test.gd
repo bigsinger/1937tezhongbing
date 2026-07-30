@@ -327,10 +327,10 @@ func _test_alert_propagation(failures: Array[String]) -> void:
 	main.enemies.append(distant_enemy)
 	main._on_attack_started(attacker, target, 2, 640.0)
 	_expect(
-		nearby_enemy.current_target == attacker
-		and nearby_enemy.behavior_state == ENEMY_UNIT_SCRIPT.BehaviorState.CHASE
+		nearby_enemy.current_target == null
+		and nearby_enemy.behavior_state == ENEMY_UNIT_SCRIPT.BehaviorState.SEARCH
 		and nearby_enemy.last_known_target_position == attacker.position,
-		"gunfire alert gives nearby enemies the shooter's live target and position",
+		"gunfire alert gives nearby enemies the shooter's coordinate without a live target",
 		failures,
 	)
 	_expect(
@@ -381,8 +381,32 @@ func _test_alert_propagation(failures: Array[String]) -> void:
 		coordinator.shared_alerts.size() == 1
 		and coordinator.shared_alerts[0].get("source") == dead_enemy
 		and coordinator.shared_alerts[0].get("target") == attacker
-		and (coordinator.shared_alerts[0].get("world_position") as Vector2) == dead_enemy.position,
-		"enemy-death alerts enter the mission AI cooperation queue instead of bypassing its delay and group limits",
+		and (
+			coordinator.shared_alerts[0].get("world_position") as Vector2
+		) == dead_enemy.position
+		and is_equal_approx(
+			float(coordinator.shared_alerts[0].get("base_radius")),
+			256.0,
+		),
+		"faction-1 death emits the recovered 256-radius coordinate pulse",
+		failures,
+	)
+	main.runtime_settings["difficulty_mode"] = "normal"
+	var editorial_dead_enemy = _make_alert_enemy(
+		"editorial dead source", Vector2(260.0, 0.0), clear_sight
+	)
+	editorial_dead_enemy.is_alive = false
+	arena.add_child(editorial_dead_enemy)
+	main.enemies.append(editorial_dead_enemy)
+	main._on_combatant_died(editorial_dead_enemy, attacker)
+	_expect(
+		coordinator.shared_alerts.size() == 2
+		and coordinator.shared_alerts[1].get("source") == editorial_dead_enemy
+		and coordinator.shared_alerts[1].get("target") == attacker
+		and (
+			coordinator.shared_alerts[1].get("world_position") as Vector2
+		) == editorial_dead_enemy.position,
+		"editorial modes route death alerts through the delayed bounded cooperation queue",
 		failures,
 	)
 	main.mission_ai_coordinator = null
