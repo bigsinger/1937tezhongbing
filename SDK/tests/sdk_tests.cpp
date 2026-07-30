@@ -215,6 +215,84 @@ int main(int argc, char** argv) {
                 m1937::sdk::find_mission_route(16) == nullptr,
             "mission route lookup accepted an invalid level", checks);
 
+        {
+        using namespace m1937::sdk::input;
+        require(
+            original_action_binding_count == 28 &&
+                find_action_binding(OriginalAction::weapon_1) &&
+                find_action_binding(OriginalAction::weapon_1)->scan_code ==
+                    DikScanCode::digit_1 &&
+                find_action_binding(OriginalAction::weapon_1)->phase ==
+                    TriggerPhase::press &&
+                find_action_binding(OriginalAction::minimap) &&
+                find_action_binding(OriginalAction::minimap)->scan_code ==
+                    DikScanCode::m &&
+                find_action_binding(OriginalAction::minimap)->phase ==
+                    TriggerPhase::release &&
+                find_action_binding(OriginalAction::force_target_up)->phase ==
+                    TriggerPhase::held,
+            "original DirectInput action matrix mismatch", checks);
+        const auto pressed = transition(false, true);
+        const auto held = transition(true, true);
+        const auto released = transition(true, false);
+        require(
+            pressed.pressed && pressed.down && !pressed.released &&
+                !held.pressed && held.down && !held.released &&
+                !released.pressed && !released.down && released.released,
+            "mouse button transition matrix mismatch", checks);
+        require(
+            keyboard_state_offset(DikScanCode::m) ==
+                    InputStateOffsets::keyboard_state + 0x32 &&
+                m1937::sdk::rva::keyboard_state_base -
+                    m1937::sdk::rva::input_state_base ==
+                    InputStateOffsets::keyboard_state &&
+                m1937::sdk::rva::mouse_middle_pressed -
+                    m1937::sdk::rva::input_state_base ==
+                    InputStateOffsets::mouse_middle_pressed &&
+                m1937::sdk::rva::mouse_right_pressed -
+                    m1937::sdk::rva::input_state_base ==
+                    InputStateOffsets::mouse_right_pressed &&
+                m1937::sdk::rva::mouse_right_released -
+                    m1937::sdk::rva::input_state_base ==
+                    InputStateOffsets::mouse_right_released,
+            "input-state field offsets no longer match catalog globals",
+            checks);
+        require(
+            edge_direction(0, 360, 1280, 720) == EdgeDirection::west &&
+                edge_direction(1, 360, 1280, 720) ==
+                    EdgeDirection::west &&
+                edge_direction(2, 360, 1280, 720) ==
+                    EdgeDirection::none &&
+                edge_direction(1279, 1, 1280, 720) ==
+                    EdgeDirection::northeast &&
+                edge_direction(1280, 360, 1280, 720) ==
+                    EdgeDirection::none &&
+                advance_scroll_velocity(0, 64, true) == 8 &&
+                advance_scroll_velocity(64, 64, false) == 56,
+            "original two-coordinate edge/ramp semantics mismatch", checks);
+        require(
+            context_cursor(true, true, true, true, true, true, true) ==
+                    CursorSerial::burial &&
+                context_cursor(
+                    false, true, true, true, true, true, true) ==
+                    CursorSerial::sight &&
+                context_cursor(
+                    false, false, true, false, true, false, true) ==
+                    CursorSerial::interact &&
+                context_cursor(
+                    false, false, true, false, false, false, false) ==
+                    CursorSerial::blocked,
+            "original mouse.spr cursor-priority matrix mismatch", checks);
+        require(
+            m1937::sdk::rva::direct_input_poll != 0 &&
+                m1937::sdk::rva::original_world_input_controller != 0 &&
+                m1937::sdk::rva::cursor_set_serial != 0 &&
+                m1937::sdk::rva::right_drag_selection != 0 &&
+                m1937::sdk::rva::world_input_dispatch != 0 &&
+                m1937::sdk::rva::set_scroll_velocity_limit != 0,
+            "input/cursor RVA catalog mismatch", checks);
+        }
+
         using m1937::sdk::InventoryContainerKind;
         require(
             m1937::sdk::original_world_pickups.size() == 10,

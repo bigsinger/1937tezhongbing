@@ -6,6 +6,9 @@ const MISSION_RUNTIME_SCRIPT: Script = preload("res://scripts/mission_runtime.gd
 const MISSION_STATE: Script = preload("res://scripts/mission_state.gd")
 const NAVIGATION_GRID_DATA: Script = preload("res://scripts/navigation_grid_data.gd")
 const SPECIAL_PROFILES: Script = preload("res://scripts/legacy_special_action_profiles.gd")
+const LEGACY_CURSOR_PRESENTER: Script = preload(
+	"res://scripts/legacy_cursor_presenter.gd"
+)
 const MAIN_SCRIPT: Script = preload("res://scripts/main.gd")
 const TACTICAL_MAP_VIEW: Script = preload("res://scripts/tactical_map_view.gd")
 const LEVEL_IDS: Array[String] = [
@@ -210,6 +213,7 @@ func _init() -> void:
 		"all 17,858 Layer 5 editor correction markers are preserved",
 	)
 	validate_sprite_manifests()
+	validate_original_cursor_asset()
 	validate_special_action_assets()
 	validate_m000_farmland_depth()
 	validate_all_level_fidelity_baselines()
@@ -271,6 +275,40 @@ func validate_sprite_manifests() -> void:
 	expect(manifest_count == EXPECTED_SPRITE_COUNT, "all 980 sprite manifests validate")
 	expect(group_count == EXPECTED_GROUP_COUNT, "all 2,775 animation groups validate")
 	expect(frame_count == EXPECTED_FRAME_COUNT, "all 11,898 animation frames validate")
+
+
+func validate_original_cursor_asset() -> void:
+	var converted_root := ProjectSettings.globalize_path(
+		"res://../LocalAssets/converted"
+	).simplify_path()
+	var manifest_path := converted_root.path_join(
+		"sprite-frames/0016/sprite.json"
+	).simplify_path()
+	var manifest := load_json_dictionary(manifest_path)
+	expect(not manifest.is_empty(), "original GFL 16 mouse.spr manifest loads")
+	if manifest.is_empty():
+		return
+	var header_values := manifest.get("header_values", []) as Array
+	expect(
+		int(manifest.get("gfl_index", -1)) == 16
+		and str(manifest.get("resource_name", "")) == "mouse.spr"
+		and header_values.size() >= 3
+		and int(header_values[2]) == 55,
+		"original cursor manifest preserves GFL index, name, and runtime type 55",
+	)
+	var presenter: RefCounted = LEGACY_CURSOR_PRESENTER.new()
+	expect(
+		bool(presenter.load_from_converted_root(converted_root)),
+		"runtime cursor presenter loads every required original frame",
+	)
+	expect(
+		presenter.available_serial_ids() == [0, 1, 2, 3, 4, 6, 8, 9, 10],
+		"mouse.spr exposes the nine recovered cursor serial IDs",
+	)
+	expect(
+		str(presenter.source_manifest_path).simplify_path() == manifest_path,
+		"cursor runtime records the contained original manifest path",
+	)
 
 
 func validate_special_action_assets() -> void:

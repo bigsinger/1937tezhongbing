@@ -339,6 +339,20 @@ func _test_original_controls_and_remapping(failures: Array[String]) -> void:
 		"original modal/action keys fire on release",
 		failures,
 	)
+	var weapon_key := InputEventKey.new()
+	weapon_key.keycode = KEY_1
+	weapon_key.pressed = true
+	_expect(
+		GAME_INPUT_BINDINGS.should_trigger_for_event("weapon_1", weapon_key),
+		"original numeric project selection fires on press",
+		failures,
+	)
+	weapon_key.pressed = false
+	_expect(
+		not GAME_INPUT_BINDINGS.should_trigger_for_event("weapon_1", weapon_key),
+		"original numeric project selection does not repeat on release",
+		failures,
+	)
 
 	var old_map := (controls["minimap"] as Dictionary).duplicate(true)
 	var old_item := (controls["item_inventory"] as Dictionary).duplicate(true)

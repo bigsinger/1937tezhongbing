@@ -31,8 +31,8 @@
     {
       "id": "input_and_hotkeys",
       "status": "partial",
-      "evidence": ["original key defaults", "release cadence", "remapping and conflict handling", "recovered S living-faction-1 direct target and singleton actor-90 ground marker command", "recovered B dead-faction-1 command kind 4, path-first 32x16 adjacent-cell range and strict >100 completion counter", "m000 basic and obstacle-route zero-mismatch MOD/Remake differential traces"],
-      "gaps": ["full mouse/cursor matrix against Mod"]
+      "evidence": ["complete DirectInput DIK matrix for Esc/F1/F2-F8/W/A/B/R/S/C/M/1-0/Ctrl/Up", "per-action press/release/held phases", "left world command on press and right drag/cancel on release", "exact client-edge classification and limit/8 velocity ramp", "remapping and conflict handling", "recovered S living-faction-1 direct target and singleton actor-90 ground marker command", "recovered B dead-faction-1 command kind 4, path-first 32x16 adjacent-cell range and strict >100 completion counter", "96-check deterministic input suite and pointer-control source guard", "m000 basic and obstacle-route zero-mismatch MOD/Remake differential traces"],
+      "gaps": ["physical stable-MOD/Remake frame traces for every menu and contextual S/B target case"]
     },
     {
       "id": "inventory_items_and_world_pickups",
@@ -73,8 +73,8 @@
     {
       "id": "menus_hud_minimap_and_cursor",
       "status": "partial",
-      "evidence": ["pause/failure menus", "F1/F7", "right-side inventory", "live minimap", "cursor modes", "S eye/help and B hand command cursors plus overhead fixed-tick burial progress"],
-      "gaps": ["1024x768 pixel baselines", "1920x1080 baselines", "remaining contextual cursor pixel parity"]
+      "evidence": ["pause/failure menus", "F1/F7", "right-side inventory", "live minimap", "GFL 16 mouse.spr runtime type 55 with all recovered serials 0/1/2/3/4/6/8/9/10", "S eye serial 8, B hand serial 4, move/target/door/blocked context selection", "overhead fixed-tick burial progress", "app-local cursor presentation with no pointer capture, clipping, warping, or desktop-coordinate fallback"],
+      "gaps": ["1024x768 pixel baselines", "1920x1080 baselines", "hotspot and animation pixel parity for every contextual cursor"]
     },
     {
       "id": "save_load_settings_and_progression",

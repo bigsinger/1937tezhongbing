@@ -18,7 +18,13 @@ struct ExecutableIdentity final {
 namespace rva {
 inline constexpr std::uintptr_t safe_blit = 0x0000EE30;
 inline constexpr std::uintptr_t menu_poll = 0x00044800;
+inline constexpr std::uintptr_t direct_input_poll = 0x00048E40;
+inline constexpr std::uintptr_t original_world_input_controller = 0x0003E050;
+inline constexpr std::uintptr_t cursor_set_serial = 0x0001C060;
+inline constexpr std::uintptr_t right_drag_selection = 0x0004C800;
 inline constexpr std::uintptr_t smooth_scroll = 0x0004C9B0;
+inline constexpr std::uintptr_t world_input_dispatch = 0x0004CB80;
+inline constexpr std::uintptr_t set_scroll_velocity_limit = 0x0004AB10;
 inline constexpr std::uintptr_t world_resolve_hover_target = 0x0004C050;
 inline constexpr std::uintptr_t enable_sight_observation_mode = 0x0004CD00;
 inline constexpr std::uintptr_t enable_burial_mode = 0x0004CD30;
@@ -103,6 +109,12 @@ inline constexpr std::uintptr_t input_raw_map = 0x000E6EDA;
 inline constexpr std::uintptr_t input_raw_help = 0x000E6EE3;
 inline constexpr std::uintptr_t mouse_left_pressed = 0x000E6E64;
 inline constexpr std::uintptr_t mouse_left_down = 0x000E6E74;
+inline constexpr std::uintptr_t mouse_middle_down = 0x000E6E70;
+inline constexpr std::uintptr_t mouse_middle_pressed = 0x000E6FD4;
+inline constexpr std::uintptr_t mouse_middle_released = 0x000E6FDC;
+inline constexpr std::uintptr_t mouse_right_pressed = 0x000E6FD8;
+inline constexpr std::uintptr_t mouse_right_released = 0x000E6E90;
+inline constexpr std::uintptr_t keyboard_state_base = 0x000E6EA8;
 inline constexpr std::uintptr_t cursor_x = 0x000E6EA0;
 inline constexpr std::uintptr_t briefing_advance = 0x000E6EA9;
 inline constexpr std::uintptr_t cursor_y = 0x000E6FAC;

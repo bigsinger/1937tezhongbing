@@ -106,6 +106,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "Godot logic tests failed with exit code $LASTEXITCODE."
 }
 
+& $GodotExecutable --headless --path $game --script 'res://tests/legacy_input_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot original input parity tests failed with exit code $LASTEXITCODE."
+}
+
 & $GodotExecutable --headless --path $game --script 'res://tests/combat_mission_runtime_test.gd'
 if ($LASTEXITCODE -ne 0) {
     throw "Godot combat and mission runtime tests failed with exit code $LASTEXITCODE."

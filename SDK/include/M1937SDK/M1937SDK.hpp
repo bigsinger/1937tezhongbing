@@ -4,6 +4,7 @@
 #include "Commands.hpp"
 #include "CorpseDiscovery.hpp"
 #include "EnemyAI.hpp"
+#include "Input.hpp"
 #include "Inventory.hpp"
 #include "MissionRoutes.hpp"
 #include "Module.hpp"

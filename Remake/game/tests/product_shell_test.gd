@@ -579,10 +579,11 @@ func _run() -> void:
 	)
 	expect(
 		main.edge_scroll_direction_for_position(Vector2(0.0, 0.0), viewport_size) == Vector2(-1.0, -1.0)
-		and main.edge_scroll_direction_for_position(Vector2(1.0, 360.0), viewport_size).is_zero_approx()
+		and main.edge_scroll_direction_for_position(Vector2(1.0, 360.0), viewport_size) == Vector2.LEFT
+		and main.edge_scroll_direction_for_position(Vector2(2.0, 360.0), viewport_size).is_zero_approx()
 		and main.edge_scroll_direction_for_position(Vector2(1278.0, 360.0), viewport_size).is_zero_approx()
 		and main.edge_scroll_direction_for_position(Vector2(1280.0, 360.0), viewport_size).is_zero_approx(),
-		"one-pixel edge scrolling is symmetric, combines corners, and rejects the exclusive viewport bound",
+		"recovered coordinates 0/1 scroll symmetrically, combine corners, and reject the exclusive viewport bound",
 		failures,
 	)
 	expect(

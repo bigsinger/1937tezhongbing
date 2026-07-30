@@ -1,6 +1,8 @@
 class_name GameInputBindings
 extends RefCounted
 
+const LEGACY_INPUT_RULES: Script = preload("res://scripts/legacy_input_rules.gd")
+
 ## Original-game compatible keyboard mapping.  The order is also used by the
 ## settings screen, so it deliberately follows the 2001 help-page grouping.
 const DEFINITIONS: Array[Dictionary] = [
@@ -46,7 +48,20 @@ const DEFINITIONS: Array[Dictionary] = [
 
 
 static func definitions() -> Array[Dictionary]:
-	return DEFINITIONS.duplicate(true)
+	var result: Array[Dictionary] = DEFINITIONS.duplicate(true)
+	for definition: Dictionary in result:
+		var action := str(definition.get("action", ""))
+		definition["trigger_phase"] = (
+			LEGACY_INPUT_RULES.trigger_phase_for_action(action)
+			if is_original_action(action)
+			else LEGACY_INPUT_RULES.PHASE_PRESS
+		)
+		definition["legacy_scan_code"] = (
+			LEGACY_INPUT_RULES.direct_input_scan_code_for_action(action)
+			if is_original_action(action)
+			else -1
+		)
+	return result
 
 
 static func action_ids() -> Array[String]:
@@ -64,17 +79,9 @@ static func is_original_action(action: String) -> bool:
 
 
 static func should_trigger_for_event(action: String, event: InputEventKey) -> bool:
-	if action.is_empty() or event.echo:
-		return false
-	if action.begins_with("select_"):
-		# F2-F6 are polled as held-state keys by the original executable. A
-		# single press is sufficient because selecting the same actor is
-		# idempotent; key-repeat noise is deliberately ignored.
-		return event.pressed
-	# The 2001 executable polls DirectInput on key release.  Preserve that
-	# cadence for recovered commands while keeping remake-only shortcuts
-	# responsive on key press.
-	return not event.pressed if is_original_action(action) else event.pressed
+	if is_original_action(action):
+		return LEGACY_INPUT_RULES.should_trigger_for_event(action, event)
+	return not action.is_empty() and not event.echo and event.pressed
 
 
 static func default_bindings() -> Dictionary:

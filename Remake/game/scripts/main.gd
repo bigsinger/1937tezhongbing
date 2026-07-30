@@ -32,6 +32,10 @@ const GAME_SETTINGS_SCRIPT: Script = preload("res://scripts/game_settings.gd")
 const GAME_SAVE_STORE_SCRIPT: Script = preload("res://scripts/game_save_store.gd")
 const GAME_SESSION_STATE_SCRIPT: Script = preload("res://scripts/game_session_state.gd")
 const GAME_INPUT_BINDINGS: Script = preload("res://scripts/game_input_bindings.gd")
+const LEGACY_INPUT_RULES: Script = preload("res://scripts/legacy_input_rules.gd")
+const LEGACY_CURSOR_PRESENTER: Script = preload(
+	"res://scripts/legacy_cursor_presenter.gd"
+)
 const WORLD_PICKUP_CATALOG: Script = preload("res://scripts/world_pickup_catalog.gd")
 const FIELD_PICKUP_SCRIPT: Script = preload("res://scripts/field_pickup.gd")
 const EXPLOSIVE_PROP_SCRIPT: Script = preload("res://scripts/explosive_prop.gd")
@@ -227,10 +231,12 @@ var world_size := DEFAULT_WORLD_SIZE
 var movement_bounds := DEFAULT_MOVEMENT_BOUNDS
 var terrain_loaded := false
 var camera_dragging := false
-var left_world_click_armed := false
 var right_dragging := false
 var right_drag_start_screen := Vector2.ZERO
 var right_drag_current_screen := Vector2.ZERO
+var edge_scroll_strength := 0.0
+var edge_scroll_last_direction := Vector2.ZERO
+var legacy_cursor_presenter: RefCounted = LEGACY_CURSOR_PRESENTER.new()
 var original_force_target_held := false
 var sight_observation_mode := false
 var sight_target_pending := false
@@ -315,6 +321,11 @@ func _ready() -> void:
 	queue_redraw()
 
 
+func _exit_tree() -> void:
+	if legacy_cursor_presenter != null:
+		legacy_cursor_presenter.reset()
+
+
 func create_interface() -> void:
 	var canvas := CanvasLayer.new()
 	add_child(canvas)
@@ -379,6 +390,7 @@ func switch_level(
 	start_direction: bool = true,
 ) -> void:
 	_cancel_direction_camera_tween()
+	_reset_context_cursor()
 	pending_initial_briefing_level = ""
 	pending_direction_start_sequence_id = ""
 	pending_victory_media_cue = false
@@ -503,6 +515,8 @@ func load_imported_level(level_id: String = LEVEL_VIEW.DEFAULT_LEVEL_ID) -> bool
 	converted_root = (
 		ProjectSettings.globalize_path("res://../LocalAssets/converted").simplify_path()
 	)
+	if legacy_cursor_presenter != null:
+		legacy_cursor_presenter.load_from_converted_root(converted_root)
 	imported_level = IMPORTED_LEVEL_DATA.load_level(level_id)
 	var imported: Dictionary = LEVEL_VIEW.load_imported_terrain(level_id)
 	if imported.is_empty():
@@ -1158,7 +1172,6 @@ func _spawn_ambient_units() -> void:
 
 
 func _process(delta: float) -> void:
-	_update_context_cursor()
 	_update_tactical_sight_visibility()
 	if mission_direction_runtime != null:
 		mission_direction_runtime.advance_time(maxf(delta, 0.0))
@@ -1179,6 +1192,7 @@ func _process(delta: float) -> void:
 		GAME_INPUT_BINDINGS.action_is_held("force_target_ctrl", controls)
 		or force_up_held
 	)
+	_update_context_cursor(delta)
 	if (
 		game_shell != null
 		and game_shell.is_tactical_map_visible()
@@ -1192,17 +1206,21 @@ func _process(delta: float) -> void:
 		)
 	if level_camera == null:
 		return
-	var direction := Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
+	var keyboard_direction := Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
 	# Up is an original held-state force-target key, not a camera key. Mouse
 	# edge scrolling remains the faithful camera control; left/right/down arrow
 	# support is a remake convenience.
 	if force_up_held:
-		direction.y = maxf(direction.y, 0.0)
-	if bool(runtime_settings.get("edge_scroll", true)):
-		direction += _mouse_edge_scroll_direction()
-	if direction.length_squared() > 1.0:
-		direction = direction.normalized()
-	level_camera.position += direction * CAMERA_PAN_SPEED * delta / level_camera.zoom.x
+		keyboard_direction.y = maxf(keyboard_direction.y, 0.0)
+	var edge_direction := _advance_mouse_edge_scroll(delta)
+	# Original diagonal edge scrolling applies the full X and Y velocity. It is
+	# intentionally not normalized together with the remake keyboard channel.
+	level_camera.position += (
+		(keyboard_direction + edge_direction)
+		* CAMERA_PAN_SPEED
+		* delta
+		/ level_camera.zoom.x
+	)
 	clamp_level_camera()
 
 
@@ -1210,17 +1228,60 @@ func _physics_process(_delta: float) -> void:
 	_advance_burial_command_world_tick()
 
 
-func _update_context_cursor() -> void:
-	if burial_mode:
-		Input.set_default_cursor_shape(Input.CURSOR_POINTING_HAND)
-	elif sight_target_pending:
-		Input.set_default_cursor_shape(Input.CURSOR_HELP)
-	elif legacy_door_at_world_point(_mouse_world_position()) != null:
-		Input.set_default_cursor_shape(Input.CURSOR_POINTING_HAND)
-	elif not selected_units.is_empty() and enemy_at_world_point(_mouse_world_position()) != null:
-		Input.set_default_cursor_shape(Input.CURSOR_CROSS)
-	else:
-		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+func _update_context_cursor(delta: float = 0.0) -> void:
+	if legacy_cursor_presenter == null:
+		return
+	if game_shell != null and game_shell.is_overlay_open():
+		legacy_cursor_presenter.apply(LEGACY_INPUT_RULES.CursorSerial.NORMAL, delta)
+		return
+	if _pointer_over_interactive_control():
+		legacy_cursor_presenter.apply(LEGACY_INPUT_RULES.CursorSerial.NORMAL, delta)
+		return
+	var mouse_screen := get_viewport().get_mouse_position()
+	var viewport_size := get_viewport_rect().size
+	var pointer_inside_world := (
+		mouse_screen.x >= 0.0
+		and mouse_screen.y >= 0.0
+		and mouse_screen.x < viewport_size.x
+		and mouse_screen.y < viewport_size.y
+	)
+	var mouse_world := (
+		get_global_transform_with_canvas().affine_inverse() * mouse_screen
+	)
+	var serial_id: int = LEGACY_INPUT_RULES.context_cursor_serial(
+		burial_mode,
+		sight_target_pending,
+		not selected_units.is_empty(),
+		original_force_target_held,
+		legacy_door_at_world_point(mouse_world) != null,
+		enemy_at_world_point(mouse_world) != null,
+		_cursor_ground_is_walkable(mouse_world),
+		pointer_inside_world,
+	)
+	legacy_cursor_presenter.apply(serial_id, delta)
+
+
+func _reset_context_cursor() -> void:
+	if legacy_cursor_presenter != null:
+		legacy_cursor_presenter.reset()
+
+
+func _pointer_over_interactive_control() -> bool:
+	var hovered_control := get_viewport().gui_get_hovered_control()
+	return (
+		hovered_control != null
+		and hovered_control.mouse_filter != Control.MOUSE_FILTER_IGNORE
+	)
+
+
+func _cursor_ground_is_walkable(world_position: Vector2) -> bool:
+	if navigation_grid == null:
+		return movement_bounds.has_point(world_position)
+	var cell := navigation_grid.world_to_cell(world_position)
+	return (
+		navigation_grid.is_valid_cell(cell)
+		and not navigation_grid.is_movement_blocked(cell)
+	)
 
 func _update_tactical_sight_visibility() -> void:
 	if (
@@ -1249,20 +1310,36 @@ func _mouse_edge_scroll_direction() -> Vector2:
 		or not DisplayServer.window_is_focused()
 		or right_dragging
 		or camera_dragging
+		or _pointer_over_interactive_control()
 	):
 		return Vector2.ZERO
 	var viewport_size := get_viewport_rect().size
 	var mouse_position := get_viewport().get_mouse_position()
-	# In windowed mode Godot can report a stale viewport mouse coordinate while
-	# the pointer is over the client edge. Convert the desktop coordinate back to
-	# the client area as a fallback; fullscreen keeps the normal fast path.
-	if DisplayServer.window_get_mode() != DisplayServer.WINDOW_MODE_FULLSCREEN:
-		var desktop := DisplayServer.mouse_get_position()
-		var window_origin := DisplayServer.window_get_position()
-		var desktop_position := Vector2(desktop - window_origin)
-		if desktop_position.x >= 0.0 and desktop_position.y >= 0.0:
-			mouse_position = desktop_position
 	return edge_scroll_direction_for_position(mouse_position, viewport_size, EDGE_SCROLL_MARGIN)
+
+
+func _advance_mouse_edge_scroll(delta: float) -> Vector2:
+	if (
+		not bool(runtime_settings.get("edge_scroll", true))
+		or DisplayServer.get_name() == "headless"
+		or not DisplayServer.window_is_focused()
+		or right_dragging
+		or camera_dragging
+	):
+		edge_scroll_strength = 0.0
+		edge_scroll_last_direction = Vector2.ZERO
+		return Vector2.ZERO
+	var requested_direction := _mouse_edge_scroll_direction()
+	if not requested_direction.is_zero_approx():
+		edge_scroll_last_direction = requested_direction
+	edge_scroll_strength = LEGACY_INPUT_RULES.advance_scroll_strength(
+		edge_scroll_strength,
+		not requested_direction.is_zero_approx(),
+		maxf(delta, 0.0) * 60.0,
+	)
+	if edge_scroll_strength <= 0.0:
+		edge_scroll_last_direction = Vector2.ZERO
+	return edge_scroll_last_direction * edge_scroll_strength
 
 
 static func edge_scroll_direction_for_position(
@@ -1270,24 +1347,11 @@ static func edge_scroll_direction_for_position(
 	viewport_size: Vector2,
 	margin: float = EDGE_SCROLL_MARGIN,
 ) -> Vector2:
-	if (
-		mouse_position.x < 0.0
-		or mouse_position.y < 0.0
-		or mouse_position.x >= viewport_size.x
-		or mouse_position.y >= viewport_size.y
-	):
-		return Vector2.ZERO
-	var safe_margin := clampf(margin, 0.0, minf(viewport_size.x, viewport_size.y) * 0.5)
-	var direction := Vector2.ZERO
-	if mouse_position.x < safe_margin:
-		direction.x -= 1.0
-	elif mouse_position.x >= viewport_size.x - safe_margin:
-		direction.x += 1.0
-	if mouse_position.y < safe_margin:
-		direction.y -= 1.0
-	elif mouse_position.y >= viewport_size.y - safe_margin:
-		direction.y += 1.0
-	return direction
+	return LEGACY_INPUT_RULES.edge_direction_for_position(
+		mouse_position,
+		viewport_size,
+		margin,
+	)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -1326,22 +1390,20 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_global_transform_with_canvas().affine_inverse() * mouse_event.position
 		)
 		if mouse_event.button_index == MOUSE_BUTTON_LEFT:
-			if mouse_event.pressed:
-				left_world_click_armed = true
-			else:
-				if left_world_click_armed:
-					_handle_original_left_click(local_position, mouse_event.shift_pressed)
-				left_world_click_armed = false
+			if LEGACY_INPUT_RULES.should_submit_world_left(mouse_event.pressed):
+				_handle_original_left_click(local_position, mouse_event.shift_pressed)
 			get_viewport().set_input_as_handled()
 		elif mouse_event.button_index == MOUSE_BUTTON_RIGHT:
-			if mouse_event.pressed:
+			if not LEGACY_INPUT_RULES.should_finish_world_right(mouse_event.pressed):
 				right_dragging = true
 				right_drag_start_screen = mouse_event.position
 				right_drag_current_screen = mouse_event.position
 			else:
 				var drag_distance := right_drag_start_screen.distance_to(mouse_event.position)
 				right_dragging = false
-				if drag_distance >= RIGHT_DRAG_THRESHOLD:
+				if _cancel_pending_pointer_mode_from_right_release():
+					update_status("已取消当前鼠标命令模式")
+				elif drag_distance >= RIGHT_DRAG_THRESHOLD:
 					_select_units_in_screen_rect(
 						Rect2(right_drag_start_screen, mouse_event.position - right_drag_start_screen).abs(),
 						mouse_event.shift_pressed,
@@ -1386,6 +1448,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			switch_level(10)
 			update_status("原版 F8 调试后门：已进入 M010（未读取原版二进制存档）")
 			get_viewport().set_input_as_handled()
+
+
+func _cancel_pending_pointer_mode_from_right_release() -> bool:
+	var canceled := burial_mode or sight_target_pending
+	burial_mode = false
+	sight_target_pending = false
+	sight_observation_mode = false
+	return canceled
 
 
 func _handle_original_left_click(world_position: Vector2, additive: bool) -> void:
@@ -4349,6 +4419,7 @@ func _open_pause_menu() -> void:
 	if media_director != null and media_director.has_method("is_modal_active"):
 		if bool(media_director.is_modal_active()):
 			return
+	_reset_context_cursor()
 	game_shell.set_save_slots(_save_slot_summaries())
 	if current_mission_state != null and current_mission_state.is_victory():
 		game_shell.show_victory(
@@ -4377,6 +4448,7 @@ func _open_tactical_map() -> void:
 
 func _open_inventory(mode: String = "items") -> void:
 	if game_shell != null:
+		_reset_context_cursor()
 		game_shell.hide_tactical_map()
 		game_shell.show_inventory(_inventory_grid_model(), mode)
 		if mode == "items":
@@ -4391,6 +4463,7 @@ func _report_direction_action(action: String) -> void:
 func _open_control_guide() -> void:
 	if game_shell == null:
 		return
+	_reset_context_cursor()
 	game_shell.hide_tactical_map()
 	game_shell.show_control_guide(
 		_load_external_texture(converted_root.path_join("iblock/1047.png"))
@@ -4400,6 +4473,7 @@ func _open_control_guide() -> void:
 func _show_current_briefing() -> void:
 	if media_director == null:
 		return
+	_reset_context_cursor()
 	if game_shell != null:
 		game_shell.hide_tactical_map()
 	media_director.show_briefing(
@@ -5221,8 +5295,10 @@ func _play_mission_media_cue(section: String, key: String = "") -> bool:
 				)
 			)
 		"movie":
+			_reset_context_cursor()
 			return bool(media_director.play_movie(str(cue.get("movie_id", ""))))
 		"ending":
+			_reset_context_cursor()
 			var target_width := 1024
 			if is_inside_tree():
 				target_width = maxi(int(get_viewport_rect().size.x), 1)
@@ -5252,6 +5328,7 @@ func _on_mission_failed(failure_id: String) -> void:
 	update_status("任务失败：%s。请在失败菜单选择重新开始或读取存档。" % failure_id)
 	_refresh_mission_ui()
 	if game_shell != null:
+		_reset_context_cursor()
 		game_shell.set_save_slots(_save_slot_summaries())
 		game_shell.show_failure("任务失败：%s\n可重新开始本关，或从多槽存档选择器读取进度。" % failure_id, _has_save_slot())
 

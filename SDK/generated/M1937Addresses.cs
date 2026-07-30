@@ -15,7 +15,13 @@ namespace Mission1937.SDK.Generated
     {
         public const long SafeBlit = 0x0000EE30L;
         public const long MenuPoll = 0x00044800L;
+        public const long DirectInputPoll = 0x00048E40L;
+        public const long OriginalWorldInputController = 0x0003E050L;
+        public const long CursorSetSerial = 0x0001C060L;
+        public const long RightDragSelection = 0x0004C800L;
         public const long SmoothScroll = 0x0004C9B0L;
+        public const long WorldInputDispatch = 0x0004CB80L;
+        public const long SetScrollVelocityLimit = 0x0004AB10L;
         public const long WorldResolveHoverTarget = 0x0004C050L;
         public const long EnableSightObservationMode = 0x0004CD00L;
         public const long EnableBurialMode = 0x0004CD30L;
@@ -100,6 +106,12 @@ namespace Mission1937.SDK.Generated
         public const long InputRawHelp = 0x000E6EE3L;
         public const long MouseLeftPressed = 0x000E6E64L;
         public const long MouseLeftDown = 0x000E6E74L;
+        public const long MouseMiddleDown = 0x000E6E70L;
+        public const long MouseMiddlePressed = 0x000E6FD4L;
+        public const long MouseMiddleReleased = 0x000E6FDCL;
+        public const long MouseRightPressed = 0x000E6FD8L;
+        public const long MouseRightReleased = 0x000E6E90L;
+        public const long KeyboardStateBase = 0x000E6EA8L;
         public const long CursorX = 0x000E6EA0L;
         public const long BriefingAdvance = 0x000E6EA9L;
         public const long CursorY = 0x000E6FACL;
