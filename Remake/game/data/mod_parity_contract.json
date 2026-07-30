@@ -31,8 +31,8 @@
     {
       "id": "input_and_hotkeys",
       "status": "partial",
-      "evidence": ["complete DirectInput DIK matrix for Esc/F1/F2-F8/W/A/B/R/S/C/M/1-0/Ctrl/Up", "per-action press/release/held phases", "left world command on press and right drag/cancel on release", "exact client-edge classification and limit/8 velocity ramp", "remapping and conflict handling", "recovered S living-faction-1 direct target and singleton actor-90 ground marker command", "recovered B dead-faction-1 command kind 4, path-first 32x16 adjacent-cell range and strict >100 completion counter", "96-check deterministic input suite and pointer-control source guard", "headless target-viewport F2/left-click/M/E frame-input world gate with no global pointer control", "m000 basic and obstacle-route zero-mismatch MOD/Remake differential traces"],
-      "gaps": ["physical stable-MOD/Remake frame traces for every menu and contextual S/B target case"]
+      "evidence": ["complete DirectInput DIK matrix for Esc/F1/F2-F8/W/A/B/R/S/C/M/1-0/Ctrl/Up", "per-action press/release/held phases", "left world command on press and right drag/cancel on release", "exact client-edge classification and limit/8 velocity ramp", "remapping and conflict handling", "recovered S living-faction-1 direct target and singleton actor-90 ground marker command", "recovered B dead-faction-1 command kind 4, path-first 32x16 adjacent-cell range and strict >100 completion counter", "96-check deterministic input suite and pointer-control source guard", "headless target-viewport F2/left-click/M/E frame-input world gate with no global pointer control", "12-level 403-check/648-event product-input journey covering F2 camera focus, ground commands, R/C, W/A, M, F1, Esc, S target, ordinary weapon click, B timed burial, physical quick-save/load and keyboard restart without global pointer control", "m000 basic and obstacle-route zero-mismatch MOD/Remake differential traces"],
+      "gaps": ["stable-MOD differential frame traces for remaining contextual S/B ambiguities and briefing/media dismissal"]
     },
     {
       "id": "inventory_items_and_world_pickups",
@@ -61,8 +61,8 @@
     {
       "id": "mission_state_machines",
       "status": "partial",
-      "evidence": ["12 data-driven mission graphs from sub_404BB0/sub_405410", "five recovered player-global identities", "scene bindings", "dependency/count/time/failure/victory runtime", "exact per-level required player and escort death routing", "12 stable-MOD real-content product-world-action victory closures", "m006/m008/m009/m011 stable-MOD and repaired dual-profile closures", "m006 scene 1457 item-101 drop plus Qiangzi-only ownership", "m008 stable path without invented manual detonation", "m010 four-zone recovered existence test without invented identity constraint", "m011 overwritten scenes 1348-1352 rejection, scene 1353 effective target and Old Zhao/Qiangzi scene 1359 exit", "m001/m007/m010 time-limit failures", "m008 repaired-only premature-detonation failure"],
-      "gaps": ["12 MOD-matched human-input victory traces", "remaining level-specific major failure traces", "source-backed dialogue/camera/tutorial timing"]
+      "evidence": ["12 data-driven mission graphs from sub_404BB0/sub_405410", "five recovered player-global identities", "scene bindings", "dependency/count/time/failure/victory runtime", "exact per-level required player and escort death routing", "12 stable-MOD real-content product-world-action victory closures", "m006/m008/m009/m011 stable-MOD and repaired dual-profile closures", "12-level viewport-input primary-failure and focused-keyboard-restart journey", "m006 scene 1457 item-101 drop plus Qiangzi-only ownership", "m008 stable path without invented manual detonation", "m010 four-zone recovered existence test without invented identity constraint", "m011 overwritten scenes 1348-1352 rejection, scene 1353 effective target and Old Zhao/Qiangzi scene 1359 exit", "m001/m007/m010 time-limit failures", "m008 repaired-only premature-detonation failure"],
+      "gaps": ["12 MOD-matched human-input victory traces", "remaining level-specific secondary failure traces", "source-backed dialogue/camera/tutorial timing"]
     },
     {
       "id": "dialogue_camera_tutorial_and_cutscenes",
@@ -73,14 +73,14 @@
     {
       "id": "menus_hud_minimap_and_cursor",
       "status": "partial",
-      "evidence": ["pause/failure menus", "F1/F7", "right-side inventory", "live minimap", "GFL 16 mouse.spr runtime type 55 with all recovered serials 0/1/2/3/4/6/8/9/10", "S eye serial 8, B hand serial 4, move/target/door/blocked context selection", "overhead fixed-tick burial progress", "app-local cursor presentation with no pointer capture, clipping, warping, or desktop-coordinate fallback"],
+      "evidence": ["pause/failure menus", "F1/F7", "right-side inventory", "live minimap", "12-level viewport-input open/close coverage for W/A grids, M minimap, F1 guide, Esc pause and automatic failure menu", "GFL 16 mouse.spr runtime type 55 with all recovered serials 0/1/2/3/4/6/8/9/10", "S eye serial 8, B hand serial 4, move/target/door/blocked context selection", "overhead fixed-tick burial progress", "app-local cursor presentation with no pointer capture, clipping, warping, or desktop-coordinate fallback"],
       "gaps": ["1024x768 pixel baselines", "1920x1080 baselines", "hotspot and animation pixel parity for every contextual cursor"]
     },
     {
       "id": "save_load_settings_and_progression",
       "status": "partial",
-      "evidence": ["10 slots", "quick/autosave", "atomic JSON with backup", "remapping and channel volumes", "stable-MOD/repaired mission-rule setting and per-session identity", "actor-78 cache and pending B worker/target/counter persistence while ephemeral actor 90 is deliberately excluded", "door open state, corpse claim/global alarm/dynamic reinforcement identity and five-point coordinate-search persistence", "Gu Ming runtime actor/GFL variant, faction exposure and clothing/recovery counters", "12 real-content heterogeneous mid-mission capture/rebuild hash round-trips"],
-      "gaps": ["physical-disk slot save at every mission phase", "cross-version migration policy", "campaign progression parity"]
+      "evidence": ["10 slots", "quick/autosave", "atomic JSON with backup", "remapping and channel volumes", "stable-MOD/repaired mission-rule setting and per-session identity", "actor-78 cache and pending B worker/target/counter persistence while ephemeral actor 90 is deliberately excluded", "door open state, corpse claim/global alarm/dynamic reinforcement identity and five-point coordinate-search persistence", "Gu Ming runtime actor/GFL variant, faction exposure and clothing/recovery counters", "12 real-content heterogeneous mid-mission capture/rebuild hash round-trips", "12-level physical-disk Ctrl+F5/Ctrl+F9 resume gate after movement, contextual targeting and burial"],
+      "gaps": ["physical-disk slot save before and after every required objective", "cross-version migration policy", "campaign progression parity"]
     },
     {
       "id": "audio_and_media",

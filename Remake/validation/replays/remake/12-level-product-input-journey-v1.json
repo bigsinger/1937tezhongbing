@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "trace_id": "12-level-product-input-journey-v1",
+  "source_profile": "repository-mod-12-level-20260729",
+  "runtime": "remake-product-viewport",
+  "pointer_policy": "target-viewport-events-only",
+  "levels": [
+    "m000",
+    "m001",
+    "m002",
+    "m003",
+    "m004",
+    "m005",
+    "m006",
+    "m007",
+    "m008",
+    "m009",
+    "m010",
+    "m011"
+  ],
+  "required_actions": [
+    "select_first_player_and_recenter",
+    "left_click_move",
+    "toggle_run_walk",
+    "toggle_stand_crawl",
+    "open_close_weapon_grid",
+    "open_close_item_grid",
+    "open_close_live_minimap",
+    "open_close_help",
+    "open_close_pause_menu",
+    "sight_target_live_enemy",
+    "attack_live_enemy",
+    "bury_enemy_after_101_ticks",
+    "physical_quicksave",
+    "physical_quickload_resume",
+    "primary_failure",
+    "keyboard_restart"
+  ],
+  "notes": [
+    "Events are delivered only to the Godot product viewport.",
+    "No operating-system pointer capture, clipping, warping, or desktop-coordinate input is allowed.",
+    "Autonomous AI and presentation are disabled only to keep this input contract deterministic; their product runtimes have separate real-content gates."
+  ]
+}

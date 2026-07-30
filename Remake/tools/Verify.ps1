@@ -357,6 +357,12 @@ if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
     }
 
     & $GodotExecutable --headless --path $game `
+        --script 'res://tests/real_input_campaign_journey_test.gd' -- --skip-briefing
+    if ($LASTEXITCODE -ne 0) {
+        throw "Godot real 12-level product-input journey failed with exit code $LASTEXITCODE."
+    }
+
+    & $GodotExecutable --headless --path $game `
         --script 'res://tests/navigation_stress_test.gd' -- --level=m004
     if ($LASTEXITCODE -ne 0) {
         throw "Godot dense navigation stress test failed with exit code $LASTEXITCODE."

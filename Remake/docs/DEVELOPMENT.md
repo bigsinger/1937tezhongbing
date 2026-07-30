@@ -67,6 +67,22 @@ godot --headless --editor --path .\game --quit-after 2
 
 验证入口依次执行 .NET 合成格式/媒体目录、Godot 核心逻辑、战斗/任务、投射物/背包、世界交互、type 8/10/11、无资产媒体、十二关导演、产品壳、存档/设置、确定性回放和主场景冒烟。存在完整 `LocalAssets` 时，先执行 `tools/Build-LevelFidelityBaselines.ps1 -Verify`，把当前稳定 MOD 的十二个 VWF、转换地形/导航 SHA-256、19,199 个实体结构和 258 个关键 scene 与提交基线逐项比较；随后追加真实关卡/任务绑定、真实媒体审计、`real_mission_world_loop_test.gd` 十二关世界动作胜利/中途存读档/角色死亡失败闭环和 m004 高密度寻路压力测试。该闭环只调用营救、地面拾取、战斗伤害、任务交互、引爆、占区和出口等产品入口，禁止直接调用 `MissionRuntime.publish_world_event()` 伪造进度。各套件会输出自己的当前计数；计数变化必须由功能或 fixture 变化解释，不能只改文档或放宽断言，说明文档也不复制容易过期的固定总数。
 
+`tests/real_input_campaign_journey_test.gd` 是十二关统一的产品输入回归。它不直接调用
+菜单、存档或命令函数，而是向 Godot 目标视口发送 648 个键盘/鼠标事件，逐关验证
+F2 镜头定位、地面移动、R/C、W/A、M、F1、Esc、S、普通攻击、B 的 101 tick
+掩埋、物理磁盘快速存读、主要失败以及键盘重玩。测试使用进程唯一的
+`user://qa-real-input-campaign/...` 存档目录，结束后清理；不会捕获、锁定、移动或
+裁剪桌面鼠标。
+
+可单独重放某一关：
+
+```powershell
+D:\Godot\Godot_v4.7.1-stable_win64_console.exe --headless `
+  --path .\game `
+  --script res://tests/real_input_campaign_journey_test.gd -- `
+  --skip-briefing --journey-level=m010
+```
+
 ## 当前导入基线
 
 已知版本完整导入应报告并生成：
