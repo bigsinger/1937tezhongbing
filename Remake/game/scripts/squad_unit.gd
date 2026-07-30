@@ -2,19 +2,36 @@ class_name SquadUnit
 extends Node2D
 
 const BASE_SPRITE_TICK_SECONDS := 0.085
+## The actor AI counters recovered around M1937.exe sub_4587E0/sub_458A80
+## advance on the same 30 Hz logic cadence already used by the recovered
+## enemy reaction counter.
+const ORIGINAL_AI_IDLE_TICK_SECONDS := 1.0 / 30.0
+## RuntimeActor movement is advanced by M1937's 60 Hz actor update.  The
+## secondary SPR triplet supplies the maximum X and Y displacement per tick
+## (components 0 and 2); run mode uses three times the walk values.
+const ORIGINAL_MOVEMENT_TICKS_PER_SECOND := 60.0
+const ORIGINAL_RUN_STEP_MULTIPLIER := 3.0
+const MAX_MOVEMENT_SUBSTEP_SECONDS := 1.0 / ORIGINAL_MOVEMENT_TICKS_PER_SECOND
 const DEFAULT_REPLAN_BLOCKED_SECONDS := 0.25
 const COMBAT_REPATH_SECONDS := 0.40
-## Calibrated against the stable MOD m000 window-local movement trace:
-## a 0.75 s unobstructed run advances approximately 154-156 world pixels.
-const RUN_SPEED := 260.0
-const WALK_SPEED := 92.0
-const CRAWL_SPEED := 48.0
+## Representative vector magnitudes retained for settings, probes and
+## externally-authored speed scaling.  Exact path advancement remains
+## component-capped at 360/180, 120/60 and 120/60 pixels per second.
+const WALK_SPEED := 134.16407864998737
+const RUN_SPEED := 402.49223594996215
+const CRAWL_SPEED := 134.16407864998737
 const TACTICAL_SENSES_SCRIPT: Script = preload("res://scripts/tactical_senses.gd")
 const PROJECTILE_PROFILES: Script = preload("res://scripts/projectile_profiles.gd")
 const COMBAT_INVENTORY_SCRIPT: Script = preload("res://scripts/combat_inventory.gd")
 const BACKPACK_INVENTORY_SCRIPT: Script = preload("res://scripts/backpack_inventory.gd")
 const LEGACY_SPECIAL_ACTION_PROFILES: Script = preload("res://scripts/legacy_special_action_profiles.gd")
 const LEGACY_COMBAT_RULES: Script = preload("res://scripts/legacy_combat_rules.gd")
+const SPR_ANIMATION_RULES: Script = preload(
+	"res://scripts/imported_sprite_animation.gd"
+)
+const AI_IDLE_RANDOM_RULES: Script = preload(
+	"res://scripts/legacy_enemy_ai_rules.gd"
+)
 const LEGACY_DISGUISE_RULES: Script = preload(
 	"res://scripts/legacy_disguise_rules.gd"
 )
@@ -74,9 +91,21 @@ var run_groups: Array[Dictionary] = []
 var walk_groups: Array[Dictionary] = []
 var crawl_groups: Array[Dictionary] = []
 var standing_idle_groups: Array[Dictionary] = []
+var stand_action_groups: Array[Dictionary] = []
+var walk_step_components := Vector2.ZERO
+var crawl_step_components := Vector2.ZERO
+var uses_original_component_movement := false
 var animation_group_index := 7
 var animation_frame_index := 0
 var animation_elapsed := 0.0
+var original_ai_idle_animation_enabled := false
+var original_ai_idle_action_active := false
+var original_ai_idle_tick_counter := 0
+var original_ai_idle_tick_limit := 0
+var original_ai_idle_tick_elapsed := 0.0
+var original_ai_idle_frame_index := 0
+var original_ai_idle_frame_elapsed := 0.0
+var original_ai_idle_random_state := 1
 var weapon_profile: Dictionary = {}
 var attack_groups: Array[Dictionary] = []
 var death_groups: Array[Dictionary] = []
@@ -130,6 +159,21 @@ func configure(
 	walk_groups = new_movement_groups
 	crawl_groups = []
 	standing_idle_groups = new_idle_groups
+	stand_action_groups = []
+	walk_step_components = _authored_motion_components(
+		new_movement_groups,
+		animation_group_index,
+	)
+	crawl_step_components = walk_step_components
+	uses_original_component_movement = not walk_step_components.is_zero_approx()
+	original_ai_idle_animation_enabled = false
+	original_ai_idle_action_active = false
+	original_ai_idle_tick_counter = 0
+	original_ai_idle_tick_limit = 0
+	original_ai_idle_tick_elapsed = 0.0
+	original_ai_idle_frame_index = 0
+	original_ai_idle_frame_elapsed = 0.0
+	original_ai_idle_random_state = 1
 	is_running = true
 	is_crawling = false
 	move_speed = RUN_SPEED
@@ -175,11 +219,119 @@ func configure(
 			dynamic_occupancy = null
 	z_index = WORLD_DEPTH.normal_z(position.y, 1)
 	if movement_groups.size() >= 8:
-		set_animation_group(7)
+		var first_group: int = (
+			SPR_ANIMATION_RULES.first_usable_group_index(
+				movement_groups
+			)
+		)
+		if first_group >= 0:
+			animation_group_index = first_group
+			animation_frame_index = 0
+			animation_elapsed = 0.0
+			update_animation_frame()
 		apply_idle_frame()
 	elif sprite_texture != null:
 		sprite_anchor = sprite_texture.get_size() * 0.5
 	queue_redraw()
+
+
+func configure_original_ai_idle_animation(
+	new_stand_action_groups: Array[Dictionary],
+) -> bool:
+	stand_action_groups = new_stand_action_groups
+	original_ai_idle_animation_enabled = (
+		SPR_ANIMATION_RULES.available_group_count(stand_action_groups) > 0
+	)
+	original_ai_idle_action_active = false
+	original_ai_idle_tick_counter = 0
+	original_ai_idle_tick_elapsed = 0.0
+	original_ai_idle_frame_index = 0
+	original_ai_idle_frame_elapsed = 0.0
+	# The executable uses one process-global MSVCRT rand() stream. Until every
+	# call site is recovered, seed a per-scene MSVCRT stream so save/replay is
+	# deterministic while retaining the exact rand()%160 first interval and
+	# rand()%160+40 subsequent interval domains.
+	original_ai_idle_random_state = int(
+		(scene_index * 214013 + 2531011) & 0x7fffffff
+	)
+	if original_ai_idle_random_state == 0:
+		original_ai_idle_random_state = 1
+	original_ai_idle_random_state = AI_IDLE_RANDOM_RULES.msvc_rand_step(
+		original_ai_idle_random_state
+	)
+	original_ai_idle_tick_limit = (
+		AI_IDLE_RANDOM_RULES.msvc_rand_value(
+			original_ai_idle_random_state
+		)
+		% AI_IDLE_RANDOM_RULES.SEARCH_WAIT_RANDOM_SPAN
+	)
+	apply_idle_frame()
+	return original_ai_idle_animation_enabled
+
+
+static func original_ai_idle_uses_stand_action(
+	counter: int,
+	limit: int,
+) -> bool:
+	var third := maxi(limit, 0) / 3
+	return (
+		third > 0
+		and counter >= third
+		and counter < 2 * third
+	)
+
+
+func original_ai_idle_animation_snapshot() -> Dictionary:
+	return {
+		"enabled": original_ai_idle_animation_enabled,
+		"action_active": original_ai_idle_action_active,
+		"tick_counter": original_ai_idle_tick_counter,
+		"tick_limit": original_ai_idle_tick_limit,
+		"tick_elapsed": original_ai_idle_tick_elapsed,
+		"frame_index": original_ai_idle_frame_index,
+		"frame_elapsed": original_ai_idle_frame_elapsed,
+		"random_state": original_ai_idle_random_state,
+	}
+
+
+func restore_original_ai_idle_animation(state: Dictionary) -> bool:
+	if state.is_empty() or not original_ai_idle_animation_enabled:
+		return false
+	original_ai_idle_tick_limit = clampi(
+		int(state.get("tick_limit", original_ai_idle_tick_limit)),
+		0,
+		AI_IDLE_RANDOM_RULES.SEARCH_WAIT_RANDOM_SPAN
+		+ AI_IDLE_RANDOM_RULES.SEARCH_WAIT_MINIMUM_LIMIT
+		- 1,
+	)
+	original_ai_idle_tick_counter = clampi(
+		int(state.get("tick_counter", 0)),
+		0,
+		maxi(original_ai_idle_tick_limit, 0),
+	)
+	original_ai_idle_tick_elapsed = clampf(
+		float(state.get("tick_elapsed", 0.0)),
+		0.0,
+		ORIGINAL_AI_IDLE_TICK_SECONDS,
+	)
+	original_ai_idle_frame_index = maxi(
+		int(state.get("frame_index", 0)),
+		0,
+	)
+	original_ai_idle_frame_elapsed = maxf(
+		float(state.get("frame_elapsed", 0.0)),
+		0.0,
+	)
+	original_ai_idle_random_state = maxi(
+		int(state.get("random_state", original_ai_idle_random_state)),
+		1,
+	)
+	original_ai_idle_action_active = original_ai_idle_uses_stand_action(
+		original_ai_idle_tick_counter,
+		original_ai_idle_tick_limit,
+	)
+	_apply_current_idle_visual(0.0)
+	return true
 
 
 func configure_runtime_actor_type(entity: Dictionary) -> int:
@@ -198,6 +350,17 @@ func configure_movement_modes(
 	run_groups = new_run_groups if not new_run_groups.is_empty() else movement_groups
 	walk_groups = new_walk_groups if not new_walk_groups.is_empty() else run_groups
 	crawl_groups = new_crawl_groups
+	walk_step_components = _authored_motion_components(
+		walk_groups,
+		animation_group_index,
+	)
+	crawl_step_components = _authored_motion_components(
+		crawl_groups,
+		animation_group_index,
+	)
+	if crawl_step_components.is_zero_approx():
+		crawl_step_components = walk_step_components
+	uses_original_component_movement = not walk_step_components.is_zero_approx()
 	_apply_movement_mode()
 
 
@@ -234,22 +397,152 @@ func movement_mode_name() -> String:
 
 
 func _apply_movement_mode() -> void:
+	var show_movement_frame := (
+		was_moving
+		or movement_path_index < movement_path.size()
+	)
 	if is_crawling and not crawl_groups.is_empty():
 		movement_groups = crawl_groups
 		idle_groups = crawl_groups
-		move_speed = CRAWL_SPEED
+		move_speed = _original_mode_nominal_speed(CRAWL_SPEED)
 	elif is_running:
 		movement_groups = run_groups if not run_groups.is_empty() else walk_groups
 		idle_groups = standing_idle_groups
-		move_speed = RUN_SPEED
+		move_speed = _original_mode_nominal_speed(RUN_SPEED)
 	else:
 		movement_groups = walk_groups if not walk_groups.is_empty() else run_groups
 		idle_groups = standing_idle_groups
-		move_speed = WALK_SPEED
+		move_speed = _original_mode_nominal_speed(WALK_SPEED)
 	animation_frame_index = 0
 	animation_elapsed = 0.0
-	apply_idle_frame()
+	if (
+		not SPR_ANIMATION_RULES.action_group_available(
+			movement_groups,
+			animation_group_index,
+		)
+	):
+		var first_group: int = (
+			SPR_ANIMATION_RULES.first_usable_group_index(
+				movement_groups
+			)
+		)
+		if first_group >= 0:
+			animation_group_index = first_group
+	if show_movement_frame:
+		update_animation_frame()
+	else:
+		apply_idle_frame()
 	queue_redraw()
+
+
+func _original_mode_nominal_speed(fallback: float) -> float:
+	if not uses_original_component_movement:
+		return fallback
+	var step_components := (
+		crawl_step_components
+		if is_crawling
+		else walk_step_components * (ORIGINAL_RUN_STEP_MULTIPLIER if is_running else 1.0)
+	)
+	if step_components.is_zero_approx():
+		return fallback
+	return (step_components * ORIGINAL_MOVEMENT_TICKS_PER_SECOND).length()
+
+
+static func _authored_motion_components(
+	groups: Array[Dictionary],
+	preferred_group_index: int = -1,
+) -> Vector2:
+	if groups.is_empty():
+		return Vector2.ZERO
+	var candidate_indices: Array[int] = []
+	if preferred_group_index >= 0 and preferred_group_index < groups.size():
+		candidate_indices.append(preferred_group_index)
+	for group_index: int in range(groups.size()):
+		if not candidate_indices.has(group_index):
+			candidate_indices.append(group_index)
+	for group_index: int in candidate_indices:
+		var group := groups[group_index]
+		var raw_triplet: Variant = group.get("secondary_triplet", [])
+		if not SPR_ANIMATION_RULES.triplet_is_integral(raw_triplet):
+			continue
+		var triplet := raw_triplet as Array
+		var components := Vector2(
+			absf(float(triplet[0])),
+			absf(float(triplet[2])),
+		)
+		if components.x > 0.0 and components.y > 0.0:
+			return components
+	return Vector2.ZERO
+
+
+func original_component_velocity() -> Vector2:
+	if not uses_original_component_movement or move_speed <= 0.0:
+		return Vector2.ZERO
+	var step_components := (
+		crawl_step_components
+		if is_crawling
+		else walk_step_components * (ORIGINAL_RUN_STEP_MULTIPLIER if is_running else 1.0)
+	)
+	if step_components.is_zero_approx():
+		return Vector2.ZERO
+	var unscaled_velocity := step_components * ORIGINAL_MOVEMENT_TICKS_PER_SECOND
+	var unscaled_magnitude := unscaled_velocity.length()
+	if unscaled_magnitude <= 0.0:
+		return Vector2.ZERO
+	# Enemies, escorts and ambient actors retain their recovered scalar speed,
+	# while the SPR triplet supplies the original isometric X/Y ratio.
+	return unscaled_velocity * (move_speed / unscaled_magnitude)
+
+
+static func advance_component_capped(
+	start: Vector2,
+	destination: Vector2,
+	available_seconds: float,
+	component_velocity: Vector2,
+) -> Dictionary:
+	var seconds := maxf(available_seconds, 0.0)
+	var velocity := Vector2(
+		maxf(component_velocity.x, 0.0),
+		maxf(component_velocity.y, 0.0),
+	)
+	if start.is_equal_approx(destination):
+		return {
+			"position": destination,
+			"seconds_used": 0.0,
+			"reached": true,
+		}
+	if seconds <= 0.0 or velocity.x <= 0.0 or velocity.y <= 0.0:
+		return {
+			"position": start,
+			"seconds_used": 0.0,
+			"reached": false,
+		}
+	var delta := destination - start
+	var component_cap := velocity * seconds
+	# M1937 compares integer X/Y step components with the remaining distance.
+	# Comparing two independently-divided floating-point times can classify an
+	# exact 2/1-pixel tick as just short, leaving the actor motionless for the
+	# next tick before the path cursor advances.
+	if (
+		absf(delta.x) <= component_cap.x + 0.0001
+		and absf(delta.y) <= component_cap.y + 0.0001
+	):
+		return {
+			"position": destination,
+			"seconds_used": maxf(
+				absf(delta.x) / velocity.x,
+				absf(delta.y) / velocity.y,
+			),
+			"reached": true,
+		}
+	return {
+		"position": Vector2(
+			move_toward(start.x, destination.x, velocity.x * seconds),
+			move_toward(start.y, destination.y, velocity.y * seconds),
+		),
+		"seconds_used": seconds,
+		"reached": false,
+	}
 
 
 func configure_combat(
@@ -894,7 +1187,7 @@ func try_start_attack(target: Node2D, force_target: bool = false) -> bool:
 		float(weapon_profile.get("alert_radius", 0.0)),
 	)
 	_start_one_shot(CombatAction.ATTACK, attack_groups)
-	if attack_groups.is_empty():
+	if action_finished:
 		_resolve_pending_hit()
 		combat_action = CombatAction.NONE
 		_sync_equipped_weapon_after_consumption()
@@ -963,33 +1256,92 @@ func _physics_process(delta: float) -> void:
 	var safe_delta := maxf(delta, 0.0)
 	attack_cooldown_remaining = maxf(attack_cooldown_remaining - safe_delta, 0.0)
 	if combat_action != CombatAction.NONE:
+		_suspend_original_ai_idle_action()
 		_advance_combat_action(safe_delta)
 		return
 	if not is_alive:
 		return
 	if auto_combat_enabled and _update_auto_combat(safe_delta):
+		_advance_original_ai_idle_animation(safe_delta)
 		return
 
 	var previous_position := position
 	var next_position := position
 	var next_path_index := movement_path_index
-	var remaining_distance := maxf(move_speed, 0.0) * safe_delta
-	while next_path_index < movement_path.size() and remaining_distance > 0.0:
-		var waypoint := movement_path[next_path_index]
-		var distance_to_waypoint := next_position.distance_to(waypoint)
-		if distance_to_waypoint <= remaining_distance:
-			next_position = waypoint
-			remaining_distance -= distance_to_waypoint
-			next_path_index += 1
-		else:
-			next_position = next_position.move_toward(waypoint, remaining_distance)
-			remaining_distance = 0.0
+	var component_velocity := original_component_velocity()
+	var relocation_applied_incrementally := false
+	var movement_blocked := false
+	if not component_velocity.is_zero_approx():
+		var remaining_seconds := safe_delta
+		while next_path_index < movement_path.size() and remaining_seconds > 0.0:
+			var substep_seconds := minf(
+				remaining_seconds,
+				MAX_MOVEMENT_SUBSTEP_SECONDS,
+			)
+			var candidate_position := next_position
+			var candidate_path_index := next_path_index
+			var segment := advance_component_capped(
+				candidate_position,
+				movement_path[candidate_path_index],
+				substep_seconds,
+				component_velocity,
+			)
+			candidate_position = segment["position"] as Vector2
+			if bool(segment["reached"]):
+				candidate_path_index += 1
+			# RuntimeActor chooses its next grid cell only on the following
+			# 60 Hz update. Any unused part of this tick is intentionally not
+			# carried into the next waypoint.
+			if (
+				candidate_position != next_position
+				and dynamic_occupancy != null
+				and scene_index >= 0
+			):
+				relocation_applied_incrementally = true
+				if not dynamic_occupancy.try_relocate(
+					scene_index,
+					candidate_position,
+				):
+					movement_blocked = true
+					break
+			next_position = candidate_position
+			next_path_index = candidate_path_index
+			remaining_seconds = maxf(
+				remaining_seconds - substep_seconds,
+				0.0,
+			)
+	else:
+		# Fixtures and fallback actors without an authored secondary SPR
+		# triplet retain ordinary scalar movement.
+		var remaining_distance := maxf(move_speed, 0.0) * safe_delta
+		while next_path_index < movement_path.size() and remaining_distance > 0.0:
+			var waypoint := movement_path[next_path_index]
+			var distance_to_waypoint := next_position.distance_to(waypoint)
+			if distance_to_waypoint <= remaining_distance:
+				next_position = waypoint
+				remaining_distance -= distance_to_waypoint
+				next_path_index += 1
+			else:
+				next_position = next_position.move_toward(
+					waypoint,
+					remaining_distance,
+				)
+				remaining_distance = 0.0
 	if (
-		next_position != position
+		not movement_blocked
+		and not relocation_applied_incrementally
+		and next_position != position
 		and dynamic_occupancy != null
 		and scene_index >= 0
 		and not dynamic_occupancy.try_relocate(scene_index, next_position)
 	):
+		movement_blocked = true
+	if movement_blocked:
+		# Earlier fixed substeps may already have been accepted by the runtime
+		# occupancy grid. Keep the node and path cursor synchronized with that
+		# last accepted position before replanning.
+		position = next_position
+		movement_path_index = next_path_index
 		blocked_elapsed += safe_delta
 		if blocked_elapsed >= maxf(blocked_replan_seconds, 0.05):
 			blocked_elapsed = 0.0
@@ -998,13 +1350,23 @@ func _physics_process(delta: float) -> void:
 			)
 			if not replanned.is_empty():
 				issue_path(replanned)
-		_apply_idle_state()
+		var accepted_displacement := position - previous_position
+		if accepted_displacement.is_zero_approx():
+			_apply_idle_state()
+		else:
+			_suspend_original_ai_idle_action()
+			set_animation_group(direction_group_index(accepted_displacement))
+			advance_animation(safe_delta)
+			was_moving = true
+			z_index = WORLD_DEPTH.normal_z(position.y, 1)
+			queue_redraw()
 		return
 	position = next_position
 	movement_path_index = next_path_index
 	blocked_elapsed = 0.0
 	var displacement := position - previous_position
 	if not displacement.is_zero_approx():
+		_suspend_original_ai_idle_action()
 		set_animation_group(direction_group_index(displacement))
 		advance_animation(safe_delta)
 		was_moving = true
@@ -1012,6 +1374,7 @@ func _physics_process(delta: float) -> void:
 		queue_redraw()
 	else:
 		_apply_idle_state()
+		_advance_original_ai_idle_animation(safe_delta)
 
 
 func _update_auto_combat(delta: float) -> bool:
@@ -1057,9 +1420,9 @@ func _start_one_shot(action: int, groups: Array[Dictionary]) -> void:
 	combat_action = action
 	action_frame_index = 0
 	action_frame_elapsed = 0.0
-	action_finished = groups.is_empty()
+	action_finished = _action_frame_count(groups) <= 0
 	was_moving = false
-	if groups.size() < 8:
+	if action_finished:
 		return
 	_apply_action_frame(groups)
 	if action == CombatAction.ATTACK and _action_frame_count(groups) == 1:
@@ -1083,6 +1446,9 @@ func _advance_combat_action(delta: float) -> void:
 			_sync_equipped_weapon_after_consumption()
 		return
 	var group := groups[clampi(animation_group_index, 0, 7)]
+	if group.is_empty():
+		action_finished = true
+		return
 	var frame_seconds := animation_frame_seconds(group)
 	action_frame_elapsed += delta
 	while action_frame_elapsed >= frame_seconds and not action_finished:
@@ -1105,6 +1471,8 @@ func _apply_action_frame(groups: Array[Dictionary]) -> void:
 	if groups.size() < 8:
 		return
 	var group := groups[clampi(animation_group_index, 0, 7)]
+	if group.is_empty():
+		return
 	var frames := group.get("frames", []) as Array[Texture2D]
 	if frames.is_empty():
 		return
@@ -1118,6 +1486,8 @@ func _action_frame_count(groups: Array[Dictionary]) -> int:
 	if groups.size() < 8:
 		return 0
 	var group := groups[clampi(animation_group_index, 0, 7)]
+	if group.is_empty():
+		return 0
 	return (group.get("frames", []) as Array[Texture2D]).size()
 
 
@@ -1310,6 +1680,101 @@ func _apply_idle_state() -> void:
 	queue_redraw()
 
 
+func _advance_original_ai_idle_animation(delta: float) -> void:
+	if (
+		not original_ai_idle_animation_enabled
+		or not is_alive
+		or combat_action != CombatAction.NONE
+		or is_crawling
+		or movement_path_index < movement_path.size()
+		or was_moving
+	):
+		_suspend_original_ai_idle_action()
+		return
+	original_ai_idle_tick_elapsed += maxf(delta, 0.0)
+	while (
+		original_ai_idle_tick_elapsed
+		>= ORIGINAL_AI_IDLE_TICK_SECONDS
+	):
+		original_ai_idle_tick_elapsed -= ORIGINAL_AI_IDLE_TICK_SECONDS
+		original_ai_idle_tick_counter += 1
+		if original_ai_idle_tick_counter >= original_ai_idle_tick_limit:
+			original_ai_idle_tick_counter = 0
+			var sampled: Dictionary = (
+				AI_IDLE_RANDOM_RULES.initial_search_wait_from_state(
+					original_ai_idle_random_state
+				)
+			)
+			original_ai_idle_random_state = int(
+				sampled.get("state", original_ai_idle_random_state)
+			)
+			original_ai_idle_tick_limit = int(
+				sampled.get(
+					"limit",
+					AI_IDLE_RANDOM_RULES.SEARCH_WAIT_MINIMUM_LIMIT,
+				)
+			)
+	var next_action_active := original_ai_idle_uses_stand_action(
+		original_ai_idle_tick_counter,
+		original_ai_idle_tick_limit,
+	)
+	if next_action_active != original_ai_idle_action_active:
+		original_ai_idle_action_active = next_action_active
+		original_ai_idle_frame_index = 0
+		original_ai_idle_frame_elapsed = 0.0
+	if not _apply_current_idle_visual(maxf(delta, 0.0)):
+		return
+	queue_redraw()
+
+
+func _suspend_original_ai_idle_action() -> void:
+	if not original_ai_idle_action_active:
+		return
+	original_ai_idle_action_active = false
+	original_ai_idle_frame_index = 0
+	original_ai_idle_frame_elapsed = 0.0
+
+
+func _apply_current_idle_visual(advance_delta: float) -> bool:
+	var groups: Array[Dictionary] = (
+		stand_action_groups
+		if original_ai_idle_action_active and not is_crawling
+		else idle_groups
+	)
+	if (
+		not SPR_ANIMATION_RULES.action_group_available(
+			groups,
+			animation_group_index,
+		)
+	):
+		# IEngineSprite::SetCurrentSerial leaves the current serial untouched
+		# when action 1 or 2 has no authored direction.
+		return false
+	var group := groups[animation_group_index]
+	var frames := group.get("frames", []) as Array[Texture2D]
+	if frames.is_empty():
+		return false
+	if original_ai_idle_action_active and not is_crawling:
+		original_ai_idle_frame_index = clampi(
+			original_ai_idle_frame_index,
+			0,
+			frames.size() - 1,
+		)
+		if advance_delta > 0.0 and frames.size() > 1:
+			var frame_seconds := animation_frame_seconds(group)
+			original_ai_idle_frame_elapsed += advance_delta
+			while original_ai_idle_frame_elapsed >= frame_seconds:
+				original_ai_idle_frame_elapsed -= frame_seconds
+				original_ai_idle_frame_index = (
+					original_ai_idle_frame_index + 1
+				) % frames.size()
+		sprite_texture = frames[original_ai_idle_frame_index]
+	else:
+		sprite_texture = frames[0]
+	sprite_anchor = group.get("anchor", Vector2.ZERO) as Vector2
+	return true
+
+
 static func direction_group_index(direction: Vector2) -> int:
 	if direction.is_zero_approx():
 		return 7
@@ -1317,21 +1782,33 @@ static func direction_group_index(direction: Vector2) -> int:
 	return posmod(octant + 5, 8)
 
 
-func set_animation_group(group_index: int) -> void:
+func set_animation_group(group_index: int) -> bool:
 	if movement_groups.size() < 8:
-		return
+		return false
 	var safe_index := clampi(group_index, 0, 7)
+	if (
+		not SPR_ANIMATION_RULES.action_group_available(
+			movement_groups,
+			safe_index,
+		)
+	):
+		# IEngineSprite::SetCurrentSerial returns failure without changing the
+		# current serial when a sparse SPR has no requested direction.
+		return false
 	if animation_group_index != safe_index:
 		animation_group_index = safe_index
 		animation_frame_index = 0
 		animation_elapsed = 0.0
 	update_animation_frame()
+	return true
 
 
 func advance_animation(delta: float) -> void:
 	if movement_groups.size() < 8:
 		return
 	var group := movement_groups[animation_group_index]
+	if group.is_empty():
+		return
 	var frames := group["frames"] as Array[Texture2D]
 	if frames.size() <= 1:
 		return
@@ -1351,6 +1828,8 @@ func update_animation_frame() -> void:
 	if movement_groups.size() < 8:
 		return
 	var group := movement_groups[animation_group_index]
+	if group.is_empty():
+		return
 	var frames := group["frames"] as Array[Texture2D]
 	if frames.is_empty():
 		return
@@ -1359,16 +1838,22 @@ func update_animation_frame() -> void:
 	sprite_anchor = group["anchor"] as Vector2
 
 
-func apply_idle_frame() -> void:
+func apply_idle_frame() -> bool:
+	if original_ai_idle_animation_enabled:
+		return _apply_current_idle_visual(0.0)
 	if idle_groups.size() < 8:
 		update_animation_frame()
-		return
+		return false
 	var group := idle_groups[animation_group_index]
+	if group.is_empty():
+		# Exact SetCurrentSerial failure keeps the already displayed serial.
+		return false
 	var frames := group["frames"] as Array[Texture2D]
 	if frames.is_empty():
-		return
+		return false
 	sprite_texture = frames[0]
 	sprite_anchor = group["anchor"] as Vector2
+	return true
 
 
 func legacy_projectile_launch_offset() -> Vector2:
@@ -1409,6 +1894,8 @@ func _active_legacy_sprite_triplets() -> Dictionary:
 	if groups.size() < 8:
 		return {}
 	var group := groups[clampi(animation_group_index, 0, 7)]
+	if group.is_empty():
+		return {}
 	var primary_value: Variant = group.get("primary_triplet", [])
 	var tertiary_value: Variant = group.get("tertiary_triplet", [])
 	if (

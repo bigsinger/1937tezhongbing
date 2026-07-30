@@ -10,6 +10,20 @@ const EVENT_LAYER_ID := 4
 const MANUAL_CORRECTION_LAYER_ID := 5
 const MAGIC_BYTES: Array[int] = [77, 51, 55, 78, 65, 86, 49, 0]
 const MAX_DESTINATION_SEARCH_RADIUS := 24
+const UNREACHED_SCORE := 0x3fffffff
+## M1937 direction order: north, northeast, east, southeast, south,
+## southwest, west, northwest. It is also the deterministic expansion order
+## used when several uniform-cost routes are equivalent.
+const ORIGINAL_NEIGHBOR_DIRECTIONS: Array[Vector2i] = [
+	Vector2i(0, -1),
+	Vector2i(1, -1),
+	Vector2i(1, 0),
+	Vector2i(1, 1),
+	Vector2i(0, 1),
+	Vector2i(-1, 1),
+	Vector2i(-1, 0),
+	Vector2i(-1, -1),
+]
 
 var dimensions := Vector2i.ZERO
 var cell_size := Vector2i.ZERO
@@ -127,8 +141,12 @@ func prepare_astar(
 	# cardinal side (for example the tree beside 强子), but never through a
 	# corner where both cardinal sides are blocked.
 	astar.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_AT_LEAST_ONE_WALKABLE
-	astar.default_compute_heuristic = AStarGrid2D.HEURISTIC_EUCLIDEAN
-	astar.default_estimate_heuristic = AStarGrid2D.HEURISTIC_EUCLIDEAN
+	# sub_455E30 advances one navigation cell in the same number of actor
+	# ticks whether that step is cardinal or diagonal: X and Y are capped
+	# independently.  The matching graph metric is therefore Chebyshev
+	# (uniform cost for all eight neighboring cells), not Euclidean.
+	astar.default_compute_heuristic = AStarGrid2D.HEURISTIC_CHEBYSHEV
+	astar.default_estimate_heuristic = AStarGrid2D.HEURISTIC_CHEBYSHEV
 	astar.update()
 	var movement_values := layers[MOVEMENT_LAYER_ID] as PackedInt64Array
 	for cell_index in range(movement_values.size()):
@@ -163,7 +181,7 @@ func find_path(
 			return PackedVector2Array()
 		astar.set_point_solid(start_cell, false)
 		temporarily_opened_start = true
-	var path := astar.get_point_path(start_cell, destination_cell, true)
+	var path := _original_uniform_path(start_cell, destination_cell)
 	path = _canonicalize_equal_cost_steps(path, destination_cell)
 	if temporarily_opened_start:
 		astar.set_point_solid(start_cell, true)
@@ -186,6 +204,214 @@ func find_path(
 	return path
 
 
+func _original_uniform_path(
+	start_cell: Vector2i,
+	destination_cell: Vector2i,
+) -> PackedVector2Array:
+	var cell_count := dimensions.x * dimensions.y
+	var scores := PackedInt32Array()
+	scores.resize(cell_count)
+	scores.fill(UNREACHED_SCORE)
+	var previous := PackedInt32Array()
+	previous.resize(cell_count)
+	previous.fill(-1)
+	var closed := PackedByteArray()
+	closed.resize(cell_count)
+	var start_index := cell_to_index(start_cell)
+	var destination_index := cell_to_index(destination_cell)
+	var insertion_serial := 0
+	var heap: Array[Vector4i] = []
+	scores[start_index] = 0
+	_heap_push(
+		heap,
+		Vector4i(
+			_chebyshev_distance(start_cell, destination_cell),
+			_alignment_deviation(
+				start_cell,
+				start_cell,
+				destination_cell,
+			),
+			insertion_serial,
+			start_index,
+		),
+	)
+	insertion_serial += 1
+	var best_index := start_index
+	var best_heuristic := _chebyshev_distance(
+		start_cell,
+		destination_cell,
+	)
+	var best_squared_distance := (
+		start_cell - destination_cell
+	).length_squared()
+	var resolved_index := -1
+	while not heap.is_empty():
+		var entry := _heap_pop(heap)
+		var current_index := entry.w
+		if closed[current_index] != 0:
+			continue
+		var current := index_to_cell(current_index)
+		var heuristic := _chebyshev_distance(
+			current,
+			destination_cell,
+		)
+		if (
+			entry.x != scores[current_index] + heuristic
+			or entry.y != _alignment_deviation(
+				current,
+				start_cell,
+				destination_cell,
+			)
+		):
+			continue
+		closed[current_index] = 1
+		var squared_distance := (
+			current - destination_cell
+		).length_squared()
+		if (
+			heuristic < best_heuristic
+			or (
+				heuristic == best_heuristic
+				and squared_distance < best_squared_distance
+			)
+		):
+			best_index = current_index
+			best_heuristic = heuristic
+			best_squared_distance = squared_distance
+		if current_index == destination_index:
+			resolved_index = current_index
+			break
+		for direction: Vector2i in ORIGINAL_NEIGHBOR_DIRECTIONS:
+			var neighbor := current + direction
+			if not _astar_step_is_clear(current, neighbor):
+				continue
+			var neighbor_index := cell_to_index(neighbor)
+			if closed[neighbor_index] != 0:
+				continue
+			var next_score := scores[current_index] + 1
+			if next_score >= scores[neighbor_index]:
+				continue
+			scores[neighbor_index] = next_score
+			previous[neighbor_index] = current_index
+			_heap_push(
+				heap,
+				Vector4i(
+					next_score + _chebyshev_distance(
+						neighbor,
+						destination_cell,
+					),
+					_alignment_deviation(
+						neighbor,
+						start_cell,
+						destination_cell,
+					),
+					insertion_serial,
+					neighbor_index,
+				),
+			)
+			insertion_serial += 1
+	if resolved_index < 0:
+		resolved_index = best_index
+	if resolved_index != start_index and previous[resolved_index] < 0:
+		return PackedVector2Array()
+	var reversed_cells: Array[Vector2i] = []
+	var cursor := resolved_index
+	while cursor >= 0:
+		reversed_cells.append(index_to_cell(cursor))
+		if cursor == start_index:
+			break
+		cursor = previous[cursor]
+	if reversed_cells.is_empty() or reversed_cells[-1] != start_cell:
+		return PackedVector2Array()
+	var result := PackedVector2Array()
+	for reversed_index: int in range(
+		reversed_cells.size() - 1,
+		-1,
+		-1,
+	):
+		result.append(cell_to_world(reversed_cells[reversed_index]))
+	return result
+
+
+static func _chebyshev_distance(
+	first: Vector2i,
+	second: Vector2i,
+) -> int:
+	return maxi(
+		absi(first.x - second.x),
+		absi(first.y - second.y),
+	)
+
+
+static func _alignment_deviation(
+	cell: Vector2i,
+	start: Vector2i,
+	destination: Vector2i,
+) -> int:
+	var deviation := 0
+	if start.x == destination.x:
+		deviation += absi(cell.x - start.x)
+	if start.y == destination.y:
+		deviation += absi(cell.y - start.y)
+	return deviation
+
+
+static func _heap_entry_precedes(
+	first: Vector4i,
+	second: Vector4i,
+) -> bool:
+	return (
+		first.x < second.x
+		or (
+			first.x == second.x
+			and (
+				first.y < second.y
+				or (first.y == second.y and first.z < second.z)
+			)
+		)
+	)
+
+
+static func _heap_push(
+	heap: Array[Vector4i],
+	entry: Vector4i,
+) -> void:
+	heap.append(entry)
+	var index := heap.size() - 1
+	while index > 0:
+		var parent := (index - 1) / 2 as int
+		if _heap_entry_precedes(heap[parent], entry):
+			break
+		heap[index] = heap[parent]
+		index = parent
+	heap[index] = entry
+
+
+static func _heap_pop(heap: Array[Vector4i]) -> Vector4i:
+	var result := heap[0]
+	var tail: Vector4i = heap.pop_back()
+	if heap.is_empty():
+		return result
+	var index := 0
+	while true:
+		var left := index * 2 + 1
+		if left >= heap.size():
+			break
+		var child := left
+		var right := left + 1
+		if (
+			right < heap.size()
+			and _heap_entry_precedes(heap[right], heap[left])
+		):
+			child = right
+		if _heap_entry_precedes(tail, heap[child]):
+			break
+		heap[index] = heap[child]
+		index = child
+	heap[index] = tail
+	return result
+
+
 func _canonicalize_equal_cost_steps(
 	path: PackedVector2Array,
 	destination_cell: Vector2i,
@@ -194,6 +420,39 @@ func _canonicalize_equal_cost_steps(
 		return path
 	var result := path.duplicate()
 	var start_cell := world_to_cell(result[0])
+	# A uniform eight-way search may encounter two opposite diagonals whose
+	# minor-axis components cancel. M1937 keeps the straight cardinal pair in
+	# this case (for example the first m000 tree-edge route), avoiding a
+	# visible one-cell zigzag without changing path cost.
+	for index: int in range(result.size() - 2):
+		var first := world_to_cell(result[index])
+		var middle := world_to_cell(result[index + 1])
+		var finish := world_to_cell(result[index + 2])
+		var candidate := middle
+		if (
+			first.x == finish.x
+			and absi(finish.y - first.y) == 2
+			and middle.x != first.x
+		):
+			candidate = first + Vector2i(
+				0,
+				signi(finish.y - first.y),
+			)
+		elif (
+			first.y == finish.y
+			and absi(finish.x - first.x) == 2
+			and middle.y != first.y
+		):
+			candidate = first + Vector2i(
+				signi(finish.x - first.x),
+				0,
+			)
+		if (
+			candidate != middle
+			and _astar_step_is_clear(first, candidate)
+			and _astar_step_is_clear(candidate, finish)
+		):
+			result[index + 1] = cell_to_world(candidate)
 	# AStarGrid2D can return any of several equal-cost staircases. Stable MOD
 	# m000 traces return from a one-cell obstacle detour as soon as the
 	# original corridor is clear. They also place a same-direction vertical

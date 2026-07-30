@@ -696,7 +696,7 @@ internal static class OriginalAssetConverter
         var manifestPath = ResolveContainedPath(spriteDirectory, "sprite.json");
         WriteJson(manifestPath, new
         {
-            schema_version = 2,
+            schema_version = 3,
             gfl_index = entry.Index,
             resource_name = entry.OriginalName,
             internal_name = sprite.InternalName,

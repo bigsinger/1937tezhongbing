@@ -23,6 +23,15 @@ const OBSERVATION_SECONDS := 0.75
 ## hit into the following checkpoint.
 const NATURAL_CONTACT_FIRST_DAMAGE_DEADLINE_SECONDS := 6.0
 const NATURAL_CONTACT_SECOND_DAMAGE_DEADLINE_SECONDS := 3.0
+## A frame-by-frame phase sweep against the stable-MOD patrol capture places
+## both audited one-second intervals at physics frame 543 after gameplay-ready.
+## Use simulation time so CI load cannot shift the patrol/hold phase.
+const PATROL_CAPTURE_SETTLE_SECONDS := 9.05
+const NATURAL_CONTACT_CAPTURE_SETTLE_SECONDS := 9.2
+## The read-only MOD trace has a 307 ms handoff between the outbound-observed
+## snapshot and the replacement command. Reproduce that physics time instead
+## of relying on host-dependent process/screenshot latency.
+const NATURAL_CONTACT_COMMAND_HANDOFF_SECONDS := 0.30
 
 var output_directory := ""
 var failures: Array[String] = []
@@ -118,7 +127,7 @@ func _run_probe() -> void:
 			_elapsed_ms(started),
 			_movement_tags(primary, main),
 		)
-		await create_timer(observation_seconds).timeout
+		await _wait_physics_seconds(observation_seconds)
 		trace.capture_main(
 			"move_outbound_observed",
 			main,
@@ -143,7 +152,7 @@ func _run_probe() -> void:
 			_elapsed_ms(started),
 			_movement_tags(primary, main),
 		)
-		await create_timer(observation_seconds).timeout
+		await _wait_physics_seconds(observation_seconds)
 		trace.capture_main(
 			"move_return_observed",
 			main,
@@ -192,9 +201,9 @@ func _run_enemy_patrol_probe(
 	# fully resumed; commanded/observed pairs compare interval movement rather
 	# than unrelated absolute startup phase.
 	# The isolated MOD probe resumes the original menu, waits 4.2 seconds for
-	# the gameplay capture, then observes five seconds of spawn safety before
-	# its first patrol checkpoint. Reproduce that 9.2-second phase here.
-	await create_timer(9.2).timeout
+	# the gameplay capture, then observes five seconds of spawn safety. The
+	# frame sweep above identifies the matching post-ready simulation phase.
+	await _wait_physics_seconds(PATROL_CAPTURE_SETTLE_SECONDS)
 	var enemy_count := (main.get("enemies") as Array).size()
 	_expect(enemy_count >= 46, "m000 imported enemy roster is available")
 	trace.call(
@@ -204,7 +213,7 @@ func _run_enemy_patrol_probe(
 		_elapsed_ms(started),
 		{"scope": "audited_m000_enemy_identities"},
 	)
-	await create_timer(observation_seconds).timeout
+	await _wait_physics_seconds(observation_seconds)
 	trace.call(
 		"capture_main",
 		"patrol_interval_1_observed",
@@ -219,7 +228,7 @@ func _run_enemy_patrol_probe(
 		_elapsed_ms(started),
 		{"scope": "audited_m000_enemy_identities"},
 	)
-	await create_timer(observation_seconds).timeout
+	await _wait_physics_seconds(observation_seconds)
 	trace.call(
 		"capture_main",
 		"patrol_interval_2_observed",
@@ -265,7 +274,7 @@ func _run_natural_contact_probe(
 	observation_seconds: float,
 ) -> void:
 	# Match the stable MOD probe's gameplay-resume and spawn-safety phase.
-	await create_timer(9.2).timeout
+	await _wait_physics_seconds(NATURAL_CONTACT_CAPTURE_SETTLE_SECONDS)
 	var primary = _primary_unit(main)
 	trace.call(
 		"capture_main",
@@ -305,13 +314,16 @@ func _run_natural_contact_probe(
 			_elapsed_ms(started),
 			_movement_tags(primary, main),
 		)
-		await create_timer(observation_seconds).timeout
+		await _wait_physics_seconds(observation_seconds)
 		trace.call(
 			"capture_main",
 			"move_outbound_observed",
 			main,
 			_elapsed_ms(started),
 			_movement_tags(primary, main),
+		)
+		await _wait_physics_seconds(
+			NATURAL_CONTACT_COMMAND_HANDOFF_SECONDS
 		)
 		main.issue_formation_move(return_target)
 		_expect(
@@ -508,6 +520,24 @@ func _wait_for_damage_event_count(
 			return true
 		await physics_frame
 	return int(unit.get("damage_event_count")) >= minimum_event_count
+
+
+func _wait_physics_seconds(duration_seconds: float) -> void:
+	var ticks_per_second := maxi(
+		int(
+			ProjectSettings.get_setting(
+				"physics/common/physics_ticks_per_second",
+				60,
+			)
+		),
+		1,
+	)
+	var frame_count := maxi(
+		roundi(maxf(duration_seconds, 0.0) * float(ticks_per_second)),
+		1,
+	)
+	for _frame_index: int in range(frame_count):
+		await physics_frame
 
 
 func _movement_tags(unit: Node2D, main: Node) -> Dictionary:

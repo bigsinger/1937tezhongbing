@@ -804,11 +804,13 @@ func load_entity_action_groups(entity: Dictionary, action_key: String) -> Array[
 	var preview_path := entity_preview_path(entity)
 	if preview_path.is_empty():
 		return []
-	var cache_key := "%s|%s" % [preview_path, action_key]
+	var cache_key := "%s|%s|sparse" % [preview_path, action_key]
 	if imported_animation_cache.has(cache_key):
 		return imported_animation_cache[cache_key] as Array[Dictionary]
 	var groups: Array[Dictionary] = IMPORTED_SPRITE_ANIMATION.load_action_groups(
-		preview_path, action_key
+		preview_path,
+		action_key,
+		true,
 	)
 	imported_animation_cache[cache_key] = groups
 	return groups
@@ -845,7 +847,7 @@ func _load_gfl_action_groups(
 	var preview_path := _gfl_preview_path(gfl_index)
 	if preview_path.is_empty():
 		return []
-	var cache_key := "%s|%s" % [preview_path, action_key]
+	var cache_key := "%s|%s|strict" % [preview_path, action_key]
 	if imported_animation_cache.has(cache_key):
 		return imported_animation_cache[cache_key] as Array[Dictionary]
 	var groups: Array[Dictionary] = (
@@ -989,6 +991,18 @@ func spawn_squad() -> void:
 		)
 		unit.configure_runtime_actor_type(entity)
 		unit.configure_movement_modes(run_groups, walk_groups, crawl_groups)
+		if not entity.is_empty():
+			var authored_direction := clampi(
+				int(entity.get("direction_index", 1)),
+				1,
+				8,
+			)
+			unit.set_animation_group(
+				IMPORTED_SPRITE_ANIMATION.legacy_group_index_for_direction(
+					authored_direction
+				)
+			)
+			unit.apply_idle_frame()
 		var attack_type := playable_initial_attack_type(entity, name)
 		var level_id := str(
 			current_mission.get("id", FORMAL_LEVEL_IDS[current_level_index])
@@ -1124,6 +1138,10 @@ func _spawn_escorts() -> void:
 		if movement_groups.is_empty():
 			movement_groups = load_entity_action_groups(entity, "run")
 		var idle_groups := load_entity_action_groups(entity, "stand")
+		var stand_action_groups := load_entity_action_groups(
+			entity,
+			"stand_action",
+		)
 		var death_groups := load_entity_action_groups(entity, "death")
 		var escort_weapon: Dictionary = COMBAT_PROFILES.weapon_profile_for_attack_type(
 			int(entity.get("default_attack_type", 0))
@@ -1145,6 +1163,7 @@ func _spawn_escorts() -> void:
 			dynamic_occupancy,
 			attack_groups,
 		)
+		escort.configure_original_ai_idle_animation(stand_action_groups)
 		_configure_original_backpack(
 			escort,
 			str(current_mission.get("id", FORMAL_LEVEL_IDS[current_level_index])),
@@ -1167,6 +1186,10 @@ func _spawn_enemies() -> void:
 		if movement_groups.is_empty():
 			movement_groups = load_entity_action_groups(entity, "run")
 		var idle_groups := load_entity_action_groups(entity, "stand")
+		var stand_action_groups := load_entity_action_groups(
+			entity,
+			"stand_action",
+		)
 		var weapon_profile: Dictionary = COMBAT_PROFILES.weapon_profile_for_attack_type(
 			int(entity.get("default_attack_type", 2))
 		)
@@ -1187,6 +1210,7 @@ func _spawn_enemies() -> void:
 			attack_groups,
 			death_groups,
 		)
+		enemy.configure_original_ai_idle_animation(stand_action_groups)
 		enemy.original_mission_number = int(
 			current_mission.get("number", current_level_index + 1)
 		)
@@ -1211,6 +1235,10 @@ func _spawn_ambient_units() -> void:
 		if movement_groups.is_empty():
 			movement_groups = load_entity_action_groups(entity, "run")
 		var idle_groups := load_entity_action_groups(entity, "stand")
+		var stand_action_groups := load_entity_action_groups(
+			entity,
+			"stand_action",
+		)
 		var death_groups := load_entity_action_groups(entity, "death")
 		var ambient: AMBIENT_UNIT = AMBIENT_UNIT.new()
 		add_child(ambient)
@@ -1222,6 +1250,7 @@ func _spawn_ambient_units() -> void:
 			death_groups,
 			dynamic_occupancy,
 		)
+		ambient.configure_original_ai_idle_animation(stand_action_groups)
 		_configure_original_backpack(
 			ambient,
 			str(current_mission.get("id", FORMAL_LEVEL_IDS[current_level_index])),
@@ -2876,6 +2905,7 @@ func _load_legacy_special_visual(gfl_index: int) -> Dictionary:
 						var group := raw_group as Dictionary
 						var frames: Array[Texture2D] = IMPORTED_SPRITE_ANIMATION.load_group_atlas(
 							group,
+							group.get("frames", []) as Array,
 							manifest_path.get_base_dir(),
 						)
 						if frames.is_empty():
@@ -2971,6 +3001,7 @@ func _load_legacy_projectile_visual(gfl_index: int) -> Dictionary:
 		var frames: Array[Texture2D] = (
 			IMPORTED_SPRITE_ANIMATION.load_group_atlas(
 				group,
+				group.get("frames", []) as Array,
 				manifest_path.get_base_dir(),
 			)
 		)
@@ -3838,6 +3869,10 @@ func _spawn_legacy_reinforcement(
 	if movement_groups.is_empty():
 		movement_groups = load_entity_action_groups(entity, "run")
 	var idle_groups := load_entity_action_groups(entity, "stand")
+	var stand_action_groups := load_entity_action_groups(
+		entity,
+		"stand_action",
+	)
 	var weapon_profile: Dictionary = COMBAT_PROFILES.weapon_profile_for_attack_type(
 		int(entity.get("default_attack_type", 2))
 	)
@@ -3859,6 +3894,7 @@ func _spawn_legacy_reinforcement(
 		attack_groups,
 		death_groups,
 	)
+	reinforcement.configure_original_ai_idle_animation(stand_action_groups)
 	reinforcement.original_mission_number = int(
 		current_mission.get("number", current_level_index + 1)
 	)

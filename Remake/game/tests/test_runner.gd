@@ -293,6 +293,44 @@ func _init() -> void:
 		"out-of-range SPR serials are rejected",
 		failures
 	)
+	var legacy_triplets: Dictionary = (
+		IMPORTED_SPRITE_ANIMATION
+		. normalized_runtime_triplets(
+			{
+				"primary_triplet": [21, 0, 20],
+				"secondary_triplet": [0, 0, 0],
+				"tertiary_triplet": [2, 1, 1],
+			},
+			2,
+		)
+	)
+	expect(
+		(
+			legacy_triplets.get("secondary", []) == [2, 1, 1]
+			and legacy_triplets.get("tertiary", []) == [0, 0, 0]
+		),
+		"schema 1/2 SPR manifests migrate the formerly swapped runtime triplets",
+		failures,
+	)
+	var current_triplets: Dictionary = (
+		IMPORTED_SPRITE_ANIMATION
+		. normalized_runtime_triplets(
+			{
+				"primary_triplet": [21, 0, 20],
+				"secondary_triplet": [2, 1, 1],
+				"tertiary_triplet": [0, 0, 0],
+			},
+			3,
+		)
+	)
+	expect(
+		(
+			current_triplets.get("secondary", []) == [2, 1, 1]
+			and current_triplets.get("tertiary", []) == [0, 0, 0]
+		),
+		"schema 3 SPR manifests expose corrected runtime triplet semantics directly",
+		failures,
+	)
 
 	var movement_layer := PackedInt64Array()
 	movement_layer.resize(7 * 5)
@@ -308,6 +346,38 @@ func _init() -> void:
 	expect(
 		navigation.find_path(Vector2(17, 9), Vector2(17, 9)).is_empty(),
 		"a no-op path does not snap a unit to its cell center",
+		failures,
+	)
+	var aligned_navigation: NavigationGridData = (
+		NAVIGATION_GRID_DATA.create_for_tests(
+			5,
+			3,
+			Vector2i(32, 16),
+			PackedInt64Array(
+				[
+					0, 0, 0, 0, 0,
+					0, 0, 0, 0, 0,
+					0, 0, 0, 0, 0,
+				]
+			),
+		)
+	)
+	aligned_navigation.prepare_astar()
+	var aligned_path := aligned_navigation.find_path(
+		aligned_navigation.cell_to_world(Vector2i(0, 1)),
+		aligned_navigation.cell_to_world(Vector2i(4, 1)),
+	)
+	var aligned_cells: Array[Vector2i] = []
+	for aligned_point: Vector2 in aligned_path:
+		aligned_cells.append(aligned_navigation.world_to_cell(aligned_point))
+	expect(
+		aligned_cells == [
+			Vector2i(1, 1),
+			Vector2i(2, 1),
+			Vector2i(3, 1),
+			Vector2i(4, 1),
+		],
+		"uniform-cost route ties preserve an aligned cardinal path and facing",
 		failures,
 	)
 	var routed_path: PackedVector2Array = navigation.find_path(
@@ -722,6 +792,185 @@ func _init() -> void:
 				"frame_hold_ticks": 1,
 			}
 		)
+	var sparse_animation_groups: Array[Dictionary] = []
+	for unused_direction in range(8):
+		sparse_animation_groups.append({})
+	sparse_animation_groups[4] = {
+		"group_index": 0,
+		"frames": [] as Array[Texture2D],
+		"anchor": Vector2(11.0, 19.0),
+		"frame_hold_ticks": 1,
+	}
+	sparse_animation_groups[6] = {
+		"group_index": 1,
+		"frames": [] as Array[Texture2D],
+		"anchor": Vector2(13.0, 23.0),
+		"frame_hold_ticks": 1,
+	}
+	expect(
+		(
+			IMPORTED_SPRITE_ANIMATION.available_group_count(
+				sparse_animation_groups
+			) == 2
+			and IMPORTED_SPRITE_ANIMATION.first_usable_group_index(
+				sparse_animation_groups
+			) == 4
+		),
+		"sparse original SPR actions preserve only authored directions and source order",
+		failures,
+	)
+	var sparse_unit = SQUAD_UNIT_SCRIPT.new()
+	sparse_unit.configure(
+		"sparse vehicle",
+		Color.WHITE,
+		Vector2.ZERO,
+		null,
+		sparse_animation_groups,
+		sparse_animation_groups,
+	)
+	var sparse_initial_group: int = sparse_unit.animation_group_index
+	var rejected_sparse_direction: bool = sparse_unit.set_animation_group(5)
+	var retained_sparse_group: int = sparse_unit.animation_group_index
+	var accepted_sparse_direction: bool = sparse_unit.set_animation_group(6)
+	expect(
+		(
+			sparse_initial_group == 4
+			and not rejected_sparse_direction
+			and retained_sparse_group == 4
+			and accepted_sparse_direction
+			and sparse_unit.animation_group_index == 6
+		),
+		"missing vehicle serials retain the current direction exactly like SetCurrentSerial",
+		failures,
+	)
+	sparse_unit.free()
+
+	var movement_image := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+	movement_image.fill(Color.RED)
+	var movement_texture := ImageTexture.create_from_image(movement_image)
+	var idle_image := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+	idle_image.fill(Color.BLUE)
+	var idle_texture := ImageTexture.create_from_image(idle_image)
+	var moving_mode_groups: Array[Dictionary] = []
+	var idle_mode_groups: Array[Dictionary] = []
+	for group_index: int in range(8):
+		var movement_frames: Array[Texture2D] = [movement_texture]
+		var idle_frames: Array[Texture2D] = [idle_texture]
+		moving_mode_groups.append(
+			{
+				"group_index": group_index,
+				"frames": movement_frames,
+				"anchor": Vector2.ZERO,
+				"frame_hold_ticks": 1,
+			}
+		)
+		idle_mode_groups.append(
+			{
+				"group_index": group_index,
+				"frames": idle_frames,
+				"anchor": Vector2.ZERO,
+				"frame_hold_ticks": 1,
+			}
+		)
+	var movement_mode_unit = SQUAD_UNIT_SCRIPT.new()
+	movement_mode_unit.configure(
+		"movement transition",
+		Color.WHITE,
+		Vector2.ZERO,
+		null,
+		moving_mode_groups,
+		idle_mode_groups,
+	)
+	movement_mode_unit.configure_movement_modes(
+		moving_mode_groups,
+		moving_mode_groups,
+		[] as Array[Dictionary],
+	)
+	movement_mode_unit.was_moving = true
+	movement_mode_unit.set_running(false)
+	expect(
+		movement_mode_unit.sprite_texture == movement_texture,
+		"run/walk changes during movement do not flash a standing frame",
+		failures,
+	)
+	movement_mode_unit.free()
+	expect(
+		(
+			not SQUAD_UNIT_SCRIPT.original_ai_idle_uses_stand_action(29, 90)
+			and SQUAD_UNIT_SCRIPT.original_ai_idle_uses_stand_action(30, 90)
+			and SQUAD_UNIT_SCRIPT.original_ai_idle_uses_stand_action(59, 90)
+			and not SQUAD_UNIT_SCRIPT.original_ai_idle_uses_stand_action(60, 90)
+		),
+		"original AI idle action occupies only the middle integer third of its counter",
+		failures,
+	)
+	var idle_action_image_a := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+	idle_action_image_a.fill(Color.GREEN)
+	var idle_action_texture_a := ImageTexture.create_from_image(idle_action_image_a)
+	var idle_action_image_b := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+	idle_action_image_b.fill(Color.YELLOW)
+	var idle_action_texture_b := ImageTexture.create_from_image(idle_action_image_b)
+	var idle_action_groups: Array[Dictionary] = []
+	for group_index: int in range(8):
+		var idle_action_frames: Array[Texture2D] = [
+			idle_action_texture_a,
+			idle_action_texture_b,
+		]
+		idle_action_groups.append(
+			{
+				"group_index": group_index,
+				"frames": idle_action_frames,
+				"anchor": Vector2.ZERO,
+				"frame_hold_ticks": 1,
+			}
+		)
+	var idle_action_unit = SQUAD_UNIT_SCRIPT.new()
+	idle_action_unit.configure(
+		"AI idle action",
+		Color.WHITE,
+		Vector2.ZERO,
+		null,
+		moving_mode_groups,
+		idle_mode_groups,
+		2401,
+	)
+	expect(
+		idle_action_unit.configure_original_ai_idle_animation(
+			idle_action_groups
+		),
+		"a complete stand_action set enables original AI idle playback",
+		failures,
+	)
+	idle_action_unit.original_ai_idle_tick_limit = 90
+	idle_action_unit.original_ai_idle_tick_counter = 30
+	idle_action_unit._advance_original_ai_idle_animation(0.0)
+	var entered_idle_action: bool = (
+		idle_action_unit.original_ai_idle_action_active
+		and idle_action_unit.sprite_texture == idle_action_texture_a
+	)
+	idle_action_unit._advance_original_ai_idle_animation(0.09)
+	var advanced_idle_action: bool = (
+		idle_action_unit.original_ai_idle_frame_index == 1
+		and idle_action_unit.sprite_texture == idle_action_texture_b
+	)
+	var idle_action_snapshot: Dictionary = (
+		idle_action_unit.original_ai_idle_animation_snapshot()
+	)
+	idle_action_unit.original_ai_idle_tick_counter = 0
+	idle_action_unit.original_ai_idle_action_active = false
+	var restored_idle_action: bool = (
+		idle_action_unit.restore_original_ai_idle_animation(
+			idle_action_snapshot
+		)
+		and idle_action_unit.original_ai_idle_action_active
+		and idle_action_unit.original_ai_idle_frame_index == 1
+	)
+	expect(
+		entered_idle_action and advanced_idle_action and restored_idle_action,
+		"AI stand_action enters, animates, and restores without changing gameplay movement",
+		failures,
+	)
+	idle_action_unit.free()
 	var escort_fixture = ESCORT_UNIT_SCRIPT.new()
 	escort_fixture.configure_escort(
 		{
@@ -950,6 +1199,109 @@ func _init() -> void:
 		failures,
 	)
 	path_unit.free()
+	var exact_movement_groups: Array[Dictionary] = []
+	var exact_crawl_groups: Array[Dictionary] = []
+	for group_index: int in range(8):
+		exact_movement_groups.append(
+			{
+				"group_index": group_index,
+				"secondary_triplet": [2, 1, 1],
+				"frames": [] as Array[Texture2D],
+				"anchor": Vector2.ZERO,
+				"frame_hold_ticks": 1,
+			}
+		)
+		exact_crawl_groups.append(
+			{
+				"group_index": group_index,
+				"secondary_triplet": [1, 0, 1],
+				"frames": [] as Array[Texture2D],
+				"anchor": Vector2.ZERO,
+				"frame_hold_ticks": 1,
+			}
+		)
+	var exact_movement_unit = SQUAD_UNIT_SCRIPT.new()
+	exact_movement_unit.configure(
+		"exact movement",
+		Color.WHITE,
+		Vector2.ZERO,
+		null,
+		exact_movement_groups,
+		[] as Array[Dictionary],
+	)
+	exact_movement_unit.configure_movement_modes(
+		exact_movement_groups,
+		exact_movement_groups,
+		exact_crawl_groups,
+	)
+	expect(
+		exact_movement_unit.original_component_velocity().is_equal_approx(
+			Vector2(360.0, 180.0)
+		),
+		"run mode uses three times the authored walk triplet at 60 Hz",
+		failures,
+	)
+	exact_movement_unit.set_running(false)
+	expect(
+		exact_movement_unit.original_component_velocity().is_equal_approx(
+			Vector2(120.0, 60.0)
+		),
+		"walk mode uses secondary SPR X/Z components at 60 Hz",
+		failures,
+	)
+	exact_movement_unit.set_crawling(true)
+	expect(
+		exact_movement_unit.original_component_velocity().is_equal_approx(
+			Vector2(60.0, 60.0)
+		),
+		"crawl mode uses its independently authored secondary SPR triplet",
+		failures,
+	)
+	exact_movement_unit.set_crawling(false)
+	exact_movement_unit.set_running(true)
+	exact_movement_unit.issue_path(PackedVector2Array([Vector2(1000.0, 1000.0)]))
+	exact_movement_unit._physics_process(1.0)
+	expect(
+		exact_movement_unit.position.is_equal_approx(Vector2(360.0, 180.0)),
+		"component-capped movement advances both original axes without Euclidean distortion",
+		failures,
+	)
+	var exact_segment: Dictionary = SQUAD_UNIT_SCRIPT.advance_component_capped(
+		Vector2.ZERO,
+		Vector2(60.0, 30.0),
+		1.0,
+		Vector2(120.0, 60.0),
+	)
+	expect(
+		(
+			bool(exact_segment["reached"])
+			and (exact_segment["position"] as Vector2).is_equal_approx(
+				Vector2(60.0, 30.0)
+			)
+			and is_equal_approx(float(exact_segment["seconds_used"]), 0.5)
+		),
+		"component-capped path segments report residual time at reached waypoints",
+		failures,
+	)
+	var exact_tick_segment: Dictionary = (
+		SQUAD_UNIT_SCRIPT.advance_component_capped(
+			Vector2.ZERO,
+			Vector2(2.0, 1.0),
+			1.0 / 60.0,
+			Vector2(120.0, 60.0),
+		)
+	)
+	expect(
+		(
+			bool(exact_tick_segment["reached"])
+			and (
+				exact_tick_segment["position"] as Vector2
+			).is_equal_approx(Vector2(2.0, 1.0))
+		),
+		"an exact original 2/1-pixel tick reaches its waypoint without an idle frame",
+		failures,
+	)
+	exact_movement_unit.free()
 	expect(
 		is_equal_approx(
 			SQUAD_UNIT_SCRIPT.animation_frame_seconds({"frame_hold_ticks": 3}),

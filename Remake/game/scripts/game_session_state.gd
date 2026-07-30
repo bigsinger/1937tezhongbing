@@ -158,6 +158,7 @@ static func _capture_actor(actor: Node2D, group_name: String) -> Dictionary:
 		"is_alive": bool(actor.get("is_alive")),
 		"is_crawling": bool(actor.get("is_crawling")),
 		"is_running": bool(actor.get("is_running")),
+		"move_speed": maxf(float(actor.get("move_speed")), 0.0),
 		"selected": (
 			bool(actor.get("selected"))
 			if group_name in ["units", "enemies"]
@@ -178,6 +179,17 @@ static func _capture_actor(actor: Node2D, group_name: String) -> Dictionary:
 		record["original_disguise"] = _json_value(
 			actor.call("original_disguise_state_snapshot")
 		)
+	if actor.has_method("original_ai_idle_animation_snapshot"):
+		var idle_animation: Variant = actor.call(
+			"original_ai_idle_animation_snapshot"
+		)
+		if (
+			idle_animation is Dictionary
+			and bool((idle_animation as Dictionary).get("enabled", false))
+		):
+			record["original_ai_idle_animation"] = _json_value(
+				idle_animation
+			)
 	if group_name == "enemies":
 		var current_target: Variant = actor.get("current_target")
 		record["ai"] = {
@@ -586,6 +598,10 @@ static func _restore_actor(game: Node, actor: Node2D, record: Dictionary, group_
 	if actor.has_method("_apply_movement_mode"):
 		actor.call("_apply_movement_mode")
 	actor.set(
+		"move_speed",
+		maxf(float(record.get("move_speed", actor.get("move_speed"))), 0.0),
+	)
+	actor.set(
 		"selected",
 		bool(record.get("selected", false))
 		and alive
@@ -622,6 +638,18 @@ static func _restore_actor(game: Node, actor: Node2D, record: Dictionary, group_
 		actor.call(
 			"restore_original_disguise_state",
 			original_disguise_value as Dictionary,
+		)
+	var original_ai_idle_animation: Variant = record.get(
+		"original_ai_idle_animation",
+		{},
+	)
+	if (
+		original_ai_idle_animation is Dictionary
+		and actor.has_method("restore_original_ai_idle_animation")
+	):
+		actor.call(
+			"restore_original_ai_idle_animation",
+			original_ai_idle_animation as Dictionary,
 		)
 	if alive:
 		actor.set("death_emitted", false)

@@ -750,6 +750,23 @@ func _test_mid_mission_capture_and_apply(failures: Array[String]) -> void:
 		"live ambient actors and their patrol phase are captured",
 		failures,
 	)
+	var captured_enemy_idle := (
+		(session["enemies"] as Array)[0].get(
+			"original_ai_idle_animation",
+			{},
+		) as Dictionary
+	)
+	_expect(
+		(
+			int(captured_enemy_idle.get("tick_limit", 0)) == 90
+			and int(captured_enemy_idle.get("tick_counter", 0)) == 45
+			and bool(captured_enemy_idle.get("action_active", false))
+			and int(captured_enemy_idle.get("frame_index", 0)) == 3
+			and int(captured_enemy_idle.get("random_state", 0)) == 123456
+		),
+		"AI stand_action counter, frame phase, and deterministic random state are captured",
+		failures,
+	)
 	_expect(
 		not bool((session["world"] as Dictionary)["victory_presentation_completed"]),
 		"an interrupted victory presentation remains distinguishable in the snapshot",
@@ -782,6 +799,11 @@ func _test_mid_mission_capture_and_apply(failures: Array[String]) -> void:
 	_expect(target_unit.position.is_equal_approx(Vector2(321.0, 654.0)), "actor position restores", failures)
 	_expect(int(target_unit.current_hit_points) == 6, "actor health restores", failures)
 	_expect(
+		is_equal_approx(float(target_unit.move_speed), 177.0),
+		"actor movement speed survives mode reapplication during save restore",
+		failures,
+	)
+	_expect(
 		target_unit.selected and target_game.selected_units == [target_unit],
 		"selected squad membership restores without stale spawn selection",
 		failures,
@@ -799,6 +821,21 @@ func _test_mid_mission_capture_and_apply(failures: Array[String]) -> void:
 			and bool(target_game.enemies[0].patrol_path_in_flight)
 		),
 		"enemy patrol endpoint hold and active-leg state survive a mid-mission save",
+		failures,
+	)
+	_expect(
+		(
+			int(target_game.enemies[0].original_ai_idle_tick_limit) == 90
+			and int(target_game.enemies[0].original_ai_idle_tick_counter) == 45
+			and bool(target_game.enemies[0].original_ai_idle_action_active)
+			and int(target_game.enemies[0].original_ai_idle_frame_index) == 3
+			and is_equal_approx(
+				float(target_game.enemies[0].original_ai_idle_frame_elapsed),
+				0.04,
+			)
+			and int(target_game.enemies[0].original_ai_idle_random_state) == 123456
+		),
+		"AI stand_action phase survives a mid-mission save",
 		failures,
 	)
 	_expect(
@@ -1049,6 +1086,16 @@ func _make_mock_game(populated: bool) -> MockGame:
 	game.dynamic_occupancy = MockOccupancy.new()
 	var unit = SQUAD_UNIT.new()
 	var empty_groups: Array[Dictionary] = []
+	var ai_idle_groups: Array[Dictionary] = []
+	for group_index: int in range(8):
+		ai_idle_groups.append(
+			{
+				"group_index": group_index,
+				"frames": [] as Array[Texture2D],
+				"anchor": Vector2.ZERO,
+				"frame_hold_ticks": 1,
+			}
+		)
 	unit.configure(
 		"老赵",
 		Color.WHITE,
@@ -1084,6 +1131,7 @@ func _make_mock_game(populated: bool) -> MockGame:
 		empty_groups,
 		game.dynamic_occupancy,
 	)
+	enemy.configure_original_ai_idle_animation(ai_idle_groups)
 	game.enemies.append(enemy)
 	game.add_child(enemy)
 	var ambient = AMBIENT_UNIT.new()
@@ -1109,16 +1157,24 @@ func _make_mock_game(populated: bool) -> MockGame:
 		empty_groups,
 		game.dynamic_occupancy,
 	)
+	ambient.configure_original_ai_idle_animation(ai_idle_groups)
 	game.ambient_units.append(ambient)
 	game.add_child(ambient)
 	if populated:
 		unit.position = Vector2(321.0, 654.0)
+		unit.move_speed = 177.0
 		unit.selected = true
 		game.selected_units = [unit]
 		enemy.current_target = unit
 		enemy.behavior_state = ENEMY_UNIT.BehaviorState.CHASE
 		enemy.patrol_wait_remaining = 1.25
 		enemy.patrol_path_in_flight = true
+		enemy.original_ai_idle_tick_limit = 90
+		enemy.original_ai_idle_tick_counter = 45
+		enemy.original_ai_idle_action_active = true
+		enemy.original_ai_idle_frame_index = 3
+		enemy.original_ai_idle_frame_elapsed = 0.04
+		enemy.original_ai_idle_random_state = 123456
 		ambient.position = Vector2(222.0, 333.0)
 		ambient.patrol_index = 1
 		ambient.patrol_wait_remaining = 0.75

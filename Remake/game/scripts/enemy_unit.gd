@@ -18,10 +18,11 @@ const CHASE_REPLAN_SECONDS := 0.50
 const SEARCH_TIMEOUT_SECONDS := 2.50
 const PATROL_PATH_RETRY_MIN_SECONDS := 0.75
 const PATROL_PATH_RETRY_STEP_SECONDS := 0.05
-## Stable-MOD differential capture recovers a 134 px/s uninterrupted patrol
-## displacement in m000.  Original-parity mode applies no editorial mission
-## multiplier, so the recovered value is the runtime source of truth.
-const STABLE_MOD_BASE_PATROL_SPEED := 134.0
+## The corrected SPR secondary triplet advances a walking guard by 2/1 world
+## pixels per 60 Hz actor tick.  Keep the exact vector magnitude here: rounding
+## it to 134 makes an ordinary 16/8 navigation cell require a ninth tick and
+## accumulates a visible pause at every waypoint.
+const STABLE_MOD_BASE_PATROL_SPEED := 134.16407864998737
 ## Entry/steady MOD snapshots are five seconds apart. Across 25 guards that
 ## reverse a recovered waypoint in that window, the median residual endpoint
 ## hold is about 2.1 seconds after subtracting travel at 134 px/s.  The

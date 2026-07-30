@@ -25,8 +25,8 @@
     {
       "id": "actors_and_animation",
       "status": "partial",
-      "evidence": ["980 sprites", "2775 groups", "11898 frames", "20 actions x 9 directions", "762 resolved runtime-to-VWF actor identities across m000-m011", "5 verified live-faction overrides", "Gu Ming type-10/GFL-270 to type-91/GFL-272 replacement with strict 101-tick bidirectional clothing transition", "sub_458700 non-lethal path preserves commands/actions and writes no hurt timer"],
-      "gaps": ["remaining action transitions", "per-actor anchor verification"]
+      "evidence": ["980 sprites", "2775 groups", "11898 frames", "20 actions x 9 directions", "762 resolved runtime-to-VWF actor identities across m000-m011", "39 exact actor SPR resources with 212 runtime-loaded action sets, 1664 groups and 9896 frames", "204 complete eight-direction actions plus 8 exact sparse four-direction vehicle actions", "per-action serial, source order, primary/secondary/tertiary triplets, render anchor, frame timing and frame-count verification", "schema-3 correction of serialized primary/tertiary/secondary order with schema-1/2 migration", "secondary X/Z component-capped 60 Hz walk/run/crawl movement with exact-tick waypoint advancement", "missing sparse serial retains the current animation like IEngineSprite::SetCurrentSerial", "authored player spawn facing and movement-safe run/walk transitions", "sub_4587E0/sub_458A80 AI stand/stand_action middle-third cycling with deterministic save/replay state, covering 30 sets, 240 directions and 1912 frames", "attack types 8/10 select the original active_action serial and the sole actor asset retains 8 directions/72 frames", "5 verified live-faction overrides", "Gu Ming type-10/GFL-270 to type-91/GFL-272 replacement with strict 101-tick bidirectional clothing transition", "sub_458700 non-lethal path preserves commands/actions and writes no hurt timer"],
+      "gaps": ["triplet middle-component and SPR lookup-array gameplay semantics"]
     },
     {
       "id": "input_and_hotkeys",
@@ -49,7 +49,7 @@
     {
       "id": "navigation_routes_and_doors",
       "status": "partial",
-      "evidence": ["L3 A*", "516 patrol routes", "dynamic occupancy and replanning", "m000 obstacle-free command replacement and movement-vector parity at 260 px/s", "m000 tree-edge one-open-side diagonal and early corridor recovery parity", "m000 46-enemy two-interval patrol kinematics gate from stable MOD runtime", "96 real door instances across 12 levels with closed/open alpha-difference source-cell release, including 94 navigation-changing and 2 decorative instances", "door A*, LOS and save/load lifecycle with 201 real-content checks"],
+      "evidence": ["L3 eight-neighbor uniform-cost deterministic A* with Chebyshev heuristic and original direction expansion order", "axis-aligned tie preservation and equal-cost obstacle staircase canonicalization", "516 patrol routes", "dynamic occupancy and replanning", "m000 obstacle-free command replacement and 60 Hz component-movement parity", "m000 tree-edge one-open-side diagonal and early corridor recovery parity", "m000 46-enemy two-interval patrol kinematics gate with exact 134.164 px/s maximum/P90 displacement from stable MOD runtime", "m000 natural-contact route and damage-onset parity", "96 real door instances across 12 levels with closed/open alpha-difference source-cell release, including 94 navigation-changing and 2 decorative instances", "door A*, LOS and save/load lifecycle with 201 real-content checks"],
       "gaps": ["remaining non-character footprints", "exact patrol phase for scripted and blocked routes", "remaining foreground route-shape parity", "corridor coordination parity"]
     },
     {

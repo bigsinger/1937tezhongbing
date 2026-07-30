@@ -121,10 +121,16 @@ public sealed class SprSprite
 
         var frameCount = ReadCount(source, ref cursor, "frame count", maximum: 65_536);
         var primaryTriplet = ReadInt32Array(source, ref cursor, 3);
-        var secondaryTriplet = serializationVersion >= 2
+        // IEngineSpriteFrameGroup::Load (M1937.exe sub_427560) reads the
+        // serialized triplets into object fields +0x10, +0x28, then +0x1c.
+        // The +0x1c triplet is queried by sub_41C5F0 for actor walk/crawl
+        // step sizes, while +0x28 is copied into the current sprite state.
+        // Earlier converter revisions named the two file-order groups in
+        // sequence and therefore swapped their runtime semantics.
+        var tertiaryTriplet = serializationVersion >= 2
             ? ReadInt32Array(source, ref cursor, 3)
             : primaryTriplet.ToArray();
-        var tertiaryTriplet = ReadInt32Array(source, ref cursor, 3);
+        var secondaryTriplet = ReadInt32Array(source, ref cursor, 3);
         var parameters = ReadInt32Array(source, ref cursor, 9);
         var lookupColumns = parameters[5];
         var lookupRows = parameters[6];

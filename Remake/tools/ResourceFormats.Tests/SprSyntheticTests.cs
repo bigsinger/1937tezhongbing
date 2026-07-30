@@ -19,6 +19,32 @@ internal static class SprSyntheticTests
         Equal(1, sprite.Groups[0].FirstLookup.Count, "SPR1 first lookup size", ref checks);
         Equal(1, sprite.Groups[0].SecondLookup.Count, "SPR1 second lookup size", ref checks);
         Equal(1, sprite.Groups[0].RowLookup.Count, "SPR1 row lookup size", ref checks);
+        True(
+            sprite.Groups[0].PrimaryTriplet.SequenceEqual([2, 0, 2]),
+            "SPR1 primary triplet semantic order",
+            ref checks);
+        True(
+            sprite.Groups[0].SecondaryTriplet.SequenceEqual([1, 1, 1]),
+            "SPR1 actor-step triplet semantic order",
+            ref checks);
+        True(
+            sprite.Groups[0].TertiaryTriplet.SequenceEqual([2, 0, 2]),
+            "SPR1 version-one current-state triplet fallback",
+            ref checks);
+
+        var versionTwoGroupSprite = SprSprite.Read(CreateFixture(groupVersion: 2));
+        True(
+            versionTwoGroupSprite.Groups[0].PrimaryTriplet.SequenceEqual([2, 0, 2]),
+            "SPR1 version-two primary triplet semantic order",
+            ref checks);
+        True(
+            versionTwoGroupSprite.Groups[0].SecondaryTriplet.SequenceEqual([1, 1, 1]),
+            "SPR1 version-two actor-step triplet semantic order",
+            ref checks);
+        True(
+            versionTwoGroupSprite.Groups[0].TertiaryTriplet.SequenceEqual([7, 8, 9]),
+            "SPR1 version-two current-state triplet semantic order",
+            ref checks);
 
         var image = sprite.Groups[0].Frames[0];
         Equal(2, image.Width, "SPR1 frame width", ref checks);
@@ -62,12 +88,17 @@ internal static class SprSyntheticTests
         return checks;
     }
 
-    private static byte[] CreateFixture()
+    private static byte[] CreateFixture(uint groupVersion = 1)
     {
+        if (groupVersion is < 1 or > 2)
+        {
+            throw new ArgumentOutOfRangeException(nameof(groupVersion));
+        }
+
         const int groupOffset = SprSprite.SignatureSize + 24 + SprSprite.NameFieldSize;
-        const int groupHeaderSize = 8 + 12 + 12 + 36;
+        var groupHeaderSize = 8 + 12 + (groupVersion == 2 ? 12 : 0) + 12 + 36;
         const int lookupSize = 12;
-        const int embeddedOffset = groupOffset + groupHeaderSize + lookupSize + 4;
+        var embeddedOffset = groupOffset + groupHeaderSize + lookupSize + 4;
         ushort[] pixels = [0xF800, 0x07E0, 0x001F, 0x0000];
         var rgb565 = new byte[pixels.Length * sizeof(ushort)];
         for (var index = 0; index < pixels.Length; index++)
@@ -99,11 +130,17 @@ internal static class SprSyntheticTests
         }
 
         var cursor = groupOffset;
-        WriteAndAdvance(fixture, ref cursor, 1); // Group version.
+        WriteAndAdvance(fixture, ref cursor, groupVersion);
         WriteAndAdvance(fixture, ref cursor, 1); // Frame count.
         WriteAndAdvance(fixture, ref cursor, 2);
         WriteAndAdvance(fixture, ref cursor, 0);
         WriteAndAdvance(fixture, ref cursor, 2);
+        if (groupVersion == 2)
+        {
+            WriteAndAdvance(fixture, ref cursor, 7);
+            WriteAndAdvance(fixture, ref cursor, 8);
+            WriteAndAdvance(fixture, ref cursor, 9);
+        }
         WriteAndAdvance(fixture, ref cursor, 1);
         WriteAndAdvance(fixture, ref cursor, 1);
         WriteAndAdvance(fixture, ref cursor, 1);

@@ -5,6 +5,9 @@ const MISSION_DATA: Script = preload("res://scripts/mission_data.gd")
 const MISSION_RUNTIME_SCRIPT: Script = preload("res://scripts/mission_runtime.gd")
 const MISSION_STATE: Script = preload("res://scripts/mission_state.gd")
 const NAVIGATION_GRID_DATA: Script = preload("res://scripts/navigation_grid_data.gd")
+const IMPORTED_SPRITE_ANIMATION: Script = preload(
+	"res://scripts/imported_sprite_animation.gd"
+)
 const SPECIAL_PROFILES: Script = preload("res://scripts/legacy_special_action_profiles.gd")
 const LEGACY_CURSOR_PRESENTER: Script = preload(
 	"res://scripts/legacy_cursor_presenter.gd"
@@ -213,6 +216,7 @@ func _init() -> void:
 		"all 17,858 Layer 5 editor correction markers are preserved",
 	)
 	validate_sprite_manifests()
+	validate_runtime_actor_sprite_actions()
 	validate_original_cursor_asset()
 	validate_special_action_assets()
 	validate_m000_farmland_depth()
@@ -237,6 +241,8 @@ func validate_sprite_manifests() -> void:
 	var manifest_count := 0
 	var group_count := 0
 	var frame_count := 0
+	var movement_triplet_count := 0
+	var usable_movement_triplet_count := 0
 	for directory_name: String in directories:
 		var manifest_path: String = sprite_root.path_join(directory_name).path_join("sprite.json")
 		if not FileAccess.file_exists(manifest_path):
@@ -246,9 +252,65 @@ func validate_sprite_manifests() -> void:
 		if manifest.is_empty():
 			continue
 		manifest_count += 1
-		for group_value: Variant in manifest.get("groups", []) as Array:
+		var manifest_groups := manifest.get("groups", []) as Array
+		expect(
+			(
+				int(manifest.get("schema_version", 0))
+				== IMPORTED_SPRITE_ANIMATION.MAX_SCHEMA_VERSION
+				and int(manifest.get("gfl_index", -1)) == int(directory_name)
+				and int(manifest.get("group_count", -1)) == manifest_groups.size()
+			),
+			"sprite %s uses corrected schema 3, GFL identity, and group count" % directory_name,
+		)
+		var serial_lookup: Dictionary = {}
+		var manifest_frame_count := 0
+		for source_group_index: int in range(manifest_groups.size()):
+			var group_value: Variant = manifest_groups[source_group_index]
 			var group := group_value as Dictionary
 			group_count += 1
+			var semantic: Dictionary = IMPORTED_SPRITE_ANIMATION.group_semantic(group)
+			expect(
+				(
+					not semantic.is_empty()
+					and int(group.get("group_index", -1)) == source_group_index
+					and not serial_lookup.has(int(semantic.get("serial_id", -1)))
+				),
+				(
+					"sprite %s group %d has a unique exact action/direction serial"
+					% [directory_name, source_group_index]
+				),
+			)
+			if str(group.get("action_key", "")) in ["walk", "crawl"]:
+				movement_triplet_count += 1
+				var movement_triplet := group.get(
+					"secondary_triplet",
+					[],
+				) as Array
+				if (
+					movement_triplet.size() == 3
+					and int(movement_triplet[0]) > 0
+					and int(movement_triplet[2]) > 0
+				):
+					usable_movement_triplet_count += 1
+			if not semantic.is_empty():
+				serial_lookup[int(semantic["serial_id"])] = true
+			expect(
+				(
+					IMPORTED_SPRITE_ANIMATION.triplet_is_integral(
+						group.get("primary_triplet")
+					)
+					and IMPORTED_SPRITE_ANIMATION.triplet_is_integral(
+						group.get("secondary_triplet")
+					)
+					and IMPORTED_SPRITE_ANIMATION.triplet_is_integral(
+						group.get("tertiary_triplet")
+					)
+				),
+				(
+					"sprite %s group %d preserves all three integral SPR triplets"
+					% [directory_name, source_group_index]
+				),
+			)
 			var parameters: Array = group.get("parameters", []) as Array
 			var threshold := int(group.get("frame_tick_threshold", -1))
 			var hold_ticks := int(group.get("frame_hold_ticks", -1))
@@ -265,16 +327,266 @@ func validate_sprite_manifests() -> void:
 			)
 			var frames: Array = group.get("frames", []) as Array
 			frame_count += frames.size()
+			manifest_frame_count += frames.size()
 			expect(
-				frames.size() == int(group.get("frame_count", -1)),
 				(
-					"sprite %s group %d frame count matches its manifest"
+					frames.size() == int(group.get("frame_count", -1))
+					and IMPORTED_SPRITE_ANIMATION.group_frame_layout_is_valid(
+						group,
+						frames,
+					)
+				),
+				(
+					"sprite %s group %d frame order, dimensions, and atlas match its manifest"
 					% [directory_name, int(group.get("group_index", -1))]
 				),
 			)
+		expect(
+			manifest_frame_count == int(manifest.get("frame_count", -1)),
+			"sprite %s total frame count matches its manifest" % directory_name,
+		)
 	expect(manifest_count == EXPECTED_SPRITE_COUNT, "all 980 sprite manifests validate")
 	expect(group_count == EXPECTED_GROUP_COUNT, "all 2,775 animation groups validate")
 	expect(frame_count == EXPECTED_FRAME_COUNT, "all 11,898 animation frames validate")
+	expect(
+		movement_triplet_count == 373
+		and usable_movement_triplet_count == movement_triplet_count,
+		"all 373 walk/crawl groups expose usable corrected X/Z movement components",
+	)
+
+
+func validate_runtime_actor_sprite_actions() -> void:
+	var catalog := load_json_dictionary(
+		"res://data/original_runtime_actor_catalog.json"
+	)
+	expect(
+		(
+			int(catalog.get("schema_version", 0)) == 1
+			and int((catalog.get("summary", {}) as Dictionary).get(
+				"resolved_actor_count",
+				-1,
+			)) == 762
+		),
+		"runtime actor catalog exposes the 762 recovered stable-MOD actors",
+	)
+	var catalog_levels: Dictionary = catalog.get("levels", {}) as Dictionary
+	var preview_paths: Dictionary = {}
+	var resolved_actor_count := 0
+	for level_id: String in LEVEL_IDS:
+		var level: Dictionary = IMPORTED_LEVEL_DATA.load_level(level_id)
+		var entities_by_scene: Dictionary = {}
+		for entity_value: Variant in level.get("entities", []) as Array:
+			var entity := entity_value as Dictionary
+			entities_by_scene[int(entity.get("scene_index", -1))] = entity
+		var catalog_level := catalog_levels.get(level_id, {}) as Dictionary
+		var actors := catalog_level.get("actors", {}) as Dictionary
+		var level_path: String = ProjectSettings.globalize_path(
+			IMPORTED_LEVEL_DATA.level_path(level_id)
+		)
+		for scene_key: Variant in actors.keys():
+			var scene_index := int(scene_key)
+			expect(
+				entities_by_scene.has(scene_index),
+				"%s runtime actor scene %d still exists in its VWF" % [level_id, scene_index],
+			)
+			if not entities_by_scene.has(scene_index):
+				continue
+			resolved_actor_count += 1
+			var entity := entities_by_scene[scene_index] as Dictionary
+			var relative_preview := str(entity.get("sprite_preview", ""))
+			var preview_path := (
+				level_path
+				. get_base_dir()
+				. path_join(relative_preview)
+				. simplify_path()
+			)
+			expect(
+				not relative_preview.is_empty()
+				and FileAccess.file_exists(preview_path),
+				"%s runtime actor scene %d has its exact SPR preview" % [level_id, scene_index],
+			)
+			if not relative_preview.is_empty() and FileAccess.file_exists(preview_path):
+				preview_paths[preview_path] = true
+
+	var action_set_count := 0
+	var full_action_set_count := 0
+	var sparse_action_set_count := 0
+	var actor_group_count := 0
+	var actor_frame_count := 0
+	var stand_action_set_count := 0
+	var stand_action_group_count := 0
+	var stand_action_frame_count := 0
+	var active_action_set_count := 0
+	var active_action_group_count := 0
+	var active_action_frame_count := 0
+	for preview_value: Variant in preview_paths.keys():
+		var preview_path := str(preview_value)
+		var manifest_path: String = (
+			IMPORTED_SPRITE_ANIMATION.sprite_manifest_path(preview_path)
+		)
+		var manifest: Dictionary = load_json_dictionary(manifest_path)
+		expect(
+			not manifest.is_empty(),
+			"runtime actor %s has a loadable SPR manifest" % preview_path.get_file(),
+		)
+		if manifest.is_empty():
+			continue
+		var action_groups: Dictionary = {}
+		for group_value: Variant in manifest.get("groups", []) as Array:
+			var source_group := group_value as Dictionary
+			var action_key := str(source_group.get("action_key", ""))
+			if not action_groups.has(action_key):
+				action_groups[action_key] = []
+			(action_groups[action_key] as Array).append(source_group)
+			actor_group_count += 1
+			actor_frame_count += (
+				(source_group.get("frames", []) as Array).size()
+			)
+
+		for action_value: Variant in action_groups.keys():
+			var action_key := str(action_value)
+			var source_groups := action_groups[action_value] as Array
+			if action_key == "stand_action":
+				stand_action_set_count += 1
+				stand_action_group_count += source_groups.size()
+				for source_value: Variant in source_groups:
+					stand_action_frame_count += ((source_value as Dictionary).get(
+						"frames", []
+					) as Array).size()
+			elif action_key == "active_action":
+				active_action_set_count += 1
+				active_action_group_count += source_groups.size()
+				for source_value: Variant in source_groups:
+					active_action_frame_count += ((source_value as Dictionary).get(
+						"frames", []
+					) as Array).size()
+			var direction_lookup: Dictionary = {}
+			for source_value: Variant in source_groups:
+				var source_group := source_value as Dictionary
+				var semantic: Dictionary = (
+					IMPORTED_SPRITE_ANIMATION.group_semantic(source_group)
+				)
+				if not semantic.is_empty():
+					direction_lookup[int(semantic["direction_index"])] = true
+			var sparse: bool = direction_lookup.size() != 8
+			var loaded_groups: Array[Dictionary] = (
+				IMPORTED_SPRITE_ANIMATION.load_action_groups(
+					preview_path,
+					action_key,
+					sparse,
+				)
+			)
+			action_set_count += 1
+			if sparse:
+				sparse_action_set_count += 1
+			else:
+				full_action_set_count += 1
+			expect(
+				(
+					loaded_groups.size()
+					== IMPORTED_SPRITE_ANIMATION.DIRECTION_GROUP_COUNT
+					and IMPORTED_SPRITE_ANIMATION.available_group_count(
+						loaded_groups
+					) == source_groups.size()
+				),
+				(
+					"runtime actor %s action %s loads all %d authored directions"
+					% [
+						preview_path.get_file(),
+						action_key,
+						source_groups.size(),
+					]
+				),
+			)
+			if loaded_groups.size() != IMPORTED_SPRITE_ANIMATION.DIRECTION_GROUP_COUNT:
+				continue
+			for source_value: Variant in source_groups:
+				var source_group := source_value as Dictionary
+				var semantic: Dictionary = (
+					IMPORTED_SPRITE_ANIMATION.group_semantic(source_group)
+				)
+				if semantic.is_empty():
+					continue
+				var runtime_index: int = (
+					IMPORTED_SPRITE_ANIMATION.legacy_group_index_for_direction(
+						int(semantic["direction_index"])
+					)
+				)
+				var runtime_group: Dictionary = loaded_groups[runtime_index]
+				var primary: Array = source_group.get("primary_triplet", []) as Array
+				var timing: Dictionary = IMPORTED_SPRITE_ANIMATION.group_timing(
+					source_group
+				)
+				expect(
+					(
+						int(runtime_group.get("serial_id", -1))
+						== int(semantic["serial_id"])
+						and int(runtime_group.get("group_index", -1))
+						== int(source_group.get("group_index", -2))
+						and runtime_group.get("primary_triplet", [])
+						== source_group.get("primary_triplet", [])
+						and runtime_group.get("secondary_triplet", [])
+						== source_group.get("secondary_triplet", [])
+						and runtime_group.get("tertiary_triplet", [])
+						== source_group.get("tertiary_triplet", [])
+						and (runtime_group.get("anchor", Vector2.ZERO) as Vector2)
+						== Vector2(float(primary[0]), float(primary[2]))
+						and int(runtime_group.get("frame_hold_ticks", -1))
+						== int(timing.get("frame_hold_ticks", -2))
+						and (runtime_group.get("frames", []) as Array).size()
+						== (source_group.get("frames", []) as Array).size()
+					),
+					(
+						"runtime actor %s action %s direction %d preserves serial, triplets, anchor, timing, and frames"
+						% [
+							preview_path.get_file(),
+							action_key,
+							int(semantic["direction_index"]),
+						]
+					),
+				)
+			for direction_index: int in range(1, 9):
+				if direction_lookup.has(direction_index):
+					continue
+				var runtime_index: int = (
+					IMPORTED_SPRITE_ANIMATION.legacy_group_index_for_direction(
+						direction_index
+					)
+				)
+				expect(
+					loaded_groups[runtime_index].is_empty(),
+					(
+						"runtime actor %s action %s leaves unauthored direction %d absent"
+						% [preview_path.get_file(), action_key, direction_index]
+					),
+				)
+
+	expect(resolved_actor_count == 762, "all 762 recovered actors bind to formal VWF scenes")
+	expect(preview_paths.size() == 39, "the 762 actors resolve to 39 exact original SPR resources")
+	expect(action_set_count == 212, "all 212 actor action sets load through the runtime")
+	expect(full_action_set_count == 204, "all 204 eight-direction actor actions remain complete")
+	expect(
+		sparse_action_set_count == 8,
+		"the eight original four-direction vehicle actions retain exact sparse serial behavior",
+	)
+	expect(actor_group_count == 1664, "all 1,664 actor animation groups are runtime reachable")
+	expect(actor_frame_count == 9896, "all 9,896 actor animation frames are runtime reachable")
+	expect(
+		(
+			stand_action_set_count == 30
+			and stand_action_group_count == 240
+			and stand_action_frame_count == 1912
+		),
+		"AI idle cycling can reach all 30 stand_action sets, 240 directions, and 1,912 frames",
+	)
+	expect(
+		(
+			active_action_set_count == 1
+			and active_action_group_count == 8
+			and active_action_frame_count == 72
+		),
+		"the original type 8/10 active_action set retains all eight directions and 72 frames",
+	)
 
 
 func validate_original_cursor_asset() -> void:
