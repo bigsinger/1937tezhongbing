@@ -162,6 +162,76 @@ func _run() -> void:
 	)
 	shell._resume_button.pressed.emit()
 
+	var level_entries: Array[Dictionary] = []
+	for level_index: int in range(12):
+		level_entries.append(
+			{
+				"id": "m%03d" % level_index,
+				"number": level_index + 1,
+				"title": "测试任务 %02d" % (level_index + 1),
+			}
+		)
+	shell.set_level_selection(
+		level_entries,
+		{
+			"highest_unlocked_level_id": "m002",
+			"completed_level_ids": ["m000", "m001"],
+		},
+		"m001",
+	)
+	var level_requests: Array[String] = []
+	shell.level_requested.connect(
+		func(level_id: String) -> void:
+			level_requests.append(level_id)
+	)
+	shell.show_pause_menu(false)
+	shell._level_select_button.pressed.emit()
+	expect(
+		shell.overlay_mode == GAME_SHELL_SCRIPT.OverlayMode.LEVEL_SELECTOR
+		and paused
+		and shell._level_selector.level_buttons.size() == 12,
+		"game menu opens a native twelve-mission selector",
+		failures,
+	)
+	expect(
+		not (shell._level_selector.level_buttons["m011"] as Button).disabled
+		and (shell._level_selector.level_buttons["m000"] as Button).text.contains(
+			"已完成"
+		)
+		and (shell._level_selector.level_buttons["m001"] as Button).text.contains(
+			"当前"
+		),
+		"stable-MOD free selection keeps every formal mission enabled while showing progress",
+		failures,
+	)
+	shell._return_from_level_selector()
+	expect(
+		shell.overlay_mode == GAME_SHELL_SCRIPT.OverlayMode.PAUSE_MENU and paused,
+		"back from mission selection returns to its owning game menu",
+		failures,
+	)
+	shell._level_select_button.pressed.emit()
+	(shell._level_selector.level_buttons["m007"] as Button).pressed.emit()
+	expect(
+		level_requests == ["m007"] and not shell.is_overlay_open() and not paused,
+		"choosing a mission releases the local pause and emits only its formal ID",
+		failures,
+	)
+	var startup_cancel_requests := [0]
+	shell.level_selection_cancelled.connect(
+		func() -> void:
+			startup_cancel_requests[0] += 1
+	)
+	shell.show_level_selector(true)
+	shell._return_from_level_selector()
+	expect(
+		startup_cancel_requests[0] == 1
+		and not shell.is_overlay_open()
+		and not paused,
+		"startup mission selection can safely continue the default mission",
+		failures,
+	)
+
 	shell.show_control_guide()
 	var guide_press := InputEventKey.new()
 	guide_press.keycode = KEY_F1

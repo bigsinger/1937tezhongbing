@@ -30,6 +30,7 @@ const MEDIA_DIRECTOR_SCRIPT: Script = preload("res://scripts/media_director.gd")
 const GAME_SHELL_SCRIPT: Script = preload("res://scripts/game_shell.gd")
 const GAME_SETTINGS_SCRIPT: Script = preload("res://scripts/game_settings.gd")
 const GAME_SAVE_STORE_SCRIPT: Script = preload("res://scripts/game_save_store.gd")
+const CAMPAIGN_PROGRESS_SCRIPT: Script = preload("res://scripts/campaign_progress.gd")
 const GAME_SESSION_STATE_SCRIPT: Script = preload("res://scripts/game_session_state.gd")
 const GAME_INPUT_BINDINGS: Script = preload("res://scripts/game_input_bindings.gd")
 const LEGACY_INPUT_RULES: Script = preload("res://scripts/legacy_input_rules.gd")
@@ -285,6 +286,7 @@ var game_shell: CanvasLayer
 var game_settings: RefCounted
 var save_store: RefCounted
 var campaign_progress: Dictionary = {}
+var startup_level_selection_pending := false
 var command_line_controls_display := false
 var media_event_seed := 0
 var legacy_crt_random_state := 1
@@ -321,7 +323,14 @@ func _ready() -> void:
 	_create_game_shell()
 	create_interface()
 	create_level_camera()
-	switch_level(requested_level_index())
+	startup_level_selection_pending = _should_show_startup_level_selector()
+	switch_level(
+		requested_level_index(),
+		not startup_level_selection_pending,
+		not startup_level_selection_pending,
+	)
+	if startup_level_selection_pending:
+		call_deferred("_open_level_selector", true)
 	queue_redraw()
 
 
@@ -430,6 +439,20 @@ func switch_level(
 		)
 	elif start_direction:
 		_start_initial_direction_sequence()
+	_sync_level_selection()
+
+
+func _should_show_startup_level_selector() -> bool:
+	if DisplayServer.get_name() == "headless":
+		return false
+	for argument: String in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if argument.begins_with("--level=") or argument == "--skip-level-selector":
+			return false
+		if argument.contains("product_ui_probe.gd"):
+			return true
+		if argument.contains("res://tests/") or argument.contains("\\tests\\"):
+			return false
+	return true
 
 
 func _should_show_briefing() -> bool:
@@ -4632,6 +4655,8 @@ func _create_game_shell() -> void:
 	game_shell.load_slot_requested.connect(_load_game)
 	game_shell.restart_requested.connect(_restart_current_level)
 	game_shell.next_level_requested.connect(_advance_to_next_level)
+	game_shell.level_requested.connect(_on_level_requested)
+	game_shell.level_selection_cancelled.connect(_on_level_selection_cancelled)
 	game_shell.quit_requested.connect(_quit_game)
 	game_shell.settings_changed.connect(_on_shell_settings_changed)
 	game_shell.map_position_requested.connect(_on_map_position_requested)
@@ -4640,6 +4665,7 @@ func _create_game_shell() -> void:
 	game_shell.inventory_slot_requested.connect(_on_inventory_slot_requested)
 	game_shell.set_settings(runtime_settings)
 	_apply_runtime_settings(runtime_settings)
+	_sync_level_selection()
 
 
 func _initialize_persistence() -> void:
@@ -4710,6 +4736,61 @@ func _advance_to_next_level() -> void:
 		return
 	switch_level(current_level_index + 1)
 	update_status("已进入下一关")
+
+
+func _open_level_selector(startup: bool = false) -> void:
+	if game_shell == null:
+		return
+	_reset_context_cursor()
+	if media_director != null:
+		media_director.close_for_state_change()
+	game_shell.hide_tactical_map()
+	_sync_level_selection()
+	game_shell.show_level_selector(startup)
+
+
+func _on_level_requested(level_id: String) -> void:
+	var level_index := FORMAL_LEVEL_IDS.find(level_id)
+	if level_index < 0:
+		update_status("自由选关失败：无效关卡 %s" % level_id)
+		return
+	startup_level_selection_pending = false
+	switch_level(level_index)
+	update_status("自由选关：第 %d 关 %s" % [
+		level_index + 1,
+		str(current_mission.get("title", level_id.to_upper())),
+	])
+
+
+func _on_level_selection_cancelled() -> void:
+	if not startup_level_selection_pending:
+		return
+	startup_level_selection_pending = false
+	switch_level(current_level_index)
+
+
+func _sync_level_selection() -> void:
+	if game_shell == null:
+		return
+	var entries: Array[Dictionary] = []
+	for level_index: int in range(FORMAL_LEVEL_IDS.size()):
+		var level_id := FORMAL_LEVEL_IDS[level_index]
+		var mission: Dictionary = MISSION_DATA.load_mission_for_rule_mode(
+			level_id,
+			str(runtime_settings.get("mission_rule_mode", "stable_mod")),
+		)
+		entries.append(
+			{
+				"id": level_id,
+				"number": level_index + 1,
+				"title": str(mission.get("title", level_id.to_upper())),
+			}
+		)
+	game_shell.set_level_selection(
+		entries,
+		CAMPAIGN_PROGRESS_SCRIPT.normalize(campaign_progress),
+		FORMAL_LEVEL_IDS[current_level_index],
+	)
 
 
 func _quit_game() -> void:
@@ -5558,19 +5639,11 @@ func _show_load_feedback(message: String) -> void:
 
 func _update_campaign_progress_for_victory() -> void:
 	var level_id := str(current_mission.get("id", ""))
-	if not FORMAL_LEVEL_IDS.has(level_id):
-		return
-	if campaign_progress.is_empty():
-		campaign_progress = GAME_SAVE_STORE_SCRIPT.default_campaign()
-	var completed: Array = campaign_progress.get("completed_level_ids", []) as Array
-	if not completed.has(level_id):
-		completed.append(level_id)
-	completed.sort()
-	campaign_progress["completed_level_ids"] = completed
-	var next_index := mini(FORMAL_LEVEL_IDS.find(level_id) + 1, FORMAL_LEVEL_IDS.size() - 1)
-	var current_highest := str(campaign_progress.get("highest_unlocked_level_id", "m000"))
-	var current_highest_index := maxi(FORMAL_LEVEL_IDS.find(current_highest), 0)
-	campaign_progress["highest_unlocked_level_id"] = FORMAL_LEVEL_IDS[maxi(next_index, current_highest_index)]
+	campaign_progress = CAMPAIGN_PROGRESS_SCRIPT.record_victory(
+		campaign_progress,
+		level_id,
+	)
+	_sync_level_selection()
 
 
 func _publish_mission_event(event_name: String, payload: Dictionary = {}) -> Array[String]:

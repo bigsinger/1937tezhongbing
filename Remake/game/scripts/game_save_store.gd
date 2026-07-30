@@ -2,8 +2,10 @@ class_name GameSaveStore
 extends RefCounted
 
 const ATOMIC_JSON_STORE: Script = preload("res://scripts/atomic_json_store.gd")
+const CAMPAIGN_PROGRESS: Script = preload("res://scripts/campaign_progress.gd")
 
 const SCHEMA_VERSION := 1
+const MIN_SUPPORTED_SCHEMA_VERSION := 0
 const GAME_ID := "1937-remake"
 const MISSION_RULE_MODES: Array[String] = ["stable_mod", "repaired"]
 const DEFAULT_DIRECTORY := "user://saves"
@@ -60,9 +62,19 @@ static func empty_session(level_id: String = "m000") -> Dictionary:
 
 
 static func default_campaign() -> Dictionary:
+	return CAMPAIGN_PROGRESS.default_state()
+
+
+static func migration_policy() -> Dictionary:
 	return {
-		"highest_unlocked_level_id": "m000",
-		"completed_level_ids": [],
+		"current_schema_version": SCHEMA_VERSION,
+		"minimum_supported_schema_version": MIN_SUPPORTED_SCHEMA_VERSION,
+		"supported_source_versions": [0, SCHEMA_VERSION],
+		"schema_zero_shape": "prototype root/session document",
+		"migration_mode": "in_memory_then_current_schema_on_next_save",
+		"future_version_policy": "reject_and_preserve_all_generations",
+		"unsupported_legacy_policy": "reject_and_preserve_all_generations",
+		"malformed_primary_policy": "recover_valid_backup_then_quarantine_on_next_save",
 	}
 
 
@@ -76,6 +88,10 @@ func save_slot(
 		return last_result
 	if not _is_valid_session(session):
 		last_result = _failure("invalid_session", "mid-mission session payload is incomplete or not JSON-safe")
+		return last_result
+	var compatibility := _save_compatibility_guard(slot_id)
+	if not bool(compatibility.get("ok", false)):
+		last_result = compatibility.duplicate(true)
 		return last_result
 
 	var previous := load_slot(slot_id)
@@ -109,6 +125,10 @@ func save_slot(
 func load_slot(slot_id: String) -> Dictionary:
 	if not is_valid_slot_id(slot_id):
 		last_result = _failure("invalid_slot", "slot ID contains unsupported characters")
+		return last_result
+	var compatibility := _load_compatibility_guard(slot_id)
+	if not bool(compatibility.get("ok", false)):
+		last_result = compatibility.duplicate(true)
 		return last_result
 	var result: Dictionary = ATOMIC_JSON_STORE.load_document(
 		slot_path(slot_id),
@@ -216,10 +236,7 @@ static func is_valid_slot_id(slot_id: String) -> bool:
 
 
 static func is_valid_level_id(level_id: String) -> bool:
-	if level_id.length() != 4 or not level_id.begins_with("m"):
-		return false
-	var numeric := level_id.substr(1)
-	return numeric.is_valid_int() and int(numeric) >= 0 and int(numeric) <= 11
+	return CAMPAIGN_PROGRESS.is_valid_level_id(level_id)
 
 
 func _is_loadable_document(value: Variant) -> bool:
@@ -263,14 +280,7 @@ func _is_current_document(document: Dictionary) -> bool:
 
 
 func _is_valid_campaign(campaign: Dictionary) -> bool:
-	if not is_valid_level_id(str(campaign.get("highest_unlocked_level_id", ""))):
-		return false
-	if not campaign.get("completed_level_ids", []) is Array:
-		return false
-	for level_value: Variant in campaign.get("completed_level_ids", []) as Array:
-		if not is_valid_level_id(str(level_value)):
-			return false
-	return true
+	return CAMPAIGN_PROGRESS.is_valid_state(campaign)
 
 
 func _is_valid_session(session: Dictionary) -> bool:
@@ -373,18 +383,103 @@ func _normalize_session(session: Dictionary) -> Dictionary:
 
 
 func _normalize_campaign(campaign: Dictionary) -> Dictionary:
-	if not _is_valid_campaign(campaign):
-		return default_campaign()
-	var completed: Array[String] = []
-	for value: Variant in campaign.get("completed_level_ids", []) as Array:
-		var level_id := str(value)
-		if not completed.has(level_id):
-			completed.append(level_id)
-	completed.sort()
+	return CAMPAIGN_PROGRESS.normalize(campaign)
+
+
+func _save_compatibility_guard(slot_id: String) -> Dictionary:
+	for generation: String in ["primary", "backup"]:
+		var path := slot_path(slot_id) + ("" if generation == "primary" else ".bak")
+		var probe := _probe_schema_generation(path)
+		if str(probe.get("status", "")) in [
+			"unsupported_future_version",
+			"unsupported_legacy_version",
+		]:
+			return _unsupported_generation_failure(probe, generation)
+	return {"ok": true}
+
+
+func _load_compatibility_guard(slot_id: String) -> Dictionary:
+	var primary_probe := _probe_schema_generation(slot_path(slot_id))
+	if str(primary_probe.get("status", "")) in [
+		"unsupported_future_version",
+		"unsupported_legacy_version",
+	]:
+		return _unsupported_generation_failure(primary_probe, "primary")
+	if bool(primary_probe.get("loadable", false)):
+		return {"ok": true}
+	var backup_probe := _probe_schema_generation(slot_path(slot_id) + ".bak")
+	if str(backup_probe.get("status", "")) in [
+		"unsupported_future_version",
+		"unsupported_legacy_version",
+	]:
+		return _unsupported_generation_failure(backup_probe, "backup")
+	return {"ok": true}
+
+
+func _probe_schema_generation(path: String) -> Dictionary:
+	if not FileAccess.file_exists(path):
+		return {"status": "missing", "path": path, "loadable": false}
+	var input := FileAccess.open(path, FileAccess.READ)
+	if input == null:
+		return {"status": "unreadable", "path": path, "loadable": false}
+	var source_text := input.get_as_text()
+	input.close()
+	var parser := JSON.new()
+	if parser.parse(source_text) != OK or not parser.data is Dictionary:
+		return {"status": "malformed", "path": path, "loadable": false}
+	var document := parser.data as Dictionary
+	if not document.has("schema_version"):
+		return {
+			"status": "supported",
+			"path": path,
+			"schema_version": 0,
+			"loadable": _is_loadable_document(document),
+		}
+	if not _is_number(document["schema_version"]):
+		return {"status": "malformed", "path": path, "loadable": false}
+	var version := int(document["schema_version"])
+	if version < MIN_SUPPORTED_SCHEMA_VERSION:
+		return {
+			"status": "unsupported_legacy_version",
+			"path": path,
+			"schema_version": version,
+			"loadable": false,
+		}
+	if version > SCHEMA_VERSION:
+		return {
+			"status": "unsupported_future_version",
+			"path": path,
+			"schema_version": version,
+			"loadable": false,
+		}
 	return {
-		"highest_unlocked_level_id": str(campaign["highest_unlocked_level_id"]),
-		"completed_level_ids": completed,
+		"status": "supported",
+		"path": path,
+		"schema_version": version,
+		"loadable": _is_loadable_document(document),
 	}
+
+
+func _unsupported_generation_failure(probe: Dictionary, generation: String) -> Dictionary:
+	var code := str(probe.get("status", "unsupported_save_version"))
+	var version := int(probe.get("schema_version", -1))
+	var result := _failure(
+		code,
+		(
+			"save %s uses schema %d; this build supports %d..%d and preserved every file"
+			% [
+				generation,
+				version,
+				MIN_SUPPORTED_SCHEMA_VERSION,
+				SCHEMA_VERSION,
+			]
+		),
+	)
+	result["schema_version"] = version
+	result["generation"] = generation
+	result["path"] = str(probe.get("path", ""))
+	result["preserved"] = true
+	return result
 
 
 func _migrate_document(document: Dictionary, requested_slot_id: String) -> Dictionary:
@@ -399,6 +494,9 @@ func _migrate_document(document: Dictionary, requested_slot_id: String) -> Dicti
 		)
 		normalized_document["session"] = _normalize_session(
 			document.get("session", {}) as Dictionary
+		)
+		normalized_document["campaign"] = _normalize_campaign(
+			document.get("campaign", default_campaign()) as Dictionary
 		)
 		return normalized_document
 	var raw_session: Dictionary

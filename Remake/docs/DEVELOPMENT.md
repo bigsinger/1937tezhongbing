@@ -74,6 +74,12 @@ F2 镜头定位、地面移动、R/C、W/A、M、F1、Esc、S、普通攻击、B
 `user://qa-real-input-campaign/...` 存档目录，结束后清理；不会捕获、锁定、移动或
 裁剪桌面鼠标。
 
+`save_settings_test.gd` 还必须用物理 `user://` 文件覆盖全部存档版本边界：
+schema 0 迁移、schema 1 规范化、损坏主文件回退 `.bak`、未来/过旧 schema
+主文件与备份逐字节不变，以及十二次产品胜利后的完成度/解锁前沿磁盘回读。
+新增 schema 时必须先更新 `GameSaveStore.migration_policy()` 和这些用例；
+不允许仅提高版本号后把旧文件交给通用“损坏文件隔离”路径。
+
 可单独重放某一关：
 
 ```powershell
@@ -126,6 +132,12 @@ Godot 端的责任分工为：
   精确动态角色的开局背包；物品效果证据见
   [原版角色物品背包恢复](ORIGINAL_ITEM_INVENTORY.md)；
 - `original_runtime_actor_catalog.gd`：读取 762 个运行时角色身份及阵营覆盖；
+- `campaign_progress.gd`：十二个正式关卡的唯一完成度/顺序解锁状态机；
+  MOD/命令行自由选关不写进度，只有产品胜利入口调用 `record_victory()`；
+- `campaign_level_selector.gd`：启动页和 `Esc` 菜单共用的 3×4 原生关卡
+  选择器；全部正式路由可用，同时只读展示当前关、完成度与顺序前沿；
+- `game_save_store.gd`：schema 0→1 内存迁移、当前格式规范化、原子写入与
+  未来/过旧 schema 的拒绝且不改文件策略；
 - `legacy_projectile_rules.gd` / `legacy_combat_rules.gd` /
   `projectile_world.gd` / `combat_projectile.gd`：type 1/2/3/6/7/9 的
   原版整数 Bresenham 路径、逐 world-tick 步长、目标格门、机枪角度散布、

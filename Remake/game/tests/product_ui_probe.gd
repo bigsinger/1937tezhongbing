@@ -22,6 +22,21 @@ func _run() -> void:
 	DirAccess.make_dir_recursive_absolute(output_directory)
 	var main = MAIN_SCENE.instantiate()
 	root.add_child(main)
+	await process_frame
+	_expect(
+		main.startup_level_selection_pending
+		and main.game_shell.overlay_mode == GAME_SHELL_SCRIPT.OverlayMode.LEVEL_SELECTOR
+		and main.game_shell._level_selector.level_buttons.size() == 12,
+		"normal product startup opens the native twelve-mission selector",
+	)
+	_expect(await _wait_for_render_frame(), "startup level-selector frame renders")
+	_capture("startup-level-selector.jpg")
+	(main.game_shell._level_selector.level_buttons["m000"] as Button).pressed.emit()
+	_expect(
+		not main.startup_level_selection_pending
+		and main.current_level_index == 0,
+		"choosing a startup mission enters its normal level-loading path",
+	)
 	await _dismiss_startup_media(main)
 	_expect(await _wait_for_render_frame(), "initial product frame renders")
 
@@ -54,6 +69,17 @@ func _run() -> void:
 		"Esc pause menu opens",
 	)
 	_capture("pause-menu.jpg")
+	main.game_shell.close_for_state_change()
+
+	main._open_level_selector(false)
+	paused = false
+	_expect(await _wait_for_render_frame(), "level-selector frame renders")
+	_expect(
+		main.game_shell.overlay_mode == GAME_SHELL_SCRIPT.OverlayMode.LEVEL_SELECTOR
+		and main.game_shell._level_selector.level_buttons.size() == 12,
+		"native free selector exposes exactly the twelve formal missions",
+	)
+	_capture("level-selector.jpg")
 	main.game_shell.close_for_state_change()
 
 	main.game_shell.show_failure("自动验收：任务失败\n可重新开始本关或从多槽选择器读取存档。", false)

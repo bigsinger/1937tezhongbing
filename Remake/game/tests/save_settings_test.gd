@@ -3,6 +3,8 @@ extends SceneTree
 const ATOMIC_JSON_STORE: Script = preload("res://scripts/atomic_json_store.gd")
 const COMBAT_PROFILES: Script = preload("res://scripts/combat_profiles.gd")
 const GAME_SAVE_STORE: Script = preload("res://scripts/game_save_store.gd")
+const CAMPAIGN_PROGRESS: Script = preload("res://scripts/campaign_progress.gd")
+const MAIN_RUNTIME: Script = preload("res://scripts/main.gd")
 const GAME_SESSION_STATE: Script = preload("res://scripts/game_session_state.gd")
 const GAME_SETTINGS: Script = preload("res://scripts/game_settings.gd")
 const GAME_INPUT_BINDINGS: Script = preload("res://scripts/game_input_bindings.gd")
@@ -118,6 +120,7 @@ func _run_tests() -> void:
 	_test_audio_bus_configuration(failures)
 	_test_save_round_trip_and_recovery(failures)
 	_test_save_migration_and_slot_safety(failures)
+	_test_campaign_progression_and_disk_resume(failures)
 	_test_legacy_world_snapshot_presence(failures)
 	_test_mid_mission_capture_and_apply(failures)
 	_test_buried_enemy_save_round_trip(failures)
@@ -548,6 +551,15 @@ func _test_save_round_trip_and_recovery(failures: Array[String]) -> void:
 
 func _test_save_migration_and_slot_safety(failures: Array[String]) -> void:
 	var store = GAME_SAVE_STORE.new(test_root + "/migration-saves")
+	var policy: Dictionary = GAME_SAVE_STORE.migration_policy()
+	_expect(
+		int(policy["minimum_supported_schema_version"]) == 0
+		and int(policy["current_schema_version"]) == 1
+		and str(policy["future_version_policy"])
+		== "reject_and_preserve_all_generations",
+		"save migration policy exposes its supported window and fail-closed future policy",
+		failures,
+	)
 	_expect(not GAME_SAVE_STORE.is_valid_slot_id("../escape"), "slot path traversal is rejected", failures)
 	_expect(not bool(store.save_slot("../escape", _sample_session())["ok"]), "unsafe slot cannot be written", failures)
 	_expect(GAME_SAVE_STORE.is_valid_slot_id("quick-save_1"), "safe slot ID is accepted", failures)
@@ -597,6 +609,7 @@ func _test_save_migration_and_slot_safety(failures: Array[String]) -> void:
 	_write_json(legacy_path, {"level_id": "m002", "elapsed_seconds": 13.0})
 	var legacy: Dictionary = store.load_slot("legacy")
 	_expect(bool(legacy["ok"]), "v0 level save migrates", failures)
+	_expect(bool(legacy["migrated"]), "v0 load is explicitly reported as migrated", failures)
 	_expect(int((legacy["data"] as Dictionary)["schema_version"]) == 1, "v0 save receives current schema", failures)
 	_expect(
 		str(((legacy["data"] as Dictionary)["session"] as Dictionary)["level_id"]) == "m002",
@@ -656,8 +669,160 @@ func _test_save_migration_and_slot_safety(failures: Array[String]) -> void:
 		failures,
 	)
 	var future_path: String = str(store.slot_path("future"))
-	_write_json(future_path, {"schema_version": 77, "game_id": "1937-remake"})
-	_expect(not bool(store.load_slot("future")["ok"]), "future save version is rejected", failures)
+	var future_text := "{\"schema_version\":77,\"game_id\":\"1937-remake\",\"opaque\":\"keep-me\"}"
+	_write_text(future_path, future_text)
+	var future_load: Dictionary = store.load_slot("future")
+	_expect(
+		not bool(future_load["ok"])
+		and str(future_load["code"]) == "unsupported_future_version"
+		and bool(future_load["preserved"]),
+		"future save version is rejected with an explicit preservation result",
+		failures,
+	)
+	_expect(
+		_read_text(future_path) == future_text,
+		"loading a future save leaves its bytes unchanged",
+		failures,
+	)
+	var future_save: Dictionary = store.save_slot("future", _sample_session())
+	_expect(
+		not bool(future_save["ok"])
+		and str(future_save["code"]) == "unsupported_future_version",
+		"an older build cannot overwrite a future primary generation",
+		failures,
+	)
+	_expect(
+		_read_text(future_path) == future_text
+		and not FileAccess.file_exists(future_path + ".corrupt")
+		and not FileAccess.file_exists(future_path + ".tmp"),
+		"future primary is neither quarantined nor partially replaced",
+		failures,
+	)
+	var future_backup_path := str(store.slot_path("future_backup")) + ".bak"
+	_write_text(future_backup_path, future_text)
+	var future_backup_load: Dictionary = store.load_slot("future_backup")
+	_expect(
+		not bool(future_backup_load["ok"])
+		and str(future_backup_load["generation"]) == "backup",
+		"a future backup generation is also fail-closed when primary is absent",
+		failures,
+	)
+	_expect(
+		not bool(store.save_slot("future_backup", _sample_session())["ok"])
+		and _read_text(future_backup_path) == future_text,
+		"saving cannot erase an unsupported future backup",
+		failures,
+	)
+	var unsupported_legacy_path := str(store.slot_path("unsupported_legacy"))
+	var unsupported_legacy_text := "{\"schema_version\":-1,\"opaque\":\"keep-old\"}"
+	_write_text(unsupported_legacy_path, unsupported_legacy_text)
+	var unsupported_legacy: Dictionary = store.load_slot("unsupported_legacy")
+	_expect(
+		not bool(unsupported_legacy["ok"])
+		and str(unsupported_legacy["code"]) == "unsupported_legacy_version"
+		and _read_text(unsupported_legacy_path) == unsupported_legacy_text,
+		"schema versions older than the supported window are rejected without mutation",
+		failures,
+	)
+
+
+func _test_campaign_progression_and_disk_resume(failures: Array[String]) -> void:
+	var progress: Dictionary = CAMPAIGN_PROGRESS.default_state()
+	_expect(
+		CAMPAIGN_PROGRESS.is_unlocked(progress, "m000")
+		and not CAMPAIGN_PROGRESS.is_unlocked(progress, "m001"),
+		"a fresh sequential campaign starts at mission one",
+		failures,
+	)
+	var store = GAME_SAVE_STORE.new(test_root + "/campaign-saves")
+	var product_runtime: Node2D = MAIN_RUNTIME.new()
+	product_runtime.campaign_progress = CAMPAIGN_PROGRESS.default_state()
+	for level_index: int in range(CAMPAIGN_PROGRESS.FORMAL_LEVEL_IDS.size()):
+		var level_id: String = CAMPAIGN_PROGRESS.FORMAL_LEVEL_IDS[level_index]
+		progress = CAMPAIGN_PROGRESS.record_victory(progress, level_id)
+		product_runtime.current_mission = {"id": level_id}
+		product_runtime._update_campaign_progress_for_victory()
+		var expected_highest_index := mini(
+			level_index + 1,
+			CAMPAIGN_PROGRESS.FORMAL_LEVEL_IDS.size() - 1,
+		)
+		_expect(
+			str(progress["highest_unlocked_level_id"])
+			== CAMPAIGN_PROGRESS.FORMAL_LEVEL_IDS[expected_highest_index],
+			"victory advances the sequential unlock frontier for %s" % level_id,
+			failures,
+		)
+		_expect(
+			product_runtime.campaign_progress == progress,
+			"the product victory entry uses the canonical campaign transition for %s"
+				% level_id,
+			failures,
+		)
+		_expect(
+			CAMPAIGN_PROGRESS.completion_count(progress) == level_index + 1,
+			"victory records one unique completion for %s" % level_id,
+			failures,
+		)
+		var session: Dictionary = GAME_SAVE_STORE.empty_session(level_id)
+		var write_result: Dictionary = store.save_slot("campaign", session, progress)
+		var disk_result: Dictionary = store.load_slot("campaign")
+		_expect(
+			bool(write_result["ok"])
+			and bool(disk_result["ok"])
+			and (
+				(disk_result["data"] as Dictionary)["campaign"] as Dictionary
+			) == progress,
+			"campaign frontier survives a physical disk round trip after %s" % level_id,
+			failures,
+		)
+	var final_state: Dictionary = progress.duplicate(true)
+	progress = CAMPAIGN_PROGRESS.record_victory(progress, "m011")
+	_expect(
+		progress == final_state,
+		"replaying the final mission neither duplicates completion nor wraps the frontier",
+		failures,
+	)
+	var out_of_order: Dictionary = CAMPAIGN_PROGRESS.record_victory(
+		CAMPAIGN_PROGRESS.default_state(),
+		"m010",
+	)
+	_expect(
+		str(out_of_order["highest_unlocked_level_id"]) == "m011"
+		and (out_of_order["completed_level_ids"] as Array) == ["m010"],
+		"free/developer selection can record a real out-of-order victory without fake earlier completions",
+		failures,
+	)
+	var non_regressing: Dictionary = CAMPAIGN_PROGRESS.record_victory(
+		{
+			"highest_unlocked_level_id": "m010",
+			"completed_level_ids": ["m009"],
+		},
+		"m002",
+	)
+	_expect(
+		str(non_regressing["highest_unlocked_level_id"]) == "m010"
+		and (non_regressing["completed_level_ids"] as Array) == ["m002", "m009"],
+		"replaying an earlier mission never regresses a higher unlock frontier",
+		failures,
+	)
+	var repaired_inconsistent: Dictionary = CAMPAIGN_PROGRESS.normalize(
+		{
+			"highest_unlocked_level_id": "m000",
+			"completed_level_ids": ["m003", "m003"],
+		}
+	)
+	_expect(
+		str(repaired_inconsistent["highest_unlocked_level_id"]) == "m004"
+		and (repaired_inconsistent["completed_level_ids"] as Array) == ["m003"],
+		"normalization deduplicates completion and repairs an impossible unlock frontier",
+		failures,
+	)
+	_expect(
+		CAMPAIGN_PROGRESS.record_victory(progress, "m999") == progress,
+		"unknown or withdrawn mission IDs cannot mutate campaign state",
+		failures,
+	)
+	product_runtime.free()
 
 
 func _test_legacy_world_snapshot_presence(failures: Array[String]) -> void:
@@ -1254,6 +1419,15 @@ func _write_text(path: String, value: String) -> void:
 	if file != null:
 		file.store_string(value)
 		file.close()
+
+
+func _read_text(path: String) -> String:
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return ""
+	var value := file.get_as_text()
+	file.close()
+	return value
 
 
 func _cleanup_test_root() -> void:

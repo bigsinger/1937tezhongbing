@@ -8,6 +8,8 @@ signal save_slot_requested(slot_id: String)
 signal load_slot_requested(slot_id: String)
 signal restart_requested
 signal next_level_requested
+signal level_requested(level_id: String)
+signal level_selection_cancelled
 signal quit_requested
 signal settings_changed(settings: Dictionary)
 signal map_position_requested(world_position: Vector2)
@@ -17,6 +19,9 @@ signal inventory_slot_requested(slot: Dictionary)
 
 const TACTICAL_MAP_VIEW_SCRIPT: Script = preload("res://scripts/tactical_map_view.gd")
 const SAVE_SLOT_SELECTOR_SCRIPT: Script = preload("res://scripts/save_slot_selector.gd")
+const CAMPAIGN_LEVEL_SELECTOR_SCRIPT: Script = preload(
+	"res://scripts/campaign_level_selector.gd"
+)
 const INVENTORY_GRID_VIEW_SCRIPT: Script = preload("res://scripts/inventory_grid_view.gd")
 const GAME_INPUT_BINDINGS: Script = preload("res://scripts/game_input_bindings.gd")
 const ORIGINAL_INVENTORY_POPUP_SIZE := Vector2(276.0, 421.0)
@@ -25,7 +30,17 @@ const TACTICAL_MAP_PANEL_CHROME := Vector2(44.0, 77.0)
 const DIFFICULTY_MODES: Array[String] = ["original", "easy", "normal", "hard"]
 const MISSION_RULE_MODES: Array[String] = ["stable_mod", "repaired"]
 
-enum OverlayMode { NONE, PAUSE_MENU, TACTICAL_MAP, INVENTORY, FAILURE, SLOT_SELECTOR, SETTINGS, HELP }
+enum OverlayMode {
+	NONE,
+	PAUSE_MENU,
+	TACTICAL_MAP,
+	INVENTORY,
+	FAILURE,
+	SLOT_SELECTOR,
+	SETTINGS,
+	HELP,
+	LEVEL_SELECTOR,
+}
 
 var overlay_mode := OverlayMode.NONE
 var settings: Dictionary = {}
@@ -42,6 +57,7 @@ var _next_level_button: Button
 var _save_button: Button
 var _load_button: Button
 var _restart_button: Button
+var _level_select_button: Button
 var _difficulty_option: OptionButton
 var _mission_rule_option: OptionButton
 var _fullscreen_toggle: CheckButton
@@ -71,6 +87,12 @@ var _slot_selector_panel: PanelContainer
 var _slot_selector: SaveSlotSelector
 var _slot_return_mode := OverlayMode.PAUSE_MENU
 var _save_slot_summaries: Array[Dictionary] = []
+var _level_selector_panel: PanelContainer
+var _level_selector: CampaignLevelSelector
+var _level_selector_return_mode := OverlayMode.PAUSE_MENU
+var _level_entries: Array[Dictionary] = []
+var _campaign_progress: Dictionary = {}
+var _current_level_id := "m000"
 var _pause_owned := false
 var _pause_state_before_overlay := false
 var _updating_settings_controls := false
@@ -172,6 +194,41 @@ func show_victory(can_load: bool, has_next_level: bool) -> void:
 
 func set_save_slots(summaries: Array[Dictionary]) -> void:
 	_save_slot_summaries = summaries.duplicate(true)
+
+
+func set_level_selection(
+	entries: Array[Dictionary],
+	progress: Dictionary,
+	current_level_id: String,
+) -> void:
+	_level_entries = entries.duplicate(true)
+	_campaign_progress = progress.duplicate(true)
+	_current_level_id = current_level_id
+	if _level_selector != null:
+		_level_selector.configure(
+			_level_entries,
+			_campaign_progress,
+			_current_level_id,
+		)
+
+
+func show_level_selector(startup: bool = false) -> void:
+	_level_selector_return_mode = (
+		OverlayMode.NONE if startup else overlay_mode
+	)
+	if (
+		not startup
+		and _level_selector_return_mode
+		not in [OverlayMode.PAUSE_MENU, OverlayMode.FAILURE]
+	):
+		_level_selector_return_mode = OverlayMode.PAUSE_MENU
+	_enter_mode(OverlayMode.LEVEL_SELECTOR)
+	_level_selector.configure(
+		_level_entries,
+		_campaign_progress,
+		_current_level_id,
+	)
+	_level_selector.focus_current()
 
 
 func show_failure(failure_text: String, can_load: bool) -> void:
@@ -326,6 +383,9 @@ func close_active_overlay() -> bool:
 	if overlay_mode == OverlayMode.SETTINGS:
 		_return_from_settings()
 		return true
+	if overlay_mode == OverlayMode.LEVEL_SELECTOR:
+		_return_from_level_selector()
+		return true
 	_close_overlay()
 	resume_requested.emit()
 	return true
@@ -427,6 +487,7 @@ func _enter_mode(mode: int) -> void:
 	_slot_selector_panel.visible = mode == OverlayMode.SLOT_SELECTOR
 	_settings_panel.visible = mode == OverlayMode.SETTINGS
 	_help_panel.visible = mode == OverlayMode.HELP
+	_level_selector_panel.visible = mode == OverlayMode.LEVEL_SELECTOR
 
 
 func _close_overlay() -> void:
@@ -502,6 +563,24 @@ func _on_restart_pressed() -> void:
 func _on_next_level_pressed() -> void:
 	_close_overlay()
 	next_level_requested.emit()
+
+
+func _show_level_selector_from_menu() -> void:
+	show_level_selector(false)
+
+
+func _on_level_chosen(level_id: String) -> void:
+	_close_overlay()
+	level_requested.emit(level_id)
+
+
+func _return_from_level_selector() -> void:
+	var return_mode := _level_selector_return_mode
+	if return_mode in [OverlayMode.PAUSE_MENU, OverlayMode.FAILURE]:
+		_enter_mode(return_mode)
+		return
+	_close_overlay()
+	level_selection_cancelled.emit()
 
 
 func _on_quit_pressed() -> void:
@@ -701,6 +780,7 @@ func _build_interface() -> void:
 	_build_map_panel()
 	_build_inventory_panel()
 	_build_slot_selector_panel()
+	_build_level_selector_panel()
 	_build_settings_panel()
 	_build_help_panel()
 	_root.visible = false
@@ -713,9 +793,15 @@ func _build_menu_panel() -> void:
 	_menu_panel.add_theme_stylebox_override("panel", _panel_style(Color(0.09, 0.115, 0.09, 0.98)))
 	_root.add_child(_menu_panel)
 
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_menu_panel.add_child(scroll)
 	var content := VBoxContainer.new()
+	content.custom_minimum_size.x = 560.0
+	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	content.add_theme_constant_override("separation", 9)
-	_menu_panel.add_child(content)
+	scroll.add_child(content)
 
 	_menu_title = Label.new()
 	_menu_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -735,6 +821,11 @@ func _build_menu_panel() -> void:
 	_save_button = _add_button(content, "保存游戏…", _on_save_pressed)
 	_load_button = _add_button(content, "读取游戏…", _on_load_pressed)
 	_restart_button = _add_button(content, "重新开始本关", _on_restart_pressed)
+	_level_select_button = _add_button(
+		content,
+		"选择关卡…",
+		_show_level_selector_from_menu,
+	)
 
 	var separator := HSeparator.new()
 	content.add_child(separator)
@@ -1020,6 +1111,21 @@ func _build_slot_selector_panel() -> void:
 	_slot_selector.slot_chosen.connect(_on_slot_chosen)
 	_slot_selector.back_requested.connect(_return_from_slot_selector)
 	_slot_selector_panel.add_child(_slot_selector)
+
+
+func _build_level_selector_panel() -> void:
+	_level_selector_panel = PanelContainer.new()
+	_level_selector_panel.name = "CampaignLevelSelectorPanel"
+	_center_control(_level_selector_panel, Vector2(820.0, 600.0))
+	_level_selector_panel.add_theme_stylebox_override(
+		"panel",
+		_panel_style(Color(0.065, 0.078, 0.062, 0.99)),
+	)
+	_root.add_child(_level_selector_panel)
+	_level_selector = CAMPAIGN_LEVEL_SELECTOR_SCRIPT.new()
+	_level_selector_panel.add_child(_level_selector)
+	_level_selector.level_chosen.connect(_on_level_chosen)
+	_level_selector.back_requested.connect(_return_from_level_selector)
 
 
 func _build_help_panel() -> void:

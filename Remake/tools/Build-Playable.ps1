@@ -203,7 +203,8 @@ $playableReadme = @"
 1937 Remake local playable build
 
 Run: double-click Play-1937-Remake.cmd.
-Level selection: Play-1937-Remake.cmd -- --level=m007 (m000 through m011).
+Level selection: use the native startup/menu selector, or launch directly with
+Play-1937-Remake.cmd -- --level=m007 (m000 through m011).
 
 Keep game and LocalAssets in their current relative locations. The launcher fixes the working
 directory so the exported program can find the locally converted assets.
