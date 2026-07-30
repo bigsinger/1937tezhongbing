@@ -16,6 +16,13 @@ const PRIMARY_DATABASE_ENTRY_ID := 924
 const OUTBOUND_TARGET := Vector2(48.0, 56.0)
 const RETURN_TARGET := Vector2(176.0, 56.0)
 const OBSERVATION_SECONDS := 0.75
+## The reference trace records the first scene-1598 hit at the return-observed
+## checkpoint and the second one at the settled checkpoint. Bound those event
+## milestones by simulated physics ticks. A wall-clock SceneTreeTimer can expire
+## after fewer physics ticks on a busy CI host and move an otherwise identical
+## hit into the following checkpoint.
+const NATURAL_CONTACT_FIRST_DAMAGE_DEADLINE_SECONDS := 6.0
+const NATURAL_CONTACT_SECOND_DAMAGE_DEADLINE_SECONDS := 3.0
 
 var output_directory := ""
 var failures: Array[String] = []
@@ -318,7 +325,18 @@ func _run_natural_contact_probe(
 			_elapsed_ms(started),
 			_movement_tags(primary, main),
 		)
-		await create_timer(observation_seconds).timeout
+		var first_damage_observed := await _wait_for_damage_event_count(
+			primary,
+			1,
+			maxf(
+				observation_seconds,
+				NATURAL_CONTACT_FIRST_DAMAGE_DEADLINE_SECONDS,
+			),
+		)
+		_expect(
+			first_damage_observed,
+			"scene 1598 delivers the first recovered rifle hit before the contact deadline",
+		)
 		trace.call(
 			"capture_main",
 			"move_return_observed",
@@ -326,7 +344,15 @@ func _run_natural_contact_probe(
 			_elapsed_ms(started),
 			_movement_tags(primary, main),
 		)
-		await create_timer(1.0).timeout
+		var second_damage_observed := await _wait_for_damage_event_count(
+			primary,
+			2,
+			NATURAL_CONTACT_SECOND_DAMAGE_DEADLINE_SECONDS,
+		)
+		_expect(
+			second_damage_observed,
+			"scene 1598 delivers the second recovered rifle hit before the settled deadline",
+		)
 		trace.call(
 			"capture_main",
 			"contact_settled",
@@ -457,6 +483,31 @@ func _safe_file_component(value: String) -> String:
 
 func _elapsed_ms(started: int) -> float:
 	return float(Time.get_ticks_usec() - started) / 1000.0
+
+
+func _wait_for_damage_event_count(
+	unit: Node2D,
+	minimum_event_count: int,
+	deadline_seconds: float,
+) -> bool:
+	var ticks_per_second := maxi(
+		int(
+			ProjectSettings.get_setting(
+				"physics/common/physics_ticks_per_second",
+				60,
+			)
+		),
+		1,
+	)
+	var frame_count := maxi(
+		ceili(maxf(deadline_seconds, 0.0) * float(ticks_per_second)),
+		1,
+	)
+	for _frame_index: int in range(frame_count):
+		if int(unit.get("damage_event_count")) >= minimum_event_count:
+			return true
+		await physics_frame
+	return int(unit.get("damage_event_count")) >= minimum_event_count
 
 
 func _movement_tags(unit: Node2D, main: Node) -> Dictionary:

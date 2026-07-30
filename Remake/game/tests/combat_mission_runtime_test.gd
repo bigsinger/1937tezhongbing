@@ -722,7 +722,10 @@ func _test_faction_and_exit_party_rules(failures: Array[String]) -> void:
 
 
 func _test_m008_manual_explosion_sequence(failures: Array[String]) -> void:
-	var mission: Dictionary = MISSION_DATA.load_mission("m008")
+	var mission: Dictionary = MISSION_DATA.load_mission_for_rule_mode(
+		"m008",
+		"repaired",
+	)
 	var level := _build_mission_level_fixture(mission)
 
 	var early_state = MISSION_STATE.new(mission)
@@ -741,7 +744,7 @@ func _test_m008_manual_explosion_sequence(failures: Array[String]) -> void:
 	_expect(
 		early_state.failure_id == "premature_explosion"
 		and not early_state.is_objective_complete("detonate_charges"),
-		"F detonation closes m008 through the recovered premature-explosion failure",
+		"F detonation closes repaired m008 through its opt-in premature-explosion failure",
 		failures,
 	)
 	early_main.mission_runtime = null
@@ -812,8 +815,8 @@ func _test_m010_simultaneous_high_ground(failures: Array[String]) -> void:
 	_expect(
 		str(rule.get("source_status", "")) == "recovered"
 		and float(rule.get("radius_world", 0.0)) == 128.0
-		and bool(rule.get("distinct_occupants", false)),
-		"m010 stores the recovered 128-pixel simultaneous occupation rule",
+		and not bool(rule.get("distinct_occupants", true)),
+		"m010 stores the recovered 128-pixel per-zone proximity rule without inventing an identity constraint",
 		failures,
 	)
 	_expect(
@@ -869,7 +872,7 @@ func _test_m010_simultaneous_high_ground(failures: Array[String]) -> void:
 	)
 	_expect(
 		not main._can_assign_distinct_zone_occupants([[0], [0]], 0, {}),
-		"simultaneous zones cannot reuse one actor for two points",
+		"the optional distinct-zone matcher still prevents actor reuse when explicitly configured",
 		failures,
 	)
 	for unit: Node2D in main.units:
@@ -909,6 +912,100 @@ func _test_mission_rule_profiles(failures: Array[String]) -> void:
 		failures,
 	)
 
+	var m006_stable: Dictionary = MISSION_DATA.load_mission("m006")
+	var m006_repaired: Dictionary = MISSION_DATA.load_mission_for_rule_mode(
+		"m006",
+		"repaired",
+	)
+	_expect(
+		(m006_stable.get("objectives", []) as Array).size() == 3
+		and (m006_stable.get("required_survivors", []) as Array) == ["强子"]
+		and not m006_stable.has("media_cues")
+		and bool(m006_stable.get("disable_editorial_direction", false)),
+		"m006 stable profile uses the recovered two deaths plus Qiangzi/item-101 path",
+		failures,
+	)
+	_expect(
+		(m006_repaired.get("objectives", []) as Array).size() == 4
+		and m006_repaired.has("media_cues")
+		and not bool(m006_repaired.get("disable_editorial_direction", true)),
+		"m006 repaired profile retains the editorial contact and exit flow",
+		failures,
+	)
+	var m006_state = MISSION_STATE.new(m006_stable)
+	m006_state.record_event(
+		"role_eliminated",
+		{"role_id": "m006_sun_damazi", "scene_index": 1457},
+	)
+	m006_state.record_event(
+		"item_acquired",
+		{
+			"item_role": "m006_name_list",
+			"collector_name": "老赵",
+			"source_scene_index": 1457,
+		},
+	)
+	m006_state.record_event(
+		"role_eliminated",
+		{"role_id": "m006_kato", "scene_index": 1460},
+	)
+	_expect(
+		not m006_state.is_victory()
+		and not m006_state.is_objective_complete("acquire_name_list"),
+		"m006 stable profile rejects item 101 when anyone other than Qiangzi picks it up",
+		failures,
+	)
+	m006_state.record_event(
+		"item_acquired",
+		{
+			"item_role": "m006_name_list",
+			"collector_name": "强子",
+			"source_scene_index": 1457,
+		},
+	)
+	_expect(
+		m006_state.is_victory(),
+		"m006 stable profile closes only after Qiangzi owns Sun Damazi's item 101",
+		failures,
+	)
+
+	var m008_stable: Dictionary = MISSION_DATA.load_mission("m008")
+	var m008_repaired: Dictionary = MISSION_DATA.load_mission_for_rule_mode(
+		"m008",
+		"repaired",
+	)
+	var m008_stable_state = MISSION_STATE.new(m008_stable)
+	for scene_index: int in range(798, 802):
+		m008_stable_state.record_event(
+			"trigger_activated",
+			{"display_name": "检测爆炸精灵", "scene_index": scene_index},
+		)
+	m008_stable_state.record_event("explosion", {"cause": "manual_detonation"})
+	_expect(
+		not m008_stable_state.is_failed()
+		and not m008_stable_state.is_victory()
+		and (m008_stable.get("objectives", []) as Array).size() == 2,
+		"m008 stable profile has no invented manual-detonation step or premature failure",
+		failures,
+	)
+	m008_stable_state.record_event(
+		"trigger_activated",
+		{"display_name": "检测出口精灵", "scene_index": 802},
+	)
+	_expect(
+		m008_stable_state.is_victory(),
+		"m008 stable profile closes on four placements plus Old Zhao/Da Niu exit",
+		failures,
+	)
+	var m008_repaired_state = MISSION_STATE.new(m008_repaired)
+	m008_repaired_state.record_event("explosion", {"cause": "manual_detonation"})
+	_expect(
+		m008_repaired_state.is_failed()
+		and str(m008_repaired_state.failure_id) == "premature_explosion",
+		"m008 repaired profile keeps the opt-in manual-detonation failure branch",
+		failures,
+	)
+
 	var m011_stable: Dictionary = MISSION_DATA.load_mission("m011")
 	var stable_state = MISSION_STATE.new(m011_stable)
 	for scene_index: int in range(1348, 1353):
@@ -926,8 +1023,25 @@ func _test_mission_rule_profiles(failures: Array[String]) -> void:
 		{"display_name": "检测爆炸精灵", "scene_index": 1353},
 	)
 	_expect(
+		not stable_state.is_victory()
+		and stable_state.is_objective_complete("destroy_last_airfield_target")
+		and (m011_stable.get("required_survivors", []) as Array) == ["老赵", "强子"]
+		and (
+			(m011_stable.get("exit_party", {}) as Dictionary).get(
+				"player_names",
+				[],
+			) as Array
+		) == ["老赵", "强子"],
+		"m011 stable profile preserves scene 1353 but still requires the two original survivors",
+		failures,
+	)
+	stable_state.record_event(
+		"party_at_trigger",
+		{"trigger_scene_index": 1359},
+	)
+	_expect(
 		stable_state.is_victory(),
-		"m011 stable profile reproduces scene 1353 as the effective original check",
+		"m011 stable profile closes only when Old Zhao and Qiangzi reach scene 1359",
 		failures,
 	)
 
@@ -972,12 +1086,19 @@ func _test_mission_rule_profiles(failures: Array[String]) -> void:
 func _test_mission_media_cues(failures: Array[String]) -> void:
 	var catalog: Dictionary = MISSION_DATA.load_catalog()
 	_expect(not catalog.is_empty(), "mission catalog accepts data-driven media cues", failures)
-	for mission_id: String in ["m000", "m006", "m011"]:
+	for mission_id: String in ["m000", "m011"]:
 		_expect(
 			MISSION_DATA.is_valid_media_cues(MISSION_DATA.load_mission(mission_id)),
 			"%s media cue schema validates" % mission_id,
 			failures,
 		)
+	_expect(
+		MISSION_DATA.is_valid_media_cues(
+			MISSION_DATA.load_mission_for_rule_mode("m006", "repaired")
+		),
+		"m006 repaired-only editorial media cue schema validates",
+		failures,
+	)
 	var invalid_catalog := catalog.duplicate(true)
 	var invalid_cue := (
 		(((invalid_catalog["missions"] as Array)[0] as Dictionary)["media_cues"] as Dictionary)["on_start"]
@@ -1018,7 +1139,10 @@ func _test_mission_media_cues(failures: Array[String]) -> void:
 	main.mission_runtime = mock_runtime
 	main.mission_direction_runtime = direction_runtime
 	main.mission_ai_coordinator = ai_coordinator
-	main.current_mission = MISSION_DATA.load_mission("m006")
+	main.current_mission = MISSION_DATA.load_mission_for_rule_mode(
+		"m006",
+		"repaired",
+	)
 	mock_runtime.last_error = "synthetic rejection"
 	main._publish_mission_event("trigger_activated", {"scene_index": -1})
 	_expect(

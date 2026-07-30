@@ -163,9 +163,9 @@ serial_id = action_index * 9 + direction_index
 
 爆破关必须显式提供 `charge_policy`，并将来源状态保持为 `remake_policy_from_recovered_map_inventory`。策略中的 `inventory_item_id` 必须是 DBL 998 已恢复的物品 45。m001/m004/m011 使用 `preplanted`；m002/m003/m008/m009 使用 `inventory_required`。验证器会将 `target_count` 与 explosion scene 绑定、`map_pickup_count` 与真实 DBL 998 逐关计数交叉核对，并拒绝物资不足的消耗模式。实现时必须先成功发布世界事件，再从角色 `+0x22C` 容器提交扣除；不要把检查和扣除顺序颠倒，不要重新引入共享 `field_inventory`，也不要让预置目标因角色恰好有炸药而消费物品。
 
-m004 的计划书携带者已由物品 101/VWF 携带记录定案为 scene 2637；m009/m011 的 `stable_mod` 与 `repaired` 目标都由 `MissionData` 解析，默认稳定 MOD，设置与存档必须保留 profile 身份，不能在世界脚本里静默混用；m010 的四个区域由老赵、强子、大牛、古明在 128 像素内分别同时占据，不按 `E`、不累计、不要求停留或先清敌。不要在新脚本中重新引入旧候选或临时近似。
+m004 的计划书携带者已由物品 101/VWF 携带记录定案为 scene 2637；m006/m008/m009/m011 的 `stable_mod` 与 `repaired` 目标都由 `MissionData` 解析，默认稳定 MOD，设置与存档必须保留 profile 身份，不能在世界脚本里静默混用。m006 稳定规则必须记录实际拾取者并把 scene 1457 的物品 101 放入强子背包；m008 稳定规则不要求手动引爆；m011 稳定规则在 scene 1353 后仍要求老赵、强子进入 scene 1359。m010 的四个区域分别实时检查老赵、强子、大牛、古明之一是否在 128 像素内，不按 `E`、不累计、不要求停留或先清敌，也不额外发明原代码没有的身份去重条件。不要在新脚本中重新引入旧候选或临时近似。
 
-任务媒体必须写入可选 `media_cues`，不得在关卡脚本里散落硬编码弹窗。只允许 `on_start`、`on_objective`、`on_story_anchor`、`on_victory` 四段和 `audio`、`dialogue`、`movie`、`ending` 四类 cue；每项必须标 `recovered_media_mapping`、`remake_editorial` 或 `mixed`。目标键必须引用真实 objective ID，剧情锚点键必须同时存在于 scene 绑定和 `story_anchor_reached` 目标。当前基线包括 m000 教程/彭鑫营救确认、m006 接头提示和 m011 结局；重复持久剧情事实不能重播模态媒体。
+任务媒体必须写入可选 `media_cues`，不得在关卡脚本里散落硬编码弹窗。只允许 `on_start`、`on_objective`、`on_story_anchor`、`on_victory` 四段和 `audio`、`dialogue`、`movie`、`ending` 四类 cue；每项必须标 `recovered_media_mapping`、`remake_editorial` 或 `mixed`。目标键必须引用真实 objective ID，剧情锚点键必须同时存在于 scene 绑定和 `story_anchor_reached` 目标。当前基线包括 m000 教程/彭鑫营救确认、m006 的 `repaired` 接头提示和 m011 结局；重复持久剧情事实不能重播模态媒体。
 
 `runtime_state_snapshot.gd` 为合成战斗命令和十二关任务事件生成规范化 SHA-256 哈希链，并执行两遍比较。它验证状态确定性，不录制鼠标/键盘、物理帧或渲染时序；涉及长期稳定性时仍需另建真实输入回放和帧时间/内存基线。
 

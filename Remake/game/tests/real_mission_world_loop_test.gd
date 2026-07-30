@@ -99,10 +99,10 @@ func _run() -> void:
 		_trigger_primary_failure(main, level_id)
 		await process_frame
 
-	# The shipped/default pass above exercises stable-MOD control flow. The two
-	# missions with recovered original defects also need a full world-action
-	# closure under the explicitly opt-in repaired rules.
-	for level_id: String in ["m009", "m011"]:
+	# The shipped/default pass above exercises stable-MOD control flow. Every
+	# mission with an explicitly recovered-vs-repaired fork also needs a full
+	# world-action closure under the opt-in repaired rules.
+	for level_id: String in ["m006", "m008", "m009", "m011"]:
 		var level_index := LEVEL_IDS.find(level_id)
 		main.runtime_settings["mission_rule_mode"] = "repaired"
 		main.switch_level(level_index, false, false)
@@ -202,7 +202,10 @@ func _perform_checkpoint_world_action(main: Node, level_id: String) -> void:
 		"m005":
 			_eliminate_scene(main, 736)
 		"m006":
-			_interact_bound_scene(main, 1461)
+			if str(main.current_mission.get("rule_mode", "")) == "repaired":
+				_interact_bound_scene(main, 1461)
+			else:
+				_eliminate_scene(main, 1457)
 		"m007":
 			_rescue_scene(main, 2394)
 		"m008":
@@ -251,9 +254,14 @@ func _complete_level_after_checkpoint(main: Node, level_id: String) -> void:
 		"m005":
 			_collect_role_item(main, "m005_document", "acquire_document")
 		"m006":
-			_eliminate_scene(main, 1457)
-			_eliminate_scene(main, 1460)
-			_use_exit(main, 1462)
+			if str(main.current_mission.get("rule_mode", "")) == "repaired":
+				_eliminate_scene(main, 1457)
+				_eliminate_scene(main, 1460)
+				_use_exit(main, 1462)
+			else:
+				_collect_role_item(main, "m006_name_list", "acquire_name_list")
+				_expect_actor_backpack_item(main, "强子", 101)
+				_eliminate_scene(main, 1460)
 		"m007":
 			_rescue_scene(main, 2395)
 			_rescue_scene(main, 2299)
@@ -261,8 +269,9 @@ func _complete_level_after_checkpoint(main: Node, level_id: String) -> void:
 		"m008":
 			_collect_database_pickups(main, 998, 3)
 			_place_all_charges(main)
-			main._detonate_mission_charges()
-			committed_world_actions += 1
+			if str(main.current_mission.get("rule_mode", "")) == "repaired":
+				main._detonate_mission_charges()
+				committed_world_actions += 1
 			_use_exit(main, 802)
 		"m009":
 			if str(main.current_mission.get("rule_mode", "")) == "repaired":
@@ -286,6 +295,11 @@ func _complete_level_after_checkpoint(main: Node, level_id: String) -> void:
 				_use_exit(main, 1359)
 			else:
 				_interact_bound_scene(main, 1353)
+				_expect(
+					not main.current_mission_state.is_victory(),
+					"m011 stable profile still requires Old Zhao and Qiangzi at the exit",
+				)
+				_use_exit(main, 1359)
 		_:
 			_expect(false, "unsupported real mission remainder %s" % level_id)
 
@@ -300,7 +314,24 @@ func _trigger_primary_failure(main: Node, level_id: String) -> void:
 		main.mission_runtime.advance_time(time_limit + 1.0)
 		expected_failure = "time_limit"
 		committed_world_actions += 1
-	elif level_id == "m008":
+	elif level_id == "m000":
+		var required_escort = null
+		for escort_value: Variant in main.escorts:
+			var candidate := escort_value as Node2D
+			if main._is_required_escort_scene(int(candidate.get("scene_index"))):
+				required_escort = candidate
+				break
+		_expect(
+			required_escort != null,
+			"m000 failure path has a living required rescue actor",
+		)
+		if required_escort != null:
+			required_escort.call("take_damage", 1_000_000, null)
+			committed_world_actions += 1
+	elif (
+		level_id == "m008"
+		and str(main.current_mission.get("rule_mode", "")) == "repaired"
+	):
 		main._detonate_mission_charges()
 		expected_failure = "premature_explosion"
 		committed_world_actions += 1
@@ -327,6 +358,27 @@ func _first_living_player(main: Node):
 		if bool(unit.get("is_alive")):
 			return unit
 	return null
+
+
+func _expect_actor_backpack_item(
+	main: Node,
+	display_name: String,
+	item_id: int,
+) -> void:
+	var actor = null
+	for unit_value: Variant in main.units:
+		var candidate := unit_value as Node
+		if str(candidate.get("display_name")) == display_name:
+			actor = candidate
+			break
+	var quantity := 0
+	if actor != null and actor.get("backpack_inventory") != null:
+		quantity = int(actor.get("backpack_inventory").call("item_count", item_id))
+	_expect(
+		actor != null and quantity > 0,
+		"%s owns original backpack item %d after world pickup"
+			% [display_name, item_id],
+	)
 
 
 func _select_and_move_player(main: Node, world_position: Vector2):

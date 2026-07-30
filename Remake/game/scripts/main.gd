@@ -4134,6 +4134,15 @@ func _on_combatant_died(unit: Node2D, killer: Node2D) -> void:
 			_publish_mission_event(
 				"area_hostiles_cleared", {"area_role": "m009_station"}
 			)
+	elif unit is ESCORT_UNIT:
+		if _is_required_escort_scene(int(unit.scene_index)):
+			_publish_mission_event(
+				"required_character_lost",
+				{
+					"display_name": str(unit.display_name),
+					"scene_index": int(unit.scene_index),
+				},
+			)
 	elif unit is SQUAD_UNIT:
 		var required_survivors: Array = current_mission.get("required_survivors", []) as Array
 		if not required_survivors.is_empty() and not required_survivors.has(str(unit.display_name)):
@@ -4144,6 +4153,15 @@ func _on_combatant_died(unit: Node2D, killer: Node2D) -> void:
 			payload["scene_index"] = int(unit.scene_index)
 		_publish_mission_event("required_character_lost", payload)
 	_refresh_mission_ui()
+
+
+func _is_required_escort_scene(scene_index: int) -> bool:
+	for binding_value: Variant in (
+		current_mission.get("required_escort_bindings", []) as Array
+	):
+		if _binding_scenes(str(binding_value)).has(scene_index):
+			return true
+	return false
 
 
 func _spawn_original_inventory_drops(unit: SQUAD_UNIT) -> void:
@@ -4246,6 +4264,20 @@ func _spawn_role_drops(unit: Node2D) -> void:
 		payload["source_scene_index"] = source_scene
 		var original_item_id := int(payload.get("original_item_id", 0))
 		if original_item_id > 0:
+			payload["original_inventory_kind"] = str(
+				payload.get("original_inventory_kind", "backpack")
+			)
+			payload["item_id"] = int(payload.get("item_id", original_item_id))
+			payload["item_name"] = str(
+				payload.get(
+					"item_name",
+					ORIGINAL_INITIAL_ITEM_INVENTORY.item_display_name(
+						original_item_id
+					),
+				)
+			)
+			payload["quantity"] = maxi(int(payload.get("quantity", 1)), 1)
+			payload["quantity_mode"] = int(payload.get("quantity_mode", 0))
 			var exact_pickup := _find_original_inventory_pickup(
 				source_scene,
 				original_item_id,
@@ -4312,7 +4344,7 @@ func _configure_mission_direction() -> void:
 	if mission_ai_coordinator != null:
 		mission_ai_coordinator.free()
 		mission_ai_coordinator = null
-	# m009/m011 have recovered stable-MOD control-flow profiles whose actual
+	# Several missions have recovered stable-MOD control-flow profiles whose actual
 	# objective set conflicts with the later Remake editorial sequences. Keep
 	# those sequences available in repaired mode, but never narrate repaired
 	# goals while the player selected strict stable-MOD behaviour.
@@ -5413,7 +5445,7 @@ func _load_game(slot_id: String = "") -> bool:
 		game_shell.close_for_state_change()
 	# A save owns the mission graph under which objective progress was
 	# recorded. Resolve it before switch_level() creates MissionState, or an
-	# m009/m011 checkpoint could be restored against the other rule profile.
+	# a forked mission checkpoint could be restored against the other rule profile.
 	var saved_mission_rule := str(
 		session.get(
 			"mission_rule_mode",
@@ -5907,7 +5939,9 @@ func _collect_original_inventory_pickup(
 	if not accepted:
 		# Collection is already committed by the original interaction flow.
 		# Preserve the evidence in the mission event instead of silently losing it.
-		_publish_item_acquired_if_mission_bound(payload)
+		var rejected_event_payload := payload.duplicate(true)
+		rejected_event_payload["collector_name"] = str(collector.display_name)
+		_publish_item_acquired_if_mission_bound(rejected_event_payload)
 		update_status("物品容器冲突，已按任务物品记录")
 		return true
 	var item_name := str(
@@ -5918,6 +5952,7 @@ func _collect_original_inventory_pickup(
 	)
 	var event_payload := payload.duplicate(true)
 	event_payload["item_name"] = item_name
+	event_payload["collector_name"] = str(collector.display_name)
 	_publish_item_acquired_if_mission_bound(event_payload)
 	_play_media_audio("ui_confirm")
 	update_status("%s 拾取 %s" % [collector.display_name, item_name])

@@ -40,6 +40,7 @@ const FACT_IDENTITY_FIELDS: Array[String] = [
 	"role_id",
 	"item_role",
 	"item_name",
+	"collector_name",
 	"display_name",
 	"family_role",
 	"area_role",

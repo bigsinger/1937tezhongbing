@@ -375,6 +375,32 @@ func _init() -> void:
 		"equal-cost path canonicalization restores an obstacle detour early without pulling later goal progress forward",
 		failures,
 	)
+	var delayed_vertical_first := PackedVector2Array(
+		[
+			detour_navigation.cell_to_world(Vector2i(0, 3)),
+			detour_navigation.cell_to_world(Vector2i(1, 2)),
+			detour_navigation.cell_to_world(Vector2i(2, 1)),
+			detour_navigation.cell_to_world(Vector2i(2, 0)),
+		]
+	)
+	var recovered_vertical_first: PackedVector2Array = (
+		detour_navigation
+		. _canonicalize_equal_cost_steps(delayed_vertical_first, Vector2i(2, 0))
+	)
+	expect(
+		(
+			detour_navigation.world_to_cell(recovered_vertical_first[0])
+			== Vector2i(0, 3)
+			and detour_navigation.world_to_cell(recovered_vertical_first[1])
+			== Vector2i(0, 2)
+			and detour_navigation.world_to_cell(recovered_vertical_first[2])
+			== Vector2i(1, 1)
+			and detour_navigation.world_to_cell(recovered_vertical_first[3])
+			== Vector2i(2, 0)
+		),
+		"equal-cost path canonicalization preserves original vertical-first final facing",
+		failures,
+	)
 	var corner_sight_navigation: NavigationGridData = NAVIGATION_GRID_DATA.create_for_tests(
 		2, 2, Vector2i(32, 16), PackedInt64Array([0, 0, 0, 0]), corner_layer
 	)
@@ -1200,9 +1226,22 @@ func _init() -> void:
 	bridge_state.record_event("trigger_activated", {"display_name": "检测出口精灵", "scene_index": 1235})
 	expect(bridge_state.is_victory(), "bridge task graph reaches victory", failures)
 
-	var mine_state = MISSION_STATE.new(MISSION_DATA.load_mission("m008"))
-	mine_state.record_event("explosion")
-	expect(mine_state.is_failed(), "mine mission rejects a premature explosion", failures)
+	var stable_mine_state = MISSION_STATE.new(MISSION_DATA.load_mission("m008"))
+	stable_mine_state.record_event("explosion")
+	expect(
+		not stable_mine_state.is_failed(),
+		"stable mine mission does not invent a premature-explosion failure",
+		failures,
+	)
+	var repaired_mine_state = MISSION_STATE.new(
+		MISSION_DATA.load_mission_for_rule_mode("m008", "repaired")
+	)
+	repaired_mine_state.record_event("explosion")
+	expect(
+		repaired_mine_state.is_failed(),
+		"repaired mine mission rejects a premature explosion",
+		failures,
+	)
 	var port_state = MISSION_STATE.new(MISSION_DATA.load_mission("m010"))
 	port_state.advance_time(3600.0)
 	expect(

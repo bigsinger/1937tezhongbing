@@ -61,8 +61,8 @@
     {
       "id": "mission_state_machines",
       "status": "partial",
-      "evidence": ["12 data-driven mission graphs", "scene bindings", "dependency/count/time/failure/victory runtime", "12 stable-MOD real-content product-world-action victory closures", "m009/m011 stable-MOD and repaired dual-profile closures", "m011 overwritten scenes 1348-1352 rejection and scene 1353 effective-check assertion", "combat-driven required-character failures", "m001/m007/m010 time-limit failures", "m008 premature-detonation failure"],
-      "gaps": ["12 MOD-matched human-input victory traces", "remaining level-specific major failure traces", "original control-flow decisions for every mission"]
+      "evidence": ["12 data-driven mission graphs from sub_404BB0/sub_405410", "five recovered player-global identities", "scene bindings", "dependency/count/time/failure/victory runtime", "exact per-level required player and escort death routing", "12 stable-MOD real-content product-world-action victory closures", "m006/m008/m009/m011 stable-MOD and repaired dual-profile closures", "m006 scene 1457 item-101 drop plus Qiangzi-only ownership", "m008 stable path without invented manual detonation", "m010 four-zone recovered existence test without invented identity constraint", "m011 overwritten scenes 1348-1352 rejection, scene 1353 effective target and Old Zhao/Qiangzi scene 1359 exit", "m001/m007/m010 time-limit failures", "m008 repaired-only premature-detonation failure"],
+      "gaps": ["12 MOD-matched human-input victory traces", "remaining level-specific major failure traces", "source-backed dialogue/camera/tutorial timing"]
     },
     {
       "id": "dialogue_camera_tutorial_and_cutscenes",

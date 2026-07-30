@@ -143,11 +143,11 @@ type 8/10 在同一末帧协议上创建专用世界对象并
 
 爆破目标另由 `charge_policy` 声明 `preplanted` 或 `inventory_required`。模式来自真实 DBL 998 拾取数量与爆破目标数量的逐关闭环，而非未经证明的原版消耗调用：m001/m004/m011 不扣背包，m002/m003/m008/m009 每个目标消耗一份。主场景只在 `MissionRuntime` 成功接受事件后提交库存扣除，拒绝事件、缺少物资和重复 scene 都保持背包与任务状态不变。
 
-主场景切关时按持久化 `mission_rule_mode` 加载任务图并显示目标列表；救援、任务角色击毙/掉落、物品取得、爆破/占点、区域清敌、出口、限时和必要角色死亡已经转成规范化事件。`m000` 已具备营救两名 NPC、护送到出口及成功/失败的端到端闭环。m004 已确认 scene 2637/物品 101；m009/m011 同时保留稳定 MOD 实际控制流和按简报修复的增强 profile，默认前者；m010 自动判定老赵、强子、大牛、古明分别同时占据四个 128 像素区域。
+主场景切关时按持久化 `mission_rule_mode` 加载任务图并显示目标列表；救援、任务角色击毙/掉落、物品取得（含实际拾取者）、爆破/占点、区域清敌、出口、限时和必要队员/护送者死亡已经转成规范化事件。`m000` 已具备营救两名 NPC、护送到出口及成功/失败的端到端闭环。m004 已确认 scene 2637/物品 101；m006/m008/m009/m011 同时保留稳定 MOD 实际控制流和按简报修复的增强 profile，默认前者；m010 自动实时判定四个 128 像素区域是否分别存在四名指定角色之一，不附加原代码没有的身份去重。
 
 `MissionDirectionRuntime` 在任务图上再消费 `mission_direction.json`：十二关第一版共有 43 个节奏节点、45 行提示对白、教程门控、镜头请求和 AI 指令；`MissionAiCoordinator` 应用逐关协作与 Easy/Normal/Hard 数值换算。objective/scene 引用来自恢复事实，补写对白、镜头参数、教程、AI 策略和难度均为 `remake_editorial`。导演节拍、教程门控、持久事件/计时及 AI 姿态、增援预算、命令序号已经接入产品级 `GameSessionState`；仍需用完整通关校准节奏。
 
-任务媒体层把 `on_start`、`on_objective`、`on_story_anchor`、`on_victory` 映射为 `audio`、`dialogue`、`movie` 或 `ending`，并要求每项标记 `recovered_media_mapping`、`remake_editorial` 或 `mixed`。当前 m000 教程/营救确认、m006 接头提示和 m011 结局已接线；剧情锚点只在产生新目标进度时播放，因此持久事实重放不会重复弹出对白。它是受 schema 约束的编排接口，不代表其余九关已有完整演出。
+任务媒体层把 `on_start`、`on_objective`、`on_story_anchor`、`on_victory` 映射为 `audio`、`dialogue`、`movie` 或 `ending`，并要求每项标记 `recovered_media_mapping`、`remake_editorial` 或 `mixed`。当前 m000 教程/营救确认、m006 `repaired` 规则的接头提示和 m011 结局已接线；剧情锚点只在产生新目标进度时播放，因此持久事实重放不会重复弹出对白。它是受 schema 约束的编排接口，不代表其余关卡已有完整原版演出。
 
 `RuntimeStateSnapshot` 把战斗单位、背包和任务进度规范化为稳定文本并计算 SHA-256。测试会对同一合成事件流执行两遍并逐步比较哈希，覆盖战斗和十二关任务图的胜利、失败及重置；该层不是用户输入录制器，也不替代十分钟实机回放。
 

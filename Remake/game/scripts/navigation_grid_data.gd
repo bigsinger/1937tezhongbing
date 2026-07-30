@@ -196,9 +196,9 @@ func _canonicalize_equal_cost_steps(
 	var start_cell := world_to_cell(result[0])
 	# AStarGrid2D can return any of several equal-cost staircases. Stable MOD
 	# m000 traces return from a one-cell obstacle detour as soon as the
-	# original corridor is clear, while keeping later goal progress in its
-	# original vertical-first order. Bubble only a step that cancels such a
-	# wrong-way detour; do not generally pull all goal-facing diagonals ahead.
+	# original corridor is clear. They also place a same-direction vertical
+	# step before the remaining diagonals: this makes the final movement
+	# octant (and therefore the retained idle facing) match the original.
 	for _pass_index: int in range(result.size()):
 		var changed := false
 		for index: int in range(result.size() - 2):
@@ -231,7 +231,65 @@ func _canonicalize_equal_cost_steps(
 			changed = true
 		if not changed:
 			break
+	# Run the vertical-first pass separately. Combining both transforms in one
+	# loop can make an obstacle-detour correction and a staircase correction
+	# undo one another on alternating passes.
+	for _pass_index: int in range(result.size()):
+		var changed := false
+		for index: int in range(result.size() - 2):
+			var first := world_to_cell(result[index])
+			var middle := world_to_cell(result[index + 1])
+			var finish := world_to_cell(result[index + 2])
+			var first_step := middle - first
+			var second_step := finish - middle
+			if not _restores_vertical_first_order(
+				first_step,
+				second_step,
+				first,
+				destination_cell,
+			):
+				continue
+			var candidate := first + second_step
+			if (
+				_reduces_wrong_way_detour(
+					candidate,
+					middle,
+					start_cell,
+					destination_cell,
+				)
+				or
+				not _astar_step_is_clear(first, candidate)
+				or not _astar_step_is_clear(candidate, finish)
+			):
+				continue
+			result[index + 1] = cell_to_world(candidate)
+			changed = true
+		if not changed:
+			break
 	return result
+
+
+func _restores_vertical_first_order(
+	first_step: Vector2i,
+	second_step: Vector2i,
+	first: Vector2i,
+	destination: Vector2i,
+) -> bool:
+	if (
+		absi(first_step.x) != 1
+		or absi(first_step.y) != 1
+		or second_step.x != 0
+		or absi(second_step.y) != 1
+		or first_step.y != second_step.y
+	):
+		return false
+	var remaining := destination - first
+	return (
+		remaining.x != 0
+		and remaining.y != 0
+		and first_step.x * remaining.x > 0
+		and second_step.y * remaining.y > 0
+	)
 
 
 func _astar_step_is_clear(from_cell: Vector2i, to_cell: Vector2i) -> bool:

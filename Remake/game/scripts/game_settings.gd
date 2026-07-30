@@ -53,7 +53,8 @@ static func default_document() -> Dictionary:
 			"difficulty_mode": "original",
 			# Task control-flow is independent from combat difficulty. The
 			# shipped default reproduces what the stable MOD actually evaluates;
-			# repaired restores briefing intent for known m009/m011 defects.
+			# repaired restores briefing/editorial intent for the explicit
+			# m006/m008/m009/m011 control-flow forks.
 			"mission_rule_mode": "stable_mod",
 		},
 		"controls": GAME_INPUT_BINDINGS.default_bindings(),

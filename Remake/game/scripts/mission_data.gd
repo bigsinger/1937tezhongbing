@@ -67,8 +67,26 @@ static func apply_rule_mode(mission: Dictionary, rule_mode: String) -> Dictionar
 			resolved["required_survivors"] = (
 				profile.get("required_survivors", []) as Array
 			).duplicate(true)
-		elif resolved.has("required_survivors"):
-			resolved.erase("required_survivors")
+		if profile.has("required_escort_bindings"):
+			resolved["required_escort_bindings"] = (
+				profile.get("required_escort_bindings", []) as Array
+			).duplicate(true)
+		if profile.has("failure_conditions"):
+			resolved["failure_conditions"] = (
+				profile.get("failure_conditions", []) as Array
+			).duplicate(true)
+		if profile.has("exit_party"):
+			resolved["exit_party"] = (
+				profile.get("exit_party", {}) as Dictionary
+			).duplicate(true)
+		if profile.has("simultaneous_zone_rule"):
+			resolved["simultaneous_zone_rule"] = (
+				profile.get("simultaneous_zone_rule", {}) as Dictionary
+			).duplicate(true)
+		if profile.has("media_cues"):
+			resolved["media_cues"] = (
+				profile.get("media_cues", {}) as Dictionary
+			).duplicate(true)
 		resolved["rule_source_status"] = str(profile.get("source_status", ""))
 		resolved["disable_editorial_direction"] = bool(
 			profile.get("disable_editorial_direction", false)
@@ -120,6 +138,11 @@ static func is_valid_catalog(catalog: Dictionary) -> bool:
 			mission["required_survivors"]
 		):
 			return false
+		if (
+			mission.has("required_escort_bindings")
+			and not is_valid_required_escort_bindings(mission)
+		):
+			return false
 		if mission.has("simultaneous_zone_rule") and not is_valid_simultaneous_zone_rule(
 			mission
 		):
@@ -153,6 +176,11 @@ static func is_valid_rule_profiles(mission: Dictionary) -> bool:
 		):
 			return false
 		if (
+			profile.has("required_escort_bindings")
+			and not _is_unique_nonempty_string_array(profile["required_escort_bindings"])
+		):
+			return false
+		if (
 			profile.has("disable_editorial_direction")
 			and not profile["disable_editorial_direction"] is bool
 		):
@@ -163,8 +191,46 @@ static func is_valid_rule_profiles(mission: Dictionary) -> bool:
 			resolved["required_survivors"] = (
 				profile["required_survivors"] as Array
 			).duplicate(true)
-		elif resolved.has("required_survivors"):
-			resolved.erase("required_survivors")
+		if profile.has("required_escort_bindings"):
+			resolved["required_escort_bindings"] = (
+				profile["required_escort_bindings"] as Array
+			).duplicate(true)
+		if profile.has("failure_conditions"):
+			if not profile["failure_conditions"] is Array:
+				return false
+			resolved["failure_conditions"] = (
+				profile["failure_conditions"] as Array
+			).duplicate(true)
+		if profile.has("exit_party"):
+			if not profile["exit_party"] is Dictionary:
+				return false
+			resolved["exit_party"] = (
+				profile["exit_party"] as Dictionary
+			).duplicate(true)
+		if profile.has("simultaneous_zone_rule"):
+			if not profile["simultaneous_zone_rule"] is Dictionary:
+				return false
+			resolved["simultaneous_zone_rule"] = (
+				profile["simultaneous_zone_rule"] as Dictionary
+			).duplicate(true)
+		if profile.has("media_cues"):
+			if not profile["media_cues"] is Dictionary:
+				return false
+			resolved["media_cues"] = (
+				profile["media_cues"] as Dictionary
+			).duplicate(true)
+		if (
+			resolved.has("required_escort_bindings")
+			and not is_valid_required_escort_bindings(resolved)
+		):
+			return false
+		if resolved.has("exit_party") and not is_valid_exit_party(resolved):
+			return false
+		if (
+			resolved.has("simultaneous_zone_rule")
+			and not is_valid_simultaneous_zone_rule(resolved)
+		):
+			return false
 		if resolved.has("media_cues") and not is_valid_media_cues(resolved):
 			return false
 	return true
@@ -253,6 +319,26 @@ static func is_valid_exit_party(mission: Dictionary) -> bool:
 			):
 				return false
 	return has_requirement
+
+
+static func is_valid_required_escort_bindings(mission: Dictionary) -> bool:
+	var raw_bindings: Variant = mission.get("required_escort_bindings")
+	var raw_scene_bindings: Variant = mission.get("scene_bindings")
+	if (
+		not _is_unique_nonempty_string_array(raw_bindings)
+		or not raw_scene_bindings is Dictionary
+	):
+		return false
+	var scene_bindings := raw_scene_bindings as Dictionary
+	for binding_value: Variant in raw_bindings as Array:
+		var binding := str(binding_value)
+		if (
+			not scene_bindings.has(binding)
+			or not scene_bindings[binding] is Array
+			or (scene_bindings[binding] as Array).is_empty()
+		):
+			return false
+	return true
 
 
 static func is_valid_simultaneous_zone_rule(mission: Dictionary) -> bool:
