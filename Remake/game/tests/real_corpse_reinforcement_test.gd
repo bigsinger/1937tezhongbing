@@ -23,10 +23,28 @@ func _run_tests() -> void:
 	var original_count := (main.enemies as Array).size()
 	_expect(original_count >= 2, "m000 supplies observer and corpse actors")
 	if original_count >= 2:
+		var initial_candidates_empty := true
+		for enemy_value: Variant in main.enemies as Array:
+			var enemy := enemy_value as Node
+			if not (enemy.get("potential_corpses") as Array).is_empty():
+				initial_candidates_empty = false
+				break
+		_expect(
+			initial_candidates_empty,
+			"living enemy roster is excluded from corpse sense candidates",
+		)
 		var observer := (main.enemies as Array)[0] as Node2D
 		var corpse := (main.enemies as Array)[1] as Node2D
 		corpse.set("is_alive", false)
 		corpse.set("current_hit_points", 0)
+		corpse.set("legacy_corpse_discovered", false)
+		main.call("_refresh_enemy_corpse_candidates")
+		var observer_candidates := observer.get("potential_corpses") as Array
+		_expect(
+			observer_candidates.size() == 1
+			and observer_candidates[0] == corpse,
+			"new corpse enters every observer scan in world insertion order",
+		)
 		corpse.set("legacy_corpse_discovered", true)
 		var expected_marker: Dictionary = main.call(
 			"_nearest_legacy_reinforcement_marker",
@@ -36,6 +54,10 @@ func _run_tests() -> void:
 			"_on_enemy_legacy_corpse_discovered",
 			observer,
 			corpse,
+		)
+		_expect(
+			(observer.get("potential_corpses") as Array).is_empty(),
+			"claimed corpse leaves the shared sense candidate set",
 		)
 		var after_spawn := (main.enemies as Array).size()
 		_expect(

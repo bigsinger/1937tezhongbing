@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "profile_id": "twelve-level-windowed-10-minute-corpse-candidate-filter-v1",
+  "content_profile": "repository-mod-12-level-20260729",
+  "measurement": {
+    "requested_sample_seconds": 600,
+    "pass_count": 2,
+    "viewport_input_events": 2466,
+    "global_pointer_control": false,
+    "window": {
+      "width": 1920,
+      "height": 1080,
+      "mode": "windowed",
+      "maximum_fps": 60,
+      "vsync": false
+    },
+    "runtime": {
+      "godot_version": "4.7.1-stable (official)",
+      "os_name": "Windows",
+      "os_version": "10.0.19045",
+      "renderer": "gl_compatibility",
+      "video_adapter": "NVIDIA GeForce GTX 1050 Ti"
+    }
+  },
+  "thresholds": {
+    "maximum_p95_ms": 20.0,
+    "maximum_p99_ms": 25.0,
+    "minimum_per_level_p99_samples": 600,
+    "maximum_over_50_per_level": 0,
+    "maximum_second_pass_growth_mib": 128.0
+  },
+  "aggregate_metrics": {
+    "sample_count": 33125,
+    "average_ms": 16.6660864905668,
+    "p50_ms": 16.666,
+    "p95_ms": 18.389,
+    "p99_ms": 20.714,
+    "maximum_ms": 36.853,
+    "frames_over_25_ms": 61,
+    "frames_over_50_ms": 0
+  },
+  "memory": {
+    "pass_end_bytes": [
+      105410693,
+      106309091
+    ],
+    "second_pass_growth_bytes": 898398,
+    "static_peak_bytes": 190282287
+  },
+  "levels": [
+    {
+      "level_id": "m000",
+      "sample_count": 2760,
+      "p95_ms": 19.196,
+      "p99_ms": 22.975,
+      "maximum_ms": 27.98,
+      "frames_over_50_ms": 0,
+      "moved_enemy_max": 40
+    },
+    {
+      "level_id": "m001",
+      "sample_count": 2761,
+      "p95_ms": 17.996,
+      "p99_ms": 19.729,
+      "maximum_ms": 24.54,
+      "frames_over_50_ms": 0,
+      "moved_enemy_max": 53
+    },
+    {
+      "level_id": "m002",
+      "sample_count": 2760,
+      "p95_ms": 18.312,
+      "p99_ms": 21.224,
+      "maximum_ms": 26.348,
+      "frames_over_50_ms": 0,
+      "moved_enemy_max": 22
+    },
+    {
+      "level_id": "m003",
+      "sample_count": 2761,
+      "p95_ms": 17.753,
+      "p99_ms": 18.954,
+      "maximum_ms": 25.935,
+      "frames_over_50_ms": 0,
+      "moved_enemy_max": 32
+    },
+    {
+      "level_id": "m004",
+      "sample_count": 2760,
+      "p95_ms": 19.091,
+      "p99_ms": 21.922,
+      "maximum_ms": 30.028,
+      "frames_over_50_ms": 0,
+      "moved_enemy_max": 77
+    },
+    {
+      "level_id": "m005",
+      "sample_count": 2761,
+      "p95_ms": 17.669,
+      "p99_ms": 19.414,
+      "maximum_ms": 22.956,
+      "frames_over_50_ms": 0,
+      "moved_enemy_max": 46
+    },
+    {
+      "level_id": "m006",
+      "sample_count": 2760,
+      "p95_ms": 18.578,
+      "p99_ms": 21.093,
+      "maximum_ms": 33.367,
+      "frames_over_50_ms": 0,
+      "moved_enemy_max": 19
+    },
+    {
+      "level_id": "m007",
+      "sample_count": 2760,
+      "p95_ms": 17.943,
+      "p99_ms": 20.474,
+      "maximum_ms": 30.746,
+      "frames_over_50_ms": 0,
+      "moved_enemy_max": 54
+    },
+    {
+      "level_id": "m008",
+      "sample_count": 2760,
+      "p95_ms": 17.733,
+      "p99_ms": 19.784,
+      "maximum_ms": 28.273,
+      "frames_over_50_ms": 0,
+      "moved_enemy_max": 19
+    },
+    {
+      "level_id": "m009",
+      "sample_count": 2761,
+      "p95_ms": 17.568,
+      "p99_ms": 19.228,
+      "maximum_ms": 25.557,
+      "frames_over_50_ms": 0,
+      "moved_enemy_max": 33
+    },
+    {
+      "level_id": "m010",
+      "sample_count": 2761,
+      "p95_ms": 19.137,
+      "p99_ms": 20.851,
+      "maximum_ms": 33.486,
+      "frames_over_50_ms": 0,
+      "moved_enemy_max": 63
+    },
+    {
+      "level_id": "m011",
+      "sample_count": 2760,
+      "p95_ms": 17.529,
+      "p99_ms": 21.461,
+      "maximum_ms": 36.853,
+      "frames_over_50_ms": 0,
+      "moved_enemy_max": 12
+    }
+  ],
+  "notes": [
+    "This is a reference-hardware baseline, not a universal hardware guarantee.",
+    "The probe rendered a real 1920x1080 window and exercised normal product input paths.",
+    "Input was injected only into the target viewport; the desktop pointer was never captured, clipped, warped, or moved.",
+    "The full local report and log remain under the ignored Remake/LocalAssets/qa directory."
+  ]
+}

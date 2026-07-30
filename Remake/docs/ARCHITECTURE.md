@@ -149,7 +149,7 @@ type 8/10 在同一末帧协议上创建专用世界对象并
 
 任务媒体层把 `on_start`、`on_objective`、`on_story_anchor`、`on_victory` 映射为 `audio`、`dialogue`、`movie` 或 `ending`，并要求每项标记 `recovered_media_mapping`、`remake_editorial` 或 `mixed`。当前 m000 教程/营救确认、m006 `repaired` 规则的接头提示和 m011 结局已接线；剧情锚点只在产生新目标进度时播放，因此持久事实重放不会重复弹出对白。它是受 schema 约束的编排接口，不代表其余关卡已有完整原版演出。
 
-`RuntimeStateSnapshot` 把战斗单位、背包和任务进度规范化为稳定文本并计算 SHA-256。测试会对同一合成事件流执行两遍并逐步比较哈希，覆盖战斗和十二关任务图的胜利、失败及重置；该层不是用户输入录制器，也不替代十分钟实机回放。
+`RuntimeStateSnapshot` 把战斗单位、背包和任务进度规范化为稳定文本并计算 SHA-256。测试会对同一合成事件流执行两遍并逐步比较哈希，覆盖战斗和十二关任务图的胜利、失败及重置；该层不是用户输入录制器。独立的 `campaign_performance_probe.gd` 已负责十二关双轮十分钟真实窗口输入、帧时间和内存门禁，但两者都不替代稳定 MOD/Remake 的真人完整通关差分。
 
 对白、镜头、演出先后、触发半径、AI 配合和难度节奏不能仅靠静态锚点完整恢复，需要根据简报、运行观察和历史资料人工校准。详见 [任务恢复说明](MISSION_RECOVERY.md)。
 
@@ -169,13 +169,13 @@ Godot 从 `res://../LocalAssets/converted/` 读取本地数据：
 
 `ImportedLevelData` 保留并校验转换结果中的 `database_header_values`；`WorldDepth` 据 DBL `header[0]` 把地面/固定背景、正常深度、固定前景和顶层映射到四个互不重叠的 z 区间。m000 真实资源回归已确认 22 个 DBL 336/337 庄稼底图在 queue 1，70 个 DBL 335 稻谷在 queue 0；因此前者固定在人物后，后者才参与人物基线排序。玩家身份不再只按姓名猜测，而由 `original_initial_weapon_inventory.json` 的 level + scene ID 确定；`original_runtime_actor_catalog.json` 还固化 762 个已解析运行时角色及 5 个 VWF/运行时阵营差异。玩家单位各自持有原版直接数量语义的 `CombatInventory`；另由 `original_initial_item_inventory.json` 和独立 `BackpackInventory` 固化十二关 650 个精确动态角色、538 条 actor `+0x228` 物品记录，绝不再与 `+0x22C` 武器或全队公共物资混用。`InventoryGridView` 以右侧 276×421 五列方格分别呈现 W 武器/A 物品；`ProjectileWorld` 负责 type 1/2/3/6/7/9 的原版坐标弹路、命中火花与爆炸，`LegacySpecialWorldObject` 和 `LegacyAiControlEffect` 负责 type 8/10/11。`FieldPickup` 读取 DBL `header[2]` 的真实 item ID，并按原程序 `sub_45AE10` 路由到拾取角色自己的武器或物品容器；DBL 1003 则保留为可受伤汽油桶，绝不按名称猜成普通物品。`LandMine` 和 `ExplosiveProp` 通过统一椭圆爆炸请求支持地雷、油桶和连锁伤害。世界命令不绘制黄色目标线。
 
-`GameShell` 管理暂停菜单、十槽选择器、按键重映射、四通道音量、失败灰化和五列背包。世界左键提交选择/移动/攻击/使用，左 `Ctrl` 或 `↑` 按住时进入强制目标；世界右键只拖框，菜单右键松开返回。右下角地图属于独立 HUD，不暂停 SceneTree；它优先显示原版逐关静态目标图，并增加实时敌我/任务点、镜头框和点击卷屏。`MediaDirector` 在切关时显示原简报图；音乐/环境声和影片音轨进入 `Music`，对白进入 `Voice`，攻击、命中、警报、角色、死亡和 UI WAV 进入 `Sfx`，媒体 `Esc` 在松开时关闭/跳过。导演节拍/教程/持久事件和 AI 姿态/增援预算、已掩埋敌人的 scene 索引及特殊对象等可变状态均随 `GameSessionState` 保存恢复。仍未完成的是通用中立角色行为、听觉遮挡/完整尸体发现、原版 S/B 命令细节、经证据核对的逐关演出和长时间实机验收。
+`GameShell` 管理暂停菜单、十槽选择器、按键重映射、四通道音量、失败灰化和五列背包。世界左键提交选择/移动/攻击/使用，左 `Ctrl` 或 `↑` 按住时进入强制目标；世界右键只拖框，菜单右键松开返回。右下角地图属于独立 HUD，不暂停 SceneTree；它优先显示原版逐关静态目标图，并增加实时敌我/任务点、镜头框和点击卷屏。`MediaDirector` 在切关时显示原简报图；音乐/环境声和影片音轨进入 `Music`，对白进入 `Voice`，攻击、命中、警报、角色、死亡和 UI WAV 进入 `Sfx`，媒体 `Esc` 在松开时关闭/跳过。导演节拍/教程/持久事件和 AI 姿态/增援预算、已掩埋敌人的 scene 索引及特殊对象等可变状态均随 `GameSessionState` 保存恢复。仍未完成的是通用中立角色行为、原版 S/B 命令细节、经证据核对的逐关演出、真人完整通关差分和跨 Windows 机器验收。
 
 ## 6. 为什么选择 Godot 4.7
 
 本作适合俯视角 2D 即时战术架构。Godot 提供 2D 渲染、动画、导航、音频、UI、场景编辑器和现代 Windows 导出，可以把后续工作集中在规则、AI 和任务系统上。
 
-运行时使用 Standard 版本与 typed GDScript，不依赖 .NET；资源工具使用 .NET 10，以便严格处理二进制边界、合成 fixture 和命令行批量转换。默认采用 Compatibility renderer，目标是兼顾学校环境中的旧集成显卡。逻辑时钟为 60 Hz；m000 已在 54 名敌人、动态占位和巡逻同时运行时完成 360 帧实测，合成事件流也已有确定性哈希。仍需补真实帧输入长回放、异步关卡预载以及包含投射物、拾取、爆炸和媒体切换的新性能基线。
+运行时使用 Standard 版本与 typed GDScript，不依赖 .NET；资源工具使用 .NET 10，以便严格处理二进制边界、合成 fixture 和命令行批量转换。默认采用 Compatibility renderer，目标是兼顾学校环境中的旧集成显卡。逻辑时钟为 60 Hz；Windows 10/GTX 1050 Ti 的十二关双轮 600 秒窗口基线共 33,125 帧，整体 P95 18.389 ms、P99 20.714 ms、零个 >50 ms 帧，第二轮静态内存增长 898,398 字节。仍需补稳定 MOD/Remake 真人完整通关差分、异步关卡预载、Windows 11 和更多硬件验收。
 
 ## 7. 仓库与本地资产隔离
 

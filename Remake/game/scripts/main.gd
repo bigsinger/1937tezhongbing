@@ -289,6 +289,10 @@ var campaign_progress: Dictionary = {}
 var startup_level_selection_pending := false
 var command_line_controls_display := false
 var media_event_seed := 0
+var last_formation_move_total_usec := 0
+var last_formation_move_audio_usec := 0
+var last_formation_move_path_usec := 0
+var last_formation_move_event_usec := 0
 var legacy_crt_random_state := 1
 var field_pickups: Array[Node2D] = []
 var explosive_props: Array[Node2D] = []
@@ -501,27 +505,27 @@ func load_imported_level(level_id: String = LEVEL_VIEW.DEFAULT_LEVEL_ID) -> bool
 	burial_mode = false
 	for mine: Node2D in deployed_mines:
 		if is_instance_valid(mine):
-			mine.queue_free()
+			_free_level_runtime_node(mine)
 	deployed_mines.clear()
 	for world_object: Node2D in legacy_special_world_objects:
 		if is_instance_valid(world_object):
-			world_object.queue_free()
+			_free_level_runtime_node(world_object)
 	legacy_special_world_objects.clear()
 	for explosion_effect: Node2D in legacy_explosion_effects:
 		if is_instance_valid(explosion_effect):
-			explosion_effect.queue_free()
+			_free_level_runtime_node(explosion_effect)
 	legacy_explosion_effects.clear()
 	for effect: Node in legacy_ai_control_effects:
 		if is_instance_valid(effect):
-			effect.queue_free()
+			_free_level_runtime_node(effect)
 	legacy_ai_control_effects.clear()
 	for deployment_target: Node2D in legacy_deployment_targets:
 		if is_instance_valid(deployment_target):
-			deployment_target.queue_free()
+			_free_level_runtime_node(deployment_target)
 	legacy_deployment_targets.clear()
 	for burial_cache: Node2D in legacy_burial_caches:
 		if is_instance_valid(burial_cache):
-			burial_cache.queue_free()
+			_free_level_runtime_node(burial_cache)
 	legacy_burial_caches.clear()
 	legacy_doors.clear()
 	field_pickups.clear()
@@ -629,8 +633,20 @@ func _load_navigation_grid() -> NavigationGridData:
 func remove_imported_node(node_name: String) -> void:
 	var existing := get_node_or_null(node_name)
 	if existing != null:
-		remove_child(existing)
-		existing.queue_free()
+		_free_level_runtime_node(existing)
+
+
+func _free_level_runtime_node(node: Node) -> void:
+	# Level reconstruction is synchronous and no discarded node is allowed to
+	# survive into the newly playable scene. Deferred deletion of thousands of
+	# sprites and their ImageTextures previously produced a later 0.4–1.0 s
+	# hitch, most visibly when entering m007.
+	if node == null or not is_instance_valid(node):
+		return
+	var parent := node.get_parent()
+	if parent != null:
+		parent.remove_child(node)
+	node.free()
 
 
 func spawn_imported_entities() -> int:
@@ -917,8 +933,7 @@ func initial_camera_focus() -> Vector2:
 
 func spawn_squad() -> void:
 	if projectile_world != null:
-		remove_child(projectile_world)
-		projectile_world.queue_free()
+		_free_level_runtime_node(projectile_world)
 	projectile_world = PROJECTILE_WORLD_SCRIPT.new()
 	projectile_world.name = "ProjectileWorld"
 	add_child(projectile_world)
@@ -934,15 +949,15 @@ func spawn_squad() -> void:
 		_on_projectile_explosion_actor_requested
 	)
 	for unit: SQUAD_UNIT in units:
-		unit.queue_free()
+		_free_level_runtime_node(unit)
 	for enemy: ENEMY_UNIT in enemies:
-		enemy.queue_free()
+		_free_level_runtime_node(enemy)
 	for escort: ESCORT_UNIT in escorts:
-		escort.queue_free()
+		_free_level_runtime_node(escort)
 	for ambient: AMBIENT_UNIT in ambient_units:
-		ambient.queue_free()
+		_free_level_runtime_node(ambient)
 	for pickup: MISSION_PICKUP in mission_pickups:
-		pickup.queue_free()
+		_free_level_runtime_node(pickup)
 	units.clear()
 	enemies.clear()
 	escorts.clear()
@@ -1110,6 +1125,7 @@ func spawn_squad() -> void:
 	_spawn_enemies()
 	if dynamic_occupancy != null:
 		dynamic_occupancy.finalize_registration()
+		_prewarm_authored_patrol_paths()
 	var target_nodes: Array[Node2D] = []
 	for unit: SQUAD_UNIT in units:
 		target_nodes.append(unit)
@@ -1122,6 +1138,33 @@ func spawn_squad() -> void:
 	_refresh_projectile_world_combatants()
 	if not units.is_empty():
 		select_only(units[0])
+
+
+func _prewarm_authored_patrol_paths() -> void:
+	if dynamic_occupancy == null:
+		return
+	var patrol_actors: Array[Node2D] = []
+	for enemy: ENEMY_UNIT in enemies:
+		patrol_actors.append(enemy)
+	for ambient: AMBIENT_UNIT in ambient_units:
+		patrol_actors.append(ambient)
+	for actor: Node2D in patrol_actors:
+		if not bool(actor.get("patrol_enabled")):
+			continue
+		var waypoints := actor.get("patrol_waypoints") as PackedVector2Array
+		if waypoints.is_empty():
+			continue
+		var patrol_index := clampi(
+			int(actor.get("patrol_index")),
+			0,
+			waypoints.size() - 1,
+		)
+		dynamic_occupancy.prewarm_patrol_cycle_for_scene(
+			int(actor.get("scene_index")),
+			actor.position,
+			waypoints,
+			patrol_index,
+		)
 
 
 static func playable_initial_attack_type(entity: Dictionary, display_name: String) -> int:
@@ -2049,6 +2092,7 @@ func _finish_burial() -> void:
 	burial_target.mark_legacy_corpse_buried(true)
 	burial_target.visible = false
 	burial_target.process_mode = Node.PROCESS_MODE_DISABLED
+	_refresh_enemy_corpse_candidates()
 	update_status("掩埋完成：已生成原版藏尸处，尸体物品保留其中")
 	_cancel_burial_command()
 
@@ -2601,13 +2645,28 @@ func _cancel_legacy_deployment_for_unit(unit: Node2D) -> void:
 
 
 func issue_formation_move(destination: Vector2) -> void:
+	var formation_started_usec := Time.get_ticks_usec()
+	last_formation_move_total_usec = 0
+	last_formation_move_audio_usec = 0
+	last_formation_move_path_usec = 0
+	last_formation_move_event_usec = 0
 	if selected_units.is_empty():
 		update_status("请先选择队员")
+		last_formation_move_total_usec = (
+			Time.get_ticks_usec() - formation_started_usec
+		)
 		return
 	if terrain_loaded and navigation_grid == null:
 		update_status("当前关卡导航数据不可用，已拒绝可能穿墙的移动命令")
+		last_formation_move_total_usec = (
+			Time.get_ticks_usec() - formation_started_usec
+		)
 		return
+	var audio_started_usec := Time.get_ticks_usec()
 	_play_media_audio("acknowledge", _media_actor_key(selected_units[0].display_name))
+	last_formation_move_audio_usec = (
+		Time.get_ticks_usec() - audio_started_usec
+	)
 	var offsets: Array[Vector2] = []
 	for index: int in range(selected_units.size()):
 		offsets.append(SIMULATION_SCRIPT.formation_offset(index, selected_units.size()))
@@ -2627,12 +2686,16 @@ func issue_formation_move(destination: Vector2) -> void:
 			planned_count += 1
 			continue
 		var path := PackedVector2Array()
+		var path_started_usec := Time.get_ticks_usec()
 		if dynamic_occupancy != null and unit.scene_index >= 0:
 			path = dynamic_occupancy.find_path_for_scene(
 				unit.scene_index, unit.position, unit_destination
 			)
 		else:
 			path = navigation_grid.find_path(unit.position, unit_destination)
+		last_formation_move_path_usec += (
+			Time.get_ticks_usec() - path_started_usec
+		)
 		if path.is_empty() and not unit.position.is_equal_approx(unit_destination):
 			unit.cancel_path()
 			continue
@@ -2645,9 +2708,16 @@ func issue_formation_move(destination: Vector2) -> void:
 			"自动寻路：%d/%d 名队员 → (%d, %d)" % [planned_count, selected_units.size(), center.x, center.y]
 		)
 	if planned_count > 0:
+		var event_started_usec := Time.get_ticks_usec()
 		_report_direction_action("move_order")
 		if str(current_mission.get("id", "")) == "m010" and selected_units.size() == 1:
 			_record_m010_split_order(selected_units[0])
+		last_formation_move_event_usec = (
+			Time.get_ticks_usec() - event_started_usec
+		)
+	last_formation_move_total_usec = (
+		Time.get_ticks_usec() - formation_started_usec
+	)
 
 
 func _record_m010_split_order(unit: SQUAD_UNIT) -> void:
@@ -3666,7 +3736,19 @@ func _refresh_enemy_world_items() -> void:
 func _refresh_enemy_corpse_candidates() -> void:
 	var corpses: Array[Node2D] = []
 	for enemy: ENEMY_UNIT in enemies:
-		if enemy != null and is_instance_valid(enemy):
+		if (
+			enemy != null
+			and is_instance_valid(enemy)
+			and not enemy.is_alive
+			and enemy.faction_id
+				== LEGACY_CORPSE_DISCOVERY_RULES.ENEMY_FACTION_ID
+			and not enemy.legacy_corpse_discovered
+			and not enemy.legacy_corpse_buried
+		):
+			# The original world scan returns the first eligible corpse in
+			# insertion order. Keep that order, but do not hand every guard the
+			# full live enemy roster: on a 96-guard map that caused 96 x 96
+			# dynamic property checks on each common 0.20-second sense tick.
 			corpses.append(enemy)
 	for enemy: ENEMY_UNIT in enemies:
 		if enemy != null and is_instance_valid(enemy):
@@ -4381,8 +4463,7 @@ func _living_enemy_count() -> int:
 
 func _configure_mission_runtime() -> void:
 	if mission_runtime != null:
-		remove_child(mission_runtime)
-		mission_runtime.queue_free()
+		_free_level_runtime_node(mission_runtime)
 	mission_runtime = MISSION_RUNTIME_SCRIPT.new()
 	add_child(mission_runtime)
 	mission_runtime.state_changed.connect(_refresh_mission_ui)
@@ -4712,7 +4793,18 @@ func _command_line_has_display_override() -> bool:
 	for argument: String in OS.get_cmdline_args():
 		if argument in ["--windowed", "--fullscreen", "--maximized"]:
 			return true
-		if argument.contains("runtime_probe.gd"):
+		# Godot consumes native display switches before GDScript can inspect
+		# OS.get_cmdline_args(). Windowed render probes are identifiable by their
+		# script path, so persisted fullscreen settings must not override the
+		# window mode and resolution already selected by the engine.
+		if (
+			argument.contains("runtime_probe.gd")
+			or argument.contains("campaign_performance_probe.gd")
+			or argument.contains("product_ui_probe.gd")
+		):
+			return true
+	for argument: String in OS.get_cmdline_user_args():
+		if argument == "--command-line-controls-display":
 			return true
 	return false
 

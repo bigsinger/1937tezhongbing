@@ -71,7 +71,20 @@ func _test_visual_navigation_and_snapshot_lifecycle() -> void:
 	navigation.prepare_astar()
 	var occupancy = DYNAMIC_OCCUPANCY_GRID.new()
 	occupancy.configure(navigation)
+	occupancy.register_scene(
+		20,
+		navigation.cell_to_world(Vector2i(4, 2)),
+	)
 	occupancy.finalize_registration()
+	_expect(
+		occupancy.prewarm_path_for_scene(
+			20,
+			navigation.cell_to_world(Vector2i(4, 2)),
+			navigation.cell_to_world(Vector2i(3, 2)),
+		),
+		"an unrelated authored route is cached before a door changes",
+	)
+	var astar_before_open: AStarGrid2D = navigation.astar
 	var texture := _texture(Color.WHITE)
 	var open_texture := _texture(Color(0.4, 0.8, 0.4))
 	var profile: Dictionary = DOOR_CATALOG.profile_for_entity(
@@ -117,6 +130,19 @@ func _test_visual_navigation_and_snapshot_lifecycle() -> void:
 		not navigation.astar.is_point_solid(door_cell)
 		and occupancy.is_source_scene_disabled(12),
 		"opening releases exact scene L3 footprint",
+	)
+	_expect(
+		navigation.astar == astar_before_open
+			and occupancy.prewarmed_paths.has(20)
+			and navigation.incremental_source_update_count == 1,
+		"opening a door updates its cells in place and preserves unrelated patrol caches",
+	)
+	_expect(
+		not navigation.find_path(
+			navigation.cell_to_world(Vector2i(1, 1)),
+			navigation.cell_to_world(Vector2i(3, 1)),
+		).is_empty(),
+		"incremental component merging makes the opened passage immediately routable",
 	)
 	_expect(
 		occupancy.has_line_of_sight(

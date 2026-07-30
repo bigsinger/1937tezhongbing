@@ -32,6 +32,13 @@ var astar: AStarGrid2D
 var ignored_scene_indices: Dictionary = {}
 var source_scene_cells_by_layer: Dictionary = {}
 var released_source_cells_by_layer: Dictionary = {}
+var runtime_release_owners_by_layer: Dictionary = {}
+var static_component_by_cell := PackedInt32Array()
+var static_component_cells: Dictionary = {}
+var static_component_destination_cache: Dictionary = {}
+var static_component_redirect_count := 0
+var incremental_source_update_count := 0
+var incremental_source_update_usec := 0
 
 
 static func load_file(path: String, metadata: Dictionary) -> NavigationGridData:
@@ -133,6 +140,10 @@ func prepare_astar(
 		MOVEMENT_LAYER_ID: _cell_lookup(movement_cells_to_release),
 		LINE_OF_SIGHT_LAYER_ID: _cell_lookup(sight_cells_to_release),
 	}
+	runtime_release_owners_by_layer = {
+		MOVEMENT_LAYER_ID: {},
+		LINE_OF_SIGHT_LAYER_ID: {},
+	}
 	astar = AStarGrid2D.new()
 	astar.region = Rect2i(Vector2i.ZERO, dimensions)
 	astar.cell_size = Vector2(cell_size)
@@ -159,6 +170,165 @@ func prepare_astar(
 			)
 		):
 			astar.set_point_solid(cell, true)
+	_rebuild_static_components()
+
+
+func set_source_scene_disabled(
+	scene_index: int,
+	disabled: bool,
+	movement_release_cells: Array[Vector2i] = [],
+	sight_release_cells: Array[Vector2i] = [],
+) -> Array[Vector2i]:
+	var changed_cells: Array[Vector2i] = []
+	if scene_index < 0:
+		return changed_cells
+	if astar == null:
+		prepare_astar()
+	var was_disabled := ignored_scene_indices.has(scene_index)
+	if was_disabled == disabled:
+		return changed_cells
+	var started_usec := Time.get_ticks_usec()
+	if disabled:
+		ignored_scene_indices[scene_index] = true
+	else:
+		ignored_scene_indices.erase(scene_index)
+	_update_runtime_release_owners(
+		MOVEMENT_LAYER_ID,
+		scene_index,
+		disabled,
+		movement_release_cells,
+	)
+	_update_runtime_release_owners(
+		LINE_OF_SIGHT_LAYER_ID,
+		scene_index,
+		disabled,
+		sight_release_cells,
+	)
+	changed_cells = source_cells_for_scene(
+		MOVEMENT_LAYER_ID,
+		scene_index,
+	)
+	for release_cell: Vector2i in movement_release_cells:
+		if release_cell not in changed_cells:
+			changed_cells.append(release_cell)
+	changed_cells.sort()
+	for cell: Vector2i in changed_cells:
+		var should_be_solid := is_movement_blocked(
+			cell,
+			ignored_scene_indices,
+		)
+		astar.set_point_solid(cell, should_be_solid)
+	# Gameplay doors only transition from closed to open. Merging the newly
+	# walkable cells into existing components keeps destination redirection
+	# exact without reconstructing the complete AStarGrid2D. A rare close
+	# operation (for example state restoration on a synthetic shared grid)
+	# can split a component, so it deliberately takes the full safe rebuild.
+	if disabled:
+		_merge_opened_cells_into_static_components(changed_cells)
+	else:
+		_rebuild_static_components()
+	static_component_destination_cache.clear()
+	incremental_source_update_count += 1
+	incremental_source_update_usec += (
+		Time.get_ticks_usec() - started_usec
+	)
+	return changed_cells
+
+
+func _update_runtime_release_owners(
+	layer_id: int,
+	scene_index: int,
+	disabled: bool,
+	cells: Array[Vector2i],
+) -> void:
+	var layer_owners := (
+		runtime_release_owners_by_layer.get(layer_id, {}) as Dictionary
+	)
+	var released_lookup := (
+		released_source_cells_by_layer.get(layer_id, {}) as Dictionary
+	)
+	for cell: Vector2i in cells:
+		var owners := layer_owners.get(cell, {}) as Dictionary
+		if disabled:
+			owners[scene_index] = true
+			layer_owners[cell] = owners
+			released_lookup[cell] = true
+			continue
+		owners.erase(scene_index)
+		if owners.is_empty():
+			layer_owners.erase(cell)
+			released_lookup.erase(cell)
+		else:
+			layer_owners[cell] = owners
+	runtime_release_owners_by_layer[layer_id] = layer_owners
+	released_source_cells_by_layer[layer_id] = released_lookup
+
+
+func _merge_opened_cells_into_static_components(
+	opened_cells: Array[Vector2i],
+) -> void:
+	if static_component_by_cell.size() != dimensions.x * dimensions.y:
+		_rebuild_static_components()
+		return
+	for cell: Vector2i in opened_cells:
+		if not is_valid_cell(cell) or astar.is_point_solid(cell):
+			continue
+		var connected_components: Dictionary = {}
+		var existing_component := static_component_by_cell[
+			cell_to_index(cell)
+		]
+		if existing_component >= 0:
+			connected_components[existing_component] = true
+		for direction: Vector2i in ORIGINAL_NEIGHBOR_DIRECTIONS:
+			var neighbor := cell + direction
+			if (
+				not is_valid_cell(neighbor)
+				or not _astar_step_is_clear(cell, neighbor)
+			):
+				continue
+			var neighbor_component := static_component_by_cell[
+				cell_to_index(neighbor)
+			]
+			if neighbor_component >= 0:
+				connected_components[neighbor_component] = true
+		var component_ids: Array = connected_components.keys()
+		component_ids.sort()
+		var target_component: int
+		if component_ids.is_empty():
+			target_component = _next_static_component_id()
+			var new_component_cells: Array[Vector2i] = []
+			static_component_cells[target_component] = new_component_cells
+		else:
+			target_component = int(component_ids[0])
+		var target_cells := (
+			static_component_cells.get(target_component, [])
+			as Array[Vector2i]
+		)
+		if existing_component < 0:
+			static_component_by_cell[cell_to_index(cell)] = target_component
+			target_cells.append(cell)
+		for component_value: Variant in component_ids:
+			var component_id := int(component_value)
+			if component_id == target_component:
+				continue
+			var merged_cells := (
+				static_component_cells.get(component_id, [])
+				as Array[Vector2i]
+			)
+			for merged_cell: Vector2i in merged_cells:
+				static_component_by_cell[
+					cell_to_index(merged_cell)
+				] = target_component
+				target_cells.append(merged_cell)
+			static_component_cells.erase(component_id)
+		static_component_cells[target_component] = target_cells
+
+
+func _next_static_component_id() -> int:
+	var next_id := 0
+	for component_value: Variant in static_component_cells.keys():
+		next_id = maxi(next_id, int(component_value) + 1)
+	return next_id
 
 
 func find_path(
@@ -174,6 +344,13 @@ func find_path(
 	var destination_cell := nearest_walkable_cell(world_to_cell(world_destination))
 	if not is_valid_cell(start_cell) or destination_cell.x < 0:
 		return PackedVector2Array()
+	var component_destination := _nearest_static_component_destination(
+		start_cell,
+		destination_cell,
+	)
+	if component_destination.x >= 0 and component_destination != destination_cell:
+		destination_cell = component_destination
+		static_component_redirect_count += 1
 	var temporarily_opened_start := false
 	if astar.is_point_solid(start_cell):
 		var start_value := movement_value(start_cell)
@@ -202,6 +379,106 @@ func find_path(
 		if path.is_empty() or path[-1].distance_squared_to(world_destination) > 1.0:
 			path.append(world_destination)
 	return path
+
+
+func _rebuild_static_components() -> void:
+	var cell_count := dimensions.x * dimensions.y
+	static_component_by_cell.resize(cell_count)
+	static_component_by_cell.fill(-1)
+	static_component_cells.clear()
+	static_component_destination_cache.clear()
+	static_component_redirect_count = 0
+	var component_id := 0
+	for seed_index: int in range(cell_count):
+		if (
+			static_component_by_cell[seed_index] >= 0
+			or astar.is_point_solid(index_to_cell(seed_index))
+		):
+			continue
+		var pending: Array[int] = [seed_index]
+		var cursor := 0
+		var cells: Array[Vector2i] = []
+		static_component_by_cell[seed_index] = component_id
+		while cursor < pending.size():
+			var current_index := pending[cursor]
+			cursor += 1
+			var current := index_to_cell(current_index)
+			cells.append(current)
+			for direction: Vector2i in ORIGINAL_NEIGHBOR_DIRECTIONS:
+				var neighbor := current + direction
+				if not is_valid_cell(neighbor):
+					continue
+				var neighbor_index := cell_to_index(neighbor)
+				if (
+					static_component_by_cell[neighbor_index] >= 0
+					or not _astar_step_is_clear(current, neighbor)
+				):
+					continue
+				static_component_by_cell[neighbor_index] = component_id
+				pending.append(neighbor_index)
+		static_component_cells[component_id] = cells
+		component_id += 1
+
+
+func _nearest_static_component_destination(
+	start_cell: Vector2i,
+	destination_cell: Vector2i,
+) -> Vector2i:
+	if (
+		static_component_by_cell.size() != dimensions.x * dimensions.y
+		or not is_valid_cell(start_cell)
+		or not is_valid_cell(destination_cell)
+	):
+		return destination_cell
+	var start_component := static_component_by_cell[cell_to_index(start_cell)]
+	var destination_component := (
+		static_component_by_cell[cell_to_index(destination_cell)]
+	)
+	if (
+		start_component < 0
+		or start_component == destination_component
+		or not static_component_cells.has(start_component)
+	):
+		return destination_cell
+	var cache_key := Vector2i(
+		start_component,
+		cell_to_index(destination_cell),
+	)
+	if static_component_destination_cache.has(cache_key):
+		var cached := (
+			static_component_destination_cache[cache_key] as Vector2i
+		)
+		if (
+			cached == start_cell
+			or not astar.is_point_solid(cached)
+		):
+			return cached
+	var best := Vector2i(-1, -1)
+	var best_heuristic := UNREACHED_SCORE
+	var best_squared_distance := UNREACHED_SCORE
+	for candidate: Vector2i in (
+		static_component_cells[start_component] as Array[Vector2i]
+	):
+		# Runtime actors and reserved destinations can temporarily occupy a
+		# statically reachable cell. Do not redirect another actor onto it.
+		if astar.is_point_solid(candidate) and candidate != start_cell:
+			continue
+		var heuristic := _chebyshev_distance(candidate, destination_cell)
+		var squared_distance := (candidate - destination_cell).length_squared()
+		if (
+			heuristic < best_heuristic
+			or (
+				heuristic == best_heuristic
+				and squared_distance < best_squared_distance
+			)
+		):
+			best = candidate
+			best_heuristic = heuristic
+			best_squared_distance = squared_distance
+	if best.x >= 0:
+		static_component_destination_cache[cache_key] = best
+		return best
+	return destination_cell
 
 
 func _original_uniform_path(

@@ -36,6 +36,13 @@ const STABLE_MOD_PATROL_WAYPOINT_HOLD_SECONDS := 2.1
 const ORIGINAL_ATTACK_REACTION_TICK_SECONDS := 1.0 / 30.0
 const ATTACK_RECHECK_MIN_SECONDS := 20.0 * ORIGINAL_ATTACK_REACTION_TICK_SECONDS
 const ATTACK_RECHECK_MAX_SECONDS := 39.0 * ORIGINAL_ATTACK_REACTION_TICK_SECONDS
+## Tactical sight outlines are presentation, not the authoritative detection
+## test.  Rebuilding both clipped fans from _draw() repeated 176 supercover
+## line-of-sight queries on every redraw of a moving observed guard.  Cache the
+## outline by authored navigation cell and facing, with a bounded refresh for
+## moving third-party sight blockers, so drawing remains a cheap polyline.
+const TACTICAL_RANGE_CACHE_REFRESH_SECONDS := 0.50
+const TACTICAL_RANGE_CELL_SIZE := Vector2(32.0, 16.0)
 ## Editorial accuracy model. The original executable's exact miss formula has
 ## not been recovered; this bounded base chance makes the authored per-level
 ## aim-error curve affect real hit resolution without pretending otherwise.
@@ -119,6 +126,13 @@ var patrol_path_retry_seconds := PATROL_PATH_RETRY_MIN_SECONDS
 var special_control_lock_count := 0
 var special_control_source: Node2D
 var tactical_ranges_visible := false
+var tactical_outer_outline := PackedVector2Array()
+var tactical_inner_outline := PackedVector2Array()
+var tactical_cache_cell := Vector2i(-1, -1)
+var tactical_cache_direction := -1
+var tactical_cache_refresh_remaining := 0.0
+var tactical_range_cache_rebuild_count := 0
+var tactical_range_cache_rebuild_usec := 0
 var mission_ai_coordinator: Node
 ## No miss dispersion is applied until an explicitly editorial difficulty
 ## profile configures it.  Original-parity mode therefore uses the recovered
@@ -139,6 +153,10 @@ func set_tactical_ranges_visible(value: bool) -> void:
 	if tactical_ranges_visible == value:
 		return
 	tactical_ranges_visible = value
+	if tactical_ranges_visible:
+		_refresh_tactical_range_cache(true)
+	else:
+		tactical_cache_refresh_remaining = 0.0
 	queue_redraw()
 
 
@@ -179,6 +197,11 @@ func configure_enemy(
 	# maps can contain about one hundred active actors, and issuing every A* query
 	# in the same frame creates an avoidable startup spike.
 	path_request_delay_remaining = float(posmod(scene_index * 37, 24)) / 60.0
+	# Detection starts on the recovered common 0.20-second boundary. Offsetting
+	# individual guards made an extra m000 observer engage before the stable MOD
+	# contact checkpoint, so sensing cadence is gameplay state, not a rendering
+	# optimization point.
+	sense_elapsed = 0.0
 	original_direction_index = clampi(int(entity.get("direction_index", 1)), 1, 8)
 	set_animation_group(
 		IMPORTED_SPRITE_ANIMATION.legacy_group_index_for_direction(original_direction_index)
@@ -347,6 +370,7 @@ func _physics_process(delta: float) -> void:
 	var safe_delta := maxf(delta, 0.0)
 	if not is_alive or combat_action != CombatAction.NONE or hurt_remaining > 0.0:
 		super._physics_process(safe_delta)
+		_advance_tactical_range_cache(safe_delta)
 		return
 	var legacy_effect_blocked_at_start := (
 		legacy_hypnosis_active
@@ -361,6 +385,7 @@ func _physics_process(delta: float) -> void:
 				animation_group_index
 			)
 		)
+		_advance_tactical_range_cache(safe_delta)
 		return
 	path_request_delay_remaining = maxf(path_request_delay_remaining - safe_delta, 0.0)
 	sense_elapsed += safe_delta
@@ -382,6 +407,7 @@ func _physics_process(delta: float) -> void:
 	original_direction_index = (
 		IMPORTED_SPRITE_ANIMATION.direction_index_for_legacy_group(animation_group_index)
 	)
+	_advance_tactical_range_cache(safe_delta)
 
 
 func apply_special_control(source: Node2D = null) -> bool:
@@ -1577,33 +1603,80 @@ func _draw() -> void:
 
 
 func _draw_tactical_ranges() -> void:
+	# The red and green fans deliberately draw only outlines.  Their expensive
+	# L2 clipping was already cached outside the CanvasItem draw callback.
+	if tactical_outer_outline.size() >= 3:
+		draw_polyline(
+			tactical_outer_outline,
+			Color(0.92, 0.22, 0.16, 0.74),
+			1.5,
+			true,
+		)
+	if tactical_inner_outline.size() >= 3:
+		draw_polyline(
+			tactical_inner_outline,
+			Color(0.20, 0.96, 0.42, 0.88),
+			1.5,
+			true,
+		)
+func _advance_tactical_range_cache(delta: float) -> void:
+	if not tactical_ranges_visible:
+		return
+	tactical_cache_refresh_remaining = maxf(
+		tactical_cache_refresh_remaining - maxf(delta, 0.0),
+		0.0,
+	)
+	_refresh_tactical_range_cache(false)
+
+
+func _refresh_tactical_range_cache(force: bool) -> bool:
+	if not tactical_ranges_visible:
+		return false
+	var current_cell := Vector2i(
+		floori(position.x / TACTICAL_RANGE_CELL_SIZE.x),
+		floori(position.y / TACTICAL_RANGE_CELL_SIZE.y),
+	)
+	if (
+		not force
+		and current_cell == tactical_cache_cell
+		and original_direction_index == tactical_cache_direction
+		and tactical_cache_refresh_remaining > 0.0
+	):
+		return false
+	var started_usec := Time.get_ticks_usec()
 	var vision_radii := Vector2(
 		float(sense_profile.get("horizontal_radius", 0.0)),
 		float(sense_profile.get("vertical_radius", 0.0)),
 	)
+	tactical_outer_outline = PackedVector2Array()
+	tactical_inner_outline = PackedVector2Array()
 	if vision_radii.x > 0.0 and vision_radii.y > 0.0:
-		var near_ratio := clampf(float(sense_profile.get("near_band_ratio", 0.5)), 0.1, 1.0)
+		var near_ratio := clampf(
+			float(sense_profile.get("near_band_ratio", 0.5)),
+			0.1,
+			1.0,
+		)
 		# Commandos-style directional perception: green is detectable while the
 		# target stands, red is the outer band that needs a prone target. Every
 		# ray stops at the first L2 sight obstruction, so walls cut the fan.
-		_draw_visibility_fan(vision_radii, 1.0, Color(0.92, 0.22, 0.16, 0.74))
-		_draw_visibility_fan(vision_radii, near_ratio, Color(0.20, 0.96, 0.42, 0.88))
-	var attack_radii := Vector2(
-		float(weapon_profile.get("horizontal_range", 0.0)),
-		float(weapon_profile.get("vertical_range", 0.0)),
-	)
-	if attack_radii.x > 0.0 and attack_radii.y > 0.0:
-		_draw_ellipse_outline(attack_radii, Color(0.92, 0.20, 0.16, 0.72), 1.5)
+		tactical_outer_outline = _visibility_fan_points(vision_radii, 1.0)
+		tactical_inner_outline = _visibility_fan_points(
+			vision_radii,
+			near_ratio,
+		)
+	tactical_cache_cell = current_cell
+	tactical_cache_direction = original_direction_index
+	tactical_cache_refresh_remaining = TACTICAL_RANGE_CACHE_REFRESH_SECONDS
+	tactical_range_cache_rebuild_count += 1
+	tactical_range_cache_rebuild_usec += Time.get_ticks_usec() - started_usec
+	queue_redraw()
+	return true
 
 
-func _draw_ellipse_outline(radii: Vector2, color: Color, width: float) -> void:
-	var points := PackedVector2Array()
-	for index: int in range(49):
-		var angle := TAU * float(index) / 48.0
-		points.append(Vector2(cos(angle) * radii.x, sin(angle) * radii.y))
-	draw_polyline(points, color, width, true)
-
-func _draw_visibility_fan(radii: Vector2, ratio: float, outline: Color) -> void:
+func _visibility_fan_points(
+	radii: Vector2,
+	ratio: float,
+) -> PackedVector2Array:
 	# The fan is parameterized in the executable's logical isometric angle.
 	# Scaling x/y by the recovered ellipse radii projects it to screen pixels.
 	var center: float = TACTICAL_SENSES.original_direction_center_degrees(
@@ -1611,7 +1684,7 @@ func _draw_visibility_fan(radii: Vector2, ratio: float, outline: Color) -> void:
 	)
 	var half_angle: float = TACTICAL_SENSES.original_direction_half_angle_degrees(original_direction_index)
 	if center < 0.0 or half_angle <= 0.0:
-		return
+		return PackedVector2Array()
 	var points := PackedVector2Array([Vector2.ZERO])
 	const STEPS := 10
 	for step: int in range(STEPS + 1):
@@ -1619,8 +1692,7 @@ func _draw_visibility_fan(radii: Vector2, ratio: float, outline: Color) -> void:
 		var candidate := Vector2(cos(deg_to_rad(degrees)) * radii.x * ratio, sin(deg_to_rad(degrees)) * radii.y * ratio)
 		var endpoint := _clip_vision_ray(candidate)
 		points.append(endpoint)
-	if points.size() >= 3:
-		draw_polyline(points, outline, 1.5, true)
+	return points
 
 func _clip_vision_ray(candidate: Vector2) -> Vector2:
 	if dynamic_occupancy == null:

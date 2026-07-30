@@ -27,6 +27,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 & (Join-Path $PSScriptRoot 'Test-ModParityContract.ps1')
+& (Join-Path $PSScriptRoot 'Test-CampaignPerformanceBaseline.ps1')
 & (Join-Path $PSScriptRoot 'Test-OriginalInitialWeaponInventory.ps1')
 & (Join-Path $PSScriptRoot 'Test-OriginalInitialItemInventory.ps1')
 & (Join-Path $PSScriptRoot 'Test-OriginalWorldPickups.ps1')
@@ -367,6 +368,15 @@ if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
     if ($LASTEXITCODE -ne 0) {
         throw "Godot dense navigation stress test failed with exit code $LASTEXITCODE."
     }
+
+    $campaignPerformanceOutput = Join-Path $remakeRoot (
+        'LocalAssets\qa\verify-campaign-performance')
+    & (Join-Path $PSScriptRoot 'Run-CampaignPerformance.ps1') `
+        -GodotExecutable $GodotExecutable `
+        -DurationSeconds 48 `
+        -Passes 1 `
+        -OutputDirectory $campaignPerformanceOutput `
+        -ProfileId 'verify-twelve-level-windowed-short-v1'
 
     $productUiProbeOutput = Join-Path $remakeRoot 'LocalAssets\qa\verify-product-ui'
     New-Item -ItemType Directory -Force -Path $productUiProbeOutput | Out-Null

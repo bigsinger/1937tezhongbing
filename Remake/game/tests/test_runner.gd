@@ -513,7 +513,11 @@ func _init() -> void:
 	divided_navigation.prepare_astar()
 	var partial_path := divided_navigation.find_path(Vector2(16, 24), Vector2(144, 24))
 	expect(
-		not partial_path.is_empty() and divided_navigation.world_to_cell(partial_path[-1]).x < 2,
+		(
+			not partial_path.is_empty()
+			and divided_navigation.world_to_cell(partial_path[-1]).x < 2
+			and divided_navigation.static_component_redirect_count == 1
+		),
 		"an unreachable destination resolves to the closest reachable side of its wall",
 		failures,
 	)
@@ -726,8 +730,15 @@ func _init() -> void:
 				enemy_fixture.move_speed,
 				ENEMY_UNIT_SCRIPT.STABLE_MOD_BASE_PATROL_SPEED,
 			)
+			and is_equal_approx(
+				enemy_fixture.sense_elapsed,
+				0.0,
+			)
 		),
-		"enemy runtime consumes recovered spawn, speed, hit points, and attack type",
+		(
+			"enemy runtime consumes recovered spawn, speed, hit points, "
+			+ "attack type, and synchronized sensing phase"
+		),
 		failures,
 	)
 	enemy_fixture.path_request_delay_remaining = 0.0
@@ -779,6 +790,36 @@ func _init() -> void:
 			and enemy_fixture.last_known_target_position == silent_target.position
 		),
 		"an explicit noise event sends the enemy to investigate its world position without live tracking",
+		failures,
+	)
+	enemy_fixture.set_tactical_ranges_visible(true)
+	var first_tactical_outline := (
+		enemy_fixture.tactical_outer_outline.duplicate()
+		as PackedVector2Array
+	)
+	expect(
+		(
+			enemy_fixture.tactical_range_cache_rebuild_count == 1
+			and first_tactical_outline.size() == 12
+			and enemy_fixture.tactical_inner_outline.size() == 12
+		),
+		"opening tactical sight precomputes only the two original visibility outlines once",
+		failures,
+	)
+	enemy_fixture._advance_tactical_range_cache(0.1)
+	expect(
+		enemy_fixture.tactical_range_cache_rebuild_count == 1,
+		"an unchanged observed guard reuses its tactical outline between redraws",
+		failures,
+	)
+	enemy_fixture.original_direction_index = 4
+	enemy_fixture._advance_tactical_range_cache(0.0)
+	expect(
+		(
+			enemy_fixture.tactical_range_cache_rebuild_count == 2
+			and enemy_fixture.tactical_outer_outline != first_tactical_outline
+		),
+		"changing the observed guard's facing immediately rebuilds the directional fan",
 		failures,
 	)
 	silent_target.free()
@@ -1469,6 +1510,171 @@ func _init() -> void:
 	expect(
 		crossing_grid.goal_owners.is_empty(),
 		"cancelled movement releases stale destination reservations",
+		failures,
+	)
+
+	var separation_navigation: NavigationGridData = (
+		NAVIGATION_GRID_DATA.create_for_tests(
+			3,
+			1,
+			Vector2i(32, 16),
+			PackedInt64Array([0, 0, 0]),
+		)
+	)
+	var separation_grid: RefCounted = DYNAMIC_OCCUPANCY_GRID.new()
+	separation_grid.configure(separation_navigation)
+	separation_grid.register_scene(20, Vector2(31.0, 8.0))
+	separation_grid.register_scene(21, Vector2(33.0, 8.0))
+	separation_grid.finalize_registration()
+	expect(
+		not separation_grid.try_relocate(20, Vector2(31.5, 8.0)),
+		"the spatial actor index rejects a closer neighbor across an adjacent cell boundary",
+		failures,
+	)
+	separation_grid.unregister_scene(21)
+	expect(
+		(
+			separation_grid.try_relocate(20, Vector2(33.0, 8.0))
+			and not separation_grid.actor_origin_owners.has(Vector2i(0, 0))
+			and separation_grid.actor_origin_owners.has(Vector2i(1, 0))
+		),
+		"accepted relocation moves the actor between spatial-index cells without a ghost",
+		failures,
+	)
+	separation_grid.unregister_scene(20)
+	expect(
+		separation_grid.actor_origin_owners.is_empty(),
+		"unregistering the last actor clears the spatial index",
+		failures,
+	)
+
+	var prewarm_navigation: NavigationGridData = (
+		NAVIGATION_GRID_DATA.create_for_tests(
+			4,
+			1,
+			Vector2i(32, 16),
+			PackedInt64Array([0, 0, 0, 0]),
+		)
+	)
+	var prewarm_grid: RefCounted = DYNAMIC_OCCUPANCY_GRID.new()
+	prewarm_grid.configure(prewarm_navigation)
+	prewarm_grid.register_scene(
+		50,
+		prewarm_navigation.cell_to_world(Vector2i(0, 0)),
+	)
+	prewarm_grid.finalize_registration()
+	var prewarm_start := prewarm_navigation.cell_to_world(Vector2i(0, 0))
+	var prewarm_destination := prewarm_navigation.cell_to_world(Vector2i(3, 0))
+	expect(
+		prewarm_grid.prewarm_path_for_scene(
+			50,
+			prewarm_start,
+			prewarm_destination,
+		)
+			and prewarm_grid.prewarmed_path_build_count == 1,
+		"authored patrol route can be precomputed once during level loading",
+		failures,
+	)
+	var prewarmed_exact_path: PackedVector2Array = (
+		prewarm_grid.find_path_for_scene(
+			50,
+			prewarm_start,
+			prewarm_destination,
+		)
+	)
+	expect(
+		not prewarmed_exact_path.is_empty()
+			and prewarm_grid.prewarmed_path_hit_count == 1
+			and not prewarm_grid.goal_owners.is_empty(),
+		"an exact authored patrol reuses its prewarmed path and still reserves its goal",
+		failures,
+	)
+	prewarm_grid.release_goal(50)
+	var suffix_start := prewarmed_exact_path[1]
+	var prewarmed_suffix_path: PackedVector2Array = (
+		prewarm_grid.find_path_for_scene(
+			50,
+			suffix_start,
+			prewarm_destination,
+		)
+	)
+	expect(
+		not prewarmed_suffix_path.is_empty()
+			and prewarmed_suffix_path[0].is_equal_approx(suffix_start)
+			and prewarmed_suffix_path[-1].is_equal_approx(
+				prewarm_destination
+			)
+			and prewarm_grid.prewarmed_path_hit_count == 2
+			and prewarm_grid.prewarmed_path_suffix_hit_count == 1,
+		"a collision-displaced patrol resumes the cached route suffix without a full-map search",
+		failures,
+	)
+	var unreachable_values := PackedInt64Array()
+	unreachable_values.resize(70)
+	unreachable_values.fill(0)
+	unreachable_values[2] = 1
+	var unreachable_navigation: NavigationGridData = (
+		NAVIGATION_GRID_DATA.create_for_tests(
+			70,
+			1,
+			Vector2i(32, 16),
+			unreachable_values,
+		)
+	)
+	var unreachable_grid: RefCounted = DYNAMIC_OCCUPANCY_GRID.new()
+	unreachable_grid.configure(unreachable_navigation)
+	unreachable_grid.register_scene(
+		51,
+		unreachable_navigation.cell_to_world(Vector2i(0, 0)),
+	)
+	for dummy_cell_x: int in range(5, 70):
+		unreachable_grid.register_scene(
+			100 + dummy_cell_x,
+			unreachable_navigation.cell_to_world(
+				Vector2i(dummy_cell_x, 0)
+			),
+		)
+	unreachable_grid.finalize_registration()
+	var unreachable_waypoints := PackedVector2Array(
+		[
+			unreachable_navigation.cell_to_world(Vector2i(0, 0)),
+			unreachable_navigation.cell_to_world(Vector2i(1, 0)),
+			unreachable_navigation.cell_to_world(Vector2i(3, 0)),
+		]
+	)
+	unreachable_grid.prewarm_patrol_cycle_for_scene(
+		51,
+		unreachable_waypoints[0],
+		unreachable_waypoints,
+		0,
+	)
+	var unreachable_key := Vector4i(1, 0, 3, 0)
+	var unreachable_scene_cache := (
+		unreachable_grid.prewarmed_paths.get(51, {}) as Dictionary
+	)
+	expect(
+		unreachable_scene_cache.has(unreachable_key)
+			and (
+				unreachable_scene_cache[unreachable_key] as PackedVector2Array
+			).is_empty(),
+		"patrol prewarming follows resolved endpoints and caches an unreachable leg",
+		failures,
+	)
+	var hits_before_unreachable_retry: int = (
+		unreachable_grid.prewarmed_path_hit_count
+	)
+	var unreachable_retry: PackedVector2Array = (
+		unreachable_grid.find_path_for_scene(
+		51,
+		unreachable_waypoints[1],
+		unreachable_waypoints[2],
+	)
+	)
+	expect(
+		unreachable_retry.is_empty()
+			and unreachable_grid.prewarmed_path_hit_count
+				== hits_before_unreachable_retry + 1,
+		"an unreachable authored patrol retry reuses the negative cache entry",
 		failures,
 	)
 
