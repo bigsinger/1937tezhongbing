@@ -111,6 +111,31 @@ type 等于物品 ID 的世界对象；原角色两套容器随后通过 `sub_45
 完整 runtime type 白名单和字段布局已固化到
 `legacy_world_item_rules.gd` 与 `M1937SDK/WorldItems.hpp`。
 
+### 普通攻击分发与低伤害免疫
+
+`M1937.exe` 的 `sub_456DF0` 按 attack type 1—7 分发直接 actor 伤害。
+`sub_45F000` 以双方 `+0x108/+0x110` 坐标各自相差不超过 1 判断目标格
+是否重合；直接 actor 路径和坐标弹道路径不能混为一谈：
+
+| attack type | 直接 actor 伤害 | 直接调用次数 | 坐标路径投射数 |
+|---:|---:|---:|---:|
+| 1 | 2 | 1 | 1 |
+| 2 | attacker runtime type 1 为 16，否则 2 | 1 | 1 |
+| 3 | 2 | 1 | 3 |
+| 4 | attacker runtime type 56 为 1，否则 8 | 1 | 0 |
+| 5 | 16 | 1 | 0 |
+| 6 | 8 | 1 | 1 |
+| 7 | 1 | 1 | 1 |
+
+所以机枪的三条散布弹道不是同一 actor 的三次扣血。普通手枪、步枪和机枪
+坐标弹道都通过 `sub_4656C0(effect=1, step=64, damage=2)` 创建；这条
+视觉/逐 tick 路径尚未接入 Remake，不能用直接目标规则代替后再声称完成。
+
+伤害入口 `sub_458700` 在伤害小于 32 时跳过 runtime target type
+34/86/87/88/94/95/96/97；32 及以上不受此门槛影响。Godot 侧由
+`LegacyCombatRules`、SDK 侧由 `OrdinaryCombat.hpp` 固化同一组规则；
+`AttackTargetCellCoincides` RVA `0x0005F000` 已进入地址清单。
+
 ### 坐标警戒与五点调查
 
 `sub_45DDA0` 不是“把看到的玩家指针发给所有友军”。它遍历全局 actor

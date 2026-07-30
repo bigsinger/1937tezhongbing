@@ -53,6 +53,7 @@
     {"name": "BurialRangeCheck", "rva": "0x00056A20", "kind": "function", "confidence": "decompiled"},
     {"name": "BurialCompletion", "rva": "0x00056CD0", "kind": "function", "confidence": "decompiled"},
     {"name": "ApplyActorDamage", "rva": "0x00058700", "kind": "function", "confidence": "decompiled"},
+    {"name": "AttackTargetCellCoincides", "rva": "0x0005F000", "kind": "function", "confidence": "decompiled"},
     {"name": "BurialCommandUpdate", "rva": "0x00058520", "kind": "function", "confidence": "decompiled"},
     {"name": "ActorCommandDispatch", "rva": "0x00058A80", "kind": "function", "confidence": "decompiled"},
     {"name": "FaceActor", "rva": "0x00059B70", "kind": "function", "confidence": "decompiled"},

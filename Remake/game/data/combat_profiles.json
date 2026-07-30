@@ -1,6 +1,6 @@
 {
-  "schema_version": 3,
-  "source_status": "M1937.exe field-level reverse engineering; coordinates are original isometric screen pixels; unresolved values are explicitly marked remake defaults",
+  "schema_version": 4,
+  "source_status": "M1937.exe field-level reverse engineering; coordinates are original isometric screen pixels; direct actor-hit counts and attacker runtime-type damage overrides follow sub_456DF0, while unresolved compatibility-only values remain explicitly marked remake defaults",
   "senses": {
     "enemy_default": {
       "horizontal_radius": 640.0,
@@ -38,6 +38,7 @@
       "requires_line_of_sight": true,
       "damage": 2,
       "burst_count": 1,
+      "direct_actor_hit_count": 1,
       "ammo_item_id": 36,
       "ammo_per_attack": 1,
       "hit_frame_mode": "last_frame",
@@ -49,6 +50,7 @@
       "source_status": {
         "damage": "recovered",
         "burst_count": "recovered",
+        "direct_actor_hit_count": "recovered",
         "ammo_item_id": "recovered",
         "ammo_per_attack": "recovered",
         "hit_frame_mode": "recovered",
@@ -67,6 +69,7 @@
       "requires_line_of_sight": true,
       "damage": 2,
       "burst_count": 1,
+      "direct_actor_hit_count": 1,
       "ammo_item_id": 37,
       "ammo_per_attack": 1,
       "hit_frame_mode": "last_frame",
@@ -76,8 +79,9 @@
       "reload_seconds": 2.0,
       "recovery_seconds": 0.55,
       "source_status": {
-        "damage": "recovered_with_unresolved_override",
+        "damage": "recovered",
         "burst_count": "recovered",
+        "direct_actor_hit_count": "recovered",
         "ammo_item_id": "recovered",
         "ammo_per_attack": "recovered",
         "hit_frame_mode": "recovered",
@@ -87,7 +91,7 @@
         "reload_seconds": "unresolved_remake_default",
         "recovery_seconds": "unresolved_remake_default"
       },
-      "damage_notes": "The normal case is 2 damage. An original actor/class condition raises it to 16, but that actor mapping is not recovered yet."
+      "damage_notes": "The normal case is 2 damage. M1937.exe sub_456DF0 raises direct actor damage to 16 exactly when the attacker runtime actor type is 1."
     },
     "machine_gun_attack": {
       "attack_type": 3,
@@ -97,6 +101,7 @@
       "requires_line_of_sight": true,
       "damage": 2,
       "burst_count": 3,
+      "direct_actor_hit_count": 1,
       "ammo_item_id": 38,
       "ammo_per_attack": 1,
       "hit_frame_mode": "last_frame",
@@ -108,6 +113,7 @@
       "source_status": {
         "damage": "recovered",
         "burst_count": "recovered",
+        "direct_actor_hit_count": "recovered",
         "ammo_item_id": "recovered",
         "ammo_per_attack": "recovered",
         "hit_frame_mode": "recovered",
@@ -126,6 +132,7 @@
       "requires_line_of_sight": true,
       "damage": 8,
       "burst_count": 1,
+      "direct_actor_hit_count": 1,
       "ammo_item_id": 39,
       "ammo_per_attack": 1,
       "hit_frame_mode": "last_frame",
@@ -135,8 +142,9 @@
       "reload_seconds": 0.0,
       "recovery_seconds": 0.4,
       "source_status": {
-        "damage": "recovered_with_unresolved_override",
+        "damage": "recovered",
         "burst_count": "recovered",
+        "direct_actor_hit_count": "recovered",
         "ammo_item_id": "recovered",
         "ammo_per_attack": "recovered",
         "hit_frame_mode": "recovered",
@@ -146,7 +154,7 @@
         "reload_seconds": "unresolved_remake_default",
         "recovery_seconds": "unresolved_remake_default"
       },
-      "damage_notes": "The normal case is 8 damage. Original actor type 56 uses 1 damage, but the converted actor mapping is not confirmed yet."
+      "damage_notes": "The normal case is 8 damage. M1937.exe sub_456DF0 applies 1 damage exactly when the attacker runtime actor type is 56; converted runtime identities already preserve this field."
     },
     "broadsword_attack": {
       "attack_type": 5,
@@ -156,6 +164,7 @@
       "requires_line_of_sight": true,
       "damage": 16,
       "burst_count": 1,
+      "direct_actor_hit_count": 1,
       "ammo_item_id": 40,
       "ammo_per_attack": 1,
       "hit_frame_mode": "last_frame",
@@ -167,6 +176,7 @@
       "source_status": {
         "damage": "recovered",
         "burst_count": "recovered",
+        "direct_actor_hit_count": "recovered",
         "ammo_item_id": "recovered",
         "ammo_per_attack": "recovered",
         "hit_frame_mode": "recovered",
@@ -185,6 +195,7 @@
       "requires_line_of_sight": true,
       "damage": 8,
       "burst_count": 1,
+      "direct_actor_hit_count": 1,
       "ammo_item_id": 41,
       "ammo_per_attack": 1,
       "hit_frame_mode": "last_frame",
@@ -196,6 +207,7 @@
       "source_status": {
         "damage": "recovered",
         "burst_count": "recovered",
+        "direct_actor_hit_count": "recovered",
         "ammo_item_id": "recovered",
         "ammo_per_attack": "recovered",
         "hit_frame_mode": "recovered",
@@ -214,6 +226,7 @@
       "requires_line_of_sight": true,
       "damage": 1,
       "burst_count": 1,
+      "direct_actor_hit_count": 1,
       "ammo_item_id": 42,
       "ammo_per_attack": 1,
       "hit_frame_mode": "last_frame",
@@ -225,6 +238,7 @@
       "source_status": {
         "damage": "recovered",
         "burst_count": "recovered",
+        "direct_actor_hit_count": "recovered",
         "ammo_item_id": "recovered",
         "ammo_per_attack": "recovered",
         "hit_frame_mode": "recovered",
@@ -243,6 +257,7 @@
       "requires_line_of_sight": true,
       "damage": 128,
       "burst_count": 1,
+      "direct_actor_hit_count": 0,
       "ammo_item_id": 43,
       "ammo_per_attack": 1,
       "hit_frame_mode": "last_frame",
@@ -254,6 +269,7 @@
       "source_status": {
         "damage": "recovered",
         "burst_count": "recovered",
+        "direct_actor_hit_count": "recovered",
         "ammo_item_id": "recovered",
         "ammo_per_attack": "recovered",
         "hit_frame_mode": "recovered",
@@ -273,6 +289,7 @@
       "requires_line_of_sight": true,
       "damage": 128,
       "burst_count": 1,
+      "direct_actor_hit_count": 0,
       "ammo_item_id": 44,
       "ammo_per_attack": 1,
       "hit_frame_mode": "last_frame",
@@ -284,6 +301,7 @@
       "source_status": {
         "damage": "recovered",
         "burst_count": "recovered",
+        "direct_actor_hit_count": "recovered",
         "ammo_item_id": "recovered",
         "ammo_per_attack": "recovered",
         "hit_frame_mode": "recovered",
@@ -303,6 +321,7 @@
       "requires_line_of_sight": true,
       "damage": 128,
       "burst_count": 1,
+      "direct_actor_hit_count": 0,
       "ammo_item_id": 45,
       "ammo_per_attack": 1,
       "hit_frame_mode": "last_frame",
@@ -314,6 +333,7 @@
       "source_status": {
         "damage": "recovered",
         "burst_count": "recovered",
+        "direct_actor_hit_count": "recovered",
         "ammo_item_id": "recovered",
         "ammo_per_attack": "recovered",
         "hit_frame_mode": "recovered",
@@ -333,6 +353,7 @@
       "requires_line_of_sight": true,
       "damage": 8,
       "burst_count": 1,
+      "direct_actor_hit_count": 0,
       "ammo_item_id": 99,
       "ammo_per_attack": 1,
       "hit_frame_mode": "last_frame",
@@ -344,6 +365,7 @@
       "source_status": {
         "damage": "unresolved_remake_default",
         "burst_count": "recovered",
+        "direct_actor_hit_count": "recovered",
         "ammo_item_id": "recovered",
         "ammo_per_attack": "recovered",
         "hit_frame_mode": "recovered",

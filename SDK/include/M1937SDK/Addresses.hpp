@@ -59,6 +59,7 @@ inline constexpr std::uintptr_t special_attack_dispatch = 0x00056DF0;
 inline constexpr std::uintptr_t burial_range_check = 0x00056A20;
 inline constexpr std::uintptr_t burial_completion = 0x00056CD0;
 inline constexpr std::uintptr_t apply_actor_damage = 0x00058700;
+inline constexpr std::uintptr_t attack_target_cell_coincides = 0x0005F000;
 inline constexpr std::uintptr_t burial_command_update = 0x00058520;
 inline constexpr std::uintptr_t actor_command_dispatch = 0x00058A80;
 inline constexpr std::uintptr_t face_actor = 0x00059B70;

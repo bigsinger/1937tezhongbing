@@ -56,6 +56,7 @@ namespace Mission1937.SDK.Generated
         public const long BurialRangeCheck = 0x00056A20L;
         public const long BurialCompletion = 0x00056CD0L;
         public const long ApplyActorDamage = 0x00058700L;
+        public const long AttackTargetCellCoincides = 0x0005F000L;
         public const long BurialCommandUpdate = 0x00058520L;
         public const long ActorCommandDispatch = 0x00058A80L;
         public const long FaceActor = 0x00059B70L;

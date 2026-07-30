@@ -15,6 +15,7 @@ const PROJECTILE_PROFILES: Script = preload("res://scripts/projectile_profiles.g
 const COMBAT_INVENTORY_SCRIPT: Script = preload("res://scripts/combat_inventory.gd")
 const BACKPACK_INVENTORY_SCRIPT: Script = preload("res://scripts/backpack_inventory.gd")
 const LEGACY_SPECIAL_ACTION_PROFILES: Script = preload("res://scripts/legacy_special_action_profiles.gd")
+const LEGACY_COMBAT_RULES: Script = preload("res://scripts/legacy_combat_rules.gd")
 const WORLD_DEPTH: Script = preload("res://scripts/world_depth.gd")
 
 enum CombatAction { NONE, ATTACK, RELOAD, DEATH }
@@ -670,7 +671,13 @@ func request_reload() -> bool:
 func take_damage(amount: int, attacker: Node2D = null) -> int:
 	if not is_alive or amount <= 0:
 		return 0
-	var applied := mini(amount, current_hit_points)
+	var accepted_damage: int = LEGACY_COMBAT_RULES.accepted_actor_damage(
+		runtime_actor_type,
+		amount,
+	)
+	if accepted_damage <= 0:
+		return 0
+	var applied := mini(accepted_damage, current_hit_points)
 	current_hit_points -= applied
 	damage_event_count += 1
 	damage_taken_total += applied
@@ -909,9 +916,13 @@ func _resolve_pending_hit() -> void:
 	if PROJECTILE_PROFILES.is_projectile_attack(attack_type):
 		projectile_requested.emit(self, pending_hit_target, weapon_profile.duplicate(true))
 		return
-	var damage := maxi(int(weapon_profile.get("damage", 1)), 1)
-	var burst_count := maxi(int(weapon_profile.get("burst_count", 1)), 1)
-	for unused_shot in range(burst_count):
+	var damage: int = LEGACY_COMBAT_RULES.direct_actor_damage(
+		attack_type,
+		runtime_actor_type,
+		int(weapon_profile.get("damage", 1)),
+	)
+	var direct_hit_count: int = LEGACY_COMBAT_RULES.direct_actor_hit_count(attack_type)
+	for unused_shot in range(direct_hit_count):
 		if not _target_is_alive(pending_hit_target):
 			break
 		var applied := int(pending_hit_target.call("take_damage", damage, self))

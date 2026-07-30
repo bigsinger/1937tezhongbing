@@ -1,7 +1,7 @@
 class_name CombatProfiles
 extends RefCounted
 
-const SCHEMA_VERSION := 3
+const SCHEMA_VERSION := 4
 const CATALOG_PATH := "res://data/combat_profiles.json"
 const REQUIRED_ALERT_KEYS := [
 	"ally_death_radius",
@@ -11,6 +11,7 @@ const REQUIRED_ALERT_KEYS := [
 const REQUIRED_WEAPON_SOURCE_FIELDS := [
 	"damage",
 	"burst_count",
+	"direct_actor_hit_count",
 	"ammo_item_id",
 	"ammo_per_attack",
 	"hit_frame_mode",
@@ -213,6 +214,7 @@ static func _is_valid_weapon(weapon: Dictionary) -> bool:
 	var animation_action_value: Variant = weapon.get("animation_action")
 	var damage_value: Variant = weapon.get("damage")
 	var burst_count_value: Variant = weapon.get("burst_count")
+	var direct_actor_hit_count_value: Variant = weapon.get("direct_actor_hit_count")
 	var ammo_item_id_value: Variant = weapon.get("ammo_item_id")
 	var ammo_per_attack_value: Variant = weapon.get("ammo_per_attack")
 	var alert_radius_value: Variant = weapon.get("alert_radius")
@@ -233,6 +235,8 @@ static func _is_valid_weapon(weapon: Dictionary) -> bool:
 		or not _is_positive_number(damage_value)
 		or not _is_integer_number(burst_count_value)
 		or int(burst_count_value) < 1
+		or not _is_integer_number(direct_actor_hit_count_value)
+		or int(direct_actor_hit_count_value) < 0
 		or not _is_integer_number(ammo_item_id_value)
 		or not _is_integer_number(ammo_per_attack_value)
 		or int(ammo_per_attack_value) < 1
@@ -250,6 +254,8 @@ static func _is_valid_weapon(weapon: Dictionary) -> bool:
 		return false
 
 	var attack_type := int(attack_type_value)
+	if int(direct_actor_hit_count_value) != (1 if attack_type <= 7 else 0):
+		return false
 	if int(ammo_item_id_value) != int(EXPECTED_AMMO_ITEM_IDS.get(attack_type, 0)):
 		return false
 	var uses_finite_ammo := FINITE_AMMO_ATTACK_TYPES.has(attack_type)

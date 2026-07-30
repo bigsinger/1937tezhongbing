@@ -26,6 +26,9 @@ PE 指纹和原始指令字节。
 - `Projectiles.hpp` 固定 type 6/7/9 的 effect/mode、16/5/8 步长、
   actor/GFL、直接伤害、L3→L2 碰撞顺序、0x44 运行时投射物布局、
   Bresenham/抛物线公式和 SPR primary/tertiary 发射锚点；
+- `OrdinaryCombat.hpp` 固定 attack type 1—7 的直接 actor 伤害、
+  步枪/匕首 attacker runtime type 例外、直接命中数、机枪三条坐标散布
+  弹道，以及八类 target runtime type 的低于 32 伤害免疫；
 - `address-catalog.json` 是地址的唯一机器源；生成器同时产出 C++ 头文件
   和 C# 探针常量；
 - `mission-routes.json` 统一描述 1—12 关的选择器编号、原引擎任务和

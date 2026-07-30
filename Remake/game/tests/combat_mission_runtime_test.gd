@@ -136,6 +136,7 @@ func _init() -> void:
 func _run_tests() -> void:
 	var failures: Array[String] = []
 	_test_combat_timing_ammo_and_death(failures)
+	_test_original_damage_dispatch(failures)
 	_test_alert_propagation(failures)
 	_test_faction_and_exit_party_rules(failures)
 	_test_m000_world_event_closure(failures)
@@ -298,6 +299,98 @@ func _test_combat_timing_ammo_and_death(failures: Array[String]) -> void:
 		failures,
 	)
 
+	arena.free()
+
+
+func _test_original_damage_dispatch(failures: Array[String]) -> void:
+	var arena := Node2D.new()
+	root.add_child(arena)
+	var clear_sight := ClearSight.new()
+	var empty_groups: Array[Dictionary] = []
+
+	var attacker = SQUAD_UNIT_SCRIPT.new()
+	attacker.configure(
+		"damage dispatcher",
+		Color.WHITE,
+		Vector2.ZERO,
+		null,
+		empty_groups,
+		empty_groups,
+		-1,
+		clear_sight,
+	)
+	attacker.configure_combat(3, 8, {}, empty_groups, empty_groups, true)
+	arena.add_child(attacker)
+
+	var target = SQUAD_UNIT_SCRIPT.new()
+	target.configure(
+		"target",
+		Color.WHITE,
+		Vector2(8.0, 0.0),
+		null,
+		empty_groups,
+		empty_groups,
+		-1,
+		clear_sight,
+	)
+	target.configure_combat(1, 64, {}, empty_groups, empty_groups, true)
+	arena.add_child(target)
+
+	var rifle_profile := _test_weapon_profile()
+	attacker.runtime_actor_type = 1
+	attacker.weapon_profile = rifle_profile
+	attacker.pending_hit_target = target
+	attacker.pending_hit_forced = true
+	attacker.pending_hit_resolved = false
+	attacker._resolve_pending_hit()
+	_expect(
+		target.current_hit_points == 48,
+		"runtime actor type 1 rifle branch applies the recovered 16 damage",
+		failures,
+	)
+
+	var dagger_profile := _test_weapon_profile()
+	dagger_profile["attack_type"] = 4
+	dagger_profile["damage"] = 8
+	attacker.runtime_actor_type = 56
+	attacker.weapon_profile = dagger_profile
+	attacker.pending_hit_target = target
+	attacker.pending_hit_resolved = false
+	attacker._resolve_pending_hit()
+	_expect(
+		target.current_hit_points == 47,
+		"runtime actor type 56 dagger branch applies the recovered 1 damage",
+		failures,
+	)
+
+	var machine_gun_profile := _test_weapon_profile()
+	machine_gun_profile["attack_type"] = 3
+	machine_gun_profile["damage"] = 2
+	machine_gun_profile["burst_count"] = 3
+	attacker.runtime_actor_type = 11
+	attacker.weapon_profile = machine_gun_profile
+	attacker.pending_hit_target = target
+	attacker.pending_hit_resolved = false
+	attacker._resolve_pending_hit()
+	_expect(
+		target.current_hit_points == 45,
+		"machine-gun actor targeting resolves one 2-damage hit, not three direct hits",
+		failures,
+	)
+
+	target.runtime_actor_type = 34
+	_expect(
+		target.take_damage(31, attacker) == 0
+		and target.current_hit_points == 45,
+		"recovered special actor types reject damage below 32",
+		failures,
+	)
+	_expect(
+		target.take_damage(32, attacker) == 32
+		and target.current_hit_points == 13,
+		"the original low-damage immunity boundary accepts exactly 32",
+		failures,
+	)
 	arena.free()
 
 

@@ -265,6 +265,28 @@ int main(int argc, char** argv) {
                 m1937::sdk::rva::special_attack_dispatch !=
                     m1937::sdk::rva::explosion_actor_update,
             "special-action RVA catalog mismatch", checks);
+        require(
+            m1937::sdk::direct_actor_damage(2, 1) == 16 &&
+                m1937::sdk::direct_actor_damage(2, 5) == 2 &&
+                m1937::sdk::direct_actor_damage(4, 56) == 1 &&
+                m1937::sdk::direct_actor_damage(4, 1) == 8,
+            "ordinary attacker-type damage branches mismatch", checks);
+        require(
+            m1937::sdk::find_ordinary_attack_rule(3) != nullptr &&
+                m1937::sdk::find_ordinary_attack_rule(3)
+                        ->direct_actor_hit_count == 1 &&
+                m1937::sdk::find_ordinary_attack_rule(3)
+                        ->coordinate_projectile_count == 3 &&
+                m1937::sdk::accepted_actor_damage(34, 31) == 0 &&
+                m1937::sdk::accepted_actor_damage(34, 32) == 32,
+            "ordinary actor-hit count and low-damage immunity mismatch",
+            checks);
+        require(
+            m1937::sdk::rva::attack_target_cell_coincides != 0 &&
+                m1937::sdk::rva::apply_actor_damage != 0 &&
+                m1937::sdk::rva::attack_target_cell_coincides !=
+                    m1937::sdk::rva::apply_actor_damage,
+            "ordinary combat RVA catalog mismatch", checks);
         {
         using namespace m1937::sdk::projectile;
         const auto* dart = find_attack_rule(6);

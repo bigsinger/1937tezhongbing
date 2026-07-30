@@ -531,6 +531,10 @@ func _init() -> void:
 		failures,
 	)
 	var rifle_profile := (combat_catalog["weapons"] as Dictionary)["rifle_attack"] as Dictionary
+	var machine_gun_profile := (
+		(combat_catalog["weapons"] as Dictionary)["machine_gun_attack"] as Dictionary
+	)
+	var dagger_profile := (combat_catalog["weapons"] as Dictionary)["dagger_attack"] as Dictionary
 	var grenade_profile := (combat_catalog["weapons"] as Dictionary)["grenade_attack"] as Dictionary
 	var enemy_sense := (combat_catalog["senses"] as Dictionary)["enemy_default"] as Dictionary
 	var dog_sense := (combat_catalog["senses"] as Dictionary)["guard_dog_special"] as Dictionary
@@ -542,6 +546,28 @@ func _init() -> void:
 			) == 700.0
 		),
 		"VWF default attack type resolves to its recovered weapon profile",
+		failures,
+	)
+	expect(
+		(
+			int(combat_catalog.get("schema_version", 0)) == 4
+			and int(rifle_profile.get("direct_actor_hit_count", 0)) == 1
+			and int(machine_gun_profile.get("direct_actor_hit_count", 0)) == 1
+			and int(machine_gun_profile.get("burst_count", 0)) == 3
+			and int(dagger_profile.get("direct_actor_hit_count", 0)) == 1
+		),
+		"ordinary actor targets receive one original damage call even when coordinate fire fans out",
+		failures,
+	)
+	expect(
+		(
+			(rifle_profile.get("source_status", {}) as Dictionary).get("damage") == "recovered"
+			and (dagger_profile.get("source_status", {}) as Dictionary).get("damage")
+			== "recovered"
+			and String(rifle_profile.get("damage_notes", "")).contains("runtime actor type is 1")
+			and String(dagger_profile.get("damage_notes", "")).contains("runtime actor type is 56")
+		),
+		"runtime-type rifle and dagger damage overrides are evidence-labelled",
 		failures,
 	)
 	var patrol_world_points: PackedVector2Array = ENEMY_UNIT_SCRIPT.patrol_world_points(
