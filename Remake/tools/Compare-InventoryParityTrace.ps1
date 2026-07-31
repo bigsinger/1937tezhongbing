@@ -230,6 +230,130 @@ $scenarioDefinitions = @{
         expected_after_quantity = 6
         target_scene = 1598
     }
+    'm010-rifle-attack-inventory-v1' = [ordered]@{
+        level_id = 'm010'
+        selector_level = 11
+        engine_mission = 11
+        actor_scene = 1589
+        actor_database_entry = 924
+        checkpoints = @('before_attack', 'after_attack')
+        active_attack_type = 2
+        delta_container = 'weapon_entries'
+        delta_item_id = 37
+        delta_quantity = -1
+        expected_before_quantity = 20
+        expected_after_quantity = 19
+        target_scene = 1126
+    }
+    'm010-machine-gun-attack-inventory-v1' = [ordered]@{
+        level_id = 'm010'
+        selector_level = 11
+        engine_mission = 11
+        actor_scene = 1589
+        actor_database_entry = 924
+        checkpoints = @('before_attack', 'after_attack')
+        active_attack_type = 3
+        delta_container = 'weapon_entries'
+        delta_item_id = 38
+        delta_quantity = -1
+        expected_before_quantity = 10
+        expected_after_quantity = 9
+        target_scene = 1126
+    }
+    'm004-dart-attack-inventory-v1' = [ordered]@{
+        level_id = 'm004'
+        selector_level = 5
+        engine_mission = 5
+        actor_scene = 2629
+        actor_database_entry = 910
+        checkpoints = @('before_attack', 'after_attack')
+        active_attack_type = 6
+        delta_container = 'weapon_entries'
+        delta_item_id = 41
+        delta_quantity = -1
+        expected_before_quantity = 20
+        expected_after_quantity = 19
+        target_scene = 2685
+    }
+    'm010-dagger-attack-inventory-v1' = [ordered]@{
+        level_id = 'm010'
+        selector_level = 11
+        engine_mission = 11
+        actor_scene = 1591
+        actor_database_entry = 910
+        checkpoints = @('before_attack', 'after_attack')
+        active_attack_type = 4
+        delta_container = 'weapon_entries'
+        delta_item_id = 39
+        delta_quantity = 0
+        expected_before_quantity = 1
+        expected_after_quantity = 1
+        target_scene = 1126
+        compare_target_hit_points = $true
+    }
+    'm010-broadsword-attack-inventory-v1' = [ordered]@{
+        level_id = 'm010'
+        selector_level = 11
+        engine_mission = 11
+        actor_scene = 1591
+        actor_database_entry = 910
+        checkpoints = @('before_attack', 'after_attack')
+        active_attack_type = 5
+        delta_container = 'weapon_entries'
+        delta_item_id = 40
+        delta_quantity = 0
+        expected_before_quantity = 1
+        expected_after_quantity = 1
+        target_scene = 1126
+        compare_target_hit_points = $true
+    }
+    'm010-grenade-attack-inventory-v1' = [ordered]@{
+        level_id = 'm010'
+        selector_level = 11
+        engine_mission = 11
+        actor_scene = 1589
+        actor_database_entry = 924
+        checkpoints = @('before_attack', 'after_attack')
+        active_attack_type = 9
+        delta_container = 'weapon_entries'
+        delta_item_id = 44
+        delta_quantity = -1
+        expected_before_quantity = 3
+        expected_after_quantity = 2
+        target_scene = 1126
+    }
+    'm010-mine-deploy-inventory-v1' = [ordered]@{
+        level_id = 'm010'
+        selector_level = 11
+        engine_mission = 11
+        actor_scene = 1590
+        actor_database_entry = 918
+        checkpoints = @('before_deploy', 'after_deploy')
+        active_attack_type = 8
+        delta_container = 'weapon_entries'
+        delta_item_id = 43
+        delta_quantity = -1
+        expected_before_quantity = 3
+        expected_after_quantity = 2
+        target_scene = -1
+        runtime_object_delta = 1
+    }
+    'm010-explosive-deploy-inventory-v1' = [ordered]@{
+        level_id = 'm010'
+        selector_level = 11
+        engine_mission = 11
+        actor_scene = 1590
+        actor_database_entry = 918
+        checkpoints = @('before_deploy', 'after_deploy')
+        active_attack_type = 10
+        delta_container = 'weapon_entries'
+        delta_item_id = 45
+        delta_quantity = -1
+        expected_before_quantity = 3
+        expected_after_quantity = 2
+        target_scene = -1
+        runtime_object_delta = 1
+    }
 }
 
 $scenarioId = [string]$reference.scenario.id
@@ -336,7 +460,9 @@ foreach ($checkpointId in $expectedCheckpointIds) {
                     ($null -ne $candidateTarget)) `
                 'required attack target'
         }
-        else {
+        elseif (
+            $definition.Contains('compare_target_hit_points') -and
+            [bool]$definition.compare_target_hit_points) {
             foreach ($field in @('current', 'maximum')) {
                 Compare-ExactValue $mismatches `
                     "checkpoints.$checkpointId.actors.scene:$($definition.target_scene).hit_points.$field" `
@@ -401,6 +527,17 @@ foreach ($traceCase in @(
         $definition.active_attack_type `
         $afterActor.inventory.active_attack_type `
         'original active weapon'
+    if ($definition.Contains('runtime_object_delta')) {
+        $runtimeObjectDelta = (
+            [int]$afterCheckpoint.world.runtime_object_count -
+            [int]$beforeCheckpoint.world.runtime_object_count
+        )
+        Compare-ExactValue $mismatches `
+            "$($traceCase.label).delta.runtime_object_count" `
+            $definition.runtime_object_delta `
+            $runtimeObjectDelta `
+            'exact spawned world-object delta'
+    }
 }
 
 $result = [pscustomobject][ordered]@{
@@ -418,11 +555,29 @@ $result = [pscustomobject][ordered]@{
         after_quantity = [int]$definition.expected_after_quantity
         delta = [int]$definition.delta_quantity
     }
+    runtime_object_delta = if (
+        $definition.Contains('runtime_object_delta')
+    ) {
+        [int]$definition.runtime_object_delta
+    }
+    else {
+        $null
+    }
     mismatch_count = $mismatches.Count
     passed = $mismatches.Count -eq 0
-    position_policy = (
-        'Actor positions are diagnostic only for these scenarios because the ' +
-        'live patrol target phase differs between isolated launches.')
+    position_policy = if (
+        $definition.Contains('compare_target_hit_points') -and
+        [bool]$definition.compare_target_hit_points
+    ) {
+        'Actor positions remain diagnostic, but this durable melee scenario ' +
+        'strictly compares target HP as well as canonical containers.'
+    }
+    else {
+        'Actor positions and target HP timing are diagnostic for inventory ' +
+        'scenarios because a live patrol phase and in-flight projectile can ' +
+        'differ between isolated launches; canonical containers and their ' +
+        'exact quantity transition are strict.'
+    }
     mismatches = @($mismatches)
 }
 
@@ -467,9 +622,20 @@ if (-not [string]::IsNullOrWhiteSpace($OutputMarkdown)) {
             'quantity transition match the stable MOD baseline.')
     }
     $lines.Add('')
-    $lines.Add(
-        '> Position is intentionally diagnostic: a moving patrol target can ' +
-        'start at a different phase in two isolated launches.')
+    if (
+        $definition.Contains('compare_target_hit_points') -and
+        [bool]$definition.compare_target_hit_points
+    ) {
+        $lines.Add(
+            '> Position is diagnostic; target HP, ordered inventories and ' +
+            'the durable quantity transition are strict for this melee case.')
+    }
+    else {
+        $lines.Add(
+            '> Position and target-HP timing are intentionally diagnostic: a ' +
+            'moving patrol or in-flight projectile can start at a different ' +
+            'phase. Ordered inventories and exact quantity deltas remain strict.')
+    }
     $lines |
         Set-Content -LiteralPath $resolvedMarkdown -Encoding UTF8
 }

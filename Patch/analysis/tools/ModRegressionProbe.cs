@@ -40,8 +40,17 @@ internal static class ModRegressionProbe
     private const int DikF1 = 0x3B;
     private const int DikF2 = 0x3C;
     private const int DikF4 = 0x3E;
+    private const int DikF6 = 0x40;
     private const int DikM = 0x32;
+    private const int DikDigit1 = 0x02;
+    private const int DikDigit3 = 0x04;
+    private const int DikDigit4 = 0x05;
     private const int DikDigit5 = 0x06;
+    private const int DikDigit6 = 0x07;
+    private const int DikDigit7 = 0x08;
+    private const int DikDigit8 = 0x09;
+    private const int DikDigit9 = 0x0A;
+    private const int DikDigit0 = 0x0B;
     private const int DikUp = 0xC8;
     private const int DikLeft = 0xCB;
     private const int DikRight = 0xCD;
@@ -90,8 +99,6 @@ internal static class ModRegressionProbe
     private const long HoverCommandArmedRelativeAddress = 0x000E7034L;
     private const long HoverTargetStatusRelativeAddress = 0x000E7038L;
     private const long HoverTargetAddressRelativeAddress = 0x000E7040L;
-    private const int M000PlayerSceneIndex = 1436;
-    private const int M000AttackTargetSceneIndex = 1598;
     private const int M001PlayerSceneIndex = 2280;
     private const int M001MineRuntimeType = 43;
     private const int M001MineItemId = 43;
@@ -302,6 +309,26 @@ internal static class ModRegressionProbe
         public int AuthoredAttackType;
     }
 
+    private sealed class WeaponAttackParityScenario
+    {
+        public string Id;
+        public string Description;
+        public string StageName;
+        public int SelectorLevel;
+        public int PlayerSceneIndex;
+        public int PlayerSelectionDik;
+        public int WeaponSelectionDik;
+        public int AttackType;
+        public int ItemId;
+        public int ExpectedBeforeQuantity;
+        public int ExpectedAfterQuantity;
+        public int TargetSceneIndex;
+        public bool UsesWorldPoint;
+        public int TargetWorldX;
+        public int TargetWorldY;
+        public bool RequiresTargetDamage;
+    }
+
     public static int Main(string[] args)
     {
         if (args.Length < 3)
@@ -483,11 +510,10 @@ internal static class ModRegressionProbe
             throw new InvalidOperationException(
                 "The audited mine pickup scenario requires selector level 2.");
         }
-        if (parityAttackOnly && selectorLevel != 1)
-        {
-            throw new InvalidOperationException(
-                "The audited pistol attack scenario requires selector level 1.");
-        }
+        if (parityAttackOnly)
+            ResolveWeaponAttackParityScenario(
+                parityScenarioOverride,
+                selectorLevel);
         var route = MissionRoutes.Find(selectorLevel);
         if (route == null)
             throw new InvalidOperationException("Unknown selector level.");
@@ -985,6 +1011,12 @@ internal static class ModRegressionProbe
                 }
                 if (parityPickupOnly || parityAttackOnly)
                 {
+                    WeaponAttackParityScenario attackParityScenario =
+                        parityAttackOnly
+                            ? ResolveWeaponAttackParityScenario(
+                                parityScenarioOverride,
+                                selectorLevel)
+                            : null;
                     string inventoryParityEvidence;
                     bool inventoryParityObserved = parityPickupOnly
                         ? ExerciseMinePickupParity(
@@ -995,13 +1027,14 @@ internal static class ModRegressionProbe
                             clock,
                             actorIdentities,
                             out inventoryParityEvidence)
-                        : ExercisePistolAttackParity(
+                        : ExerciseWeaponAttackParity(
                             process,
                             imageBase,
                             window,
                             parityCheckpoints,
                             clock,
                             actorIdentities,
+                            attackParityScenario,
                             out inventoryParityEvidence);
                     AddStage(
                         stages,
@@ -1011,7 +1044,7 @@ internal static class ModRegressionProbe
                         clock,
                         parityPickupOnly
                             ? "original_mine_pickup_inventory_delta"
-                            : "original_pistol_attack_inventory_delta",
+                            : attackParityScenario.StageName,
                         inventoryParityObserved,
                         inventoryParityEvidence);
                     samplerStop = true;
@@ -1030,7 +1063,7 @@ internal static class ModRegressionProbe
                         });
                     int trackedSceneIndex = parityPickupOnly
                         ? M001PlayerSceneIndex
-                        : M000PlayerSceneIndex;
+                        : attackParityScenario.PlayerSceneIndex;
                     bool inventorySnapshotsReady =
                         parityCheckpoints.Count == 2 &&
                         parityCheckpoints.All(
@@ -2829,59 +2862,328 @@ internal static class ModRegressionProbe
             player.Dead == 0;
     }
 
-    private static bool ExercisePistolAttackParity(
+    private static WeaponAttackParityScenario ResolveWeaponAttackParityScenario(
+        string scenarioId,
+        int selectorLevel)
+    {
+        WeaponAttackParityScenario scenario = null;
+        if (String.Equals(
+                scenarioId,
+                "m000-pistol-attack-inventory-v1",
+                StringComparison.Ordinal))
+        {
+            scenario = new WeaponAttackParityScenario
+            {
+                Id = scenarioId,
+                Description =
+                    "Select scene 1436, equip the original pistol and attack " +
+                    "live scene 1598 through process-local DirectInput; " +
+                    "capture the direct ammunition count before and after.",
+                StageName = "original_pistol_attack_inventory_delta",
+                SelectorLevel = 1,
+                PlayerSceneIndex = 1436,
+                PlayerSelectionDik = DikF4,
+                WeaponSelectionDik = DikDigit5,
+                AttackType = 1,
+                ItemId = 36,
+                ExpectedBeforeQuantity = 7,
+                ExpectedAfterQuantity = 6,
+                TargetSceneIndex = 1598
+            };
+        }
+        else if (String.Equals(
+                     scenarioId,
+                     "m010-rifle-attack-inventory-v1",
+                     StringComparison.Ordinal))
+        {
+            scenario = new WeaponAttackParityScenario
+            {
+                Id = scenarioId,
+                Description =
+                    "Select Qiangzi scene 1589, equip the original rifle and " +
+                    "attack live scene 1126 through process-local " +
+                    "DirectInput; capture the direct ammunition count.",
+                StageName = "original_rifle_attack_inventory_delta",
+                SelectorLevel = 11,
+                PlayerSceneIndex = 1589,
+                PlayerSelectionDik = DikF4,
+                WeaponSelectionDik = DikDigit6,
+                AttackType = 2,
+                ItemId = 37,
+                ExpectedBeforeQuantity = 20,
+                ExpectedAfterQuantity = 19,
+                TargetSceneIndex = 1126
+            };
+        }
+        else if (String.Equals(
+                     scenarioId,
+                     "m010-machine-gun-attack-inventory-v1",
+                     StringComparison.Ordinal))
+        {
+            scenario = new WeaponAttackParityScenario
+            {
+                Id = scenarioId,
+                Description =
+                    "Select Qiangzi scene 1589, equip the original machine " +
+                    "gun and attack live scene 1126 through process-local " +
+                    "DirectInput; capture its one-count attack consumption.",
+                StageName = "original_machine_gun_attack_inventory_delta",
+                SelectorLevel = 11,
+                PlayerSceneIndex = 1589,
+                PlayerSelectionDik = DikF4,
+                WeaponSelectionDik = DikDigit7,
+                AttackType = 3,
+                ItemId = 38,
+                ExpectedBeforeQuantity = 10,
+                ExpectedAfterQuantity = 9,
+                TargetSceneIndex = 1126
+            };
+        }
+        else if (String.Equals(
+                     scenarioId,
+                     "m004-dart-attack-inventory-v1",
+                     StringComparison.Ordinal))
+        {
+            scenario = new WeaponAttackParityScenario
+            {
+                Id = scenarioId,
+                Description =
+                    "Select Daniu scene 2629, equip the original dart and " +
+                    "attack stationary scene 2685 through process-local " +
+                    "DirectInput; capture its mode-0 item consumption.",
+                StageName = "original_dart_attack_inventory_delta",
+                SelectorLevel = 5,
+                PlayerSceneIndex = 2629,
+                PlayerSelectionDik = DikF6,
+                WeaponSelectionDik = DikDigit4,
+                AttackType = 6,
+                ItemId = 41,
+                ExpectedBeforeQuantity = 20,
+                ExpectedAfterQuantity = 19,
+                TargetSceneIndex = 2685
+            };
+        }
+        else if (String.Equals(
+                     scenarioId,
+                     "m010-dagger-attack-inventory-v1",
+                     StringComparison.Ordinal))
+        {
+            scenario = new WeaponAttackParityScenario
+            {
+                Id = scenarioId,
+                Description =
+                    "Select Daniu scene 1591, equip the original dagger and " +
+                    "attack live scene 1126 through process-local " +
+                    "DirectInput; capture its durable mode-1 inventory and " +
+                    "committed target damage.",
+                StageName = "original_dagger_attack_inventory_delta",
+                SelectorLevel = 11,
+                PlayerSceneIndex = 1591,
+                PlayerSelectionDik = DikF6,
+                WeaponSelectionDik = DikDigit1,
+                AttackType = 4,
+                ItemId = 39,
+                ExpectedBeforeQuantity = 1,
+                ExpectedAfterQuantity = 1,
+                TargetSceneIndex = 1126,
+                RequiresTargetDamage = true
+            };
+        }
+        else if (String.Equals(
+                     scenarioId,
+                     "m010-broadsword-attack-inventory-v1",
+                     StringComparison.Ordinal))
+        {
+            scenario = new WeaponAttackParityScenario
+            {
+                Id = scenarioId,
+                Description =
+                    "Select Daniu scene 1591, equip the original broadsword " +
+                    "and attack live scene 1126 through process-local " +
+                    "DirectInput; capture its durable mode-1 inventory and " +
+                    "committed target damage.",
+                StageName = "original_broadsword_attack_inventory_delta",
+                SelectorLevel = 11,
+                PlayerSceneIndex = 1591,
+                PlayerSelectionDik = DikF6,
+                WeaponSelectionDik = DikDigit3,
+                AttackType = 5,
+                ItemId = 40,
+                ExpectedBeforeQuantity = 1,
+                ExpectedAfterQuantity = 1,
+                TargetSceneIndex = 1126,
+                RequiresTargetDamage = true
+            };
+        }
+        else if (String.Equals(
+                     scenarioId,
+                     "m010-grenade-attack-inventory-v1",
+                     StringComparison.Ordinal))
+        {
+            scenario = new WeaponAttackParityScenario
+            {
+                Id = scenarioId,
+                Description =
+                    "Select Qiangzi scene 1589, equip the original grenade " +
+                    "and attack live scene 1126 through process-local " +
+                    "DirectInput; capture its mode-0 item consumption.",
+                StageName = "original_grenade_attack_inventory_delta",
+                SelectorLevel = 11,
+                PlayerSceneIndex = 1589,
+                PlayerSelectionDik = DikF4,
+                WeaponSelectionDik = DikDigit9,
+                AttackType = 9,
+                ItemId = 44,
+                ExpectedBeforeQuantity = 3,
+                ExpectedAfterQuantity = 2,
+                TargetSceneIndex = 1126
+            };
+        }
+        else if (String.Equals(
+                     scenarioId,
+                     "m010-mine-deploy-inventory-v1",
+                     StringComparison.Ordinal))
+        {
+            scenario = new WeaponAttackParityScenario
+            {
+                Id = scenarioId,
+                Description =
+                    "Select Lao Zhao scene 1590, equip the original mine " +
+                    "and deploy it at the verified walkable point (176,104) " +
+                    "through process-local DirectInput; capture its mode-0 " +
+                    "item consumption.",
+                StageName = "original_mine_deploy_inventory_delta",
+                SelectorLevel = 11,
+                PlayerSceneIndex = 1590,
+                PlayerSelectionDik = DikF2,
+                WeaponSelectionDik = DikDigit8,
+                AttackType = 8,
+                ItemId = 43,
+                ExpectedBeforeQuantity = 3,
+                ExpectedAfterQuantity = 2,
+                TargetSceneIndex = -1,
+                UsesWorldPoint = true,
+                TargetWorldX = 176,
+                TargetWorldY = 104
+            };
+        }
+        else if (String.Equals(
+                     scenarioId,
+                     "m010-explosive-deploy-inventory-v1",
+                     StringComparison.Ordinal))
+        {
+            scenario = new WeaponAttackParityScenario
+            {
+                Id = scenarioId,
+                Description =
+                    "Select Lao Zhao scene 1590, equip the original timed " +
+                    "explosive and deploy it at the verified walkable point " +
+                    "(176,104) through process-local DirectInput; capture " +
+                    "its mode-0 item consumption.",
+                StageName = "original_explosive_deploy_inventory_delta",
+                SelectorLevel = 11,
+                PlayerSceneIndex = 1590,
+                PlayerSelectionDik = DikF2,
+                WeaponSelectionDik = DikDigit0,
+                AttackType = 10,
+                ItemId = 45,
+                ExpectedBeforeQuantity = 3,
+                ExpectedAfterQuantity = 2,
+                TargetSceneIndex = -1,
+                UsesWorldPoint = true,
+                TargetWorldX = 176,
+                TargetWorldY = 104
+            };
+        }
+
+        if (scenario == null)
+        {
+            throw new InvalidOperationException(
+                "Unsupported weapon-attack parity scenario: " +
+                (scenarioId ?? "<missing>"));
+        }
+        if (scenario.SelectorLevel != selectorLevel)
+        {
+            throw new InvalidOperationException(
+                "Weapon-attack parity scenario " + scenario.Id +
+                " requires selector level " + scenario.SelectorLevel +
+                ", not " + selectorLevel + ".");
+        }
+        return scenario;
+    }
+
+    private static bool ExerciseWeaponAttackParity(
         IntPtr process,
         long imageBase,
         IntPtr window,
         List<ParityCheckpoint> checkpoints,
         Stopwatch runClock,
         Dictionary<int, RuntimeActorIdentity> actorIdentities,
+        WeaponAttackParityScenario scenario,
         out string evidence)
     {
-        bool selected = PulseKey(window, DikF4);
-        Thread.Sleep(260);
-        bool weaponSelected = PulseKey(window, DikDigit5);
+        bool selected = false;
+        bool weaponSelected = false;
         ActorSnapshot player = null;
-        bool pistolActive = WaitUntil(
-            delegate()
-            {
-                player = ReadResolvedActor(
-                    process,
-                    imageBase,
-                    actorIdentities,
-                    M000PlayerSceneIndex);
-                return player != null &&
-                    player.DefaultAttackType == 1;
-            },
-            TimeSpan.FromSeconds(1.5));
+        bool weaponActive = false;
+        int selectionAttempts = 0;
+        while (!weaponActive && selectionAttempts < 3)
+        {
+            selected =
+                PulseKey(window, scenario.PlayerSelectionDik) || selected;
+            Thread.Sleep(260);
+            weaponSelected =
+                PulseKey(window, scenario.WeaponSelectionDik) ||
+                weaponSelected;
+            weaponActive = WaitUntil(
+                delegate()
+                {
+                    player = ReadResolvedActor(
+                        process,
+                        imageBase,
+                        actorIdentities,
+                        scenario.PlayerSceneIndex);
+                    return player != null &&
+                        player.DefaultAttackType == scenario.AttackType;
+                },
+                TimeSpan.FromSeconds(1.5));
+            selectionAttempts++;
+        }
         if (player == null ||
             !ReadActorInventoryContainers(process, player))
         {
             evidence =
-                "m000 scene 1436 inventory was not readable after F4/5";
+                "scene " + scenario.PlayerSceneIndex +
+                " inventory was not readable after character/weapon selection";
             return false;
         }
         int beforeQuantity = InventoryQuantity(
-            player.WeaponEntries, 36);
-        ActorSnapshot target = ReadResolvedActor(
-            process,
-            imageBase,
-            actorIdentities,
-            M000AttackTargetSceneIndex);
+            player.WeaponEntries, scenario.ItemId);
+        ActorSnapshot target = scenario.UsesWorldPoint
+            ? null
+            : ReadResolvedActor(
+                process,
+                imageBase,
+                actorIdentities,
+                scenario.TargetSceneIndex);
         int beforeTargetHitPoints =
             target == null ? int.MinValue : target.CurrentHitPoints;
+        string checkpointVerb = scenario.UsesWorldPoint
+            ? "deploy"
+            : "attack";
         CaptureParityCheckpoint(
             checkpoints,
             process,
             imageBase,
             runClock,
-            "before_attack",
+            "before_" + checkpointVerb,
             true);
 
         bool clickSent = false;
         bool quantityChanged = false;
         int afterQuantity = beforeQuantity;
         int afterTargetHitPoints = beforeTargetHitPoints;
+        bool targetDamaged = false;
         int attempts = 0;
         int lastClickWorldX = int.MinValue;
         int lastClickWorldY = int.MinValue;
@@ -2890,22 +3192,39 @@ internal static class ModRegressionProbe
         Stopwatch wait = Stopwatch.StartNew();
         while (wait.ElapsedMilliseconds < 15000)
         {
-            target = ReadResolvedActor(
-                process,
-                imageBase,
-                actorIdentities,
-                M000AttackTargetSceneIndex);
-            if (target == null || target.Dead != 0)
-                break;
+            if (!scenario.UsesWorldPoint)
+            {
+                target = ReadResolvedActor(
+                    process,
+                    imageBase,
+                    actorIdentities,
+                    scenario.TargetSceneIndex);
+                if (target == null)
+                    break;
+                afterTargetHitPoints = target.CurrentHitPoints;
+                targetDamaged =
+                    target.Dead != 0 ||
+                    afterTargetHitPoints < beforeTargetHitPoints;
+            }
             if (attempts == 0 ||
                 (wait.ElapsedMilliseconds >= attempts * 4000 &&
                  attempts < 3))
             {
-                if (TryGetActorClickWorldPoint(
+                bool clickPointReady = scenario.UsesWorldPoint;
+                if (scenario.UsesWorldPoint)
+                {
+                    lastClickWorldX = scenario.TargetWorldX;
+                    lastClickWorldY = scenario.TargetWorldY;
+                }
+                else
+                {
+                    clickPointReady = TryGetActorClickWorldPoint(
                         process,
                         target,
                         out lastClickWorldX,
-                        out lastClickWorldY))
+                        out lastClickWorldY);
+                }
+                if (clickPointReady)
                 {
                     clickSent = ClickReplayWorldPoint(
                         process,
@@ -2922,41 +3241,67 @@ internal static class ModRegressionProbe
                 process,
                 imageBase,
                 actorIdentities,
-                M000PlayerSceneIndex);
+                scenario.PlayerSceneIndex);
             if (player == null || player.Dead != 0)
                 break;
             if (ReadActorInventoryContainers(process, player))
             {
                 afterQuantity = InventoryQuantity(
-                    player.WeaponEntries, 36);
-                if (afterQuantity == beforeQuantity - 1)
+                    player.WeaponEntries, scenario.ItemId);
+                if (
+                    afterQuantity == scenario.ExpectedAfterQuantity &&
+                    (!scenario.RequiresTargetDamage || targetDamaged))
                 {
                     quantityChanged = true;
-                    afterTargetHitPoints = target.CurrentHitPoints;
                     break;
                 }
             }
             Thread.Sleep(80);
         }
-        target = ReadResolvedActor(
+        target = scenario.UsesWorldPoint
+            ? null
+            : ReadResolvedActor(
+                process,
+                imageBase,
+                actorIdentities,
+                scenario.TargetSceneIndex);
+        if (target != null)
+        {
+            afterTargetHitPoints = target.CurrentHitPoints;
+            targetDamaged =
+                target.Dead != 0 ||
+                afterTargetHitPoints < beforeTargetHitPoints;
+        }
+        player = ReadResolvedActor(
             process,
             imageBase,
             actorIdentities,
-            M000AttackTargetSceneIndex);
-        if (target != null)
-            afterTargetHitPoints = target.CurrentHitPoints;
+            scenario.PlayerSceneIndex);
+        if (player != null &&
+            ReadActorInventoryContainers(process, player))
+        {
+            afterQuantity = InventoryQuantity(
+                player.WeaponEntries,
+                scenario.ItemId);
+            quantityChanged =
+                afterQuantity == scenario.ExpectedAfterQuantity;
+        }
         CaptureParityCheckpoint(
             checkpoints,
             process,
             imageBase,
             runClock,
-            "after_attack",
+            "after_" + checkpointVerb,
             true);
         evidence =
-            "input_isolation=process-local-DirectInput" +
-            "; selected_f4=" + selected +
-            "; selected_digit_5=" + weaponSelected +
-            "; pistol_active=" + pistolActive +
+            "scenario=" + scenario.Id +
+            "; player_scene=" + scenario.PlayerSceneIndex +
+            "; target_scene=" + scenario.TargetSceneIndex +
+            "; input_isolation=process-local-DirectInput" +
+            "; selected_character_dik=" + selected +
+            "; selected_weapon_dik=" + weaponSelected +
+            "; selection_attempts=" + selectionAttempts +
+            "; weapon_active=" + weaponActive +
             "; click_sent=" + clickSent +
             "; attempts=" + attempts +
             "; click_world=(" + lastClickWorldX + "," +
@@ -2965,16 +3310,20 @@ internal static class ModRegressionProbe
             "; action_id=" + ReadInt(
                 process,
                 imageBase + EngineAddresses.CurrentActionId) +
-            "; item_36=" + beforeQuantity + "->" + afterQuantity +
+            "; item_" + scenario.ItemId + "=" +
+            beforeQuantity + "->" + afterQuantity +
             "; target_hp=" + beforeTargetHitPoints + "->" +
             afterTargetHitPoints +
+            "; target_damaged=" + targetDamaged +
             "; player_dead=" +
             (player == null ? -1 : player.Dead);
         return selected &&
             weaponSelected &&
-            pistolActive &&
+            weaponActive &&
+            beforeQuantity == scenario.ExpectedBeforeQuantity &&
             clickSent &&
             quantityChanged &&
+            (!scenario.RequiresTargetDamage || targetDamaged) &&
             player != null &&
             player.Dead == 0;
     }
@@ -4384,15 +4733,18 @@ internal static class ModRegressionProbe
                 "through process-local DirectInput; capture both original " +
                 "inventory containers before and after.";
         }
-        else if (String.Equals(
-                     scenarioId,
-                     "m000-pistol-attack-inventory-v1",
-                     StringComparison.Ordinal))
+        else if (
+            scenarioId.EndsWith(
+                "-attack-inventory-v1",
+                StringComparison.Ordinal) ||
+            scenarioId.EndsWith(
+                "-deploy-inventory-v1",
+                StringComparison.Ordinal))
         {
             scenarioDescription =
-                "Select scene 1436, equip the original pistol and attack " +
-                "live scene 1598 through process-local DirectInput; capture " +
-                "the direct ammunition count before and after.";
+                ResolveWeaponAttackParityScenario(
+                    scenarioId,
+                    selectorLevel).Description;
         }
         else if (resolvedActorScope)
         {

@@ -4,6 +4,8 @@ param(
 
     [string]$OutputDirectory = '',
 
+    [string[]]$ScenarioId = @(),
+
     [switch]$UpdateBaselines,
 
     [switch]$AllowMismatch,
@@ -132,8 +134,77 @@ $scenarios = @(
         level_id = 'm000'
         selector_level = 1
         parity_flag = '--parity-attack-only'
+    },
+    [pscustomobject]@{
+        id = 'm010-rifle-attack-inventory-v1'
+        level_id = 'm010'
+        selector_level = 11
+        parity_flag = '--parity-attack-only'
+    },
+    [pscustomobject]@{
+        id = 'm010-machine-gun-attack-inventory-v1'
+        level_id = 'm010'
+        selector_level = 11
+        parity_flag = '--parity-attack-only'
+    },
+    [pscustomobject]@{
+        id = 'm004-dart-attack-inventory-v1'
+        level_id = 'm004'
+        selector_level = 5
+        parity_flag = '--parity-attack-only'
+    },
+    [pscustomobject]@{
+        id = 'm010-dagger-attack-inventory-v1'
+        level_id = 'm010'
+        selector_level = 11
+        parity_flag = '--parity-attack-only'
+    },
+    [pscustomobject]@{
+        id = 'm010-broadsword-attack-inventory-v1'
+        level_id = 'm010'
+        selector_level = 11
+        parity_flag = '--parity-attack-only'
+    },
+    [pscustomobject]@{
+        id = 'm010-grenade-attack-inventory-v1'
+        level_id = 'm010'
+        selector_level = 11
+        parity_flag = '--parity-attack-only'
+    },
+    [pscustomobject]@{
+        id = 'm010-mine-deploy-inventory-v1'
+        level_id = 'm010'
+        selector_level = 11
+        parity_flag = '--parity-attack-only'
+    },
+    [pscustomobject]@{
+        id = 'm010-explosive-deploy-inventory-v1'
+        level_id = 'm010'
+        selector_level = 11
+        parity_flag = '--parity-attack-only'
     }
 )
+if ($ScenarioId.Count -gt 0) {
+    $requestedScenarioIds = @(
+        $ScenarioId |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+            Select-Object -Unique
+    )
+    $unknownScenarioIds = @(
+        $requestedScenarioIds |
+            Where-Object { $_ -notin @($scenarios.id) }
+    )
+    if ($unknownScenarioIds.Count -gt 0) {
+        throw (
+            'Unknown inventory parity scenario(s): ' +
+            ($unknownScenarioIds -join ', '))
+    }
+    $scenarios = @(
+        $scenarios |
+            Where-Object { $_.id -in $requestedScenarioIds }
+    )
+}
 
 $results = [Collections.Generic.List[object]]::new()
 $completed = $false

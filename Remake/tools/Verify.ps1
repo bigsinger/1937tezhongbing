@@ -269,6 +269,38 @@ if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
         [pscustomobject]@{
             id = 'm000-pistol-attack-inventory-v1'
             level_id = 'm000'
+        },
+        [pscustomobject]@{
+            id = 'm010-rifle-attack-inventory-v1'
+            level_id = 'm010'
+        },
+        [pscustomobject]@{
+            id = 'm010-machine-gun-attack-inventory-v1'
+            level_id = 'm010'
+        },
+        [pscustomobject]@{
+            id = 'm004-dart-attack-inventory-v1'
+            level_id = 'm004'
+        },
+        [pscustomobject]@{
+            id = 'm010-dagger-attack-inventory-v1'
+            level_id = 'm010'
+        },
+        [pscustomobject]@{
+            id = 'm010-broadsword-attack-inventory-v1'
+            level_id = 'm010'
+        },
+        [pscustomobject]@{
+            id = 'm010-grenade-attack-inventory-v1'
+            level_id = 'm010'
+        },
+        [pscustomobject]@{
+            id = 'm010-mine-deploy-inventory-v1'
+            level_id = 'm010'
+        },
+        [pscustomobject]@{
+            id = 'm010-explosive-deploy-inventory-v1'
+            level_id = 'm010'
         }
     )
     foreach ($inventoryScenario in $inventoryParityScenarios) {

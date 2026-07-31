@@ -64,7 +64,16 @@ func capture_main(
 				int(_read_property(main, "imported_entity_count", 0))
 				+ _dictionary_size(_read_property(main, "playable_entities", {}))
 			),
-			"runtime_object_count": actors.size(),
+			# The original runtime count includes live characters plus spawned
+			# pickups/special objects. Keep the absolute totals runtime-local,
+			# but preserve their before/after deltas for deployment parity.
+			"runtime_object_count": (
+				actors.size()
+				+ _live_array_count(main, "mission_pickups")
+				+ _live_array_count(main, "deployed_mines")
+				+ _live_array_count(main, "legacy_special_world_objects")
+				+ _live_array_count(main, "legacy_ai_control_effects")
+			),
 		},
 		"actors": actors,
 		"mission": _capture_mission(main),
@@ -348,6 +357,17 @@ func _read_property(source: Variant, field: String, default_value: Variant) -> V
 
 func _dictionary_size(value: Variant) -> int:
 	return (value as Dictionary).size() if value is Dictionary else 0
+
+
+func _live_array_count(source: Variant, field: String) -> int:
+	var value: Variant = _read_property(source, field, [])
+	if not value is Array:
+		return 0
+	var count := 0
+	for item: Variant in value as Array:
+		if item is Object and is_instance_valid(item):
+			count += 1
+	return count
 
 
 func _json_safe(value: Variant) -> Variant:

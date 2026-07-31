@@ -28,6 +28,22 @@ $minePickupBaselinePath = Join-Path $remakeRoot `
     'validation\baselines\mod\m001-mine-pickup-inventory-v1.json'
 $pistolAttackBaselinePath = Join-Path $remakeRoot `
     'validation\baselines\mod\m000-pistol-attack-inventory-v1.json'
+$rifleAttackBaselinePath = Join-Path $remakeRoot `
+    'validation\baselines\mod\m010-rifle-attack-inventory-v1.json'
+$machineGunAttackBaselinePath = Join-Path $remakeRoot `
+    'validation\baselines\mod\m010-machine-gun-attack-inventory-v1.json'
+$dartAttackBaselinePath = Join-Path $remakeRoot `
+    'validation\baselines\mod\m004-dart-attack-inventory-v1.json'
+$daggerAttackBaselinePath = Join-Path $remakeRoot `
+    'validation\baselines\mod\m010-dagger-attack-inventory-v1.json'
+$broadswordAttackBaselinePath = Join-Path $remakeRoot `
+    'validation\baselines\mod\m010-broadsword-attack-inventory-v1.json'
+$grenadeAttackBaselinePath = Join-Path $remakeRoot `
+    'validation\baselines\mod\m010-grenade-attack-inventory-v1.json'
+$mineDeployBaselinePath = Join-Path $remakeRoot `
+    'validation\baselines\mod\m010-mine-deploy-inventory-v1.json'
+$explosiveDeployBaselinePath = Join-Path $remakeRoot `
+    'validation\baselines\mod\m010-explosive-deploy-inventory-v1.json'
 
 $schema = Get-Content -LiteralPath $schemaPath -Raw -Encoding UTF8 |
     ConvertFrom-Json
@@ -163,6 +179,94 @@ $inventoryBaselineDefinitions = @(
         item_id = 36
         before_quantity = 7
         after_quantity = 6
+    },
+    [pscustomobject]@{
+        path = $rifleAttackBaselinePath
+        scenario = 'm010-rifle-attack-inventory-v1'
+        checkpoint_ids = @('before_attack', 'after_attack')
+        scene_index = 1589
+        database_entry_id = 924
+        item_id = 37
+        before_quantity = 20
+        after_quantity = 19
+    },
+    [pscustomobject]@{
+        path = $machineGunAttackBaselinePath
+        scenario = 'm010-machine-gun-attack-inventory-v1'
+        checkpoint_ids = @('before_attack', 'after_attack')
+        scene_index = 1589
+        database_entry_id = 924
+        item_id = 38
+        before_quantity = 10
+        after_quantity = 9
+    },
+    [pscustomobject]@{
+        path = $dartAttackBaselinePath
+        scenario = 'm004-dart-attack-inventory-v1'
+        checkpoint_ids = @('before_attack', 'after_attack')
+        scene_index = 2629
+        database_entry_id = 910
+        item_id = 41
+        before_quantity = 20
+        after_quantity = 19
+    },
+    [pscustomobject]@{
+        path = $daggerAttackBaselinePath
+        scenario = 'm010-dagger-attack-inventory-v1'
+        checkpoint_ids = @('before_attack', 'after_attack')
+        scene_index = 1591
+        database_entry_id = 910
+        item_id = 39
+        before_quantity = 1
+        after_quantity = 1
+        target_scene_index = 1126
+        target_before_hit_points = 8
+        target_after_hit_points = 0
+    },
+    [pscustomobject]@{
+        path = $broadswordAttackBaselinePath
+        scenario = 'm010-broadsword-attack-inventory-v1'
+        checkpoint_ids = @('before_attack', 'after_attack')
+        scene_index = 1591
+        database_entry_id = 910
+        item_id = 40
+        before_quantity = 1
+        after_quantity = 1
+        target_scene_index = 1126
+        target_before_hit_points = 8
+        target_after_hit_points = 0
+    },
+    [pscustomobject]@{
+        path = $grenadeAttackBaselinePath
+        scenario = 'm010-grenade-attack-inventory-v1'
+        checkpoint_ids = @('before_attack', 'after_attack')
+        scene_index = 1589
+        database_entry_id = 924
+        item_id = 44
+        before_quantity = 3
+        after_quantity = 2
+    },
+    [pscustomobject]@{
+        path = $mineDeployBaselinePath
+        scenario = 'm010-mine-deploy-inventory-v1'
+        checkpoint_ids = @('before_deploy', 'after_deploy')
+        scene_index = 1590
+        database_entry_id = 918
+        item_id = 43
+        before_quantity = 3
+        after_quantity = 2
+        runtime_object_delta = 1
+    },
+    [pscustomobject]@{
+        path = $explosiveDeployBaselinePath
+        scenario = 'm010-explosive-deploy-inventory-v1'
+        checkpoint_ids = @('before_deploy', 'after_deploy')
+        scene_index = 1590
+        database_entry_id = 918
+        item_id = 45
+        before_quantity = 3
+        after_quantity = 2
+        runtime_object_delta = 1
     }
 )
 foreach ($inventoryDefinition in $inventoryBaselineDefinitions) {
@@ -221,6 +325,53 @@ foreach ($inventoryDefinition in $inventoryBaselineDefinitions) {
         throw (
             'The checked-in inventory quantity transition is invalid: ' +
             $inventoryDefinition.scenario)
+    }
+    if (
+        $inventoryDefinition.PSObject.Properties.Name -contains
+            'runtime_object_delta'
+    ) {
+        $runtimeObjectDelta = (
+            [int]$inventoryBaseline.checkpoints[1].world.runtime_object_count -
+            [int]$inventoryBaseline.checkpoints[0].world.runtime_object_count
+        )
+        if ($runtimeObjectDelta -ne
+            [int]$inventoryDefinition.runtime_object_delta) {
+            throw (
+                'The checked-in deployment runtime-object delta is invalid: ' +
+                $inventoryDefinition.scenario)
+        }
+    }
+    if (
+        $inventoryDefinition.PSObject.Properties.Name -contains
+            'target_scene_index'
+    ) {
+        $targetHitPoints = @(
+            foreach ($checkpoint in @($inventoryBaseline.checkpoints)) {
+                $target = @(
+                    $checkpoint.actors |
+                        Where-Object {
+                            [int]$_.scene_index -eq
+                                [int]$inventoryDefinition.target_scene_index
+                        }
+                )[0]
+                if ($null -eq $target) {
+                    throw (
+                        'The checked-in durable-weapon target is missing: ' +
+                        $inventoryDefinition.scenario)
+                }
+                [int]$target.hit_points.current
+            }
+        )
+        if (
+            $targetHitPoints[0] -ne
+                [int]$inventoryDefinition.target_before_hit_points -or
+            $targetHitPoints[1] -ne
+                [int]$inventoryDefinition.target_after_hit_points
+        ) {
+            throw (
+                'The checked-in durable-weapon target outcome is invalid: ' +
+                $inventoryDefinition.scenario)
+        }
     }
 }
 
@@ -348,11 +499,8 @@ try {
     }
     $checkedBaselines = @($baselinePath, $obstacleBaselinePath) +
         @($patrolBaselinePaths) +
-        @(
-            $contactBaselinePath,
-            $minePickupBaselinePath,
-            $pistolAttackBaselinePath
-        )
+        @($contactBaselinePath) +
+        @($inventoryBaselineDefinitions.path)
     foreach ($checkedBaseline in $checkedBaselines) {
         $baselineSelf = & $compareScript `
             -ReferenceTrace $checkedBaseline `

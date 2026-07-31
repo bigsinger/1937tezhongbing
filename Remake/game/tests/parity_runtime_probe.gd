@@ -16,10 +16,123 @@ const MINE_PICKUP_SCENARIO_ID := "m001-mine-pickup-inventory-v1"
 const PISTOL_ATTACK_SCENARIO_ID := "m000-pistol-attack-inventory-v1"
 const M001_PLAYER_SCENE_INDEX := 2280
 const M001_MINE_SCENE_INDEX := 2096
-const M000_PLAYER_SCENE_INDEX := 1436
-const M000_ATTACK_TARGET_SCENE_INDEX := 1598
 const LAND_MINE_ITEM_ID := 43
-const PISTOL_ITEM_ID := 36
+const WEAPON_ATTACK_SCENARIOS := {
+	PISTOL_ATTACK_SCENARIO_ID: {
+		"player_scene": 1436,
+		"target_scene": 1598,
+		"attack_type": 1,
+		"item_id": 36,
+		"before_quantity": 7,
+		"after_quantity": 6,
+		"description": (
+			"Select scene 1436, equip the original pistol and attack live "
+			+ "scene 1598; capture the direct ammunition count before and after."
+		),
+	},
+	"m010-rifle-attack-inventory-v1": {
+		"player_scene": 1589,
+		"target_scene": 1126,
+		"attack_type": 2,
+		"item_id": 37,
+		"before_quantity": 20,
+		"after_quantity": 19,
+		"description": (
+			"Select Qiangzi scene 1589, equip the original rifle and attack "
+			+ "live scene 1126; capture the direct ammunition count."
+		),
+	},
+	"m010-machine-gun-attack-inventory-v1": {
+		"player_scene": 1589,
+		"target_scene": 1126,
+		"attack_type": 3,
+		"item_id": 38,
+		"before_quantity": 10,
+		"after_quantity": 9,
+		"description": (
+			"Select Qiangzi scene 1589, equip the original machine gun and "
+			+ "attack live scene 1126; capture one-count attack consumption."
+		),
+	},
+	"m004-dart-attack-inventory-v1": {
+		"player_scene": 2629,
+		"target_scene": 2685,
+		"attack_type": 6,
+		"item_id": 41,
+		"before_quantity": 20,
+		"after_quantity": 19,
+		"description": (
+			"Select Daniu scene 2629, equip the original dart and attack "
+			+ "stationary scene 2685; capture its mode-0 item consumption."
+		),
+	},
+	"m010-dagger-attack-inventory-v1": {
+		"player_scene": 1591,
+		"target_scene": 1126,
+		"attack_type": 4,
+		"item_id": 39,
+		"before_quantity": 1,
+		"after_quantity": 1,
+		"after_target_hit_points": 0,
+		"description": (
+			"Select Daniu scene 1591, equip the original dagger and attack "
+			+ "live scene 1126; capture durable mode-1 inventory plus the "
+			+ "committed target outcome."
+		),
+	},
+	"m010-broadsword-attack-inventory-v1": {
+		"player_scene": 1591,
+		"target_scene": 1126,
+		"attack_type": 5,
+		"item_id": 40,
+		"before_quantity": 1,
+		"after_quantity": 1,
+		"after_target_hit_points": 0,
+		"description": (
+			"Select Daniu scene 1591, equip the original broadsword and "
+			+ "attack live scene 1126; capture durable mode-1 inventory plus "
+			+ "the committed target outcome."
+		),
+	},
+	"m010-grenade-attack-inventory-v1": {
+		"player_scene": 1589,
+		"target_scene": 1126,
+		"attack_type": 9,
+		"item_id": 44,
+		"before_quantity": 3,
+		"after_quantity": 2,
+		"description": (
+			"Select Qiangzi scene 1589, equip the original grenade and attack "
+			+ "live scene 1126; capture its mode-0 item consumption."
+		),
+	},
+	"m010-mine-deploy-inventory-v1": {
+		"player_scene": 1590,
+		"attack_type": 8,
+		"item_id": 43,
+		"before_quantity": 3,
+		"after_quantity": 2,
+		"world_point": Vector2(176.0, 104.0),
+		"description": (
+			"Select Lao Zhao scene 1590, equip the original mine and deploy "
+			+ "it at the verified walkable point (176,104); capture mode-0 "
+			+ "item consumption."
+		),
+	},
+	"m010-explosive-deploy-inventory-v1": {
+		"player_scene": 1590,
+		"attack_type": 10,
+		"item_id": 45,
+		"before_quantity": 3,
+		"after_quantity": 2,
+		"world_point": Vector2(176.0, 104.0),
+		"description": (
+			"Select Lao Zhao scene 1590, equip the original timed explosive "
+			+ "and deploy it at the verified walkable point (176,104); "
+			+ "capture mode-0 item consumption."
+		),
+	},
+}
 ## Layer-3-verified, obstacle-free cell centres: (1,3) and (5,3).
 ## The short observation window issues the return order before the first
 ## command can settle, so goal replacement and facing are both observable.
@@ -124,8 +237,8 @@ func _run_probe() -> void:
 	if scenario_id == MINE_PICKUP_SCENARIO_ID:
 		await _run_mine_pickup_probe(main, trace, started)
 		return
-	if scenario_id == PISTOL_ATTACK_SCENARIO_ID:
-		await _run_pistol_attack_probe(main, trace, started)
+	if WEAPON_ATTACK_SCENARIOS.has(scenario_id):
+		await _run_weapon_attack_probe(main, trace, started, scenario_id)
 		return
 	if scenario_id == _enemy_patrol_scenario_id(level_id):
 		await _run_enemy_patrol_probe(
@@ -290,49 +403,112 @@ func _run_mine_pickup_probe(
 	)
 
 
-func _run_pistol_attack_probe(
+func _run_weapon_attack_probe(
 	main: Node,
 	trace: RefCounted,
 	started: int,
+	scenario_id: String,
 ) -> void:
-	var attacker := _player_for_scene(main, M000_PLAYER_SCENE_INDEX)
-	var target := _enemy_for_scene(main, M000_ATTACK_TARGET_SCENE_INDEX)
-	_expect(attacker != null, "m000 scene 1436 player exists")
-	_expect(target != null, "m000 scene 1598 attack target exists")
-	if attacker != null and target != null:
+	var scenario: Dictionary = WEAPON_ATTACK_SCENARIOS[scenario_id]
+	var player_scene := int(scenario.get("player_scene", -1))
+	var target_scene := int(scenario.get("target_scene", -1))
+	var attack_type := int(scenario.get("attack_type", 0))
+	var item_id := int(scenario.get("item_id", -1))
+	var before_expected := int(scenario.get("before_quantity", -1))
+	var after_expected := int(scenario.get("after_quantity", -1))
+	var is_deployment := scenario.has("world_point")
+	var attacker := _player_for_scene(main, player_scene)
+	var target = null if is_deployment else _enemy_for_scene(main, target_scene)
+	_expect(attacker != null, "weapon parity player scene %d exists" % player_scene)
+	if not is_deployment:
+		_expect(target != null, "weapon parity target scene %d exists" % target_scene)
+	if attacker != null and (is_deployment or target != null):
 		main.call("select_only", attacker)
 		_expect(
-			bool(attacker.call("equip_attack_type", 1)),
-			"m000 scene 1436 equips the original pistol",
+			bool(attacker.call("equip_attack_type", attack_type)),
+			"scene %d equips original attack type %d" % [
+				player_scene,
+				attack_type,
+			],
 		)
 		var before_quantity := _inventory_quantity(
 			attacker,
 			"weapon_entries",
-			PISTOL_ITEM_ID,
+			item_id,
 		)
+		_expect(
+			before_quantity == before_expected,
+			"item %d starts at the original quantity %d" % [
+				item_id,
+				before_expected,
+			],
+		)
+		var checkpoint_verb := "deploy" if is_deployment else "attack"
 		trace.call(
 			"capture_main",
-			"before_attack",
+			"before_%s" % checkpoint_verb,
 			main,
 			_elapsed_ms(started),
 		)
-		main.call("issue_attack_order", target, false)
-		var quantity_changed := await _wait_for_inventory_quantity(
-			attacker,
-			"weapon_entries",
-			PISTOL_ITEM_ID,
-			before_quantity - 1,
-			12.0,
-		)
+		if is_deployment:
+			_expect(
+				bool(
+					main.call(
+						"_try_issue_legacy_world_object_deployment",
+						scenario["world_point"] as Vector2,
+					)
+				),
+				"attack type %d accepts the original deployment point" % attack_type,
+			)
+		else:
+			main.call("issue_attack_order", target, false)
+		var quantity_changed := false
+		var target_hit_points_changed := true
+		if scenario.has("after_target_hit_points"):
+			target_hit_points_changed = await _wait_for_target_hit_points(
+				target,
+				int(scenario["after_target_hit_points"]),
+				12.0,
+			)
+			quantity_changed = (
+				_inventory_quantity(
+					attacker,
+					"weapon_entries",
+					item_id,
+				)
+				== after_expected
+			)
+		else:
+			quantity_changed = await _wait_for_inventory_quantity(
+				attacker,
+				"weapon_entries",
+				item_id,
+				after_expected,
+				12.0,
+			)
 		_expect(
 			quantity_changed,
-			"m000 pistol attack consumes exactly one direct-count round",
+			"attack type %d reaches item %d quantity %d" % [
+				attack_type,
+				item_id,
+				after_expected,
+			],
 		)
+		_expect(
+			target_hit_points_changed,
+			"target scene %d reaches original hit points %d" % [
+				target_scene,
+				int(scenario.get("after_target_hit_points", 0)),
+			],
+		)
+		# Freeze the command after the first committed attack. In-flight
+		# projectiles keep running, but a slow CI host cannot submit a second
+		# attack while the outcome checkpoint is waiting for the original HP.
 		attacker.call("clear_combat_target")
 		attacker.call("cancel_path")
 		trace.call(
 			"capture_main",
-			"after_attack",
+			"after_%s" % checkpoint_verb,
 			main,
 			_elapsed_ms(started),
 		)
@@ -340,15 +516,33 @@ func _run_pistol_attack_probe(
 			_inventory_quantity(
 				attacker,
 				"weapon_entries",
-				PISTOL_ITEM_ID,
-			) == before_quantity - 1,
-			"m000 pistol quantity delta remains exact at capture",
+				item_id,
+			) == after_expected,
+			"item %d quantity remains exact at capture" % item_id,
 		)
 	await _finish_inventory_probe(
 		main,
 		trace,
-		PISTOL_ATTACK_SCENARIO_ID,
+		scenario_id,
 	)
+
+
+func _wait_for_target_hit_points(
+	target: Node,
+	expected_hit_points: int,
+	timeout_seconds: float,
+) -> bool:
+	var elapsed := 0.0
+	while elapsed <= timeout_seconds:
+		if (
+			target != null
+			and is_instance_valid(target)
+			and int(target.get("current_hit_points")) == expected_hit_points
+		):
+			return true
+		await physics_frame
+		elapsed += 1.0 / 60.0
+	return false
 
 
 func _finish_inventory_probe(
@@ -697,11 +891,9 @@ func _scenario_description(scenario_id: String, level_id: String) -> String:
 			+ "scene-2096 mine through the original automatic approach path; "
 			+ "capture both inventory containers before and after."
 		)
-	if scenario_id == PISTOL_ATTACK_SCENARIO_ID:
-		return (
-			"Select scene 1436, equip the original pistol and attack live "
-			+ "scene 1598; capture the direct ammunition count before and after."
-		)
+	if WEAPON_ATTACK_SCENARIOS.has(scenario_id):
+		var scenario: Dictionary = WEAPON_ATTACK_SCENARIOS[scenario_id]
+		return str(scenario.get("description", "Weapon inventory parity probe."))
 	if scenario_id == _enemy_patrol_scenario_id(level_id):
 		return (
 			"Observe the audited %s enemy patrol roster in two one-second intervals."

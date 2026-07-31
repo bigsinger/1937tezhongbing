@@ -1141,6 +1141,12 @@ func issue_attack(target: Node2D, force_target: bool = false) -> bool:
 	combat_target = target
 	combat_target_forced = force_target
 	auto_combat_enabled = true
+	# The original runtime lets a commanded squad member leave a crowded
+	# formation while approaching an attack line. Treat other dynamic actors
+	# as soft obstacles for that command so stationary team-mates cannot trap
+	# the attacker at the spawn edge; static L3 footprints and L2 line of
+	# sight remain authoritative.
+	use_soft_dynamic_occupancy = true
 	combat_repath_elapsed = COMBAT_REPATH_SECONDS
 	return true
 
@@ -1149,6 +1155,7 @@ func clear_combat_target() -> void:
 	combat_target = null
 	combat_target_forced = false
 	auto_combat_enabled = false
+	use_soft_dynamic_occupancy = false
 	combat_repath_elapsed = COMBAT_REPATH_SECONDS
 
 

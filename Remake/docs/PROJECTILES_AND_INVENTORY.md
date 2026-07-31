@@ -173,6 +173,14 @@ type 8/10 世界对象和汽油桶走统一的世界爆炸结算，可伤害单�
 | `validation/baselines/mod/world-pickups-v1.json` | MOD 数据库哈希、item ID、容器和 mode 的可复现基线 |
 | `validation/baselines/mod/m001-mine-pickup-inventory-v1.json` | scene 2280 左击 scene 2096 后项目 43 的 `2→3` 稳定 MOD 运行基线 |
 | `validation/baselines/mod/m000-pistol-attack-inventory-v1.json` | scene 1436 手枪攻击 scene 1598 后项目 36 的 `7→6` 稳定 MOD 运行基线 |
+| `validation/baselines/mod/m010-rifle-attack-inventory-v1.json` | scene 1589 步枪攻击 scene 1126 后项目 37 的 `20→19` 稳定 MOD 运行基线 |
+| `validation/baselines/mod/m010-machine-gun-attack-inventory-v1.json` | scene 1589 机枪攻击 scene 1126 后项目 38 的 `10→9` 稳定 MOD 运行基线 |
+| `validation/baselines/mod/m004-dart-attack-inventory-v1.json` | scene 2629 飞镖攻击 scene 2685 后项目 41 的 `20→19` 稳定 MOD 运行基线 |
+| `validation/baselines/mod/m010-dagger-attack-inventory-v1.json` | scene 1591 匕首攻击 scene 1126，项目 39 保持 `1→1` 且目标生命 `8→0` |
+| `validation/baselines/mod/m010-broadsword-attack-inventory-v1.json` | scene 1591 大刀攻击 scene 1126，项目 40 保持 `1→1` 且目标生命 `8→0` |
+| `validation/baselines/mod/m010-grenade-attack-inventory-v1.json` | scene 1589 手榴弹攻击 scene 1126 后项目 44 的 `3→2` 稳定 MOD 运行基线 |
+| `validation/baselines/mod/m010-mine-deploy-inventory-v1.json` | scene 1590 部署地雷后项目 43 `3→2`、运行时对象 `+1` |
+| `validation/baselines/mod/m010-explosive-deploy-inventory-v1.json` | scene 1590 部署定时炸药后项目 45 `3→2`、运行时对象 `+1` |
 | `tools/Compare-InventoryParityTrace.ps1` | 严格比较有序双容器、mode、当前攻击类型和所需数量变化 |
 | `tools/Capture-InventoryParity.ps1` | 在隔离 MOD 与 Remake 中成对复测；只使用目标窗口/进程私有输入 |
 | `../SDK/include/M1937SDK/Inventory.hpp` | MOD/工具可共用的原版物品容器路由与拾取物常量 |
@@ -209,8 +217,9 @@ actor 61 的 128 伤害和 `ProjectileWorld` 分流。`original_inventory_test.g
 生命周期，`legacy_explosion_visual_test.gd` 固定 actor 61/62 主动画、粒子
 目录、随机序列、散布、缺失 type 102 和 90/150 tick 边界。各套件在日志中
 报告当前检查数，文档不固定复制计数。真实导入资源存在时，`Verify.ps1`
-还会重放地雷拾取与手枪攻击，分别严格要求项目 43 `2→3` 和项目 36
-`7→6`；位置只作诊断，因为移动巡逻目标在两个独立进程中的启动相位不同。
+还会重放上述十条成对轨迹：严格核对有序双容器、当前攻击类型和数量/耐久
+变化；近战额外核对目标 `8→0`，部署额外核对运行时对象 `+1`。位置只作
+诊断，因为移动巡逻目标在两个独立进程中的启动相位不同。
 
 ```powershell
 godot --headless --path Remake/game --script res://tests/projectile_inventory_test.gd
