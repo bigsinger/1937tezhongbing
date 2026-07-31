@@ -44,6 +44,10 @@ DIMOUSESTATE g_replay_mouse{};
 volatile LONG g_replay_message_count = 0;
 volatile LONG g_replay_state_reads = 0;
 volatile LONGLONG g_replay_input_qpc = 0;
+volatile LONG g_replay_world_item_id = 0;
+volatile LONG g_replay_world_item_x = 0;
+volatile LONG g_replay_world_item_y = 0;
+volatile LONG g_replay_world_item_spawn_pending = 0;
 WNDPROC g_original_replay_window_proc = nullptr;
 HWND g_replay_subclass_window = nullptr;
 volatile LONG g_extension_briefing_pending = 0;
@@ -69,6 +73,8 @@ enum WindowReplayCommand : WPARAM {
     replay_clear = 7,
     replay_ai_alert = 8,
     replay_camera_center = 9,
+    replay_seed_world_item = 10,
+    replay_spawn_world_item = 11,
 };
 
 struct DiagnosticEntry {
@@ -3286,6 +3292,8 @@ void HandleWindowReplayMessage(const MSG &message) {
         memset(g_replay_keyboard, 0, sizeof(g_replay_keyboard));
         memset(&g_replay_mouse, 0, sizeof(g_replay_mouse));
         InterlockedExchange(&g_replay_menu_command, 0);
+        InterlockedExchange(&g_replay_world_item_id, 0);
+        InterlockedExchange(&g_replay_world_item_spawn_pending, 0);
         break;
     case replay_ai_alert: {
         m1937::sdk::RuntimeActorV1 **actors = nullptr;
@@ -3392,6 +3400,60 @@ void HandleWindowReplayMessage(const MSG &message) {
             "isolated_probe_only");
         break;
     }
+    case replay_seed_world_item: {
+        // This command exists only inside the opt-in, automated-probe replay
+        // channel. It never alters player input or the system cursor. A
+        // second command supplies a bounded world point and asks the original
+        // sub_44A350 factory to create the authentic runtime actor; all
+        // scanning, acceptance, transfer and effect logic remains original.
+        const bool supported =
+            argument == m1937::sdk::world_item::chicken ||
+            argument == m1937::sdk::world_item::canned_meat ||
+            argument == m1937::sdk::world_item::hypnosis_doll ||
+            argument == m1937::sdk::world_item::poisoned_wine ||
+            argument == m1937::sdk::world_item::dog_bone ||
+            argument == m1937::sdk::world_item::cigarette;
+        InterlockedExchange(
+            &g_replay_world_item_id,
+            supported ? static_cast<LONG>(argument) : 0);
+        RecordDiagnostic(
+            "replay_world_item",
+            supported ? "staged" : "rejected",
+            "isolated_probe_only");
+        break;
+    }
+    case replay_spawn_world_item: {
+        const int world_x =
+            static_cast<unsigned short>(LOWORD(message.lParam));
+        const int world_y =
+            static_cast<unsigned short>(HIWORD(message.lParam));
+        const int item_id = static_cast<int>(
+            InterlockedExchange(&g_replay_world_item_id, 0));
+        const bool supported =
+            item_id == m1937::sdk::world_item::chicken ||
+            item_id == m1937::sdk::world_item::canned_meat ||
+            item_id == m1937::sdk::world_item::hypnosis_doll ||
+            item_id == m1937::sdk::world_item::poisoned_wine ||
+            item_id == m1937::sdk::world_item::dog_bone ||
+            item_id == m1937::sdk::world_item::cigarette;
+        // Never mutate the original actor array while a window procedure is
+        // running. The game can dispatch this private replay message from
+        // inside its own object update. Calling sub_44A350 there re-enters the
+        // actor factory and corrupts the active traversal. Queue the request;
+        // PumpWindowMessages processes it at a stable input-poll boundary.
+        if (supported) {
+            InterlockedExchange(&g_replay_world_item_x, world_x);
+            InterlockedExchange(&g_replay_world_item_y, world_y);
+            InterlockedExchange(
+                &g_replay_world_item_spawn_pending,
+                static_cast<LONG>(item_id));
+        }
+        RecordDiagnostic(
+            "replay_world_item",
+            supported ? "queued" : "unavailable",
+            "isolated_probe_only");
+        break;
+    }
     default:
         return;
     }
@@ -3400,6 +3462,57 @@ void HandleWindowReplayMessage(const MSG &message) {
             &g_replay_input_qpc, PerformanceCounterNow());
     InterlockedIncrement(&g_replay_message_count);
     InterlockedIncrement(&g_telemetry.replay_messages);
+}
+
+void ProcessPendingReplayWorldItem() {
+    const int item_id = static_cast<int>(
+        InterlockedExchange(&g_replay_world_item_spawn_pending, 0));
+    if (item_id == 0) {
+        return;
+    }
+    const int world_x = static_cast<int>(
+        InterlockedCompareExchange(&g_replay_world_item_x, 0, 0));
+    const int world_y = static_cast<int>(
+        InterlockedCompareExchange(&g_replay_world_item_y, 0, 0));
+    bool spawned = false;
+    if (g_executable_base) {
+        auto **controller_slot =
+            reinterpret_cast<m1937::sdk::RuntimeViewportControllerV1 **>(
+                g_executable_base +
+                m1937::sdk::rva::viewport_controller);
+        auto *controller =
+            IsReadableRange(controller_slot, sizeof(*controller_slot))
+                ? *controller_slot
+                : nullptr;
+        if (controller &&
+            IsReadableRange(controller, sizeof(*controller)) &&
+            world_x >= 0 && world_y >= 0 &&
+            world_x < controller->world_width &&
+            world_y < controller->world_height) {
+            auto **factory_slot = reinterpret_cast<void **>(
+                g_executable_base +
+                m1937::sdk::rva::world_actor_factory);
+            void *factory =
+                IsReadableRange(factory_slot, sizeof(*factory_slot))
+                    ? *factory_slot
+                    : nullptr;
+            using CreateWorldActorFn =
+                m1937::sdk::RuntimeActorV1 *(__thiscall *)(
+                    void *, int, int, int, int);
+            auto create_world_actor =
+                reinterpret_cast<CreateWorldActorFn>(
+                    g_executable_base +
+                    m1937::sdk::rva::create_world_actor);
+            spawned = factory &&
+                IsReadableRange(factory, sizeof(std::uint32_t) * 4) &&
+                create_world_actor(
+                    factory, world_x, 0, world_y, item_id) != nullptr;
+        }
+    }
+    RecordDiagnostic(
+        "replay_world_item",
+        spawned ? "spawned" : "unavailable",
+        "safe_input_poll_boundary");
 }
 
 LRESULT CALLBACK ReplayWindowProcedure(
@@ -3500,6 +3613,7 @@ void PumpWindowMessages() {
     }
     TickEnhancedEnemyAI();
     g_pumping_messages = false;
+    ProcessPendingReplayWorldItem();
     InterlockedExchangeAdd(
         &g_telemetry.pump_messages, dispatched);
     AddTiming(

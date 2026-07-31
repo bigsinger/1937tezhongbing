@@ -193,6 +193,42 @@ func _capture_actor(
 			"maximum": int(_read_property(actor, "maximum_hit_points", 0)),
 		},
 		"weapon": captured_weapon,
+		"world_item_effect": {
+			"hypnosis_active": (
+				1
+				if bool(_read_property(actor, "legacy_hypnosis_active", false))
+				else 0
+			),
+			"hypnosis_counter": int(
+				_read_property(actor, "legacy_hypnosis_counter", 0)
+			),
+			"hypnosis_counter_limit": 600,
+			"player_selected": (
+				1
+				if bool(_read_property(actor, "legacy_hypnosis_active", false))
+				else 0
+			),
+			"poison_active": (
+				1
+				if bool(_read_property(actor, "legacy_poison_active", false))
+				else 0
+			),
+			"poison_counter": int(
+				_read_property(actor, "legacy_poison_counter", 0)
+			),
+			"poison_counter_limit": 80,
+			"distraction_active": (
+				1
+				if bool(_read_property(actor, "legacy_distraction_active", false))
+				else 0
+			),
+			"distraction_counter": int(
+				_read_property(actor, "legacy_distraction_counter", 0)
+			),
+			"distraction_limit": int(
+				_read_property(actor, "legacy_distraction_limit", 0)
+			),
+		},
 		"native": {
 			"goal_kind": goal_kind,
 			"command_variant": 1 if burial_pending else 0,

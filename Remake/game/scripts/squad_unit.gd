@@ -645,7 +645,10 @@ func register_inventory_weapon(
 	load_profile_defaults: bool = false,
 	equip_now: bool = true,
 ) -> bool:
-	if infinite_ammo or new_weapon_profile.is_empty():
+	# Original enemy actors own the same +0x22C container as players, but
+	# sub_456DF0 only consumes items for player runtime types. `infinite_ammo`
+	# therefore means "do not consume on attack", not "has no inventory".
+	if new_weapon_profile.is_empty():
 		return false
 	var action_key := str(new_weapon_profile.get("action_key", ""))
 	if action_key.is_empty():
@@ -672,7 +675,10 @@ func register_original_inventory_weapon(
 	quantity_mode: int,
 	equip_now: bool = false,
 ) -> bool:
-	if infinite_ammo or new_weapon_profile.is_empty():
+	# Original enemy actors own the same +0x22C container as players, but
+	# sub_456DF0 only consumes items for player runtime types. `infinite_ammo`
+	# therefore means "do not consume on attack", not "has no inventory".
+	if new_weapon_profile.is_empty():
 		return false
 	var action_key := str(new_weapon_profile.get("action_key", ""))
 	if action_key.is_empty():

@@ -36,6 +36,8 @@ internal static class ModRegressionProbe
     private const int ReplayMenuCommand = 6;
     private const int ReplayAiAlert = 8;
     private const int ReplayCameraCenter = 9;
+    private const int ReplaySeedWorldItem = 10;
+    private const int ReplaySpawnWorldItem = 11;
     private const uint WmActivate = 0x0006;
     private const uint WmSetFocus = 0x0007;
     private const uint WmActivateApp = 0x001C;
@@ -73,6 +75,7 @@ internal static class ModRegressionProbe
     private const int ActorFactionOffset = 0x074;
     private const int ActorWorldXOffset = 0x0D8;
     private const int ActorWorldYOffset = 0x0E0;
+    private const int ActorWorldItemPlayerSelectedOffset = 0x168;
     private const int ActorFacingDirectionOffset = 0x178;
     private const int ActorDeadOffset = 0x188;
     private const int ActorTargetStatusOffset = 0x190;
@@ -94,11 +97,17 @@ internal static class ModRegressionProbe
     private const int ActorResolvedGoalYOffset = 0x220;
     private const int ActorItemInventoryAddressOffset = 0x228;
     private const int ActorInventoryAddressOffset = 0x22C;
+    private const int ActorHypnosisActiveOffset = 0x238;
     private const int ActorSearchDelayLimitOffset = 0x248;
     private const int ActorSearchDelayCounterOffset = 0x24C;
     private const int ActorContactStateOffset = 0x250;
     private const int ActorTargetLostOffset = 0x254;
     private const int ActorReactionStateOffset = 0x25C;
+    private const int ActorPoisonActiveOffset = 0x264;
+    private const int ActorPoisonCounterOffset = 0x268;
+    private const int ActorPoisonCounterLimitOffset = 0x26C;
+    private const int ActorHypnosisCounterLimitOffset = 0x278;
+    private const int ActorHypnosisCounterOffset = 0x27C;
     private const int ActorPathOverrideActiveOffset = 0x290;
     private const long HoverWorldXRelativeAddress = 0x000E7014L;
     private const long HoverWorldYRelativeAddress = 0x000E7018L;
@@ -294,6 +303,13 @@ internal static class ModRegressionProbe
         public int ContactState;
         public int TargetLost;
         public int ReactionState;
+        public int WorldItemPlayerSelected;
+        public int HypnosisActive;
+        public int HypnosisCounter;
+        public int HypnosisCounterLimit;
+        public int PoisonActive;
+        public int PoisonCounter;
+        public int PoisonCounterLimit;
         public int PathOverrideActive;
         public bool InventoryCaptured;
         public readonly List<InventoryEntry> WeaponEntries =
@@ -375,6 +391,21 @@ internal static class ModRegressionProbe
         public bool RequiresTargetDamage;
     }
 
+    private sealed class WorldItemParityScenario
+    {
+        public string Id;
+        public string Description;
+        public string StageName;
+        public int SelectorLevel;
+        public int TargetSceneIndex;
+        public int ItemId;
+        public int ExpectedBeforeQuantity;
+        public int ExpectedAfterQuantity;
+        public bool Hypnosis;
+        public bool Poison;
+        public bool Distraction;
+    }
+
     public static int Main(string[] args)
     {
         if (args.Length < 3)
@@ -392,7 +423,8 @@ internal static class ModRegressionProbe
                 "--visual-camera-x=X --visual-camera-y=Y] " +
                 "[--identity-catalog=PATH --parity-patrol-only | " +
                 "--parity-contact-only | --parity-pickup-only | " +
-                "--parity-attack-only | --parity-sb-only " +
+                "--parity-attack-only | --parity-world-item-only | " +
+                "--parity-sb-only " +
                 "--parity-scenario=ID " +
                 "--patrol-observation-ms=MS " +
                 "--contact-observation-ms=MS] [--actor-layout-dump]");
@@ -568,6 +600,12 @@ internal static class ModRegressionProbe
                 "--parity-attack-only",
                 StringComparison.OrdinalIgnoreCase);
         });
+        bool parityWorldItemOnly = args.Any(delegate(string argument)
+        {
+            return argument.Equals(
+                "--parity-world-item-only",
+                StringComparison.OrdinalIgnoreCase);
+        });
         bool paritySbOnly = args.Any(delegate(string argument)
         {
             return argument.Equals(
@@ -585,6 +623,7 @@ internal static class ModRegressionProbe
             (parityContactOnly ? 1 : 0) +
             (parityPickupOnly ? 1 : 0) +
             (parityAttackOnly ? 1 : 0) +
+            (parityWorldItemOnly ? 1 : 0) +
             (paritySbOnly ? 1 : 0);
         if (parityModeCount > 1)
         {
@@ -685,6 +724,10 @@ internal static class ModRegressionProbe
         }
         if (parityAttackOnly)
             ResolveWeaponAttackParityScenario(
+                parityScenarioOverride,
+                selectorLevel);
+        if (parityWorldItemOnly)
+            ResolveWorldItemParityScenario(
                 parityScenarioOverride,
                 selectorLevel);
         if (paritySbOnly)
@@ -1666,7 +1709,9 @@ internal static class ModRegressionProbe
                         passed: exitCode == 0);
                     return exitCode;
                 }
-                if (parityPickupOnly || parityAttackOnly)
+                if (parityPickupOnly ||
+                    parityAttackOnly ||
+                    parityWorldItemOnly)
                 {
                     WeaponAttackParityScenario attackParityScenario =
                         parityAttackOnly
@@ -1674,17 +1719,42 @@ internal static class ModRegressionProbe
                                 parityScenarioOverride,
                                 selectorLevel)
                             : null;
+                    WorldItemParityScenario worldItemParityScenario =
+                        parityWorldItemOnly
+                            ? ResolveWorldItemParityScenario(
+                                parityScenarioOverride,
+                                selectorLevel)
+                            : null;
                     string inventoryParityEvidence;
-                    bool inventoryParityObserved = parityPickupOnly
-                        ? ExerciseMinePickupParity(
+                    bool inventoryParityObserved;
+                    if (parityPickupOnly)
+                    {
+                        inventoryParityObserved = ExerciseMinePickupParity(
                             process,
                             imageBase,
                             window,
                             parityCheckpoints,
                             clock,
                             actorIdentities,
-                            out inventoryParityEvidence)
-                        : ExerciseWeaponAttackParity(
+                            out inventoryParityEvidence);
+                    }
+                    else if (parityWorldItemOnly)
+                    {
+                        inventoryParityObserved =
+                            ExerciseWorldItemParity(
+                                process,
+                                imageBase,
+                                window,
+                                parityCheckpoints,
+                                clock,
+                                actorIdentities,
+                                worldItemParityScenario,
+                                out inventoryParityEvidence);
+                    }
+                    else
+                    {
+                        inventoryParityObserved =
+                            ExerciseWeaponAttackParity(
                             process,
                             imageBase,
                             window,
@@ -1693,6 +1763,7 @@ internal static class ModRegressionProbe
                             actorIdentities,
                             attackParityScenario,
                             out inventoryParityEvidence);
+                    }
                     AddStage(
                         stages,
                         game,
@@ -1701,7 +1772,9 @@ internal static class ModRegressionProbe
                         clock,
                         parityPickupOnly
                             ? "original_mine_pickup_inventory_delta"
-                            : attackParityScenario.StageName,
+                            : parityWorldItemOnly
+                                ? worldItemParityScenario.StageName
+                                : attackParityScenario.StageName,
                         inventoryParityObserved,
                         inventoryParityEvidence);
                     samplerStop = true;
@@ -1720,9 +1793,17 @@ internal static class ModRegressionProbe
                         });
                     int trackedSceneIndex = parityPickupOnly
                         ? M001PlayerSceneIndex
-                        : attackParityScenario.PlayerSceneIndex;
+                        : parityWorldItemOnly
+                            ? worldItemParityScenario.TargetSceneIndex
+                            : attackParityScenario.PlayerSceneIndex;
+                    int expectedCheckpointCount =
+                        parityWorldItemOnly &&
+                        worldItemParityScenario.Poison
+                            ? 3
+                            : 2;
                     bool inventorySnapshotsReady =
-                        parityCheckpoints.Count == 2 &&
+                        parityCheckpoints.Count ==
+                            expectedCheckpointCount &&
                         parityCheckpoints.All(
                             delegate(ParityCheckpoint checkpoint)
                             {
@@ -3614,6 +3695,14 @@ internal static class ModRegressionProbe
                 process, actor + ActorResolvedGoalXOffset),
             ResolvedGoalY = ReadInt(
                 process, actor + ActorResolvedGoalYOffset),
+            WorldItemPlayerSelected = ReadInt(
+                process, actor + ActorWorldItemPlayerSelectedOffset),
+            HypnosisActive = ReadInt(
+                process, actor + ActorHypnosisActiveOffset),
+            HypnosisCounter = ReadInt(
+                process, actor + ActorHypnosisCounterOffset),
+            HypnosisCounterLimit = ReadInt(
+                process, actor + ActorHypnosisCounterLimitOffset),
             SearchDelayLimit = ReadInt(
                 process, actor + ActorSearchDelayLimitOffset),
             SearchDelayCounter = ReadInt(
@@ -3624,6 +3713,12 @@ internal static class ModRegressionProbe
                 process, actor + ActorTargetLostOffset),
             ReactionState = ReadInt(
                 process, actor + ActorReactionStateOffset),
+            PoisonActive = ReadInt(
+                process, actor + ActorPoisonActiveOffset),
+            PoisonCounter = ReadInt(
+                process, actor + ActorPoisonCounterOffset),
+            PoisonCounterLimit = ReadInt(
+                process, actor + ActorPoisonCounterLimitOffset),
             PathOverrideActive = ReadInt(
                 process, actor + ActorPathOverrideActiveOffset)
         };
@@ -4076,6 +4171,348 @@ internal static class ModRegressionProbe
             quantityChanged &&
             player != null &&
             player.Dead == 0;
+    }
+
+    private static WorldItemParityScenario ResolveWorldItemParityScenario(
+        string scenarioId,
+        int selectorLevel)
+    {
+        WorldItemParityScenario scenario = null;
+        if (String.Equals(
+                scenarioId,
+                "m007-chicken-world-item-v1",
+                StringComparison.Ordinal))
+        {
+            scenario = new WorldItemParityScenario
+            {
+                Id = scenarioId,
+                Description =
+                    "Seed an authentic type-33 chicken actor at enemy " +
+                    "scene 2327 through the isolated replay channel, then " +
+                    "let the unmodified original scan, collection and " +
+                    "inventory-transfer code run.",
+                StageName = "original_chicken_world_item_effect",
+                SelectorLevel = 8,
+                TargetSceneIndex = 2327,
+                ItemId = 33,
+                ExpectedBeforeQuantity = 0,
+                ExpectedAfterQuantity = 1
+            };
+        }
+        else if (String.Equals(
+                     scenarioId,
+                     "m010-canned-meat-world-item-v1",
+                     StringComparison.Ordinal))
+        {
+            scenario = new WorldItemParityScenario
+            {
+                Id = scenarioId,
+                Description =
+                    "Seed an authentic type-48 canned-meat actor at enemy " +
+                    "scene 1126 and observe the original durable carry " +
+                    "transfer.",
+                StageName = "original_canned_meat_world_item_effect",
+                SelectorLevel = 11,
+                TargetSceneIndex = 1126,
+                ItemId = 48,
+                ExpectedBeforeQuantity = 1,
+                ExpectedAfterQuantity = 2
+            };
+        }
+        else if (String.Equals(
+                     scenarioId,
+                     "m010-hypnosis-doll-world-item-v1",
+                     StringComparison.Ordinal))
+        {
+            scenario = new WorldItemParityScenario
+            {
+                Id = scenarioId,
+                Description =
+                    "Seed an authentic type-49 hypnosis doll at enemy " +
+                    "scene 1126 and observe forced consumption plus the " +
+                    "original temporary player-command state.",
+                StageName = "original_hypnosis_doll_world_item_effect",
+                SelectorLevel = 11,
+                TargetSceneIndex = 1126,
+                ItemId = 49,
+                ExpectedBeforeQuantity = 0,
+                ExpectedAfterQuantity = 0,
+                Hypnosis = true
+            };
+        }
+        else if (String.Equals(
+                     scenarioId,
+                     "m010-poisoned-wine-world-item-v1",
+                     StringComparison.Ordinal))
+        {
+            scenario = new WorldItemParityScenario
+            {
+                Id = scenarioId,
+                Description =
+                    "Seed authentic type-52 poisoned wine at enemy scene " +
+                    "1126 and observe forced consumption, poison and " +
+                    "distraction activation, then the delayed damage boundary.",
+                StageName = "original_poisoned_wine_world_item_effect",
+                SelectorLevel = 11,
+                TargetSceneIndex = 1126,
+                ItemId = 52,
+                ExpectedBeforeQuantity = 0,
+                ExpectedAfterQuantity = 0,
+                Poison = true,
+                Distraction = true
+            };
+        }
+        else if (String.Equals(
+                     scenarioId,
+                     "m009-dog-bone-world-item-v1",
+                     StringComparison.Ordinal))
+        {
+            scenario = new WorldItemParityScenario
+            {
+                Id = scenarioId,
+                Description =
+                    "Seed an authentic type-82 dog bone at dog scene 1355 " +
+                    "and observe its original durable transfer and bounded " +
+                    "distraction state.",
+                StageName = "original_dog_bone_world_item_effect",
+                SelectorLevel = 10,
+                TargetSceneIndex = 1355,
+                ItemId = 82,
+                ExpectedBeforeQuantity = 0,
+                ExpectedAfterQuantity = 1,
+                Distraction = true
+            };
+        }
+        else if (String.Equals(
+                     scenarioId,
+                     "m010-cigarette-world-item-v1",
+                     StringComparison.Ordinal))
+        {
+            scenario = new WorldItemParityScenario
+            {
+                Id = scenarioId,
+                Description =
+                    "Seed an authentic type-83 cigarette at enemy scene " +
+                    "1126 and observe its original durable transfer and " +
+                    "bounded distraction state.",
+                StageName = "original_cigarette_world_item_effect",
+                SelectorLevel = 11,
+                TargetSceneIndex = 1126,
+                ItemId = 83,
+                ExpectedBeforeQuantity = 0,
+                ExpectedAfterQuantity = 1,
+                Distraction = true
+            };
+        }
+        if (scenario == null ||
+            scenario.SelectorLevel != selectorLevel)
+        {
+            throw new InvalidOperationException(
+                "Unknown or level-incompatible world-item parity scenario: " +
+                (scenarioId ?? ""));
+        }
+        return scenario;
+    }
+
+    private static bool ExerciseWorldItemParity(
+        IntPtr process,
+        long imageBase,
+        IntPtr window,
+        List<ParityCheckpoint> checkpoints,
+        Stopwatch runClock,
+        Dictionary<int, RuntimeActorIdentity> actorIdentities,
+        WorldItemParityScenario scenario,
+        out string evidence)
+    {
+        if (scenario == null)
+        {
+            evidence = "world-item scenario was not resolved";
+            return false;
+        }
+        ActorSnapshot target = ReadResolvedActor(
+            process,
+            imageBase,
+            actorIdentities,
+            scenario.TargetSceneIndex);
+        if (target == null ||
+            !ReadActorInventoryContainers(process, target))
+        {
+            evidence =
+                "target scene inventory was not readable before item seed";
+            return false;
+        }
+        int beforeQuantity = InventoryQuantity(
+            target.ItemEntries,
+            scenario.ItemId);
+        int beforeHitPoints = target.CurrentHitPoints;
+        int beforeWorldItemCount = CountWorldActorsOfRuntimeType(
+            process,
+            imageBase,
+            scenario.ItemId);
+        CaptureParityCheckpoint(
+            checkpoints,
+            process,
+            imageBase,
+            runClock,
+            "before_collection",
+            true);
+
+        int seedWorldX;
+        int seedWorldY;
+        WorldItemSeedPoint(target, out seedWorldX, out seedWorldY);
+        bool staged = SendReplay(
+            window,
+            ReplaySeedWorldItem,
+            scenario.ItemId);
+        bool spawned = SendReplay(
+            window,
+            ReplaySpawnWorldItem,
+            PackDelta(
+                checked((short)seedWorldX),
+                checked((short)seedWorldY)));
+        bool collectionObserved = false;
+        int afterQuantity = beforeQuantity;
+        Stopwatch collectionWait = Stopwatch.StartNew();
+        while (collectionWait.ElapsedMilliseconds < 12000)
+        {
+            target = ReadResolvedActor(
+                process,
+                imageBase,
+                actorIdentities,
+                scenario.TargetSceneIndex);
+            if (target == null)
+                break;
+            bool inventoryReadable =
+                ReadActorInventoryContainers(process, target);
+            afterQuantity = inventoryReadable
+                ? InventoryQuantity(target.ItemEntries, scenario.ItemId)
+                : int.MinValue;
+            bool quantityReady =
+                inventoryReadable &&
+                afterQuantity == scenario.ExpectedAfterQuantity;
+            bool hypnosisReady =
+                !scenario.Hypnosis ||
+                (target.HypnosisActive == 1 &&
+                 target.WorldItemPlayerSelected == 1);
+            bool poisonReady =
+                !scenario.Poison ||
+                (target.PoisonActive == 1 &&
+                 target.PoisonCounterLimit == 80);
+            bool distractionReady =
+                !scenario.Distraction ||
+                (target.ReactionState == 1 &&
+                 target.SearchDelayLimit >= 80 &&
+                 target.SearchDelayLimit <= 119);
+            if (quantityReady &&
+                hypnosisReady &&
+                poisonReady &&
+                distractionReady)
+            {
+                collectionObserved = true;
+                break;
+            }
+            Thread.Sleep(10);
+        }
+        CaptureParityCheckpoint(
+            checkpoints,
+            process,
+            imageBase,
+            runClock,
+            "after_collection",
+            true);
+
+        bool delayedEffectObserved = !scenario.Poison;
+        if (scenario.Poison)
+        {
+            Stopwatch effectWait = Stopwatch.StartNew();
+            while (effectWait.ElapsedMilliseconds < 12000)
+            {
+                target = ReadResolvedActor(
+                    process,
+                    imageBase,
+                    actorIdentities,
+                    scenario.TargetSceneIndex);
+                if (target == null)
+                    break;
+                if (target.Dead != 0 ||
+                    target.CurrentHitPoints < beforeHitPoints)
+                {
+                    delayedEffectObserved = true;
+                    break;
+                }
+                Thread.Sleep(10);
+            }
+            CaptureParityCheckpoint(
+                checkpoints,
+                process,
+                imageBase,
+                runClock,
+                "after_effect",
+                true);
+        }
+
+        int afterWorldItemCount = CountWorldActorsOfRuntimeType(
+            process,
+            imageBase,
+            scenario.ItemId);
+        evidence =
+            "input_isolation=opt-in-process-window-replay" +
+            "; authentic_factory_rva=0x" +
+            EngineAddresses.CreateWorldActor.ToString(
+                "X8", CultureInfo.InvariantCulture) +
+            "; target_scene=" + scenario.TargetSceneIndex +
+            "; target_runtime_type=" +
+            (target == null ? -1 : target.RuntimeType) +
+            "; item_id=" + scenario.ItemId +
+            "; seed_world=(" + seedWorldX + "," + seedWorldY + ")" +
+            "; staged=" + staged +
+            "; spawn_message=" + spawned +
+            "; item_quantity=" + beforeQuantity + "->" + afterQuantity +
+            "; world_item_count=" + beforeWorldItemCount + "->" +
+            afterWorldItemCount +
+            "; hypnosis_active=" +
+            (target == null ? -1 : target.HypnosisActive) +
+            "; poison_active=" +
+            (target == null ? -1 : target.PoisonActive) +
+            "; distraction_limit=" +
+            (target == null ? -1 : target.SearchDelayLimit) +
+            "; hit_points=" + beforeHitPoints + "->" +
+            (target == null ? -1 : target.CurrentHitPoints) +
+            "; dead=" + (target == null ? -1 : target.Dead);
+        return staged &&
+            spawned &&
+            beforeQuantity == scenario.ExpectedBeforeQuantity &&
+            collectionObserved &&
+            delayedEffectObserved;
+    }
+
+    private static void WorldItemSeedPoint(
+        ActorSnapshot target,
+        out int worldX,
+        out int worldY)
+    {
+        // sub_45C550 requires directional visibility band 1. Seeding exactly
+        // at the actor origin produces a zero direction vector whose legacy
+        // branch is not stable across all eight facings. Half a navigation
+        // cell ahead remains inside sub_456AB0's immediate 32x16 pickup
+        // range, stays in the actor's current walk cell and exercises the
+        // original directional scan without crossing a wall cell.
+        int deltaX = 0;
+        int deltaY = 0;
+        switch (target.Direction)
+        {
+        case 1: deltaY = -8; break;
+        case 2: deltaX = 16; deltaY = -8; break;
+        case 3: deltaX = 16; break;
+        case 4: deltaX = 16; deltaY = 8; break;
+        case 5: deltaY = 8; break;
+        case 6: deltaX = -16; deltaY = 8; break;
+        case 7: deltaX = -16; break;
+        case 8: deltaX = -16; deltaY = -8; break;
+        default: deltaX = 16; break;
+        }
+        worldX = target.WorldX + deltaX;
+        worldY = target.WorldY + deltaY;
     }
 
     private static WeaponAttackParityScenario ResolveWeaponAttackParityScenario(
@@ -6291,6 +6728,33 @@ internal static class ModRegressionProbe
         json.Append("],\"item_entries\":[");
         AppendTraceInventoryEntries(json, actor.ItemEntries);
         json.Append("]},");
+        json.AppendFormat(
+            CultureInfo.InvariantCulture,
+            "\"world_item_effect\":{{" +
+            "\"hypnosis_active\":{0}," +
+            "\"hypnosis_counter\":{1}," +
+            "\"hypnosis_counter_limit\":{2}," +
+            "\"player_selected\":{3}," +
+            "\"poison_active\":{4}," +
+            "\"poison_counter\":{5}," +
+            "\"poison_counter_limit\":{6}," +
+            "\"distraction_active\":{7}," +
+            "\"distraction_counter\":{8}," +
+            "\"distraction_limit\":{9}}},",
+            actor.HypnosisActive,
+            actor.HypnosisCounter,
+            actor.HypnosisCounterLimit,
+            actor.WorldItemPlayerSelected,
+            actor.PoisonActive,
+            actor.PoisonCounter,
+            actor.PoisonCounterLimit,
+            actor.ReactionState == 1 &&
+                actor.SearchDelayLimit >= 80 &&
+                actor.SearchDelayLimit <= 119
+                    ? 1
+                    : 0,
+            actor.SearchDelayCounter,
+            actor.SearchDelayLimit);
         return json.ToString();
     }
 
@@ -6421,6 +6885,15 @@ internal static class ModRegressionProbe
                     scenarioId,
                     selectorLevel).Description;
         }
+        else if (scenarioId.EndsWith(
+                     "-world-item-v1",
+                     StringComparison.Ordinal))
+        {
+            scenarioDescription =
+                ResolveWorldItemParityScenario(
+                    scenarioId,
+                    selectorLevel).Description;
+        }
         else if (String.Equals(
                      scenarioId,
                      "m010-sight-direct-target-v1",
@@ -6485,11 +6958,16 @@ internal static class ModRegressionProbe
             "\"description\":\"{1}\"}},\n",
             scenarioId,
             Escape(scenarioDescription));
-        json.Append(
-            "  \"metadata\": {" +
-            "\"producer\":\"ModRegressionProbe\"," +
-            "\"input_isolation\":" +
-            "\"window-message-to-process-local-DirectInput\"},\n");
+        string inputIsolation = scenarioId.EndsWith(
+            "-world-item-v1",
+            StringComparison.Ordinal)
+                ? "opt-in-window-replay-authentic-original-actor-seed"
+                : "window-message-to-process-local-DirectInput";
+        json.AppendFormat(
+            CultureInfo.InvariantCulture,
+            "  \"metadata\": {{\"producer\":\"ModRegressionProbe\"," +
+            "\"input_isolation\":\"{0}\"}},\n",
+            inputIsolation);
         json.Append("  \"checkpoints\": [\n");
         for (int checkpointIndex = 0;
              checkpointIndex < checkpoints.Count;

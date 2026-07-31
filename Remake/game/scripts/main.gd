@@ -302,6 +302,9 @@ var legacy_crt_random_state := 1
 var field_pickups: Array[Node2D] = []
 var original_pickup_order_target: Node2D
 var original_pickup_order_collector: SQUAD_UNIT
+var original_drop_order_actor: SQUAD_UNIT
+var original_drop_order_item_id := 0
+var original_drop_order_destination := Vector2.ZERO
 var explosive_props: Array[Node2D] = []
 var deployed_mines: Array[Node2D] = []
 var legacy_special_world_objects: Array[Node2D] = []
@@ -588,6 +591,7 @@ func load_imported_level(level_id: String = LEVEL_VIEW.DEFAULT_LEVEL_ID) -> bool
 	legacy_doors.clear()
 	dormant_destruction_effects_by_scene.clear()
 	_clear_original_pickup_order()
+	_clear_original_drop_order()
 	field_pickups.clear()
 	explosive_props.clear()
 	field_inventory.clear()
@@ -1590,6 +1594,57 @@ func _configure_original_backpack(
 	return not loadout.is_empty() and actor.configure_original_backpack(loadout)
 
 
+func _configure_original_weapon_container(
+	actor: SQUAD_UNIT,
+	entity: Dictionary,
+	level_id: String,
+) -> bool:
+	if actor == null:
+		return false
+	var scene_index := int(entity.get("scene_index", -1))
+	var display_name := str(entity.get("display_name", ""))
+	var loadout: Dictionary = (
+		ORIGINAL_INITIAL_WEAPON_INVENTORY.loadout_for_any_actor(
+			level_id,
+			scene_index,
+			display_name,
+		)
+	)
+	if loadout.is_empty():
+		return false
+	var configured := true
+	for item_value: Variant in loadout.get("items", []):
+		if not item_value is Dictionary:
+			configured = false
+			continue
+		var item := item_value as Dictionary
+		var attack_type: int = (
+			ORIGINAL_INITIAL_WEAPON_INVENTORY.attack_type_for_item_id(
+				int(item.get("item_id", 0))
+			)
+		)
+		var profile: Dictionary = (
+			COMBAT_PROFILES.weapon_profile_for_attack_type(attack_type)
+		)
+		if profile.is_empty() or not actor.register_original_inventory_weapon(
+			profile,
+			load_entity_action_groups(
+				entity,
+				str(profile.get("action_key", "")),
+			),
+			int(item.get("quantity", 0)),
+			int(item.get("quantity_mode", -1)),
+			false,
+		):
+			configured = false
+	var authored_attack_type := int(loadout.get("default_attack_type", 0))
+	if authored_attack_type > 0 and not actor.equip_attack_type(
+		authored_attack_type
+	):
+		configured = false
+	return configured
+
+
 func _spawn_escorts() -> void:
 	if dynamic_occupancy == null:
 		return
@@ -1630,6 +1685,11 @@ func _spawn_escorts() -> void:
 			attack_groups,
 		)
 		escort.configure_original_ai_idle_animation(stand_action_groups)
+		_configure_original_weapon_container(
+			escort,
+			entity,
+			str(current_mission.get("id", FORMAL_LEVEL_IDS[current_level_index])),
+		)
 		_configure_original_backpack(
 			escort,
 			str(current_mission.get("id", FORMAL_LEVEL_IDS[current_level_index])),
@@ -1680,6 +1740,11 @@ func _spawn_enemies() -> void:
 		enemy.original_mission_number = int(
 			current_mission.get("number", current_level_index + 1)
 		)
+		_configure_original_weapon_container(
+			enemy,
+			entity,
+			str(current_mission.get("id", FORMAL_LEVEL_IDS[current_level_index])),
+		)
 		_configure_original_backpack(
 			enemy,
 			str(current_mission.get("id", FORMAL_LEVEL_IDS[current_level_index])),
@@ -1717,6 +1782,11 @@ func _spawn_ambient_units() -> void:
 			dynamic_occupancy,
 		)
 		ambient.configure_original_ai_idle_animation(stand_action_groups)
+		_configure_original_weapon_container(
+			ambient,
+			entity,
+			str(current_mission.get("id", FORMAL_LEVEL_IDS[current_level_index])),
+		)
 		_configure_original_backpack(
 			ambient,
 			str(current_mission.get("id", FORMAL_LEVEL_IDS[current_level_index])),
@@ -1783,6 +1853,7 @@ func _process(delta: float) -> void:
 
 func _physics_process(_delta: float) -> void:
 	_advance_original_pickup_order()
+	_advance_original_drop_order()
 	_advance_burial_command_world_tick()
 
 
@@ -2232,10 +2303,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			emit_noise_at(_mouse_world_position(), 640.0)
 			get_viewport().set_input_as_handled()
 			return
-		if key_event.pressed and key_event.keycode == KEY_T:
-			drop_selected_item_at(_mouse_world_position())
-			get_viewport().set_input_as_handled()
-			return
 		if key_event.pressed:
 			_consume_original_cheat_key(key_event)
 		var controls := runtime_settings.get("controls", {}) as Dictionary
@@ -2265,10 +2332,16 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _cancel_pending_pointer_mode_from_right_release() -> bool:
-	var canceled := burial_mode or sight_target_pending
+	var canceled := (
+		burial_mode
+		or sight_target_pending
+		or selected_backpack_item_id > 0
+	)
 	burial_mode = false
 	sight_target_pending = false
 	sight_observation_mode = false
+	selected_backpack_item_id = 0
+	_refresh_inventory_ui()
 	return canceled
 
 
@@ -2279,6 +2352,9 @@ func _handle_original_left_click(world_position: Vector2, additive: bool) -> voi
 		return
 	if sight_target_pending:
 		_select_sight_observation_target(world_position)
+		return
+	if selected_backpack_item_id > 0:
+		drop_selected_item_at(world_position)
 		return
 	if original_force_target_held:
 		var forced_target := force_target_at_world_point(world_position)
@@ -2473,6 +2549,9 @@ func _try_bury_at(world_point: Vector2) -> bool:
 		_cancel_burial_command()
 		update_status("请先选择执行掩埋的队员")
 		return false
+	_clear_original_pickup_order()
+	_clear_original_drop_order()
+	_cancel_legacy_deployment_for_unit(burial_worker)
 	burial_worker.clear_combat_target()
 	if not is_original_burial_range(burial_worker.position, corpse.position):
 		_issue_burial_approach_path()
@@ -2684,6 +2763,10 @@ func _try_interact_burial_cache_at(world_position: Vector2) -> bool:
 		)
 		_refresh_inventory_ui()
 		return true
+	_clear_original_pickup_order()
+	_clear_original_drop_order()
+	_cancel_legacy_deployment_for_unit(collector)
+	collector.clear_combat_target()
 	var path := PackedVector2Array()
 	if dynamic_occupancy != null and collector.scene_index >= 0:
 		path = dynamic_occupancy.find_path_for_scene(
@@ -2977,6 +3060,8 @@ func _try_issue_legacy_world_object_deployment(world_position: Vector2) -> bool:
 		if not LEGACY_SPECIAL_ACTION_PROFILES.is_world_object_attack(attack_type):
 			continue
 		special_action_selected = true
+		_clear_original_pickup_order()
+		_clear_original_drop_order()
 		var evidence_profile: Dictionary = (
 			LEGACY_SPECIAL_ACTION_PROFILES.profile_for_attack_type(attack_type)
 		)
@@ -3073,6 +3158,7 @@ func issue_formation_move(destination: Vector2) -> void:
 	# A new ordinary ground command replaces the original status-3 pickup
 	# command just as sub_458A80 replaces the active target tuple.
 	_clear_original_pickup_order()
+	_clear_original_drop_order()
 	var audio_started_usec := Time.get_ticks_usec()
 	_play_media_audio("acknowledge", _media_actor_key(selected_units[0].display_name))
 	last_formation_move_audio_usec = (
@@ -3232,6 +3318,7 @@ func issue_attack_order(target: Node2D, force_target: bool = false) -> void:
 		update_status("请先选择存活队员和敌方目标")
 		return
 	_clear_original_pickup_order()
+	_clear_original_drop_order()
 	var issued := 0
 	for unit: SQUAD_UNIT in selected_units:
 		_cancel_legacy_deployment_for_unit(unit)
@@ -4036,28 +4123,116 @@ func drop_selected_item_at(world_position: Vector2) -> bool:
 		update_status("当前没有可丢弃物品")
 		return false
 	var item_id := selected_backpack_item_id
-	if (
-		item_id <= 0
-		or actor.backpack_inventory.item_count(item_id) <= 0
-	):
-		item_id = 0
-		for entry: Dictionary in actor.backpack_inventory.ordered_entries():
-			if int(entry.get("quantity", 0)) > 0:
-				item_id = int(entry.get("item_id", 0))
-				break
-	if item_id <= 0:
-		update_status("当前没有可丢弃物品")
+	if item_id <= 0 or actor.backpack_inventory.item_count(item_id) <= 0:
+		update_status("请先在物品栏选择要放下的物品")
 		return false
-	var dropped: Dictionary = actor.backpack_inventory.take_for_drop(item_id, 1)
-	if dropped.is_empty():
-		update_status("当前物品不能丢弃")
+	if not restore_original_drop_order(actor, item_id, world_position):
+		update_status("没有通往放置位置的可行路线")
 		return false
 	var item_name: String = (
 		ORIGINAL_INITIAL_ITEM_INVENTORY.item_display_name(item_id)
 	)
-	var pickup := MISSION_PICKUP.new()
-	add_child(pickup)
-	pickup.configure(
+	selected_backpack_item_id = 0
+	_refresh_inventory_ui()
+	update_status(
+		"%s 正在前往放下 %s；抵达前物品仍在背包中"
+		% [actor.display_name, item_name]
+	)
+	return true
+
+
+func restore_original_drop_order(
+	actor: SQUAD_UNIT,
+	item_id: int,
+	world_position: Vector2,
+) -> bool:
+	if (
+		actor == null
+		or not is_instance_valid(actor)
+		or not actor.is_alive
+		or actor.backpack_inventory == null
+		or item_id <= 0
+		or actor.backpack_inventory.item_count(item_id) <= 0
+	):
+		return false
+	var path := PackedVector2Array()
+	if navigation_grid == null:
+		path.append(world_position)
+	elif dynamic_occupancy != null and actor.scene_index >= 0:
+		path = dynamic_occupancy.find_path_for_scene(
+			actor.scene_index,
+			actor.position,
+			world_position,
+		)
+	else:
+		path = navigation_grid.find_path(
+			actor.position,
+			world_position,
+			true,
+		)
+	if path.is_empty() and not actor.position.is_equal_approx(world_position):
+		return false
+	_clear_original_pickup_order()
+	_clear_original_drop_order()
+	_cancel_legacy_deployment_for_unit(actor)
+	actor.clear_combat_target()
+	original_drop_order_actor = actor
+	original_drop_order_item_id = item_id
+	original_drop_order_destination = (
+		path[-1] if not path.is_empty() else actor.position
+	)
+	actor.issue_path(path)
+	return true
+
+
+func _advance_original_drop_order() -> void:
+	if original_drop_order_actor == null:
+		return
+	if (
+		not is_instance_valid(original_drop_order_actor)
+		or not original_drop_order_actor.is_alive
+		or original_drop_order_actor.backpack_inventory == null
+		or original_drop_order_item_id <= 0
+		or original_drop_order_actor.backpack_inventory.item_count(
+			original_drop_order_item_id
+		) <= 0
+	):
+		_clear_original_drop_order()
+		return
+	if (
+		original_drop_order_actor.movement_path_index
+			< original_drop_order_actor.movement_path.size()
+		or original_drop_order_actor.position.distance_to(
+			original_drop_order_destination
+		) > 1.0
+	):
+		return
+	_complete_original_drop_order()
+
+
+func _complete_original_drop_order() -> bool:
+	var actor := original_drop_order_actor
+	var item_id := original_drop_order_item_id
+	var destination := original_drop_order_destination
+	if (
+		actor == null
+		or not is_instance_valid(actor)
+		or not actor.is_alive
+		or actor.backpack_inventory == null
+		or item_id <= 0
+	):
+		_clear_original_drop_order()
+		return false
+	var dropped: Dictionary = actor.backpack_inventory.take_for_drop(item_id, 1)
+	if dropped.is_empty():
+		_clear_original_drop_order()
+		_refresh_inventory_ui()
+		return false
+	var item_name: String = (
+		ORIGINAL_INITIAL_ITEM_INVENTORY.item_display_name(item_id)
+	)
+	_spawn_original_inventory_pickup(
+		destination,
 		{
 			"original_inventory_kind": "backpack",
 			"item_id": item_id,
@@ -4066,18 +4241,21 @@ func drop_selected_item_at(world_position: Vector2) -> bool:
 			"quantity_mode": int(dropped.get("quantity_mode", 0)),
 			"source_scene_index": int(actor.scene_index),
 		},
-		world_position,
-		_inventory_icon_for("", item_id, ""),
 	)
-	_register_mission_pickup(pickup)
-	if not actor.backpack_inventory.has_item(item_id):
-		selected_backpack_item_id = 0
+	_clear_original_drop_order()
 	_refresh_inventory_ui()
 	update_status(
-		"已将 %s 丢到地面；仅能识别它的敌人会在近距视线内前往查看"
-		% item_name
+		"%s 已放下 %s；仅能识别它的敌人会在近距视线内前往查看"
+		% [actor.display_name, item_name]
 	)
 	return true
+
+
+func _clear_original_drop_order() -> void:
+	original_drop_order_actor = null
+	original_drop_order_item_id = 0
+	original_drop_order_destination = Vector2.ZERO
+
 
 func _on_enemy_legacy_world_item_interaction_requested(
 	enemy: ENEMY_UNIT,
@@ -4690,6 +4868,8 @@ func _refresh_inventory_ui() -> void:
 
 func _on_combatant_died(unit: Node2D, killer: Node2D) -> void:
 	_cancel_legacy_deployment_for_unit(unit)
+	if unit == original_drop_order_actor:
+		_clear_original_drop_order()
 	selected_units.erase(unit)
 	if unit is SQUAD_UNIT:
 		_spawn_original_inventory_drops(unit as SQUAD_UNIT)
@@ -4772,6 +4952,12 @@ func _spawn_original_inventory_drops(unit: SQUAD_UNIT) -> void:
 				},
 			)
 	if unit.combat_inventory != null:
+		var had_original_weapon_container := bool(
+			unit.combat_inventory.full_snapshot().get(
+				"original_parity",
+				false,
+			)
+		)
 		var weapon_drops: Array[Dictionary] = (
 			unit.combat_inventory.take_all_original_drops(
 				unit.inventory_weapon_order,
@@ -4796,6 +4982,14 @@ func _spawn_original_inventory_drops(unit: SQUAD_UNIT) -> void:
 					"source_scene_index": int(unit.scene_index),
 				},
 			)
+		if had_original_weapon_container:
+			# sub_456AB0 empties both original actor containers on death.
+			# Keep the presentation/order mirrors in the same cleared state so
+			# an empty +0x22C snapshot round-trips without resurrecting stale
+			# action keys from the freshly loaded level.
+			unit.inventory_weapon_order.clear()
+			unit.attack_groups_by_action.clear()
+			unit.call("_sync_equipped_weapon_after_consumption")
 
 
 func _spawn_original_inventory_pickup(
@@ -5610,6 +5804,8 @@ func _on_inventory_reload_requested() -> void:
 
 func _on_inventory_slot_requested(slot: Dictionary) -> void:
 	var kind := str(slot.get("kind", ""))
+	if kind != "backpack_item":
+		selected_backpack_item_id = 0
 	if kind == "weapon":
 		var action_key := str(slot.get("action_key", ""))
 		var equipped := 0
@@ -5631,10 +5827,11 @@ func _on_inventory_slot_requested(slot: Dictionary) -> void:
 				ORIGINAL_INITIAL_ITEM_INVENTORY.item_profile(item_id)
 			)
 			if str(profile.get("behavior", "")) == "use":
-				_use_original_backpack_item(actor, item_id, profile)
+				if _use_original_backpack_item(actor, item_id, profile):
+					selected_backpack_item_id = 0
 			else:
 				update_status(
-					"已选中 %s；移动鼠标后按 T 可丢到地面"
+					"已选中 %s；点击地面后队员会先寻路，抵达时再放下"
 					% str(slot.get("label", "物品"))
 				)
 	elif kind == "mission_item":
@@ -5892,7 +6089,7 @@ func _inventory_grid_model() -> Dictionary:
 			elif behavior == "mission_item":
 				description += "；任务物品"
 			else:
-				description += "；选中后可按 T 丢到地面"
+				description += "；选中后点击地面，抵达时放下"
 			backpack_slots.append({
 				"kind": "backpack_item",
 				"item_id": item_id,
@@ -6644,6 +6841,7 @@ func issue_original_pickup_order(pickup: Node2D) -> bool:
 		update_status("当前队员不能拾取该物品")
 		return false
 	_clear_original_pickup_order()
+	_clear_original_drop_order()
 	_cancel_legacy_deployment_for_unit(collector)
 	collector.clear_combat_target()
 	original_pickup_order_target = pickup

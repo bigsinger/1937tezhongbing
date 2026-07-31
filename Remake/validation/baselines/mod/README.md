@@ -48,11 +48,15 @@ Run `Remake/tools/Run-RuntimeProbe.ps1` to generate the matching Remake trace
 and `comparison.json` / `comparison.md`.
 
 `initial-weapon-inventory-v1.json` is a gameplay-entry baseline for all twelve
-levels. It contains 27 exact player identities and 83 ordered weapon-container
-entries. Every level records SHA-256 provenance for both entry and steady
-read-only snapshots plus its runtime identity catalog. Identity JSON hashes
-use UTF-8 text normalized to LF without BOM for cross-platform reproducibility.
-Product data in
+levels. It contains 660 exact actor identities, 761 ordered weapon-container
+entries and 67 intentionally empty containers; the player-only compatibility
+subset contains 27 identities and 83 entries. The active attack type is taken
+from the stable runtime snapshots rather than the VWF authored default. Enemy
+containers remain exact even though recovered `sub_456DF0` semantics do not
+consume their quantities. Every level records SHA-256 provenance for both
+entry and steady read-only snapshots plus its runtime identity catalog.
+Identity JSON hashes use UTF-8 text normalized to LF without BOM for
+cross-platform reproducibility. Product data in
 `game/data/original_initial_weapon_inventory.json` must remain semantically
 identical and is checked on every build.
 
@@ -95,6 +99,17 @@ The m010 cases also prove that a commanded attacker can leave the original
 four-person spawn formation instead of being trapped by friendly dynamic
 occupancy.
 
+Six `*-world-item-v1.json` traces cover the original command-9 drop, route,
+enemy pickup and effect lifecycle for chicken 33, canned meat 48, hypnosis
+doll 49, poisoned wine 52, dog bone 82 and cigarette 83. They strictly compare
+ordered containers and modes before/after collection, retained versus forced
+consumption, runtime object removal, temporary control, distraction and the
+poison tick-81 damage boundary. The original retains a dead poisoned actor's
+container until its later death-drop phase, while Remake materializes that
+drop immediately; only the `after_effect` container timing is diagnostic for
+that scenario. Its poison-active flag, counter/limit, HP and alive transition
+remain strict, and all before/after-collection container checks remain strict.
+
 All traces retain the complete audited actor roster, but
 `Compare-InventoryParityTrace.ps1` deliberately treats moving-patrol
 positions and target-HP timing as diagnostic: independent launches can begin
@@ -102,7 +117,7 @@ at different patrol phases and an in-flight projectile can cross a checkpoint
 boundary. Canonical ordered inventory contents, modes, active attack type and
 the required quantity transition are strict.
 
-Run `Remake/tools/Capture-InventoryParity.ps1` to recapture all ten MOD traces,
+Run `Remake/tools/Capture-InventoryParity.ps1` to recapture all sixteen MOD traces,
 replay every scenario in Remake and produce JSON/Markdown comparisons. Pass
 `-ScenarioId ID` to isolate one scenario while developing. The runner copies
 the MOD to an isolated `E:\1937` runtime, sends input only to the target

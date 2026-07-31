@@ -36,6 +36,16 @@ func _test_catalog(failures: Array[String]) -> void:
 		"the recovered 12-level initial inventory catalog validates",
 		failures,
 	)
+	var summary := catalog.get("summary", {}) as Dictionary
+	_expect(
+		int(summary.get("exact_actor_count", 0)) == 660
+		and int(summary.get("inventory_entry_count", 0)) == 761
+		and int(summary.get("empty_actor_count", 0)) == 67
+		and int(summary.get("player_count", 0)) == 27
+		and int(summary.get("player_inventory_entry_count", 0)) == 83,
+		"catalog covers every exact actor weapon container",
+		failures,
+	)
 	var m000: Dictionary = ORIGINAL_INVENTORY.loadout_for_scene("m000", 1436)
 	_expect(
 		str(m000.get("display_name", "")) == "强子"
@@ -51,6 +61,20 @@ func _test_catalog(failures: Array[String]) -> void:
 		and int((m000_items[1] as Dictionary).get("item_id", 0)) == 36
 		and int((m000_items[1] as Dictionary).get("quantity", 0)) == 7,
 		"m000 preserves original inventory order, modes and direct bullet count",
+		failures,
+	)
+	var m007_enemy: Dictionary = ORIGINAL_INVENTORY.loadout_for_any_actor_scene(
+		"m007",
+		2327,
+	)
+	var m007_enemy_items := m007_enemy.get("items", []) as Array
+	_expect(
+		int(m007_enemy.get("captured_faction_id", 0)) == 1
+		and m007_enemy_items.size() == 1
+		and int(
+			(m007_enemy_items[0] as Dictionary).get("item_id", 0)
+		) == 37,
+		"m007 enemy scene 2327 preserves its original rifle container",
 		failures,
 	)
 	_expect(

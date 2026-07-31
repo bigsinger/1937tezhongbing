@@ -184,6 +184,42 @@ $scenarios = @(
         parity_flag = '--parity-attack-only'
     },
     [pscustomobject]@{
+        id = 'm007-chicken-world-item-v1'
+        level_id = 'm007'
+        selector_level = 8
+        parity_flag = '--parity-world-item-only'
+    },
+    [pscustomobject]@{
+        id = 'm010-canned-meat-world-item-v1'
+        level_id = 'm010'
+        selector_level = 11
+        parity_flag = '--parity-world-item-only'
+    },
+    [pscustomobject]@{
+        id = 'm010-hypnosis-doll-world-item-v1'
+        level_id = 'm010'
+        selector_level = 11
+        parity_flag = '--parity-world-item-only'
+    },
+    [pscustomobject]@{
+        id = 'm010-poisoned-wine-world-item-v1'
+        level_id = 'm010'
+        selector_level = 11
+        parity_flag = '--parity-world-item-only'
+    },
+    [pscustomobject]@{
+        id = 'm009-dog-bone-world-item-v1'
+        level_id = 'm009'
+        selector_level = 10
+        parity_flag = '--parity-world-item-only'
+    },
+    [pscustomobject]@{
+        id = 'm010-cigarette-world-item-v1'
+        level_id = 'm010'
+        selector_level = 11
+        parity_flag = '--parity-world-item-only'
+    },
+    [pscustomobject]@{
         id = 'm010-sight-direct-target-v1'
         level_id = 'm010'
         selector_level = 11
@@ -251,15 +287,44 @@ try {
         }
 
         Write-Host "Capturing stable MOD trace: $($scenario.id)"
-        & $modProbe @(
-            $runtime,
-            $modOutput,
-            $scenario.selector_level,
-            60,
-            "--identity-catalog=$identityCatalog",
-            $scenario.parity_flag,
-            "--parity-scenario=$($scenario.id)")
-        if ($LASTEXITCODE -ne 0) {
+        $maximumProbeAttempts =
+            if ($scenario.parity_flag -eq '--parity-world-item-only') {
+                3
+            } else {
+                1
+            }
+        $modProbePassed = $false
+        for ($probeAttempt = 1;
+             $probeAttempt -le $maximumProbeAttempts;
+             ++$probeAttempt) {
+            if ($probeAttempt -gt 1) {
+                Write-Warning (
+                    "Retrying isolated stable MOD trace $($scenario.id) " +
+                    "($probeAttempt/$maximumProbeAttempts) after the original " +
+                    'actor factory declined the prior timing boundary.')
+                Get-ChildItem -LiteralPath $runtime -File -Force |
+                    Where-Object {
+                        $_.Name -like '1937M*.SAV' -or
+                        $_.Name -in @(
+                            'M1937Mod.log',
+                            'M1937Telemetry.jsonl')
+                    } |
+                    Remove-Item -Force
+            }
+            & $modProbe @(
+                $runtime,
+                $modOutput,
+                $scenario.selector_level,
+                60,
+                "--identity-catalog=$identityCatalog",
+                $scenario.parity_flag,
+                "--parity-scenario=$($scenario.id)")
+            if ($LASTEXITCODE -eq 0) {
+                $modProbePassed = $true
+                break
+            }
+        }
+        if (-not $modProbePassed) {
             throw "Stable MOD inventory probe failed: $($scenario.id)"
         }
         $modTrace = Join-Path $modOutput "mod-$($scenario.id).json"
@@ -344,7 +409,8 @@ try {
         schema_version = 1
         input_isolation = (
             'target-window messages and process-local DirectInput only; ' +
-            'no global cursor APIs')
+            'world-item scenarios use the opt-in original actor factory ' +
+            'inside the isolated process; no global cursor APIs')
         result_count = $results.Count
         passed = @($results | Where-Object { -not $_.passed }).Count -eq 0
         results = @($results)

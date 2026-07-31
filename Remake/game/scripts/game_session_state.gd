@@ -287,6 +287,7 @@ static func _capture_world(game: Node) -> Dictionary:
 		"legacy_burial_caches": [],
 		"legacy_doors": [],
 		"pending_burial_command": {},
+		"pending_item_drop_command": {},
 		"legacy_global_alarm_active": (
 			bool(game.get("legacy_global_alarm_active"))
 			if _has_property(game, "legacy_global_alarm_active")
@@ -450,6 +451,36 @@ static func _capture_world(game: Node) -> Dictionary:
 				if _has_property(game, "burial_action_started")
 				else false
 			),
+		}
+	var drop_actor: Variant = (
+		game.get("original_drop_order_actor")
+		if _has_property(game, "original_drop_order_actor")
+		else null
+	)
+	var drop_item_id := (
+		int(game.get("original_drop_order_item_id"))
+		if _has_property(game, "original_drop_order_item_id")
+		else 0
+	)
+	var drop_destination := (
+		game.get("original_drop_order_destination") as Vector2
+		if _has_property(game, "original_drop_order_destination")
+		else Vector2.ZERO
+	)
+	if (
+		drop_actor is Node2D
+		and is_instance_valid(drop_actor)
+		and bool((drop_actor as Node2D).get("is_alive"))
+		and drop_item_id > 0
+	):
+		world["pending_item_drop_command"] = {
+			"actor_scene_index": int(
+				(drop_actor as Node2D).get("scene_index")
+			),
+			"actor_display_name": _actor_display_name(drop_actor),
+			"item_id": drop_item_id,
+			"destination_x": drop_destination.x,
+			"destination_y": drop_destination.y,
 		}
 	var projectile_world: Variant = game.get("projectile_world")
 	if projectile_world is Node:
@@ -1054,6 +1085,11 @@ static func _restore_world(game: Node, world: Dictionary, warnings: Array[String
 		world.get("pending_burial_command", {}) as Dictionary,
 		warnings,
 	)
+	_restore_pending_item_drop_command(
+		game,
+		world.get("pending_item_drop_command", {}) as Dictionary,
+		warnings,
+	)
 	_restore_projectiles(game, world.get("projectiles", []) as Array, warnings)
 	var direction_runtime: Variant = game.get("mission_direction_runtime")
 	var direction_state: Variant = world.get("mission_direction", {})
@@ -1401,6 +1437,41 @@ static func _restore_pending_burial_command(
 		)
 	if not action_started and game.has_method("_issue_burial_approach_path"):
 		game.call("_issue_burial_approach_path")
+
+
+static func _restore_pending_item_drop_command(
+	game: Node,
+	record: Dictionary,
+	warnings: Array[String],
+) -> void:
+	if record.is_empty():
+		if game.has_method("_clear_original_drop_order"):
+			game.call("_clear_original_drop_order")
+		return
+	if not game.has_method("restore_original_drop_order"):
+		warnings.append("pending item-drop commands are unsupported by this runtime")
+		return
+	var actor := _find_actor_by_identity(
+		game,
+		int(record.get("actor_scene_index", -1)),
+		str(record.get("actor_display_name", "")),
+	)
+	if (
+		actor == null
+		or not bool(actor.get("is_alive"))
+		or not bool(
+			game.call(
+				"restore_original_drop_order",
+				actor,
+				int(record.get("item_id", 0)),
+				Vector2(
+					float(record.get("destination_x", actor.position.x)),
+					float(record.get("destination_y", actor.position.y)),
+				),
+			)
+		)
+	):
+		warnings.append("a pending item-drop command could not be restored")
 
 
 static func _restore_projectiles(game: Node, records: Array, warnings: Array[String]) -> void:

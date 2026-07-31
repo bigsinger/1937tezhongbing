@@ -66,8 +66,11 @@ $expectedAttackItems = @{
     7 = 42; 8 = 43; 9 = 44; 10 = 45; 11 = 99
 }
 $expectedPlayerCounts = @(1, 3, 1, 4, 1, 3, 1, 3, 2, 2, 4, 2)
+$actorTotal = 0
+$actorEntryTotal = 0
+$emptyActorTotal = 0
 $playerTotal = 0
-$entryTotal = 0
+$playerEntryTotal = 0
 $sceneKeys = @{}
 
 for ($levelIndex = 0; $levelIndex -lt 12; ++$levelIndex) {
@@ -75,6 +78,44 @@ for ($levelIndex = 0; $levelIndex -lt 12; ++$levelIndex) {
     $level = $gameData.levels.$levelId
     if ($null -eq $level) {
         throw "Product inventory catalog is missing $levelId."
+    }
+    $actors = @($level.actors)
+    $actorsByScene = @{}
+    foreach ($actor in $actors) {
+        $sceneKey = "$levelId/$([int]$actor.scene_index)"
+        if ($sceneKeys.ContainsKey($sceneKey)) {
+            throw "Duplicate actor scene loadout: $sceneKey"
+        }
+        $sceneKeys[$sceneKey] = $true
+        $actorsByScene[[int]$actor.scene_index] = $actor
+        if ([string]::IsNullOrWhiteSpace([string]$actor.display_name)) {
+            throw "$sceneKey has no display name."
+        }
+        $indices = @()
+        foreach ($item in @($actor.items)) {
+            $itemId = [int]$item.item_id
+            if (-not $expectedModes.ContainsKey($itemId) -or
+                [int]$item.quantity_mode -ne $expectedModes[$itemId]) {
+                throw "$sceneKey item $itemId has invalid quantity semantics."
+            }
+            if ([int]$item.quantity -lt 0) {
+                throw "$sceneKey item $itemId has a negative quantity."
+            }
+            $indices += [int]$item.inventory_index
+            ++$actorEntryTotal
+        }
+        $orderedIndices = @($indices | Sort-Object)
+        for ($inventoryIndex = 0;
+             $inventoryIndex -lt $orderedIndices.Count;
+             ++$inventoryIndex) {
+            if ($orderedIndices[$inventoryIndex] -ne $inventoryIndex) {
+                throw "$sceneKey inventory order is not contiguous."
+            }
+        }
+        if ($indices.Count -eq 0) {
+            ++$emptyActorTotal
+        }
+        ++$actorTotal
     }
     $players = @($level.players)
     if ($players.Count -ne $expectedPlayerCounts[$levelIndex]) {
@@ -84,10 +125,17 @@ for ($levelIndex = 0; $levelIndex -lt 12; ++$levelIndex) {
     }
     foreach ($player in $players) {
         $sceneKey = "$levelId/$([int]$player.scene_index)"
-        if ($sceneKeys.ContainsKey($sceneKey)) {
-            throw "Duplicate player scene loadout: $sceneKey"
+        $actorSceneIndex = [int]$player.scene_index
+        $actorRecord = if ($actorsByScene.ContainsKey($actorSceneIndex)) {
+            $actorsByScene[$actorSceneIndex]
         }
-        $sceneKeys[$sceneKey] = $true
+        else {
+            $null
+        }
+        if ($null -eq $actorRecord -or
+            -not [bool]$actorRecord.is_player_at_capture) {
+            throw "Player loadout is not backed by an exact actor: $sceneKey"
+        }
         if ([string]::IsNullOrWhiteSpace([string]$player.display_name)) {
             throw "$sceneKey has no display name."
         }
@@ -106,7 +154,7 @@ for ($levelIndex = 0; $levelIndex -lt 12; ++$levelIndex) {
                 throw "$sceneKey item $itemId has a negative quantity."
             }
             $indices += [int]$item.inventory_index
-            ++$entryTotal
+            ++$playerEntryTotal
         }
         $orderedIndices = @($indices | Sort-Object)
         for ($inventoryIndex = 0;
@@ -131,15 +179,24 @@ foreach ($itemId in $expectedModes.Keys) {
         throw "Item $itemId maps to the wrong quantity mode."
     }
 }
-if ($playerTotal -ne 27 -or $entryTotal -ne 83) {
+if ($actorTotal -ne 660 -or $actorEntryTotal -ne 761 -or
+    $emptyActorTotal -ne 67 -or
+    $playerTotal -ne 27 -or $playerEntryTotal -ne 83) {
     throw (
-        "Inventory totals are invalid: players=$playerTotal, entries=$entryTotal.")
+        "Inventory totals are invalid: actors=$actorTotal, " +
+        "entries=$actorEntryTotal, empty=$emptyActorTotal, " +
+        "players=$playerTotal, player_entries=$playerEntryTotal.")
 }
-if ([int]$gameData.summary.player_count -ne $playerTotal -or
-    [int]$gameData.summary.inventory_entry_count -ne $entryTotal) {
+if ([int]$gameData.summary.exact_actor_count -ne $actorTotal -or
+    [int]$gameData.summary.inventory_entry_count -ne $actorEntryTotal -or
+    [int]$gameData.summary.empty_actor_count -ne $emptyActorTotal -or
+    [int]$gameData.summary.player_count -ne $playerTotal -or
+    [int]$gameData.summary.player_inventory_entry_count -ne
+        $playerEntryTotal) {
     throw 'Inventory summary totals do not match the catalog.'
 }
 
 Write-Host (
-    "Original initial inventory parity passed: 12 levels, $playerTotal players, " +
-    "$entryTotal ordered entries.")
+    "Original initial weapon inventory parity passed: 12 levels, " +
+    "$actorTotal actors, $actorEntryTotal entries; $playerTotal players, " +
+    "$playerEntryTotal player entries.")

@@ -42,10 +42,11 @@ actor 61 爆炸伤害/几何/警报和 SPR 发射锚点都来自原程序恢复�
 
 ## 2. 武器容器、角色物品背包与切换
 
-`CombatInventory` 是玩家弹药和多武器状态的权威来源，统一管理：
+`CombatInventory` 是动态角色武器和直接数量状态的权威来源，统一管理：
 
 - 原攻击物品映射 `36..45` 与 `99`；
-- m000—m011 共 27 名可玩角色的 83 个原版有序武器项目；
+- m000—m011 共 660 个精确角色武器容器、761 个原版有序项目和 67 个
+  空容器；其中 27 名可玩角色占 83 个项目；
 - mode 0 逐次消费并在零时移除、mode 1 普通攻击耐久、mode 2 空枪保留；
 - 已获得武器、当前武器以及版本化快照；
 - 地雷 43、手榴弹 44、炸药 45 等世界项目的直接消耗。
@@ -53,7 +54,8 @@ actor 61 爆炸伤害/几何/警报和 SPR 发射锚点都来自原程序恢复�
 `SquadUnit.magazine_ammo` 和 `reserve_ammo` 仅保留为旧存档/API 兼容镜像；
 原版模式下前者显示当前项目的直接数量，后者恒为零。schema 2 存档保存数量模式、
 拥有状态和当前武器；schema 1 的“弹匣 + 备弹”旧档会在读取时合并成一个直接
-数量。敌方单位暂时仍使用无限弹药。
+数量。敌方角色也保留原版 `+0x22C` 有序容器；`infinite_ammo` 对敌人只表示
+`sub_456DF0` 的普通攻击不调用消费函数，不再表示“没有容器”。
 
 `BackpackInventory` 另行实现 actor `+0x228`，不与上述 `+0x22C`
 武器容器或 `field_inventory` 混用。`original_initial_item_inventory.json`
@@ -165,7 +167,7 @@ type 8/10 世界对象和汽油桶走统一的世界爆炸结算，可伤害单�
 | `game/scripts/combat_projectile.gd` | 原版离散路径、L3→L2 碰撞、actor 60 命中火花、终点 actor 61、动画和版本化快照 |
 | `game/scripts/projectile_world.gd` | 投射物生成、战斗候选与命中/爆炸信号 |
 | `game/scripts/combat_inventory.gd` | 原版数量模式、多武器切换、旧档迁移和快照 |
-| `game/data/original_initial_weapon_inventory.json` | 十二关 27 名角色的 83 个取证开局条目 |
+| `game/data/original_initial_weapon_inventory.json` | 十二关 660 个精确角色的 761 个取证武器条目；含 27 名玩家/83 条子集 |
 | `game/scripts/backpack_inventory.gd` | actor +0x228 有序物品、mode、丢弃和快照 |
 | `game/data/original_initial_item_inventory.json` | 十二关 660 个精确角色的 539 个取证开局条目 |
 | `game/data/world_pickups.json` | 真实拾取实体、地雷和汽油桶的数据配置 |
@@ -181,6 +183,7 @@ type 8/10 世界对象和汽油桶走统一的世界爆炸结算，可伤害单�
 | `validation/baselines/mod/m010-grenade-attack-inventory-v1.json` | scene 1589 手榴弹攻击 scene 1126 后项目 44 的 `3→2` 稳定 MOD 运行基线 |
 | `validation/baselines/mod/m010-mine-deploy-inventory-v1.json` | scene 1590 部署地雷后项目 43 `3→2`、运行时对象 `+1` |
 | `validation/baselines/mod/m010-explosive-deploy-inventory-v1.json` | scene 1590 部署定时炸药后项目 45 `3→2`、运行时对象 `+1` |
+| `validation/baselines/mod/*-world-item-v1.json` | 物品 33/48/49/52/82/83 的原版敌军拾取、保留/强制消耗、控制、分神和毒伤差分基线 |
 | `tools/Compare-InventoryParityTrace.ps1` | 严格比较有序双容器、mode、当前攻击类型和所需数量变化 |
 | `tools/Capture-InventoryParity.ps1` | 在隔离 MOD 与 Remake 中成对复测；只使用目标窗口/进程私有输入 |
 | `../SDK/include/M1937SDK/Inventory.hpp` | MOD/工具可共用的原版物品容器路由与拾取物常量 |
@@ -209,7 +212,8 @@ actor 61 的 128 伤害和 `ProjectileWorld` 分流。`original_inventory_test.g
 0/1/2、空枪保留、无换弹和 schema 1→2 迁移；`backpack_inventory_test.gd`
 与 `original_item_runtime_test.gd` 覆盖独立物品容器、真实治疗/补给、A 页、
 丢弃、敌人拾取和死亡掉落；`real_original_inventory_test.gd` 在真实十二关
-逐一核对 27 名玩家/83 个武器条目以及 660 个角色/539 个物品条目。
+逐一核对 660 个角色/761 个武器条目（含 27 名玩家/83 条子集），以及
+660 个角色/539 个物品条目。
 `world_interactables_test.gd` 覆盖原关卡拾取点击框、32×16 邻格、
 远距离自动寻路和一次转移，以及 type 8 基础世界交互、汽油桶
 受伤与连锁爆炸，以及七关爆破策略的 schema、真实 DBL 998 计数、成功后
@@ -217,9 +221,10 @@ actor 61 的 128 伤害和 `ProjectileWorld` 分流。`original_inventory_test.g
 生命周期，`legacy_explosion_visual_test.gd` 固定 actor 61/62 主动画、粒子
 目录、随机序列、散布、缺失 type 102 和 90/150 tick 边界。各套件在日志中
 报告当前检查数，文档不固定复制计数。真实导入资源存在时，`Verify.ps1`
-还会重放上述十条成对轨迹：严格核对有序双容器、当前攻击类型和数量/耐久
-变化；近战额外核对目标 `8→0`，部署额外核对运行时对象 `+1`。位置只作
-诊断，因为移动巡逻目标在两个独立进程中的启动相位不同。
+还会重放上述十条攻击/部署轨迹和六条世界诱饵轨迹：严格核对有序双容器、
+当前攻击类型和数量/耐久变化；近战额外核对目标 `8→0`，部署额外核对
+运行时对象 `+1`，诱饵额外核对临时控制、分神以及毒酒严格第 81 tick 的
+死亡边界。位置只作诊断，因为移动巡逻目标在两个独立进程中的启动相位不同。
 
 ```powershell
 godot --headless --path Remake/game --script res://tests/projectile_inventory_test.gd

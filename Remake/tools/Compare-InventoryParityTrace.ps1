@@ -195,6 +195,22 @@ function Get-ItemQuantity {
     return [int]$entries[0].quantity
 }
 
+function Assert-InclusiveRange {
+    param(
+        [Collections.Generic.List[object]]$Items,
+        [string]$Path,
+        $Actual,
+        [int]$Minimum,
+        [int]$Maximum,
+        [string]$Rule
+    )
+
+    $value = [int]$Actual
+    if ($value -lt $Minimum -or $value -gt $Maximum) {
+        Add-Mismatch $Items $Path "$Minimum..$Maximum" $value $Rule
+    }
+}
+
 $reference = Read-Trace $ReferenceTrace
 $candidate = Read-Trace $CandidateTrace
 $mismatches = [Collections.Generic.List[object]]::new()
@@ -354,6 +370,111 @@ $scenarioDefinitions = @{
         target_scene = -1
         runtime_object_delta = 1
     }
+    'm007-chicken-world-item-v1' = [ordered]@{
+        level_id = 'm007'
+        selector_level = 8
+        engine_mission = 8
+        actor_scene = 2327
+        actor_database_entry = 925
+        checkpoints = @('before_collection', 'after_collection')
+        active_attack_type = 2
+        delta_container = 'item_entries'
+        delta_item_id = 33
+        delta_quantity = 1
+        expected_before_quantity = 0
+        expected_after_quantity = 1
+        target_scene = -1
+        scenario_kind = 'world_item'
+        effect_kind = 'carry'
+    }
+    'm010-canned-meat-world-item-v1' = [ordered]@{
+        level_id = 'm010'
+        selector_level = 11
+        engine_mission = 11
+        actor_scene = 1126
+        actor_database_entry = 912
+        checkpoints = @('before_collection', 'after_collection')
+        active_attack_type = 2
+        delta_container = 'item_entries'
+        delta_item_id = 48
+        delta_quantity = 1
+        expected_before_quantity = 1
+        expected_after_quantity = 2
+        target_scene = -1
+        scenario_kind = 'world_item'
+        effect_kind = 'carry'
+    }
+    'm010-hypnosis-doll-world-item-v1' = [ordered]@{
+        level_id = 'm010'
+        selector_level = 11
+        engine_mission = 11
+        actor_scene = 1126
+        actor_database_entry = 912
+        checkpoints = @('before_collection', 'after_collection')
+        active_attack_type = 2
+        delta_container = 'item_entries'
+        delta_item_id = 49
+        delta_quantity = 0
+        expected_before_quantity = 0
+        expected_after_quantity = 0
+        target_scene = -1
+        scenario_kind = 'world_item'
+        effect_kind = 'hypnosis'
+    }
+    'm010-poisoned-wine-world-item-v1' = [ordered]@{
+        level_id = 'm010'
+        selector_level = 11
+        engine_mission = 11
+        actor_scene = 1126
+        actor_database_entry = 912
+        checkpoints = @(
+            'before_collection',
+            'after_collection',
+            'after_effect')
+        active_attack_type = 2
+        delta_container = 'item_entries'
+        delta_item_id = 52
+        delta_quantity = 0
+        expected_before_quantity = 0
+        expected_after_quantity = 0
+        target_scene = -1
+        scenario_kind = 'world_item'
+        effect_kind = 'poison'
+    }
+    'm009-dog-bone-world-item-v1' = [ordered]@{
+        level_id = 'm009'
+        selector_level = 10
+        engine_mission = 10
+        actor_scene = 1355
+        actor_database_entry = 1007
+        checkpoints = @('before_collection', 'after_collection')
+        active_attack_type = 4
+        delta_container = 'item_entries'
+        delta_item_id = 82
+        delta_quantity = 1
+        expected_before_quantity = 0
+        expected_after_quantity = 1
+        target_scene = -1
+        scenario_kind = 'world_item'
+        effect_kind = 'distraction'
+    }
+    'm010-cigarette-world-item-v1' = [ordered]@{
+        level_id = 'm010'
+        selector_level = 11
+        engine_mission = 11
+        actor_scene = 1126
+        actor_database_entry = 912
+        checkpoints = @('before_collection', 'after_collection')
+        active_attack_type = 2
+        delta_container = 'item_entries'
+        delta_item_id = 83
+        delta_quantity = 1
+        expected_before_quantity = 0
+        expected_after_quantity = 1
+        target_scene = -1
+        scenario_kind = 'world_item'
+        effect_kind = 'distraction'
+    }
 }
 
 $scenarioId = [string]$reference.scenario.id
@@ -442,9 +563,38 @@ foreach ($checkpointId in $expectedCheckpointIds) {
         $definition.actor_database_entry `
         $referenceActor.database_entry_id `
         'scenario identity'
-    Compare-Inventory $mismatches `
-        "checkpoints.$checkpointId.actors.scene:$($definition.actor_scene).inventory" `
-        $referenceActor.inventory $candidateActor.inventory
+    $isDelayedPoisonOutcome = (
+        $definition.Contains('scenario_kind') -and
+        [string]$definition.scenario_kind -ceq 'world_item' -and
+        [string]$definition.effect_kind -ceq 'poison' -and
+        $checkpointId -ceq 'after_effect'
+    )
+    if (-not $isDelayedPoisonOutcome) {
+        Compare-Inventory $mismatches `
+            "checkpoints.$checkpointId.actors.scene:$($definition.actor_scene).inventory" `
+            $referenceActor.inventory $candidateActor.inventory
+    }
+    if (
+        $definition.Contains('scenario_kind') -and
+        [string]$definition.scenario_kind -ceq 'world_item'
+    ) {
+        foreach ($effectCase in @(
+                [pscustomobject]@{
+                    label = 'reference'
+                    actor = $referenceActor
+                },
+                [pscustomobject]@{
+                    label = 'candidate'
+                    actor = $candidateActor
+                })) {
+            if (-not (Property-Exists `
+                    $effectCase.actor 'world_item_effect')) {
+                Add-Mismatch $mismatches `
+                    "checkpoints.$checkpointId.$($effectCase.label).world_item_effect" `
+                    'present' 'missing' 'required world-item effect snapshot'
+            }
+        }
+    }
 
     if ([int]$definition.target_scene -ge 0) {
         $referenceTarget = Get-Actor `
@@ -540,6 +690,140 @@ foreach ($traceCase in @(
     }
 }
 
+$isWorldItemScenario = (
+    $definition.Contains('scenario_kind') -and
+    [string]$definition.scenario_kind -ceq 'world_item'
+)
+if ($isWorldItemScenario) {
+    foreach ($traceCase in @(
+            [pscustomobject]@{
+                label = 'reference'
+                map = $referenceCheckpointMap
+            },
+            [pscustomobject]@{
+                label = 'candidate'
+                map = $candidateCheckpointMap
+            })) {
+        if (-not $traceCase.map.ContainsKey('after_collection')) {
+            continue
+        }
+        $afterCollectionActor = Get-Actor `
+            $traceCase.map['after_collection'] `
+            ([int]$definition.actor_scene)
+        if (
+            $null -eq $afterCollectionActor -or
+            -not (Property-Exists `
+                $afterCollectionActor 'world_item_effect')
+        ) {
+            continue
+        }
+        $effect = $afterCollectionActor.world_item_effect
+        switch ([string]$definition.effect_kind) {
+            'hypnosis' {
+                Compare-ExactValue $mismatches `
+                    "$($traceCase.label).effect.hypnosis_active" `
+                    1 $effect.hypnosis_active `
+                    'original type-49 activation'
+                Compare-ExactValue $mismatches `
+                    "$($traceCase.label).effect.player_selected" `
+                    1 $effect.player_selected `
+                    'original +0x168 temporary command state'
+                Compare-ExactValue $mismatches `
+                    "$($traceCase.label).effect.hypnosis_counter_limit" `
+                    600 $effect.hypnosis_counter_limit `
+                    'strict >600 original boundary'
+                Assert-InclusiveRange $mismatches `
+                    "$($traceCase.label).effect.hypnosis_counter" `
+                    $effect.hypnosis_counter 0 600 `
+                    'capture occurs while hypnosis remains active'
+            }
+            'poison' {
+                Compare-ExactValue $mismatches `
+                    "$($traceCase.label).effect.poison_active" `
+                    1 $effect.poison_active `
+                    'original type-52 poison activation'
+                Compare-ExactValue $mismatches `
+                    "$($traceCase.label).effect.poison_counter_limit" `
+                    80 $effect.poison_counter_limit `
+                    'strict >80 original poison boundary'
+                Compare-ExactValue $mismatches `
+                    "$($traceCase.label).effect.distraction_active" `
+                    1 $effect.distraction_active `
+                    'type-52 also starts original distraction'
+                Assert-InclusiveRange $mismatches `
+                    "$($traceCase.label).effect.distraction_limit" `
+                    $effect.distraction_limit 80 119 `
+                    'original rand()%40+80 distraction limit'
+                Assert-InclusiveRange $mismatches `
+                    "$($traceCase.label).effect.poison_counter" `
+                    $effect.poison_counter 0 80 `
+                    'collection checkpoint precedes delayed poison damage'
+            }
+            'distraction' {
+                Compare-ExactValue $mismatches `
+                    "$($traceCase.label).effect.distraction_active" `
+                    1 $effect.distraction_active `
+                    'original distraction activation'
+                Assert-InclusiveRange $mismatches `
+                    "$($traceCase.label).effect.distraction_limit" `
+                    $effect.distraction_limit 80 119 `
+                    'original rand()%40+80 distraction limit'
+                Assert-InclusiveRange $mismatches `
+                    "$($traceCase.label).effect.distraction_counter" `
+                    $effect.distraction_counter 0 `
+                    ([int]$effect.distraction_limit) `
+                    'capture occurs while distraction remains active'
+            }
+        }
+    }
+
+    if ([string]$definition.effect_kind -ceq 'poison' -and
+        $referenceCheckpointMap.ContainsKey('after_effect') -and
+        $candidateCheckpointMap.ContainsKey('after_effect')) {
+        $referenceEffectActor = Get-Actor `
+            $referenceCheckpointMap['after_effect'] `
+            ([int]$definition.actor_scene)
+        $candidateEffectActor = Get-Actor `
+            $candidateCheckpointMap['after_effect'] `
+            ([int]$definition.actor_scene)
+        if ($null -ne $referenceEffectActor -and
+            $null -ne $candidateEffectActor) {
+            Compare-ExactValue $mismatches `
+                'after_effect.hit_points.current' `
+                $referenceEffectActor.hit_points.current `
+                $candidateEffectActor.hit_points.current `
+                'exact delayed poison outcome'
+            Compare-ExactValue $mismatches `
+                'after_effect.alive' `
+                $referenceEffectActor.alive `
+                $candidateEffectActor.alive `
+                'exact delayed poison life state'
+            foreach ($effectCase in @(
+                    [pscustomobject]@{
+                        label = 'reference'
+                        actor = $referenceEffectActor
+                    },
+                    [pscustomobject]@{
+                        label = 'candidate'
+                        actor = $candidateEffectActor
+                    })) {
+                Compare-ExactValue $mismatches `
+                    "after_effect.$($effectCase.label).poison_active" `
+                    1 $effectCase.actor.world_item_effect.poison_active `
+                    'poison remains active at the damage boundary'
+                Compare-ExactValue $mismatches `
+                    "after_effect.$($effectCase.label).poison_counter" `
+                    81 $effectCase.actor.world_item_effect.poison_counter `
+                    'strict >80 original poison damage tick'
+                Compare-ExactValue $mismatches `
+                    "after_effect.$($effectCase.label).poison_counter_limit" `
+                    80 $effectCase.actor.world_item_effect.poison_counter_limit `
+                    'original poison counter limit'
+            }
+        }
+    }
+}
+
 $result = [pscustomobject][ordered]@{
     schema_version = 1
     reference_runtime = [string]$reference.runtime
@@ -565,7 +849,14 @@ $result = [pscustomobject][ordered]@{
     }
     mismatch_count = $mismatches.Count
     passed = $mismatches.Count -eq 0
-    position_policy = if (
+    position_policy = if ($isWorldItemScenario) {
+        'World position and randomized distraction-limit identity are ' +
+        'diagnostic; ordered containers, exact quantity transitions, effect ' +
+        'activation ranges and delayed poison outcome are strict. The poison ' +
+        'after-effect checkpoint does not compare containers because original ' +
+        'and Remake corpse-drop animation timing is covered separately.'
+    }
+    elseif (
         $definition.Contains('compare_target_hit_points') -and
         [bool]$definition.compare_target_hit_points
     ) {
@@ -618,11 +909,18 @@ if (-not [string]::IsNullOrWhiteSpace($OutputMarkdown)) {
     }
     else {
         $lines.Add(
-            'Canonical ordered weapon/backpack inventories and the required ' +
-            'quantity transition match the stable MOD baseline.')
+            'Canonical ordered weapon/backpack inventories, the required ' +
+            'quantity transition and any scenario effect boundaries match ' +
+            'the stable MOD baseline.')
     }
     $lines.Add('')
-    if (
+    if ($isWorldItemScenario) {
+        $lines.Add(
+            '> The test-only seed creates an authentic original world actor ' +
+            'inside the isolated game process. Normal scan, collection, ' +
+            'transfer, consumption and effect code remains unmodified.')
+    }
+    elseif (
         $definition.Contains('compare_target_hit_points') -and
         [bool]$definition.compare_target_hit_points
     ) {

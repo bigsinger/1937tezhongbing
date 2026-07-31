@@ -33,7 +33,7 @@ func _run_tests() -> void:
 	main.switch_level(10)
 	await process_frame
 	_test_m010_medkit_and_ammunition_box(main)
-	_test_drop_enemy_pickup_and_death_loot(main)
+	await _test_drop_enemy_pickup_and_death_loot(main)
 	main.queue_free()
 	if failures.is_empty():
 		print("Original item runtime tests passed (%d checks)." % checks)
@@ -332,19 +332,85 @@ func _test_drop_enemy_pickup_and_death_loot(main: Node) -> void:
 		return
 	var carrier_inventory: Variant = carrier.get("backpack_inventory")
 	var before_count := int(carrier_inventory.call("item_count", 48))
+	var source_inventory: Variant = source.get("backpack_inventory")
+	var before_source_count := int(source_inventory.call("item_count", 48))
 	var before_behavior := int(carrier.get("behavior_state"))
+	var before_pickup_count := (main.mission_pickups as Array).size()
 	main.call("select_only", source)
 	main.set("selected_backpack_item_id", 48)
 	_expect(
 		bool(main.call("drop_selected_item_at", carrier.position)),
-		"selected actor drops exact backpack item",
+		"selected actor accepts exact backpack-item placement order",
 	)
-	_expect((main.mission_pickups as Array).size() == 1, "ground pickup is created")
+	_expect(
+		(main.mission_pickups as Array).size() == before_pickup_count,
+		"ground pickup is not created before the actor arrives",
+	)
+	_expect(
+		int(source_inventory.call("item_count", 48)) == before_source_count,
+		"ordered item stays in the source backpack while pathing",
+	)
+	var pending_session: Dictionary = GAME_SESSION_STATE.capture(main)
+	var pending_record := (
+		(pending_session.get("world", {}) as Dictionary).get(
+			"pending_item_drop_command",
+			{},
+		) as Dictionary
+	)
+	_expect(
+		int(pending_record.get("actor_scene_index", -1)) == 1589
+		and int(pending_record.get("item_id", 0)) == 48,
+		"save captures the original pending item-drop command",
+	)
+	main.switch_level(10)
+	await process_frame
+	var restore_result: Dictionary = (
+		GAME_SESSION_STATE.apply_after_level_loaded(main, pending_session)
+	)
+	source = _actor_by_scene(main.units as Array, 1589)
+	carrier = null
+	for enemy_value: Variant in main.enemies as Array:
+		var enemy := enemy_value as Node2D
+		var inventory: Variant = enemy.get("backpack_inventory")
+		if (
+			inventory != null
+			and LEGACY_WORLD_ITEM_RULES.accepts_item(
+				int(enemy.get("runtime_actor_type")),
+				48,
+				int(enemy.get("faction_id")),
+			)
+		):
+			carrier = enemy
+			break
+	source_inventory = source.get("backpack_inventory")
+	carrier_inventory = carrier.get("backpack_inventory")
+	_expect(
+		bool(restore_result.get("ok", false))
+		and main.get("original_drop_order_actor") == source
+		and int(main.get("original_drop_order_item_id")) == 48,
+		"load restores the actor route and exact pending item identity",
+	)
+	var drop_destination := main.get(
+		"original_drop_order_destination"
+	) as Vector2
+	source.position = drop_destination
+	source.call("cancel_path")
+	main.call("_advance_original_drop_order")
+	_expect(
+		(main.mission_pickups as Array).size() == before_pickup_count + 1,
+		"ground pickup is created when the actor reaches the destination",
+	)
+	_expect(
+		int(source_inventory.call("item_count", 48)) == before_source_count - 1,
+		"arrival consumes exactly one source backpack item",
+	)
 	_expect(
 		int(carrier.get("behavior_state")) == before_behavior,
 		"drop does not broadcast a synthetic 640-pixel hearing alert",
 	)
-	var dropped_pickup := (main.mission_pickups as Array)[0] as Node2D
+	var dropped_pickup := (
+		main.mission_pickups as Array
+	)[before_pickup_count] as Node2D
 	_expect(
 		bool(
 			carrier.call(
@@ -376,27 +442,66 @@ func _test_drop_enemy_pickup_and_death_loot(main: Node) -> void:
 	if loot_source == null:
 		return
 	var loot_inventory: Variant = loot_source.get("backpack_inventory")
-	var expected_entries := loot_inventory.call("ordered_entries") as Array
+	var expected_item_entries := loot_inventory.call("ordered_entries") as Array
+	var expected_weapon_entries := (
+		loot_source.call("parity_inventory_snapshot").get(
+			"weapon_entries",
+			[],
+		) as Array
+	)
+	var expected_entries: Array[Dictionary] = []
+	for item_entry_value: Variant in expected_item_entries:
+		var item_entry := (item_entry_value as Dictionary).duplicate(true)
+		item_entry["original_inventory_kind"] = "backpack"
+		expected_entries.append(item_entry)
+	for weapon_entry_value: Variant in expected_weapon_entries:
+		var weapon_entry := (weapon_entry_value as Dictionary).duplicate(true)
+		weapon_entry["original_inventory_kind"] = "weapon"
+		expected_entries.append(weapon_entry)
 	var before_pickups := (main.mission_pickups as Array).size()
 	main.call("_spawn_original_inventory_drops", loot_source)
 	_expect(
 		(main.mission_pickups as Array).size()
 			== before_pickups + expected_entries.size(),
-		"death creates one ordered pickup per backpack entry",
+		"death creates one ordered pickup per original container entry",
 	)
 	_expect(
 		(loot_inventory.call("ordered_entries") as Array).is_empty(),
 		"death clears the source backpack",
 	)
-	for pickup_index: int in range(
-		before_pickups,
-		(main.mission_pickups as Array).size(),
-	):
-		var pickup := (main.mission_pickups as Array)[pickup_index] as Node
+	_expect(
+		(
+			loot_source.call("parity_inventory_snapshot").get(
+				"weapon_entries",
+				[],
+			) as Array
+		).is_empty(),
+		"death clears the source weapon container",
+	)
+	for expected_index: int in range(expected_entries.size()):
+		var pickup := (
+			main.mission_pickups as Array
+		)[before_pickups + expected_index] as Node
 		var payload := pickup.get("item_payload") as Dictionary
+		var expected := expected_entries[expected_index]
 		_expect(
-			str(payload.get("original_inventory_kind", "")) == "backpack",
+			str(payload.get("original_inventory_kind", ""))
+				== str(expected.get("original_inventory_kind", "")),
 			"death pickup preserves original container kind",
+		)
+		_expect(
+			int(payload.get("item_id", 0)) == int(expected.get("item_id", 0)),
+			"death pickup preserves original item ID and order",
+		)
+		_expect(
+			int(payload.get("quantity", -1))
+				== int(expected.get("quantity", -2)),
+			"death pickup preserves original quantity",
+		)
+		_expect(
+			int(payload.get("quantity_mode", -1))
+				== int(expected.get("quantity_mode", -2)),
+			"death pickup preserves original quantity mode",
 		)
 
 

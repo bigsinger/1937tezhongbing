@@ -144,6 +144,7 @@ inline constexpr std::uintptr_t special_attention_source = 0x000E70B4;
 inline constexpr std::uintptr_t global_corpse_alarm = 0x000E709C;
 inline constexpr std::uintptr_t current_mission = 0x000E7060;
 inline constexpr std::uintptr_t selected_save_slot = 0x000E705C;
+inline constexpr std::uintptr_t world_actor_factory = 0x000E7008;
 inline constexpr std::uintptr_t world_root = 0x000E700C;
 inline constexpr std::uintptr_t viewport_controller = 0x000D6AD8;
 inline constexpr std::uintptr_t renderer_height = 0x000D6A88;

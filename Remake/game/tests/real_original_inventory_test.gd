@@ -30,6 +30,8 @@ func _run_tests() -> void:
 	var backpack_player_count := 0
 	var backpack_entry_count := 0
 	var empty_backpack_player_count := 0
+	var exact_weapon_actor_count := 0
+	var exact_weapon_entry_count := 0
 	var exact_runtime_actor_count := 0
 	var exact_runtime_entry_count := 0
 	for level_index: int in range(LEVEL_IDS.size()):
@@ -92,6 +94,22 @@ func _run_tests() -> void:
 		]:
 			for actor_value: Variant in main.get(group_name) as Array:
 				var actor := actor_value as Node2D
+				var expected_actor_weapons: Dictionary = (
+					ORIGINAL_INVENTORY.loadout_for_any_actor_scene(
+						level_id,
+						int(actor.get("scene_index")),
+					)
+				)
+				if not expected_actor_weapons.is_empty():
+					_validate_unit(
+						level_id,
+						actor,
+						expected_actor_weapons,
+					)
+					exact_weapon_actor_count += 1
+					exact_weapon_entry_count += (
+						expected_actor_weapons.get("items", []) as Array
+					).size()
 				var expected_actor_backpack: Dictionary = (
 					ORIGINAL_ITEMS.loadout_for_scene(
 						level_id,
@@ -137,6 +155,11 @@ func _run_tests() -> void:
 		"all 27 original players and 74 backpack entries reach gameplay",
 	)
 	_expect(
+		exact_weapon_actor_count == 660
+		and exact_weapon_entry_count == 761,
+		"all 660 exact dynamic actors and 761 weapon entries reach gameplay",
+	)
+	_expect(
 		exact_runtime_actor_count == 660
 		and exact_runtime_entry_count == 539,
 		"all 660 exact dynamic actors and 539 backpack entries reach gameplay",
@@ -164,6 +187,15 @@ func _validate_unit(
 	expected: Dictionary,
 ) -> void:
 	var inventory: Variant = unit.get("combat_inventory")
+	var expected_items := expected.get("items", []) as Array
+	if expected_items.is_empty():
+		_expect(
+			inventory == null
+			or (inventory.call("registered_weapon_keys") as Array).is_empty(),
+			"%s scene %d preserves an empty original weapon container"
+			% [level_id, int(unit.get("scene_index"))],
+		)
+		return
 	_expect(
 		inventory != null and bool(inventory.call("original_parity_enabled")),
 		"%s scene %d uses direct-count original parity"
@@ -171,7 +203,6 @@ func _validate_unit(
 	)
 	if inventory == null:
 		return
-	var expected_items := expected.get("items", []) as Array
 	var actual_keys: Array[String] = inventory.call("registered_weapon_keys")
 	_expect(
 		actual_keys.size() == expected_items.size(),

@@ -140,6 +140,72 @@ const WEAPON_ATTACK_SCENARIOS := {
 		),
 	},
 }
+const WORLD_ITEM_SCENARIOS := {
+	"m007-chicken-world-item-v1": {
+		"target_scene": 2327,
+		"item_id": 33,
+		"before_quantity": 0,
+		"after_quantity": 1,
+		"description": (
+			"Create an authentic type-33 chicken world actor at enemy scene "
+			+ "2327, then observe the normal scan, collection and durable transfer."
+		),
+	},
+	"m010-canned-meat-world-item-v1": {
+		"target_scene": 1126,
+		"item_id": 48,
+		"before_quantity": 1,
+		"after_quantity": 2,
+		"description": (
+			"Create an authentic type-48 canned-meat world actor at enemy "
+			+ "scene 1126 and observe the normal durable transfer."
+		),
+	},
+	"m010-hypnosis-doll-world-item-v1": {
+		"target_scene": 1126,
+		"item_id": 49,
+		"before_quantity": 0,
+		"after_quantity": 0,
+		"effect": "hypnosis",
+		"description": (
+			"Create an authentic type-49 hypnosis doll at enemy scene 1126 "
+			+ "and observe forced consumption plus temporary player control."
+		),
+	},
+	"m010-poisoned-wine-world-item-v1": {
+		"target_scene": 1126,
+		"item_id": 52,
+		"before_quantity": 0,
+		"after_quantity": 0,
+		"effect": "poison",
+		"description": (
+			"Create authentic type-52 poisoned wine at enemy scene 1126 and "
+			+ "observe forced consumption, distraction and delayed damage."
+		),
+	},
+	"m009-dog-bone-world-item-v1": {
+		"target_scene": 1355,
+		"item_id": 82,
+		"before_quantity": 0,
+		"after_quantity": 1,
+		"effect": "distraction",
+		"description": (
+			"Create an authentic type-82 dog bone at dog scene 1355 and "
+			+ "observe its durable transfer and bounded distraction."
+		),
+	},
+	"m010-cigarette-world-item-v1": {
+		"target_scene": 1126,
+		"item_id": 83,
+		"before_quantity": 0,
+		"after_quantity": 1,
+		"effect": "distraction",
+		"description": (
+			"Create an authentic type-83 cigarette at enemy scene 1126 and "
+			+ "observe its durable transfer and bounded distraction."
+		),
+	},
+}
 ## Layer-3-verified, obstacle-free cell centres: (1,3) and (5,3).
 ## The short observation window issues the return order before the first
 ## command can settle, so goal replacement and facing are both observable.
@@ -256,6 +322,9 @@ func _run_probe() -> void:
 		return
 	if WEAPON_ATTACK_SCENARIOS.has(scenario_id):
 		await _run_weapon_attack_probe(main, trace, started, scenario_id)
+		return
+	if WORLD_ITEM_SCENARIOS.has(scenario_id):
+		await _run_world_item_probe(main, trace, started, scenario_id)
 		return
 	if scenario_id == SIGHT_DIRECT_TARGET_SCENARIO_ID:
 		await _run_sight_direct_target_probe(main, trace, started)
@@ -570,6 +639,194 @@ func _run_weapon_attack_probe(
 		trace,
 		scenario_id,
 	)
+
+
+func _run_world_item_probe(
+	main: Node,
+	trace: RefCounted,
+	started: int,
+	scenario_id: String,
+) -> void:
+	var scenario: Dictionary = WORLD_ITEM_SCENARIOS[scenario_id]
+	var target_scene := int(scenario.get("target_scene", -1))
+	var item_id := int(scenario.get("item_id", 0))
+	var before_expected := int(scenario.get("before_quantity", -1))
+	var after_expected := int(scenario.get("after_quantity", -1))
+	var effect_kind := str(scenario.get("effect", "carry"))
+	var target := _enemy_for_scene(main, target_scene)
+	_expect(target != null, "world-item target scene %d exists" % target_scene)
+	if target != null:
+		var before_quantity := _inventory_quantity(
+			target,
+			"item_entries",
+			item_id,
+		)
+		var before_hit_points := int(target.get("current_hit_points"))
+		_expect(
+			before_quantity == before_expected,
+			"target item %d starts at original quantity %d" % [
+				item_id,
+				before_expected,
+			],
+		)
+		trace.call(
+			"capture_main",
+			"before_collection",
+			main,
+			_elapsed_ms(started),
+		)
+		var pickup_count_before := (main.get("mission_pickups") as Array).size()
+		main.call(
+			"_spawn_original_inventory_pickup",
+			target.position,
+			{
+				"original_inventory_kind": "backpack",
+				"item_id": item_id,
+				"item_name": "Original item %d" % item_id,
+				"quantity": 1,
+				"quantity_mode": 0,
+				"source_scene_index": -1,
+			},
+		)
+		_expect(
+			(main.get("mission_pickups") as Array).size()
+				== pickup_count_before + 1,
+			"authentic world-item actor is registered for normal enemy scan",
+		)
+		var collected := await _wait_for_world_item_collection(
+			target,
+			item_id,
+			after_expected,
+			effect_kind,
+			12.0,
+		)
+		_expect(
+			collected,
+			"target scene %d collects and applies item %d" % [
+				target_scene,
+				item_id,
+			],
+		)
+		trace.call(
+			"capture_main",
+			"after_collection",
+			main,
+			_elapsed_ms(started),
+		)
+		_expect(
+			_inventory_quantity(target, "item_entries", item_id)
+				== after_expected,
+			"target item %d reaches exact post-collection quantity %d" % [
+				item_id,
+				after_expected,
+			],
+		)
+		if effect_kind == "poison":
+			var damaged := await _wait_for_target_damage(
+				target,
+				before_hit_points,
+				12.0,
+			)
+			_expect(
+				damaged,
+				"poisoned-wine damage resolves after the original counter boundary",
+			)
+			trace.call(
+				"capture_main",
+				"after_effect",
+				main,
+				_elapsed_ms(started),
+			)
+	await _finish_inventory_probe(
+		main,
+		trace,
+		scenario_id,
+	)
+
+
+func _wait_for_world_item_collection(
+	target: Node2D,
+	item_id: int,
+	expected_quantity: int,
+	effect_kind: String,
+	deadline_seconds: float,
+) -> bool:
+	var ticks_per_second := maxi(
+		int(
+			ProjectSettings.get_setting(
+				"physics/common/physics_ticks_per_second",
+				60,
+			)
+		),
+		1,
+	)
+	var frame_count := maxi(
+		ceili(maxf(deadline_seconds, 0.0) * float(ticks_per_second)),
+		1,
+	)
+	for _frame_index: int in range(frame_count):
+		var quantity_ready := (
+			_inventory_quantity(target, "item_entries", item_id)
+			== expected_quantity
+		)
+		var effect_ready := true
+		match effect_kind:
+			"hypnosis":
+				effect_ready = (
+					bool(target.get("legacy_hypnosis_active"))
+					and bool(target.get("selected"))
+				)
+			"poison":
+				var poison_limit := int(
+					target.get("legacy_distraction_limit")
+				)
+				effect_ready = (
+					bool(target.get("legacy_poison_active"))
+					and bool(target.get("legacy_distraction_active"))
+					and poison_limit >= 80
+					and poison_limit <= 119
+				)
+			"distraction":
+				var distraction_limit := int(
+					target.get("legacy_distraction_limit")
+				)
+				effect_ready = (
+					bool(target.get("legacy_distraction_active"))
+					and distraction_limit >= 80
+					and distraction_limit <= 119
+				)
+		if quantity_ready and effect_ready:
+			return true
+		await physics_frame
+	return false
+
+
+func _wait_for_target_damage(
+	target: Node2D,
+	before_hit_points: int,
+	deadline_seconds: float,
+) -> bool:
+	var ticks_per_second := maxi(
+		int(
+			ProjectSettings.get_setting(
+				"physics/common/physics_ticks_per_second",
+				60,
+			)
+		),
+		1,
+	)
+	var frame_count := maxi(
+		ceili(maxf(deadline_seconds, 0.0) * float(ticks_per_second)),
+		1,
+	)
+	for _frame_index: int in range(frame_count):
+		if (
+			not bool(target.get("is_alive"))
+			or int(target.get("current_hit_points")) < before_hit_points
+		):
+			return true
+		await physics_frame
+	return false
 
 
 func _run_sight_direct_target_probe(
@@ -1065,6 +1322,14 @@ func _scenario_description(scenario_id: String, level_id: String) -> String:
 	if WEAPON_ATTACK_SCENARIOS.has(scenario_id):
 		var scenario: Dictionary = WEAPON_ATTACK_SCENARIOS[scenario_id]
 		return str(scenario.get("description", "Weapon inventory parity probe."))
+	if WORLD_ITEM_SCENARIOS.has(scenario_id):
+		var world_item_scenario: Dictionary = WORLD_ITEM_SCENARIOS[scenario_id]
+		return str(
+			world_item_scenario.get(
+				"description",
+				"World-item parity probe.",
+			)
+		)
 	if scenario_id == SIGHT_DIRECT_TARGET_SCENARIO_ID:
 		return (
 			"Release S and click living faction-1 scene 1126; verify one-shot "

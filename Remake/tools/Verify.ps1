@@ -375,6 +375,30 @@ if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
         [pscustomobject]@{
             id = 'm010-explosive-deploy-inventory-v1'
             level_id = 'm010'
+        },
+        [pscustomobject]@{
+            id = 'm007-chicken-world-item-v1'
+            level_id = 'm007'
+        },
+        [pscustomobject]@{
+            id = 'm010-canned-meat-world-item-v1'
+            level_id = 'm010'
+        },
+        [pscustomobject]@{
+            id = 'm010-hypnosis-doll-world-item-v1'
+            level_id = 'm010'
+        },
+        [pscustomobject]@{
+            id = 'm010-poisoned-wine-world-item-v1'
+            level_id = 'm010'
+        },
+        [pscustomobject]@{
+            id = 'm009-dog-bone-world-item-v1'
+            level_id = 'm009'
+        },
+        [pscustomobject]@{
+            id = 'm010-cigarette-world-item-v1'
+            level_id = 'm010'
         }
     )
     foreach ($inventoryScenario in $inventoryParityScenarios) {
