@@ -35,6 +35,9 @@ const AI_IDLE_RANDOM_RULES: Script = preload(
 const LEGACY_DISGUISE_RULES: Script = preload(
 	"res://scripts/legacy_disguise_rules.gd"
 )
+const LEGACY_ROW_SLICE_SPRITE_SCRIPT: Script = preload(
+	"res://scripts/legacy_row_slice_sprite.gd"
+)
 const WORLD_DEPTH: Script = preload("res://scripts/world_depth.gd")
 
 enum CombatAction { NONE, ATTACK, RELOAD, DEATH }
@@ -99,6 +102,10 @@ var use_recorded_patrol_relocation := false
 var use_recorded_patrol_final_relocation := false
 var sprite_texture: Texture2D
 var sprite_anchor := Vector2.ZERO
+var row_slice_renderer: Node2D
+var sprite_drawn_by_row_slices := false
+var uniform_row_depth_enabled := false
+var uniform_row_depth_offset := 0.0
 var movement_groups: Array[Dictionary] = []
 var idle_groups: Array[Dictionary] = []
 var run_groups: Array[Dictionary] = []
@@ -167,6 +174,11 @@ func configure(
 	display_name = new_name
 	body_color = color
 	sprite_texture = texture
+	sprite_drawn_by_row_slices = false
+	uniform_row_depth_enabled = false
+	uniform_row_depth_offset = 0.0
+	if row_slice_renderer != null and is_instance_valid(row_slice_renderer):
+		row_slice_renderer.call("clear_visual")
 	movement_groups = new_movement_groups
 	idle_groups = new_idle_groups
 	run_groups = new_movement_groups
@@ -235,7 +247,7 @@ func configure(
 		)
 		if not dynamic_registered:
 			dynamic_occupancy = null
-	z_index = WORLD_DEPTH.normal_z(position.y, 1)
+	_update_sprite_depth()
 	if movement_groups.size() >= 8:
 		var first_group: int = (
 			SPR_ANIMATION_RULES.first_usable_group_index(
@@ -1433,7 +1445,7 @@ func _physics_process(delta: float) -> void:
 			set_animation_group(direction_group_index(accepted_displacement))
 			advance_animation(safe_delta)
 			was_moving = true
-			z_index = WORLD_DEPTH.normal_z(position.y, 1)
+			_update_sprite_depth()
 			queue_redraw()
 		return
 	position = next_position
@@ -1445,7 +1457,7 @@ func _physics_process(delta: float) -> void:
 		set_animation_group(direction_group_index(displacement))
 		advance_animation(safe_delta)
 		was_moving = true
-		z_index = WORLD_DEPTH.normal_z(position.y, 1)
+		_update_sprite_depth()
 		queue_redraw()
 	else:
 		_apply_idle_state()
@@ -1507,6 +1519,9 @@ func _find_movement_path_runtime(
 			not soft_path.is_empty()
 			and soft_path[-1].distance_squared_to(destination) > 1.0
 		):
+			# Stable runtime-evidence cache values are shared read-only. Only a
+			# redirected/partial endpoint needs an independent mutable copy.
+			soft_path = soft_path.duplicate()
 			soft_path.append(destination)
 		return soft_path
 	return dynamic_occupancy.call(
@@ -1620,6 +1635,7 @@ func _apply_action_frame(groups: Array[Dictionary]) -> void:
 	sprite_texture = frames[action_frame_index]
 	sprite_anchor = group.get("anchor", Vector2.ZERO) as Vector2
 	_apply_dynamic_sprite_footprint(group)
+	_apply_row_slice_visual(group)
 	queue_redraw()
 
 
@@ -1914,6 +1930,7 @@ func _apply_current_idle_visual(advance_delta: float) -> bool:
 		sprite_texture = frames[0]
 	sprite_anchor = group.get("anchor", Vector2.ZERO) as Vector2
 	_apply_dynamic_sprite_footprint(group)
+	_apply_row_slice_visual(group)
 	return true
 
 
@@ -1979,6 +1996,7 @@ func update_animation_frame() -> void:
 	sprite_texture = frames[animation_frame_index]
 	sprite_anchor = group["anchor"] as Vector2
 	_apply_dynamic_sprite_footprint(group)
+	_apply_row_slice_visual(group)
 
 
 func apply_idle_frame() -> bool:
@@ -1997,6 +2015,7 @@ func apply_idle_frame() -> bool:
 	sprite_texture = frames[0]
 	sprite_anchor = group["anchor"] as Vector2
 	_apply_dynamic_sprite_footprint(group)
+	_apply_row_slice_visual(group)
 	return true
 
 
@@ -2060,6 +2079,91 @@ func _apply_dynamic_sprite_footprint(group: Dictionary) -> bool:
 	return true
 
 
+func _apply_row_slice_visual(group: Dictionary) -> bool:
+	var row_lookup: Variant = group.get("draw_order_row_lookup", [])
+	if sprite_texture == null or not row_lookup is Array or (row_lookup as Array).is_empty():
+		sprite_drawn_by_row_slices = false
+		uniform_row_depth_enabled = false
+		uniform_row_depth_offset = 0.0
+		if row_slice_renderer != null and is_instance_valid(row_slice_renderer):
+			row_slice_renderer.call("clear_visual")
+		_update_sprite_depth()
+		return false
+	var normalized_rows := _normalized_draw_order_rows(row_lookup)
+	var expected_columns := ceili(
+		sprite_texture.get_width()
+		/ float(LEGACY_ROW_SLICE_SPRITE_SCRIPT.COLUMN_WIDTH)
+	)
+	if normalized_rows.size() != expected_columns:
+		sprite_drawn_by_row_slices = false
+		uniform_row_depth_enabled = false
+		uniform_row_depth_offset = 0.0
+		if row_slice_renderer != null and is_instance_valid(row_slice_renderer):
+			row_slice_renderer.call("clear_visual")
+		_update_sprite_depth()
+		return false
+	if _draw_order_rows_are_uniform(normalized_rows):
+		sprite_drawn_by_row_slices = false
+		uniform_row_depth_enabled = true
+		uniform_row_depth_offset = (
+			-sprite_anchor.y + float(normalized_rows[0])
+		)
+		if row_slice_renderer != null and is_instance_valid(row_slice_renderer):
+			row_slice_renderer.call("clear_visual")
+		_update_sprite_depth()
+		return false
+	uniform_row_depth_enabled = false
+	uniform_row_depth_offset = 0.0
+	_update_sprite_depth()
+	if row_slice_renderer == null or not is_instance_valid(row_slice_renderer):
+		row_slice_renderer = LEGACY_ROW_SLICE_SPRITE_SCRIPT.new()
+		row_slice_renderer.name = "OriginalRowSlices"
+		add_child(row_slice_renderer)
+	sprite_drawn_by_row_slices = bool(
+		row_slice_renderer.call(
+			"configure",
+			sprite_texture,
+			sprite_anchor,
+			position.y,
+			normalized_rows,
+			1,
+			true,
+		)
+	)
+	return sprite_drawn_by_row_slices
+
+
+func _update_sprite_depth() -> void:
+	var depth_reference_y := position.y
+	if uniform_row_depth_enabled:
+		depth_reference_y += uniform_row_depth_offset
+	z_index = WORLD_DEPTH.normal_z(depth_reference_y, 1)
+
+
+static func _normalized_draw_order_rows(value: Variant) -> Array[int]:
+	var result: Array[int] = []
+	if not value is Array:
+		return result
+	for raw_row: Variant in value as Array:
+		if not raw_row is int and not raw_row is float:
+			return []
+		var row_value := float(raw_row)
+		if not is_finite(row_value) or row_value != float(int(row_value)):
+			return []
+		result.append(int(row_value))
+	return result
+
+
+static func _draw_order_rows_are_uniform(rows: Array[int]) -> bool:
+	if rows.is_empty():
+		return false
+	var first := rows[0]
+	for row_index: int in range(1, rows.size()):
+		if rows[row_index] != first:
+			return false
+	return true
+
+
 func legacy_projectile_launch_offset() -> Vector2:
 	var triplets := _active_legacy_sprite_triplets()
 	if triplets.is_empty():
@@ -2116,7 +2220,7 @@ func _active_legacy_sprite_triplets() -> Dictionary:
 
 
 func _draw() -> void:
-	if sprite_texture != null:
+	if sprite_texture != null and not sprite_drawn_by_row_slices:
 		draw_texture(sprite_texture, -sprite_anchor)
 	else:
 		draw_flat_ellipse(

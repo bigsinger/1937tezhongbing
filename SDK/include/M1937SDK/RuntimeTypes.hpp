@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include <M1937SDK/Sprite.hpp>
+
 namespace m1937::sdk {
 
 // Runtime layout recovered from the supported 2001 executable. Pointer fields
@@ -33,7 +35,15 @@ struct RuntimeActorV1 final {
     // Actor 78 becomes state 3 when either copied inventory has entries.
     std::int32_t world_object_state;       // +0x070
     std::int32_t faction_id;              // +0x074
-    std::byte unknown_078[96];
+    std::byte unknown_078[60];
+    // sub_455E30 selects one of these three triplets from movement_mode.
+    // It reads only x/z as the planar per-tick component limits. The middle
+    // values are faithfully retained by SPR loading but are not consumed by
+    // the actor movement function; world_height remains unchanged while
+    // following every 2D VWF path.
+    SpriteTriplet walk_step;              // +0x0B4
+    SpriteTriplet run_step;               // +0x0C0
+    SpriteTriplet crawl_step;             // +0x0CC
     std::int32_t world_x;                 // +0x0D8
     std::int32_t world_height;            // +0x0DC
     std::int32_t world_y;                 // +0x0E0
@@ -172,6 +182,9 @@ static_assert(offsetof(RuntimeActorV1, sprite_tertiary_z) == 0x058);
 static_assert(offsetof(RuntimeActorV1, hidden_or_removed) == 0x03C);
 static_assert(offsetof(RuntimeActorV1, world_object_state) == 0x070);
 static_assert(offsetof(RuntimeActorV1, faction_id) == 0x074);
+static_assert(offsetof(RuntimeActorV1, walk_step) == 0x0B4);
+static_assert(offsetof(RuntimeActorV1, run_step) == 0x0C0);
+static_assert(offsetof(RuntimeActorV1, crawl_step) == 0x0CC);
 static_assert(offsetof(RuntimeActorV1, world_x) == 0x0D8);
 static_assert(offsetof(RuntimeActorV1, world_height) == 0x0DC);
 static_assert(offsetof(RuntimeActorV1, world_y) == 0x0E0);

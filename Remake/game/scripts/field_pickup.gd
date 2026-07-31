@@ -2,6 +2,9 @@ class_name FieldPickup
 extends Node2D
 
 const WORLD_DEPTH: Script = preload("res://scripts/world_depth.gd")
+const LEGACY_ROW_SLICE_SPRITE_SCRIPT: Script = preload(
+	"res://scripts/legacy_row_slice_sprite.gd"
+)
 
 signal collected(pickup: Node2D, collector: Node, payload: Dictionary)
 
@@ -18,12 +21,14 @@ var grant: Dictionary = {}
 var consumed := false
 
 var _original_sprite: Sprite2D
+var _row_slice_renderer: Node2D
 
 
 func configure(
 	profile: Dictionary,
 	metadata: Dictionary = {},
 	original_texture: Texture2D = null,
+	draw_order_profile: Dictionary = {},
 ) -> bool:
 	if (
 		String(profile.get("behavior", "")) != PICKUP_BEHAVIOR
@@ -43,8 +48,8 @@ func configure(
 		position = Vector2(float(entity_metadata["x"]), float(entity_metadata["y"]))
 	consumed = false
 	visible = true
-	z_index = WORLD_DEPTH.normal_z(position.y, 2)
-	_set_original_texture(original_texture)
+	z_index = WORLD_DEPTH.normal_z(position.y)
+	_set_original_texture(original_texture, draw_order_profile)
 	queue_redraw()
 	return true
 
@@ -103,7 +108,10 @@ func has_original_texture() -> bool:
 	return _original_sprite != null and _original_sprite.texture != null
 
 
-func _set_original_texture(texture: Texture2D) -> void:
+func _set_original_texture(
+	texture: Texture2D,
+	draw_order_profile: Dictionary = {},
+) -> void:
 	if _original_sprite == null:
 		_original_sprite = Sprite2D.new()
 		_original_sprite.name = "OriginalSprite"
@@ -111,10 +119,79 @@ func _set_original_texture(texture: Texture2D) -> void:
 	_original_sprite.texture = texture
 	_original_sprite.visible = texture != null
 	if texture != null:
-		_original_sprite.offset = (
-			texture.get_size() * 0.5
-			- _entity_sprite_anchor(texture)
+		var anchor := _entity_sprite_anchor(texture)
+		_original_sprite.offset = texture.get_size() * 0.5 - anchor
+		if _apply_draw_order_profile(
+			texture,
+			anchor,
+			draw_order_profile,
+		):
+			_original_sprite.visible = false
+
+
+func _apply_draw_order_profile(
+	texture: Texture2D,
+	anchor: Vector2,
+	draw_order_profile: Dictionary,
+) -> bool:
+	if draw_order_profile.is_empty():
+		return false
+	var frame_size: Variant = draw_order_profile.get(
+		"frame_size",
+		Vector2i.ZERO,
+	)
+	var row_lookup: Variant = draw_order_profile.get(
+		"draw_order_row_lookup",
+		[],
+	)
+	if (
+		not frame_size is Vector2i
+		or frame_size
+			!= Vector2i(
+				int(round(texture.get_width())),
+				int(round(texture.get_height())),
+			)
+		or not row_lookup is Array
+		or (row_lookup as Array).is_empty()
+	):
+		return false
+	var reference_y := float(
+		entity_metadata.get("reference_y", entity_metadata.get("y", position.y))
+	)
+	if _rows_are_uniform(row_lookup as Array):
+		z_index = WORLD_DEPTH.normal_z(
+			reference_y - anchor.y + float((row_lookup as Array)[0])
 		)
+		return false
+	if _row_slice_renderer == null or not is_instance_valid(_row_slice_renderer):
+		_row_slice_renderer = LEGACY_ROW_SLICE_SPRITE_SCRIPT.new()
+		_row_slice_renderer.name = "OriginalRowSlices"
+		add_child(_row_slice_renderer)
+	_row_slice_renderer.visible = true
+	return bool(
+		_row_slice_renderer.call(
+			"configure",
+			texture,
+			anchor,
+			reference_y,
+			row_lookup,
+		)
+	)
+
+
+static func _rows_are_uniform(rows: Array) -> bool:
+	if rows.is_empty():
+		return false
+	var first: Variant = rows[0]
+	if not first is int and not first is float:
+		return false
+	for row: Variant in rows:
+		if (
+			(not row is int and not row is float)
+			or float(row) != float(first)
+		):
+			return false
+	return true
 
 
 func _entity_sprite_anchor(texture: Texture2D) -> Vector2:

@@ -500,6 +500,7 @@ int main(int argc, char** argv) {
                 m1937::sdk::rva::get_sprite_draw_order_row != 0 &&
             m1937::sdk::rva::actor_lookup_origin_x != 0 &&
                 m1937::sdk::rva::actor_lookup_origin_y != 0 &&
+                m1937::sdk::rva::actor_component_movement != 0 &&
                 m1937::sdk::rva::sprite_world_hit_test != 0 &&
                 m1937::sdk::rva::register_actor_lookup != 0 &&
                 m1937::sdk::rva::unregister_actor_lookup != 0 &&
@@ -508,6 +509,17 @@ int main(int argc, char** argv) {
                 m1937::sdk::rva::register_actor_lookup !=
                     m1937::sdk::rva::unregister_actor_lookup,
             "SPR lookup RVA catalog mismatch",
+            checks);
+        require(
+            offsetof(m1937::sdk::RuntimeActorV1, walk_step) == 0x0B4 &&
+                offsetof(m1937::sdk::RuntimeActorV1, run_step) == 0x0C0 &&
+                offsetof(
+                    m1937::sdk::RuntimeActorV1,
+                    crawl_step) == 0x0CC &&
+                offsetof(
+                    m1937::sdk::RuntimeActorV1,
+                    world_x) == 0x0D8,
+            "actor SPR movement-triplet runtime layout mismatch",
             checks);
         }
         require(

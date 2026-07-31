@@ -5,8 +5,12 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $compare = Join-Path $PSScriptRoot 'Compare-VisualParity.ps1'
+$baselineBuilder = Join-Path $PSScriptRoot 'Build-VisualParityBaseline.ps1'
 if (-not (Test-Path -LiteralPath $compare -PathType Leaf)) {
     throw "Visual parity comparator is missing: $compare"
+}
+if (-not (Test-Path -LiteralPath $baselineBuilder -PathType Leaf)) {
+    throw "Visual parity baseline builder is missing: $baselineBuilder"
 }
 
 $temporaryRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
@@ -100,6 +104,28 @@ public static class Mission1937VisualParityFixtureV1
     [Mission1937VisualParityFixtureV1]::CreateOffsetPartial(
         $partialOffset, 17, 23, 40)
     [Mission1937VisualParityFixtureV1]::Create($damaged, $true)
+
+    $overwriteRejected = $false
+    try {
+        & $baselineBuilder `
+            -SummaryPath @($reference) `
+            -OutputPath $reference
+    }
+    catch {
+        if (
+            $_.Exception.Message -like
+                '*must not overwrite an input summary*'
+        ) {
+            $overwriteRejected = $true
+        }
+        else {
+            throw
+        }
+    }
+    if (-not $overwriteRejected -or
+        -not (Test-Path -LiteralPath $reference -PathType Leaf)) {
+        throw 'The baseline builder did not reject an input/output collision.'
+    }
 
     $identicalOutput = Join-Path $work 'identical-result'
     $identicalResult = & $compare `

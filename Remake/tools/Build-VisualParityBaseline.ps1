@@ -16,6 +16,19 @@ if ([string]::IsNullOrWhiteSpace($OutputPath)) {
         'game\data\visual_parity_baselines.json')
 }
 $OutputPath = [IO.Path]::GetFullPath($OutputPath)
+foreach ($inputPath in $SummaryPath) {
+    $resolvedInputPath = [IO.Path]::GetFullPath($inputPath)
+    if (
+        [string]::Equals(
+            $resolvedInputPath,
+            $OutputPath,
+            [StringComparison]::OrdinalIgnoreCase)
+    ) {
+        throw (
+            'Visual parity baseline output must not overwrite an input ' +
+            "summary: $resolvedInputPath")
+    }
+}
 
 function Copy-Metrics {
     param([Parameter(Mandatory)]$Metrics)

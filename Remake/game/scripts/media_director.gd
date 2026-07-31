@@ -142,6 +142,24 @@ func play_audio_event(
 	)
 
 
+func prewarm_audio_event(event_key: String, actor_key: String = "") -> int:
+	# Decode every possible variant while the level is being constructed.  The
+	# first player command can otherwise combine a cold WAV decode, stream
+	# allocation and A* query in one rendered frame.  Loading the streams here
+	# is deliberately silent: active channel state and variant sequencing stay
+	# untouched until play_audio_event() is called by the real command.
+	_ensure_catalog()
+	var raw_indices: Variant = catalog.call("sound_indices", event_key, actor_key)
+	if not raw_indices is Array:
+		return 0
+	var available_count := 0
+	for raw_index: Variant in raw_indices as Array:
+		var path := str(catalog.call("sound_path", int(raw_index)))
+		if not path.is_empty() and _load_cached_audio_stream(path) != null:
+			available_count += 1
+	return available_count
+
+
 func play_audio_index(
 	gfl_index: int,
 	event_key: String = "direct",

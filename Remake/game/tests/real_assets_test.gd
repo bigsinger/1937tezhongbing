@@ -245,6 +245,9 @@ func validate_sprite_manifests() -> void:
 	var frame_count := 0
 	var movement_triplet_count := 0
 	var usable_movement_triplet_count := 0
+	var primary_middle_zero_count := 0
+	var tertiary_middle_zero_count := 0
+	var secondary_middle_counts: Dictionary = {}
 	for directory_name: String in directories:
 		var manifest_path: String = sprite_root.path_join(directory_name).path_join("sprite.json")
 		if not FileAccess.file_exists(manifest_path):
@@ -264,6 +267,58 @@ func validate_sprite_manifests() -> void:
 			),
 			"sprite %s uses corrected schema 3, GFL identity, and group count" % directory_name,
 		)
+		var preview_path := (
+			sprite_root
+			. get_base_dir()
+			. path_join("sprites")
+			. path_join("%s.png" % directory_name)
+		)
+		var draw_order_profile: Dictionary = (
+			IMPORTED_SPRITE_ANIMATION.load_draw_order_profile(
+				preview_path,
+				0,
+			)
+		)
+		var preview_group := manifest_groups[0] as Dictionary
+		var preview_primary := (
+			preview_group.get("primary_triplet", []) as Array
+		)
+		var preview_lookup: Dictionary = (
+			IMPORTED_SPRITE_ANIMATION.normalized_lookup_tables(
+				preview_group
+			)
+		)
+		var preview_dimensions := (
+			preview_lookup.get("dimensions", Vector2i.ZERO) as Vector2i
+		)
+		expect(
+			(
+				not draw_order_profile.is_empty()
+				and draw_order_profile.get("anchor", Vector2.ZERO)
+					== Vector2(
+						float(preview_primary[0]),
+						float(preview_primary[2]),
+					)
+				and draw_order_profile.get(
+					"draw_order_row_lookup",
+					[],
+				) == preview_lookup.get("draw_order_rows", [])
+				and (
+					draw_order_profile.get(
+						"frame_size",
+						Vector2i.ZERO,
+					) as Vector2i
+				).x > (preview_dimensions.x - 1) * 32
+				and (
+					draw_order_profile.get(
+						"frame_size",
+						Vector2i.ZERO,
+					) as Vector2i
+				).x <= preview_dimensions.x * 32
+			),
+			"sprite %s preview exposes exact 32-pixel RowLookup strips with an optional short tail"
+			% directory_name,
+		)
 		var serial_lookup: Dictionary = {}
 		var manifest_frame_count := 0
 		for source_group_index: int in range(manifest_groups.size()):
@@ -282,6 +337,27 @@ func validate_sprite_manifests() -> void:
 					% [directory_name, source_group_index]
 				),
 			)
+			var primary_triplet := group.get(
+				"primary_triplet",
+				[],
+			) as Array
+			var secondary_triplet := group.get(
+				"secondary_triplet",
+				[],
+			) as Array
+			var tertiary_triplet := group.get(
+				"tertiary_triplet",
+				[],
+			) as Array
+			if primary_triplet.size() == 3 and int(primary_triplet[1]) == 0:
+				primary_middle_zero_count += 1
+			if tertiary_triplet.size() == 3 and int(tertiary_triplet[1]) == 0:
+				tertiary_middle_zero_count += 1
+			if secondary_triplet.size() == 3:
+				var middle_value := int(secondary_triplet[1])
+				secondary_middle_counts[middle_value] = (
+					int(secondary_middle_counts.get(middle_value, 0)) + 1
+				)
 			if str(group.get("action_key", "")) in ["walk", "crawl"]:
 				movement_triplet_count += 1
 				var movement_triplet := group.get(
@@ -384,6 +460,23 @@ func validate_sprite_manifests() -> void:
 		movement_triplet_count == 373
 		and usable_movement_triplet_count == movement_triplet_count,
 		"all 373 walk/crawl groups expose usable corrected X/Z movement components",
+	)
+	expect(
+		(
+			primary_middle_zero_count == EXPECTED_GROUP_COUNT
+			and tertiary_middle_zero_count == EXPECTED_GROUP_COUNT
+			and secondary_middle_counts
+				== {
+					0: 1233,
+					1: 1293,
+					2: 241,
+					3: 8,
+				}
+		),
+		(
+			"all 2,775 groups preserve middle values while the twelve-level "
+			+ "content has no primary/tertiary vertical offset"
+		),
 	)
 
 

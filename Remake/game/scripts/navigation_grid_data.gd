@@ -48,6 +48,7 @@ var static_component_by_cell := PackedInt32Array()
 var static_component_cells: Dictionary = {}
 var static_component_destination_cache: Dictionary = {}
 var static_component_redirect_count := 0
+var dynamic_unreachable_precheck_count := 0
 var incremental_source_update_count := 0
 var incremental_source_update_usec := 0
 var legacy_search_generation := 0
@@ -57,6 +58,14 @@ var legacy_total_scores := PackedInt32Array()
 var legacy_heuristic_scores := PackedInt32Array()
 var legacy_movement_scores := PackedInt32Array()
 var legacy_parents := PackedInt32Array()
+var legacy_child_counts := PackedByteArray()
+var legacy_children := PackedInt32Array()
+var last_legacy_expanded_node_count := 0
+var last_legacy_discovered_node_count := 0
+var last_legacy_improved_node_count := 0
+var last_legacy_closed_improvement_count := 0
+var last_legacy_propagated_relaxation_count := 0
+var last_legacy_propagation_usec := 0
 
 
 static func load_file(path: String, metadata: Dictionary) -> NavigationGridData:
@@ -353,6 +362,7 @@ func find_path(
 	world_start: Vector2,
 	world_destination: Vector2,
 	allow_scene_occupied_start: bool = false,
+	precheck_dynamic_disconnect: bool = false,
 ) -> PackedVector2Array:
 	if world_start.is_equal_approx(world_destination):
 		return PackedVector2Array()
@@ -376,7 +386,29 @@ func find_path(
 			return PackedVector2Array()
 		astar.set_point_solid(start_cell, false)
 		temporarily_opened_start = true
-	var path := _original_uniform_path(start_cell, destination_cell)
+	var path := PackedVector2Array()
+	# Multi-cell actor clearance and runtime reservations are temporary AStar
+	# solids, so they are deliberately absent from the static-component table.
+	# If such a change disconnects the requested cell, the exact legacy
+	# search would exhaust the whole map only to fall through to the same
+	# Godot partial route below. Let the native grid prove disconnection
+	# first; reachable routes still run the recovered pathfinder and retain
+	# its observable tie-breaking and final facing.
+	if (
+		precheck_dynamic_disconnect
+		and astar.get_id_path(
+			start_cell,
+			destination_cell,
+			false,
+		).is_empty()
+	):
+		dynamic_unreachable_precheck_count += 1
+		path = _temporary_obstacle_partial_path(
+			start_cell,
+			destination_cell,
+		)
+	else:
+		path = _original_uniform_path(start_cell, destination_cell)
 	# Temporary multi-cell footprint reservations are not part of the static
 	# component table. If they split a corridor, retain the remake's safe
 	# partial-route behavior so a large actor stops at the reachable edge.
@@ -540,7 +572,12 @@ func _original_uniform_path(
 	# actor's final facing, so "cleaning them up" changes gameplay traces.
 	var cell_count := dimensions.x * dimensions.y
 	_begin_legacy_search(cell_count)
-	var children_by_node: Dictionary = {}
+	last_legacy_expanded_node_count = 0
+	last_legacy_discovered_node_count = 1
+	last_legacy_improved_node_count = 0
+	last_legacy_closed_improvement_count = 0
+	last_legacy_propagated_relaxation_count = 0
+	last_legacy_propagation_usec = 0
 	var start_index := cell_to_index(start_cell)
 	var destination_index := cell_to_index(destination_cell)
 	var destination_heuristic := _legacy_squared_world_distance(
@@ -573,6 +610,7 @@ func _original_uniform_path(
 		var current_index: int = _legacy_open_heap_pop(
 			open_nodes
 		).z
+		last_legacy_expanded_node_count += 1
 		legacy_node_state[current_index] = 2
 		if current_index == start_index:
 			resolved = true
@@ -582,7 +620,13 @@ func _original_uniform_path(
 			ORIGINAL_PATHFINDER_NEIGHBOR_DIRECTIONS
 		):
 			var neighbor := current + direction
-			if not _legacy_path_cell_is_clear(neighbor):
+			if (
+				neighbor.x < 0
+				or neighbor.y < 0
+				or neighbor.x >= dimensions.x
+				or neighbor.y >= dimensions.y
+				or astar.is_point_solid(neighbor)
+			):
 				continue
 			var neighbor_index := cell_to_index(neighbor)
 			var next_movement_score := (
@@ -592,11 +636,16 @@ func _original_uniform_path(
 				legacy_node_generation[neighbor_index]
 				== legacy_search_generation
 			):
-				_legacy_append_child(
-					children_by_node,
-					current_index,
-					neighbor_index,
+				var existing_child_count := int(
+					legacy_child_counts[current_index]
 				)
+				if existing_child_count < 8:
+					legacy_children[
+						current_index * 8 + existing_child_count
+					] = neighbor_index
+					legacy_child_counts[current_index] = (
+						existing_child_count + 1
+					)
 				if (
 					next_movement_score
 					>= legacy_movement_scores[neighbor_index]
@@ -605,24 +654,36 @@ func _original_uniform_path(
 				legacy_movement_scores[neighbor_index] = (
 					next_movement_score
 				)
+				last_legacy_improved_node_count += 1
 				legacy_parents[neighbor_index] = current_index
 				legacy_total_scores[neighbor_index] = (
 					next_movement_score
 					+ legacy_heuristic_scores[neighbor_index]
 				)
 				if legacy_node_state[neighbor_index] == 2:
+					last_legacy_closed_improvement_count += 1
+					var propagation_started_usec := Time.get_ticks_usec()
 					_legacy_propagate_improved_cost(
 						neighbor_index,
-						children_by_node,
+					)
+					last_legacy_propagation_usec += (
+						Time.get_ticks_usec() - propagation_started_usec
 					)
 				continue
-			var heuristic := _legacy_squared_world_distance(
-				neighbor,
-				start_cell,
+			var heuristic_delta_x := (
+				(neighbor.x - start_cell.x) * cell_size.x
+			)
+			var heuristic_delta_y := (
+				(neighbor.y - start_cell.y) * cell_size.y
+			)
+			var heuristic := (
+				heuristic_delta_x * heuristic_delta_x
+				+ heuristic_delta_y * heuristic_delta_y
 			)
 			legacy_node_generation[neighbor_index] = (
 				legacy_search_generation
 			)
+			last_legacy_discovered_node_count += 1
 			legacy_heuristic_scores[neighbor_index] = heuristic
 			legacy_movement_scores[neighbor_index] = next_movement_score
 			legacy_total_scores[neighbor_index] = (
@@ -639,11 +700,14 @@ func _original_uniform_path(
 				),
 			)
 			insertion_serial += 1
-			_legacy_append_child(
-				children_by_node,
-				current_index,
-				neighbor_index,
+			var new_child_count := int(
+				legacy_child_counts[current_index]
 			)
+			if new_child_count < 8:
+				legacy_children[
+					current_index * 8 + new_child_count
+				] = neighbor_index
+				legacy_child_counts[current_index] = new_child_count + 1
 	if not resolved:
 		return PackedVector2Array()
 	var route_cells: Array[Vector2i] = []
@@ -692,22 +756,16 @@ func _begin_legacy_search(cell_count: int) -> void:
 		legacy_heuristic_scores.resize(cell_count)
 		legacy_movement_scores.resize(cell_count)
 		legacy_parents.resize(cell_count)
+		legacy_child_counts.resize(cell_count)
+		legacy_child_counts.fill(0)
+		legacy_children.resize(cell_count * 8)
 		legacy_search_generation = 1
 		return
+	legacy_child_counts.fill(0)
 	legacy_search_generation += 1
 	if legacy_search_generation >= 0x7fffffff:
 		legacy_node_generation.fill(0)
 		legacy_search_generation = 1
-
-
-static func _legacy_open_entry_precedes(
-	first: Vector3i,
-	second: Vector3i,
-) -> bool:
-	return (
-		first.x < second.x
-		or (first.x == second.x and first.y < second.y)
-	)
 
 
 static func _legacy_open_heap_push(
@@ -718,7 +776,14 @@ static func _legacy_open_heap_push(
 	var index := open_nodes.size() - 1
 	while index > 0:
 		var parent := (index - 1) / 2 as int
-		if _legacy_open_entry_precedes(open_nodes[parent], entry):
+		var parent_entry := open_nodes[parent]
+		if (
+			parent_entry.x < entry.x
+			or (
+				parent_entry.x == entry.x
+				and parent_entry.y < entry.y
+			)
+		):
 			break
 		open_nodes[index] = open_nodes[parent]
 		index = parent
@@ -739,15 +804,25 @@ static func _legacy_open_heap_pop(
 			break
 		var child := left
 		var right := left + 1
+		if right < open_nodes.size():
+			var right_entry := open_nodes[right]
+			var left_entry := open_nodes[left]
+			if (
+				right_entry.x < left_entry.x
+				or (
+					right_entry.x == left_entry.x
+					and right_entry.y < left_entry.y
+				)
+			):
+				child = right
+		var child_entry := open_nodes[child]
 		if (
-			right < open_nodes.size()
-			and _legacy_open_entry_precedes(
-				open_nodes[right],
-				open_nodes[left],
+			tail.x < child_entry.x
+			or (
+				tail.x == child_entry.x
+				and tail.y < child_entry.y
 			)
 		):
-			child = right
-		if _legacy_open_entry_precedes(tail, open_nodes[child]):
 			break
 		open_nodes[index] = open_nodes[child]
 		index = child
@@ -755,46 +830,34 @@ static func _legacy_open_heap_pop(
 	return result
 
 
-static func _legacy_append_child(
-	children_by_node: Dictionary,
-	parent_index: int,
-	child_index: int,
-) -> void:
-	if children_by_node.has(parent_index):
-		var children := children_by_node[parent_index] as Array
-		children.append(child_index)
-		return
-	children_by_node[parent_index] = [child_index]
-
-
 func _legacy_propagate_improved_cost(
 	root_index: int,
-	children_by_node: Dictionary,
 ) -> void:
 	var pending: Array[int] = []
 	_legacy_relax_children(
 		root_index,
-		children_by_node,
 		pending,
 	)
 	while not pending.is_empty():
-		var current_index: int = pending.pop_front()
+		# sub_45FBE0 and sub_45FC10 both operate on the same list head, so the
+		# recovered structure is a LIFO stack. Array.push_front/pop_front would
+		# preserve that order but shifts every GDScript element on each of the
+		# thousands of propagation steps. append/pop_back is order-equivalent
+		# here and keeps each legacy head operation O(1).
+		var current_index: int = pending.pop_back()
 		_legacy_relax_children(
 			current_index,
-			children_by_node,
 			pending,
 		)
 
 
 func _legacy_relax_children(
 	parent_index: int,
-	children_by_node: Dictionary,
 	pending: Array[int],
 ) -> void:
-	if not children_by_node.has(parent_index):
-		return
-	for child_value: Variant in children_by_node[parent_index] as Array:
-		var child_index := int(child_value)
+	var child_count := int(legacy_child_counts[parent_index])
+	for child_offset: int in range(child_count):
+		var child_index := legacy_children[parent_index * 8 + child_offset]
 		var next_movement_score := (
 			legacy_movement_scores[parent_index] + 1
 		)
@@ -808,8 +871,9 @@ func _legacy_relax_children(
 			next_movement_score + legacy_heuristic_scores[child_index]
 		)
 		legacy_parents[child_index] = parent_index
-		# sub_45FBE0 pushes at the head and sub_45FC10 pops the head.
-		pending.push_front(child_index)
+		last_legacy_propagated_relaxation_count += 1
+		# Same-head push/pop is represented by the array tail; see the caller.
+		pending.append(child_index)
 
 
 func _legacy_path_cell_is_clear(cell: Vector2i) -> bool:

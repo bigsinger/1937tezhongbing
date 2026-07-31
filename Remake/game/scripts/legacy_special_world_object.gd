@@ -2,6 +2,9 @@ class_name LegacySpecialWorldObject
 extends Node2D
 
 const WORLD_DEPTH: Script = preload("res://scripts/world_depth.gd")
+const LEGACY_ROW_SLICE_SPRITE_SCRIPT: Script = preload(
+	"res://scripts/legacy_row_slice_sprite.gd"
+)
 
 const SPECIAL_PROFILES: Script = preload("res://scripts/legacy_special_action_profiles.gd")
 const EXPLOSION_VISUAL_RULES: Script = preload(
@@ -51,6 +54,9 @@ var original_anchor := Vector2.ZERO
 var original_frame_hold_ticks := 1
 var original_frame_index := 0
 var original_animation_ticks := 0
+var original_draw_order_rows: Array = []
+var original_row_slice_renderer: Node2D
+var original_drawn_by_row_slices := false
 var evidence_profile: Dictionary = {}
 var resolved_visual_catalog: Dictionary = {}
 var resolved_particles: Array[Dictionary] = []
@@ -102,6 +108,13 @@ func configure(
 	original_frames.clear()
 	original_anchor = Vector2.ZERO
 	original_frame_hold_ticks = 1
+	original_draw_order_rows.clear()
+	original_drawn_by_row_slices = false
+	if (
+		original_row_slice_renderer != null
+		and is_instance_valid(original_row_slice_renderer)
+	):
+		original_row_slice_renderer.call("clear_visual")
 	if visual is Texture2D:
 		original_frames.append(visual as Texture2D)
 		original_anchor = (visual as Texture2D).get_size() * 0.5
@@ -119,6 +132,14 @@ func configure(
 			int((visual as Dictionary).get("frame_hold_ticks", 1)),
 			1,
 		)
+		var raw_draw_order_rows: Variant = (visual as Dictionary).get(
+			"draw_order_row_lookup",
+			[],
+		)
+		if raw_draw_order_rows is Array:
+			original_draw_order_rows = (
+				raw_draw_order_rows as Array
+			).duplicate()
 	original_texture = original_frames[0] if not original_frames.is_empty() else null
 	original_frame_index = 0
 	original_animation_ticks = 0
@@ -127,7 +148,7 @@ func configure(
 	trigger_target = null
 	restored_trigger_scene_index = -1
 	visible = true
-	z_index = WORLD_DEPTH.normal_z(position.y, 1)
+	_apply_original_draw_order()
 	_transition_to(State.ACTIVE)
 	queue_redraw()
 	return true
@@ -447,7 +468,16 @@ func restore_runtime_state(snapshot_value: Dictionary) -> bool:
 			original_animation_ticks / original_frame_hold_ticks
 		) % original_frames.size()
 	visible = state not in [State.DISARMED]
-	z_index = WORLD_DEPTH.normal_z(position.y, 1)
+	if state in [State.ACTIVE, State.TRIGGERED]:
+		_apply_original_draw_order()
+	else:
+		original_drawn_by_row_slices = false
+		if (
+			original_row_slice_renderer != null
+			and is_instance_valid(original_row_slice_renderer)
+		):
+			original_row_slice_renderer.call("clear_visual")
+		z_index = WORLD_DEPTH.normal_z(position.y, 1)
 	queue_redraw()
 	return true
 
@@ -491,6 +521,13 @@ func _transition_to(new_state: State) -> void:
 		return
 	var old_state := state
 	state = new_state
+	if state not in [State.ACTIVE, State.TRIGGERED]:
+		original_drawn_by_row_slices = false
+		if (
+			original_row_slice_renderer != null
+			and is_instance_valid(original_row_slice_renderer)
+		):
+			original_row_slice_renderer.call("clear_visual")
 	state_changed.emit(self, old_state, new_state)
 
 
@@ -501,6 +538,65 @@ func _advance_original_animation(ticks: int) -> void:
 	original_frame_index = (
 		original_animation_ticks / original_frame_hold_ticks
 	) % original_frames.size()
+	_apply_original_draw_order()
+
+
+func _apply_original_draw_order() -> void:
+	original_drawn_by_row_slices = false
+	z_index = WORLD_DEPTH.normal_z(position.y, 1)
+	if original_frames.is_empty() or original_draw_order_rows.is_empty():
+		if (
+			original_row_slice_renderer != null
+			and is_instance_valid(original_row_slice_renderer)
+		):
+			original_row_slice_renderer.call("clear_visual")
+		return
+	var frame: Texture2D = original_frames[
+		clampi(original_frame_index, 0, original_frames.size() - 1)
+	]
+	if _rows_are_uniform(original_draw_order_rows):
+		z_index = WORLD_DEPTH.normal_z(
+			position.y
+			- original_anchor.y
+			+ float(original_draw_order_rows[0])
+		)
+		if (
+			original_row_slice_renderer != null
+			and is_instance_valid(original_row_slice_renderer)
+		):
+			original_row_slice_renderer.call("clear_visual")
+		return
+	if (
+		original_row_slice_renderer == null
+		or not is_instance_valid(original_row_slice_renderer)
+	):
+		original_row_slice_renderer = LEGACY_ROW_SLICE_SPRITE_SCRIPT.new()
+		original_row_slice_renderer.name = "OriginalRowSlices"
+		add_child(original_row_slice_renderer)
+	original_drawn_by_row_slices = bool(
+		original_row_slice_renderer.call(
+			"configure",
+			frame,
+			original_anchor,
+			position.y,
+			original_draw_order_rows,
+		)
+	)
+
+
+static func _rows_are_uniform(rows: Array) -> bool:
+	if rows.is_empty():
+		return false
+	var first: Variant = rows[0]
+	if not first is int and not first is float:
+		return false
+	for row: Variant in rows:
+		if (
+			(not row is int and not row is float)
+			or float(row) != float(first)
+		):
+			return false
+	return true
 
 
 func _advance_resolved_particles(ticks: int) -> void:
@@ -577,7 +673,11 @@ func _is_inside_trigger_ellipse(world_position: Vector2) -> bool:
 
 
 func _draw() -> void:
-	if state in [State.ACTIVE, State.TRIGGERED] and not original_frames.is_empty():
+	if (
+		state in [State.ACTIVE, State.TRIGGERED]
+		and not original_frames.is_empty()
+		and not original_drawn_by_row_slices
+	):
 		var frame: Texture2D = original_frames[clampi(original_frame_index, 0, original_frames.size() - 1)]
 		draw_texture(frame, -original_anchor)
 	elif state in [State.ACTIVE, State.TRIGGERED]:

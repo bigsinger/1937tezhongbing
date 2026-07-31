@@ -60,6 +60,68 @@ static func sprite_manifest_path(preview_path: String) -> String:
 	)
 
 
+static func load_draw_order_profile(
+	preview_path: String,
+	group_index: int = 0,
+) -> Dictionary:
+	var manifest_path := sprite_manifest_path(preview_path)
+	if (
+		manifest_path.is_empty()
+		or group_index < 0
+		or not FileAccess.file_exists(manifest_path)
+	):
+		return {}
+	var file := FileAccess.open(manifest_path, FileAccess.READ)
+	if file == null:
+		return {}
+	var json := JSON.new()
+	if json.parse(file.get_as_text()) != OK or not json.data is Dictionary:
+		return {}
+	var manifest := json.data as Dictionary
+	var schema_version := int(manifest.get("schema_version", 0))
+	if schema_version < MIN_SCHEMA_VERSION or schema_version > MAX_SCHEMA_VERSION:
+		return {}
+	var raw_groups: Variant = manifest.get("groups")
+	if not raw_groups is Array:
+		return {}
+	for raw_group: Variant in raw_groups as Array:
+		if not raw_group is Dictionary:
+			return {}
+		var group := raw_group as Dictionary
+		if int(group.get("group_index", -1)) != group_index:
+			continue
+		var runtime_triplets := normalized_runtime_triplets(
+			group,
+			schema_version,
+		)
+		var lookup_tables := normalized_lookup_tables(group)
+		var raw_frames: Variant = group.get("frames")
+		if (
+			runtime_triplets.is_empty()
+			or lookup_tables.is_empty()
+			or not raw_frames is Array
+			or not group_frame_layout_is_valid(group, raw_frames as Array)
+			or (raw_frames as Array).is_empty()
+		):
+			return {}
+		var primary := runtime_triplets["primary"] as Array
+		var first_frame := (raw_frames as Array)[0] as Dictionary
+		return {
+			"group_index": group_index,
+			"anchor": Vector2(float(primary[0]), float(primary[2])),
+			"lookup_dimensions": lookup_tables["dimensions"],
+			"draw_order_row_lookup": (
+				lookup_tables["draw_order_rows"] as Array[int]
+			).duplicate(),
+			"frame_size": Vector2i(
+				int(first_frame["width"]),
+				int(first_frame["height"]),
+			),
+			"lookup_profile_key": "%s#%d" % [manifest_path, group_index],
+		}
+	return {}
+
+
 static func load_action_groups(
 	preview_path: String,
 	action_key: String,

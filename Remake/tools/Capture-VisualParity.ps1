@@ -178,36 +178,52 @@ function Invoke-StableModVisualCapture {
         [int]$CameraWorldY = -1
     )
 
-    Reset-IsolatedRuntimeState
     [IO.Directory]::CreateDirectory($CaptureOutput) | Out-Null
-    $arguments = @(
-        $runtime,
-        $CaptureOutput,
-        $SelectorLevel,
-        30,
-        '--visual-capture-only')
-    if ($CameraWorldX -ge 0 -and $CameraWorldY -ge 0) {
-        $arguments += "--visual-camera-x=$CameraWorldX"
-        $arguments += "--visual-camera-y=$CameraWorldY"
-    }
-    & $modProbe $arguments | Out-Host
-    if ($LASTEXITCODE -ne 0) {
-        throw "Stable MOD visual probe failed for selector $SelectorLevel."
-    }
     $metadataPath = Join-Path $CaptureOutput 'visual-capture.json'
-    if (-not (Test-Path -LiteralPath $metadataPath -PathType Leaf)) {
-        throw (
-            'Stable MOD visual metadata is missing for selector ' +
-            "$SelectorLevel.")
+    $screenshotPath = Join-Path $CaptureOutput '02-gameplay-surface.png'
+    $probeExitCode = -1
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        Reset-IsolatedRuntimeState
+        foreach ($stalePath in @($metadataPath, $screenshotPath)) {
+            if (Test-Path -LiteralPath $stalePath -PathType Leaf) {
+                Remove-Item -LiteralPath $stalePath -Force
+            }
+        }
+        $arguments = @(
+            $runtime,
+            $CaptureOutput,
+            $SelectorLevel,
+            30,
+            '--visual-capture-only')
+        if ($CameraWorldX -ge 0 -and $CameraWorldY -ge 0) {
+            $arguments += "--visual-camera-x=$CameraWorldX"
+            $arguments += "--visual-camera-y=$CameraWorldY"
+        }
+        & $modProbe $arguments | Out-Host
+        $probeExitCode = $LASTEXITCODE
+        if (
+            $probeExitCode -eq 0 -and
+            (Test-Path -LiteralPath $metadataPath -PathType Leaf)
+        ) {
+            $metadata = Get-Content -LiteralPath $metadataPath `
+                -Raw -Encoding UTF8 | ConvertFrom-Json
+            if (
+                [bool]$metadata.passed -and
+                (Test-Path -LiteralPath $screenshotPath -PathType Leaf)
+            ) {
+                return $metadata
+            }
+        }
+        if ($attempt -lt 3) {
+            Write-Warning (
+                'Stable MOD gameplay surface was not ready for selector ' +
+                "$SelectorLevel on attempt $attempt; retrying in a fresh " +
+                'isolated process.')
+        }
     }
-    $metadata = Get-Content -LiteralPath $metadataPath `
-        -Raw -Encoding UTF8 | ConvertFrom-Json
-    if (-not [bool]$metadata.passed) {
-        throw (
-            'Stable MOD primary surface capture failed for selector ' +
-            "$SelectorLevel.")
-    }
-    return $metadata
+    throw (
+        'Stable MOD gameplay surface capture failed for selector ' +
+        "$SelectorLevel after 3 attempts; last exit code: $probeExitCode.")
 }
 
 $results = [Collections.Generic.List[object]]::new()

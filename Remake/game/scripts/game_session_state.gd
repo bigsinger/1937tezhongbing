@@ -770,7 +770,10 @@ static func _restore_actor(game: Node, actor: Node2D, record: Dictionary, group_
 			"patrol_path_in_flight",
 			bool(ambient.get("patrol_path_in_flight", false)),
 		)
-	actor.set("z_index", WORLD_DEPTH.normal_z(actor.position.y, 1))
+	if actor.has_method("_update_sprite_depth"):
+		actor.call("_update_sprite_depth")
+	else:
+		actor.set("z_index", WORLD_DEPTH.normal_z(actor.position.y, 1))
 	actor.queue_redraw()
 
 

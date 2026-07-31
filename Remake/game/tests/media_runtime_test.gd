@@ -7,6 +7,16 @@ const GAME_INPUT_BINDINGS: Script = preload("res://scripts/game_input_bindings.g
 var checks := 0
 
 
+class SyntheticAudioCatalog extends RefCounted:
+	func sound_indices(event_key: String, actor_key: String = "") -> Array[int]:
+		if event_key == "acknowledge" and actor_key == "fixture":
+			return [9001, 9002]
+		return []
+
+	func sound_path(gfl_index: int) -> String:
+		return "user://prewarm-audio-fixture/%d.wav" % gfl_index
+
+
 func _init() -> void:
 	call_deferred("_run")
 
@@ -104,7 +114,26 @@ func _run() -> void:
 		"an invalid empty audio path is rejected without invoking the loader",
 		failures,
 	)
+	director.catalog = SyntheticAudioCatalog.new()
+	var prewarmed_audio_count := int(
+		director.call("prewarm_audio_event", "acknowledge", "fixture")
+	)
+	var repeated_prewarm_count := int(
+		director.call("prewarm_audio_event", "acknowledge", "fixture")
+	)
+	expect(
+		prewarmed_audio_count == 2
+		and repeated_prewarm_count == 2
+		and director.audio_stream_load_count() == 3
+		and int(synthetic_audio_load_calls[0]) == 3
+		and director.audio_stream_cache_size() == 3
+		and director.active_audio_index == -1
+		and not director.audio_player.playing,
+		"audio-event prewarming decodes each variant once without starting playback",
+		failures,
+	)
 	director.set_audio_stream_loader(Callable())
+	director.call("configure", missing_root)
 	expect(
 		director.call(
 			"_load_cached_audio_stream",

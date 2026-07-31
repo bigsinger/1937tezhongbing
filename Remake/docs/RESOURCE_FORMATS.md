@@ -222,13 +222,20 @@ Remake 现在会在站立、行走、奔跑、匍匐、攻击、主动动作及�
 当前组的两套遮罩原子替换到动态 Layer 3/Layer 2 overlay；替换会去重、重绑
 目标格预留，并清除旧动作/旧朝向留下的 ghost cell。没有合法 lookup 元数据
 时才沿用 VWF scene 足印。`row_lookup` 已完整保留并确认是
-`sub_44D980/sub_44E2D0` 的逐列排序基线；它需要把宽 SPR 分列参与 normal
-render queue，仍归入后续多层/逐列遮挡像素校准，而不能误用于碰撞。
+`sub_44D980/sub_44E2D0` 的逐列排序基线。原版以 `sub_424F10` 把帧裁成
+32 像素列（末列可短），按
+`reference_y - primary.z + row_lookup[column]` 建立记录，
+`sub_44E000` 稳定升序后由 `sub_44EF50` 绘制。Remake 对非均匀表使用缓存
+AtlasTexture 分列，对均匀表保持一个 draw item；静态场景、移动 actor、
+96 扇门的开/关两态、拾取物、爆炸物和特殊世界对象都使用相同规则。
+`row_lookup` 不能误用于碰撞。
 
 三个 triplet 的 middle 分量也全部保留。980 个真实 SPR 的 primary/tertiary
-middle 均为 0；secondary middle 在 1,542/2,775 个组中非零，但已确认的
-2D actor 移动路径只读取 secondary 的第 0/2 分量。它不是 Layer 2/Layer 3
-遮罩锚点，也不能臆测成额外平面速度；在发现明确消费者前保持兼容元数据。
+middle 均为 0；secondary middle 的全量分布是
+0:1233、1:1293、2:241、3:8。`sub_455E30` 根据移动模式选择 actor
+`+0xB4/+0xC0/+0xCC` 的 walk/run/crawl triplet，只读取第 0/2 分量并保持
+`world_height` 不变。十二关没有非二维消费者；这些 middle 仍作为兼容
+元数据无损保留，但不映射成额外速度、高度或遮罩锚点。
 
 ### 动作与方向序列号
 
@@ -488,9 +495,10 @@ char gbk_name[256]
 1. DBL 精灵元素数组与实体足印、交互区域之间的关系；
 2. SLIST 扩展数组、L4 在其他工具/版本中的用法，以及 L5 的编辑器写入流程；
 3. primary/tertiary 的投射锚点、secondary 第 0/2 分量的 60 Hz
-   角色移动，以及 first/second lookup 的动态 Layer 3/Layer 2 足印已经由
-   原程序路径与 MOD 轨迹确认并接入；仍需研究全部动作过渡、secondary
-   middle 的非 2D 消费者，以及 row lookup 的逐列像素遮挡校准；
+   角色移动、first/second lookup 的动态 Layer 3/Layer 2 足印、secondary
+   middle 的消费者边界和 RowLookup 逐列稳定遮挡已经由原程序路径、全量
+   统计、MOD 轨迹与十二关像素差分确认并接入；仍需研究少数特殊攻击过渡和
+   全局随机调用顺序；
 4. 射击、救援、任务击毙/掉落、带拾取者的物品、爆破/占点和出口已经接入通用任务运行时；m006/m008/m009/m011 稳定/修复双规则、必要队员/护送者、m010 四区存在性和七关炸药策略已经定案，仍需校准触发节奏和演出；
 5. 基础攻击/友军死亡警报已经接入；仍需研究声音遮挡、尸体发现、难度、剧情对白、镜头演出和存档格式。
 

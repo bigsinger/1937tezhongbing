@@ -30,6 +30,7 @@ namespace Mission1937.SDK.Generated
         public const long RegisterActorLookupIfVacant = 0x00051B70L;
         public const long RegisterActorLookup = 0x00051FA0L;
         public const long UnregisterActorLookup = 0x00052360L;
+        public const long ActorComponentMovement = 0x00055E30L;
         public const long RightDragSelection = 0x0004C800L;
         public const long SmoothScroll = 0x0004C9B0L;
         public const long SetCameraOrigin = 0x0004A870L;

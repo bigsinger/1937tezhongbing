@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "profile_id": "twelve-level-windowed-10-minute-corpse-candidate-filter-v1",
+  "profile_id": "twelve-level-windowed-compact-footprints-audio-prewarm-v1",
   "content_profile": "repository-mod-12-level-20260729",
   "measurement": {
     "requested_sample_seconds": 600,
@@ -31,130 +31,130 @@
   },
   "aggregate_metrics": {
     "sample_count": 33125,
-    "average_ms": 16.6660864905668,
+    "average_ms": 16.6670968150957,
     "p50_ms": 16.666,
-    "p95_ms": 18.389,
-    "p99_ms": 20.714,
-    "maximum_ms": 36.853,
-    "frames_over_25_ms": 61,
+    "p95_ms": 18.167,
+    "p99_ms": 20.936,
+    "maximum_ms": 47.976,
+    "frames_over_25_ms": 78,
     "frames_over_50_ms": 0
   },
   "memory": {
     "pass_end_bytes": [
-      105410693,
-      106309091
+      124233296,
+      125297100
     ],
-    "second_pass_growth_bytes": 898398,
-    "static_peak_bytes": 190282287
+    "second_pass_growth_bytes": 1063804,
+    "static_peak_bytes": 212753038
   },
   "levels": [
     {
       "level_id": "m000",
-      "sample_count": 2760,
-      "p95_ms": 19.196,
-      "p99_ms": 22.975,
-      "maximum_ms": 27.98,
+      "sample_count": 2761,
+      "p95_ms": 18.121,
+      "p99_ms": 20.256,
+      "maximum_ms": 33.657,
       "frames_over_50_ms": 0,
-      "moved_enemy_max": 40
+      "moved_enemy_max": 45
     },
     {
       "level_id": "m001",
       "sample_count": 2761,
-      "p95_ms": 17.996,
-      "p99_ms": 19.729,
-      "maximum_ms": 24.54,
-      "frames_over_50_ms": 0,
-      "moved_enemy_max": 53
-    },
-    {
-      "level_id": "m002",
-      "sample_count": 2760,
-      "p95_ms": 18.312,
-      "p99_ms": 21.224,
-      "maximum_ms": 26.348,
-      "frames_over_50_ms": 0,
-      "moved_enemy_max": 22
-    },
-    {
-      "level_id": "m003",
-      "sample_count": 2761,
-      "p95_ms": 17.753,
-      "p99_ms": 18.954,
-      "maximum_ms": 25.935,
-      "frames_over_50_ms": 0,
-      "moved_enemy_max": 32
-    },
-    {
-      "level_id": "m004",
-      "sample_count": 2760,
-      "p95_ms": 19.091,
-      "p99_ms": 21.922,
-      "maximum_ms": 30.028,
-      "frames_over_50_ms": 0,
-      "moved_enemy_max": 77
-    },
-    {
-      "level_id": "m005",
-      "sample_count": 2761,
-      "p95_ms": 17.669,
-      "p99_ms": 19.414,
-      "maximum_ms": 22.956,
-      "frames_over_50_ms": 0,
-      "moved_enemy_max": 46
-    },
-    {
-      "level_id": "m006",
-      "sample_count": 2760,
-      "p95_ms": 18.578,
-      "p99_ms": 21.093,
-      "maximum_ms": 33.367,
-      "frames_over_50_ms": 0,
-      "moved_enemy_max": 19
-    },
-    {
-      "level_id": "m007",
-      "sample_count": 2760,
-      "p95_ms": 17.943,
-      "p99_ms": 20.474,
-      "maximum_ms": 30.746,
+      "p95_ms": 17.604,
+      "p99_ms": 21.473,
+      "maximum_ms": 43.552,
       "frames_over_50_ms": 0,
       "moved_enemy_max": 54
     },
     {
+      "level_id": "m002",
+      "sample_count": 2760,
+      "p95_ms": 18.252,
+      "p99_ms": 20.478,
+      "maximum_ms": 25.287,
+      "frames_over_50_ms": 0,
+      "moved_enemy_max": 27
+    },
+    {
+      "level_id": "m003",
+      "sample_count": 2760,
+      "p95_ms": 17.979,
+      "p99_ms": 20.641,
+      "maximum_ms": 27.976,
+      "frames_over_50_ms": 0,
+      "moved_enemy_max": 35
+    },
+    {
+      "level_id": "m004",
+      "sample_count": 2760,
+      "p95_ms": 18.941,
+      "p99_ms": 22.824,
+      "maximum_ms": 47.976,
+      "frames_over_50_ms": 0,
+      "moved_enemy_max": 65
+    },
+    {
+      "level_id": "m005",
+      "sample_count": 2761,
+      "p95_ms": 17.686,
+      "p99_ms": 20.1,
+      "maximum_ms": 46.472,
+      "frames_over_50_ms": 0,
+      "moved_enemy_max": 56
+    },
+    {
+      "level_id": "m006",
+      "sample_count": 2760,
+      "p95_ms": 17.402,
+      "p99_ms": 20.272,
+      "maximum_ms": 24.493,
+      "frames_over_50_ms": 0,
+      "moved_enemy_max": 27
+    },
+    {
+      "level_id": "m007",
+      "sample_count": 2761,
+      "p95_ms": 17.664,
+      "p99_ms": 21.489,
+      "maximum_ms": 35.451,
+      "frames_over_50_ms": 0,
+      "moved_enemy_max": 58
+    },
+    {
       "level_id": "m008",
       "sample_count": 2760,
-      "p95_ms": 17.733,
-      "p99_ms": 19.784,
-      "maximum_ms": 28.273,
+      "p95_ms": 17.543,
+      "p99_ms": 21.705,
+      "maximum_ms": 29.751,
       "frames_over_50_ms": 0,
       "moved_enemy_max": 19
     },
     {
       "level_id": "m009",
-      "sample_count": 2761,
-      "p95_ms": 17.568,
-      "p99_ms": 19.228,
-      "maximum_ms": 25.557,
+      "sample_count": 2760,
+      "p95_ms": 17.518,
+      "p99_ms": 19.242,
+      "maximum_ms": 28.481,
       "frames_over_50_ms": 0,
-      "moved_enemy_max": 33
+      "moved_enemy_max": 34
     },
     {
       "level_id": "m010",
       "sample_count": 2761,
-      "p95_ms": 19.137,
-      "p99_ms": 20.851,
-      "maximum_ms": 33.486,
+      "p95_ms": 19.266,
+      "p99_ms": 20.874,
+      "maximum_ms": 29.922,
       "frames_over_50_ms": 0,
-      "moved_enemy_max": 63
+      "moved_enemy_max": 65
     },
     {
       "level_id": "m011",
       "sample_count": 2760,
-      "p95_ms": 17.529,
-      "p99_ms": 21.461,
-      "maximum_ms": 36.853,
+      "p95_ms": 17.396,
+      "p99_ms": 21.429,
+      "maximum_ms": 45.769,
       "frames_over_50_ms": 0,
-      "moved_enemy_max": 12
+      "moved_enemy_max": 29
     }
   ],
   "notes": [

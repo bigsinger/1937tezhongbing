@@ -27,6 +27,7 @@
     {"name": "RegisterActorLookupIfVacant", "rva": "0x00051B70", "kind": "function", "confidence": "decompiled"},
     {"name": "RegisterActorLookup", "rva": "0x00051FA0", "kind": "function", "confidence": "decompiled"},
     {"name": "UnregisterActorLookup", "rva": "0x00052360", "kind": "function", "confidence": "decompiled"},
+    {"name": "ActorComponentMovement", "rva": "0x00055E30", "kind": "function", "confidence": "decompiled"},
     {"name": "RightDragSelection", "rva": "0x0004C800", "kind": "function", "confidence": "decompiled"},
     {"name": "SmoothScroll", "rva": "0x0004C9B0", "kind": "function", "confidence": "observed"},
     {"name": "SetCameraOrigin", "rva": "0x0004A870", "kind": "function", "confidence": "decompiled"},

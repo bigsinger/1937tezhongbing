@@ -831,6 +831,21 @@ func _update_stable_mod_patrol_timeline(delta: float) -> void:
 		stable_mod_patrol_target_index
 	]
 	if stable_mod_patrol_transition_delay_ticks > 0:
+		# The recovered handoff is five stationary actor ticks. Use one of
+		# those already-observed ticks (distributed deterministically by scene
+		# identity) to prepare the next static route, while movement still
+		# begins on the same fifth-tick boundary. This prevents 50+ guards from
+		# invoking A* together at a shared capture timestamp without changing
+		# their visible timing or endpoint.
+		var route_prepare_tick := (
+			1
+			+ posmod(
+				scene_index * 17,
+				STABLE_MOD_TIMELINE_HANDOFF_TICKS,
+			)
+		)
+		if stable_mod_patrol_transition_delay_ticks == route_prepare_tick:
+			_prepare_stable_mod_patrol_segment(sample, true)
 		stable_mod_patrol_transition_delay_ticks -= 1
 		return
 	if stable_mod_patrol_segment_issued:
@@ -842,17 +857,8 @@ func _update_stable_mod_patrol_timeline(delta: float) -> void:
 	var previous_sample := stable_mod_patrol_timeline[
 		maxi(stable_mod_patrol_target_index - 1, 0)
 	]
-	var evidence_destination: Vector2 = sample.get(
-		"position",
-		position,
-	) as Vector2
-	var evidence_origin: Vector2 = previous_sample.get(
-		"position",
-		evidence_destination,
-	) as Vector2
-	var evidence_delta := evidence_destination - evidence_origin
-	var evidence_distance := evidence_delta.length()
-	stable_mod_patrol_last_evidence_distance = evidence_distance
+	_prepare_stable_mod_patrol_segment(sample, false)
+	var evidence_distance := stable_mod_patrol_last_evidence_distance
 	var evidence_seconds := maxf(
 		float(sample.get("elapsed_seconds", stable_mod_patrol_elapsed))
 		- float(previous_sample.get("elapsed_seconds", 0.0)),
@@ -868,12 +874,6 @@ func _update_stable_mod_patrol_timeline(delta: float) -> void:
 		cancel_path()
 		_apply_stable_mod_patrol_facing(sample)
 		return
-	if not stable_mod_patrol_segment_prepared:
-		# Replay the captured displacement from the actor's current collision-
-		# valid position. This preserves the MOD route vector and cadence without
-		# forcing a long absolute catch-up after combat or congestion.
-		stable_mod_patrol_runtime_destination = position + evidence_delta
-		stable_mod_patrol_segment_prepared = true
 	var destination := stable_mod_patrol_runtime_destination
 	if position.distance_squared_to(destination) <= 1.0:
 		stable_mod_patrol_segment_issued = true
@@ -913,6 +913,9 @@ func _update_stable_mod_patrol_timeline(delta: float) -> void:
 		# center. The captured RuntimeActor coordinates are continuous pixels,
 		# so preserve that exact endpoint. Incremental occupancy checks still
 		# stop this final segment at a wall or a newly occupied cell.
+		# Exact evidence-cache hits are shared read-only values; duplicate only
+		# on the exceptional redirected/partial route that needs mutation.
+		path = path.duplicate()
 		path.append(destination)
 	var unbounded_path_distance := stable_mod_patrol_path_distance(
 		position,
@@ -956,6 +959,43 @@ func _update_stable_mod_patrol_timeline(delta: float) -> void:
 	stable_mod_patrol_segment_issued = true
 
 
+func _prepare_stable_mod_patrol_segment(
+	sample: Dictionary,
+	prewarm_static_route: bool,
+) -> void:
+	if stable_mod_patrol_segment_prepared:
+		return
+	var previous_sample := stable_mod_patrol_timeline[
+		maxi(stable_mod_patrol_target_index - 1, 0)
+	]
+	var evidence_destination: Vector2 = sample.get(
+		"position",
+		position,
+	) as Vector2
+	var evidence_origin: Vector2 = previous_sample.get(
+		"position",
+		evidence_destination,
+	) as Vector2
+	var evidence_delta := evidence_destination - evidence_origin
+	stable_mod_patrol_last_evidence_distance = evidence_delta.length()
+	# Replay the captured displacement from the actor's current collision-valid
+	# position. This preserves the MOD route vector and cadence without forcing
+	# a long absolute catch-up after combat or congestion.
+	stable_mod_patrol_runtime_destination = position + evidence_delta
+	stable_mod_patrol_segment_prepared = true
+	if (
+		prewarm_static_route
+		and stable_mod_patrol_last_evidence_distance > 48.0
+		and dynamic_occupancy != null
+		and scene_index >= 0
+	):
+		dynamic_occupancy.prewarm_runtime_evidence_path_for_scene(
+			scene_index,
+			position,
+			stable_mod_patrol_runtime_destination,
+		)
+
+
 func _complete_stable_mod_patrol_evidence_endpoint() -> void:
 	if (
 		not stable_mod_patrol_segment_prepared
@@ -979,7 +1019,7 @@ func _complete_stable_mod_patrol_evidence_endpoint() -> void:
 		stable_mod_patrol_runtime_destination,
 	)):
 		position = stable_mod_patrol_runtime_destination
-		z_index = WORLD_DEPTH.normal_z(position.y, 1)
+		_update_sprite_depth()
 		queue_redraw()
 
 

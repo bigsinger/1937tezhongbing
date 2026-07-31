@@ -166,6 +166,10 @@ GFL 306 火花、投射 actor/GFL 和终点 actor 61。`RuntimeActorV1` 的
 `primary.z-tertiary.z` 视觉高度。相关投射路径、命中 actor 和一次性特效
 RVA 同样来自
 `address-catalog.json`，可供补丁探针与 Remake 使用同一证据源。
+`RuntimeActorV1 +0x0B4/+0x0C0/+0x0CC` 也已分别定名为
+`walk_step/run_step/crawl_step`；目录中的 `ActorComponentMovement`
+（RVA `0x55E30`）证明平面移动只读取每个 triplet 的 X/Z，middle 不改变
+world height。十二关资源统计与该结构结论一起固定到 SDK 测试。
 
 `Commands.hpp` 固化 S/B 命令：S 只直接选择存活 faction 1 敌军，空地使用
 唯一 actor 90 / GFL 341 并按当前扇区、LOS 和 CRT `rand()%2` 检测后消费；

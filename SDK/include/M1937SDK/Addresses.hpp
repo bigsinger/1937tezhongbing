@@ -33,6 +33,7 @@ inline constexpr std::uintptr_t actor_lookup_origin_y = 0x00051090;
 inline constexpr std::uintptr_t register_actor_lookup_if_vacant = 0x00051B70;
 inline constexpr std::uintptr_t register_actor_lookup = 0x00051FA0;
 inline constexpr std::uintptr_t unregister_actor_lookup = 0x00052360;
+inline constexpr std::uintptr_t actor_component_movement = 0x00055E30;
 inline constexpr std::uintptr_t right_drag_selection = 0x0004C800;
 inline constexpr std::uintptr_t smooth_scroll = 0x0004C9B0;
 inline constexpr std::uintptr_t set_camera_origin = 0x0004A870;

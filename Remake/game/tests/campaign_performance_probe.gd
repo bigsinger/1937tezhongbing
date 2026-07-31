@@ -517,6 +517,12 @@ func _sample_level_visit(
 			"level_id": level_id,
 			"pass_index": pass_index,
 			"load_ms": load_ms,
+			"level_load_phase_ms": _usec_dictionary_to_ms(
+				main.last_level_load_phase_usec
+			),
+			"squad_spawn_phase_ms": _usec_dictionary_to_ms(
+				main.last_squad_spawn_phase_usec
+			),
 			"first_render_ms": first_render_ms,
 			"render_sync_ms": render_sync_ms,
 			"warmup_seconds": warmup_seconds,
@@ -544,8 +550,21 @@ func _sample_level_visit(
 			"prewarmed_path_suffix_hit_count": int(
 				main.dynamic_occupancy.prewarmed_path_suffix_hit_count
 			),
+			"runtime_evidence_path_build_count": int(
+				main.dynamic_occupancy.runtime_evidence_path_build_count
+			),
+			"runtime_evidence_path_hit_count": int(
+				main.dynamic_occupancy.runtime_evidence_path_hit_count
+			),
+			"runtime_evidence_translated_hit_count": int(
+				main.dynamic_occupancy
+				.runtime_evidence_translated_hit_count
+			),
 			"dense_path_fallback_count": int(
 				main.dynamic_occupancy.dense_path_fallback_count
+			),
+			"dynamic_unreachable_precheck_count": int(
+				main.navigation_grid.dynamic_unreachable_precheck_count
 			),
 			"footprint_clearance_precompute_ms": (
 				float(
@@ -753,6 +772,13 @@ func _dismiss_all_media(main: Node) -> void:
 		else:
 			return
 		modal_dismissals += 1
+
+
+func _usec_dictionary_to_ms(values: Dictionary) -> Dictionary:
+	var result: Dictionary = {}
+	for key: Variant in values:
+		result[str(key)] = float(values[key]) / 1000.0
+	return result
 
 
 func _warmup_seconds(visit_seconds: float) -> float:

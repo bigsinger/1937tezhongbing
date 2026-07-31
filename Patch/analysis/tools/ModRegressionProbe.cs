@@ -1110,21 +1110,73 @@ internal static class ModRegressionProbe
                     }
                     // The RGB565 primary surface can briefly contain a
                     // strip-scroll intermediate frame (HUD rows copied into
-                    // the world) after a camera jump. Wait through several
-                    // original 30 Hz composition cycles before sampling.
+                    // the world) after a camera jump. A rare startup race can
+                    // also return to the mostly-black main menu after the
+                    // process state has already reported a resumed mission.
+                    // Sample for several original 30 Hz composition cycles
+                    // and only accept a nonblank, spatially complete gameplay
+                    // surface. The caller retries with a fresh isolated
+                    // process if the game has genuinely fallen back to menu.
                     Thread.Sleep(1000);
                     string copiedScreenshot = Path.Combine(
                         outputDirectory,
                         "02-gameplay-surface.png");
-                    string surfaceEvidence;
-                    bool surfaceCaptured =
-                        TryCaptureCncDdrawPrimarySurface(
-                            game,
-                            process,
-                            spawnScreenWidth,
-                            spawnScreenHeight,
-                            copiedScreenshot,
-                            out surfaceEvidence);
+                    string surfaceEvidence = "";
+                    bool surfaceCaptured = false;
+                    DateTime visualDeadline =
+                        DateTime.UtcNow.AddSeconds(5);
+                    do
+                    {
+                        string candidateEvidence;
+                        using (CaptureResult candidate =
+                            CaptureCncDdrawPrimarySurface(
+                                game,
+                                process,
+                                spawnScreenWidth,
+                                spawnScreenHeight,
+                                out candidateEvidence))
+                        {
+                            if (candidate != null &&
+                                candidate.Bitmap != null)
+                            {
+                                bool completeGameplaySurface =
+                                    candidate.NonBlank &&
+                                    candidate
+                                        .LargestDarkComponentPixels <
+                                        50000 &&
+                                    candidate.DarkPixelRatio < 0.22;
+                                surfaceEvidence =
+                                    candidateEvidence +
+                                    "; largest_dark_component=" +
+                                    candidate
+                                        .LargestDarkComponentPixels
+                                        .ToString(
+                                            CultureInfo
+                                                .InvariantCulture) +
+                                    "; dark_ratio=" +
+                                    candidate.DarkPixelRatio.ToString(
+                                        "F6",
+                                        CultureInfo
+                                            .InvariantCulture);
+                                if (completeGameplaySurface)
+                                {
+                                    candidate.Bitmap.Save(
+                                        copiedScreenshot,
+                                        ImageFormat.Png);
+                                    surfaceCaptured = true;
+                                    break;
+                                }
+                            }
+                            else
+                            {
+                                surfaceEvidence = candidateEvidence;
+                            }
+                        }
+                        Thread.Sleep(250);
+                    }
+                    while (
+                        !game.HasExited &&
+                        DateTime.UtcNow < visualDeadline);
                     AddStage(
                         stages,
                         game,

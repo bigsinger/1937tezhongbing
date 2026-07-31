@@ -36,6 +36,8 @@ func _run_tests() -> void:
 	main.set_physics_process(false)
 	var total_doors := 0
 	var navigation_doors := 0
+	var closed_row_sliced_doors := 0
+	var open_row_sliced_doors := 0
 	for level_index: int in range(LEVEL_IDS.size()):
 		var level_id := LEVEL_IDS[level_index]
 		main.switch_level(level_index, false, false)
@@ -53,7 +55,7 @@ func _run_tests() -> void:
 			if not movement_cells.is_empty():
 				navigation_doors += 1
 			_expect(
-				door.texture != null
+				door.call("active_visual_texture") != null
 					and door.get("closed_anchor") is Vector2
 					and door.get("open_anchor") is Vector2,
 				"%s scene %d uses recovered closed/open art and anchors"
@@ -63,6 +65,12 @@ func _run_tests() -> void:
 				not bool(door.get("is_open")),
 				"%s scene %d starts closed" % [level_id, scene_index],
 			)
+			if _uses_original_row_slices(door):
+				closed_row_sliced_doors += 1
+			door.call("set_open", true, false)
+			if _uses_original_row_slices(door):
+				open_row_sliced_doors += 1
+			door.call("set_open", false, false)
 	_expect(
 		total_doors == EXPECTED_SUPPORTED_DOOR_COUNT,
 		"all %d supported closed doors across the twelve real levels load"
@@ -75,6 +83,16 @@ func _run_tests() -> void:
 			+ "instances have no closed-only blocked cell"
 		)
 			% EXPECTED_NAVIGATION_DOOR_COUNT,
+	)
+	_expect(
+		closed_row_sliced_doors == EXPECTED_SUPPORTED_DOOR_COUNT,
+		"all %d closed-door visuals use their original per-column baselines"
+			% EXPECTED_SUPPORTED_DOOR_COUNT,
+	)
+	_expect(
+		open_row_sliced_doors == EXPECTED_SUPPORTED_DOOR_COUNT,
+		"all %d open-door visuals use their original per-column baselines"
+			% EXPECTED_SUPPORTED_DOOR_COUNT,
 	)
 
 	main.switch_level(0, false, false)
@@ -145,6 +163,16 @@ func _door_by_scene(main: Node, scene_index: int) -> Node2D:
 		if int(door.get("scene_index")) == scene_index:
 			return door
 	return null
+
+
+func _uses_original_row_slices(door: Node2D) -> bool:
+	var renderer: Variant = door.get("row_slice_renderer")
+	return (
+		bool(door.get("sprite_drawn_by_row_slices"))
+		and renderer is Node2D
+		and is_instance_valid(renderer)
+		and int((renderer as Node2D).call("active_part_count")) > 1
+	)
 
 
 func _any_solid(navigation: RefCounted, cells: Array[Vector2i]) -> bool:

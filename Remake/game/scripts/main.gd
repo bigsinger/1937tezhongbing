@@ -65,6 +65,9 @@ const LEGACY_DOOR_CATALOG: Script = preload(
 	"res://scripts/legacy_door_catalog.gd"
 )
 const LEGACY_DOOR_SCRIPT: Script = preload("res://scripts/legacy_door.gd")
+const LEGACY_ROW_SLICE_SPRITE_SCRIPT: Script = preload(
+	"res://scripts/legacy_row_slice_sprite.gd"
+)
 const WORLD_DEPTH: Script = preload("res://scripts/world_depth.gd")
 const NAVIGATION_GRID_DATA: Script = preload("res://scripts/navigation_grid_data.gd")
 const DYNAMIC_OCCUPANCY_GRID: Script = preload("res://scripts/dynamic_occupancy_grid.gd")
@@ -293,6 +296,8 @@ var last_formation_move_total_usec := 0
 var last_formation_move_audio_usec := 0
 var last_formation_move_path_usec := 0
 var last_formation_move_event_usec := 0
+var last_level_load_phase_usec: Dictionary = {}
+var last_squad_spawn_phase_usec: Dictionary = {}
 var legacy_crt_random_state := 1
 var field_pickups: Array[Node2D] = []
 var original_pickup_order_target: Node2D
@@ -409,6 +414,9 @@ func switch_level(
 	show_briefing: bool = true,
 	start_direction: bool = true,
 ) -> void:
+	var level_load_started_usec := Time.get_ticks_usec()
+	var level_load_phase_started_usec := level_load_started_usec
+	last_level_load_phase_usec.clear()
 	_cancel_direction_camera_tween()
 	_reset_context_cursor()
 	pending_initial_briefing_level = ""
@@ -426,11 +434,40 @@ func switch_level(
 	burial_mode = false
 	current_level_index = posmod(level_index, FORMAL_LEVEL_IDS.size())
 	var level_id := FORMAL_LEVEL_IDS[current_level_index]
+	last_level_load_phase_usec["state_reset"] = (
+		Time.get_ticks_usec() - level_load_phase_started_usec
+	)
+	level_load_phase_started_usec = Time.get_ticks_usec()
 	_load_mission_graph(level_id)
+	last_level_load_phase_usec["mission_graph"] = (
+		Time.get_ticks_usec() - level_load_phase_started_usec
+	)
+	level_load_phase_started_usec = Time.get_ticks_usec()
 	load_imported_level(level_id)
+	last_level_load_phase_usec["imported_level"] = (
+		Time.get_ticks_usec() - level_load_phase_started_usec
+	)
+	level_load_phase_started_usec = Time.get_ticks_usec()
 	spawn_squad()
+	last_level_load_phase_usec["squad"] = (
+		Time.get_ticks_usec() - level_load_phase_started_usec
+	)
+	level_load_phase_started_usec = Time.get_ticks_usec()
+	_prewarm_squad_acknowledgements()
+	last_level_load_phase_usec["squad_audio"] = (
+		Time.get_ticks_usec() - level_load_phase_started_usec
+	)
+	level_load_phase_started_usec = Time.get_ticks_usec()
 	_configure_mission_runtime()
+	last_level_load_phase_usec["mission_runtime"] = (
+		Time.get_ticks_usec() - level_load_phase_started_usec
+	)
+	level_load_phase_started_usec = Time.get_ticks_usec()
 	_configure_mission_direction()
+	last_level_load_phase_usec["mission_direction"] = (
+		Time.get_ticks_usec() - level_load_phase_started_usec
+	)
+	level_load_phase_started_usec = Time.get_ticks_usec()
 	if badge_label != null:
 		badge_label.text = "M2 / %s / LOCAL ASSETS" % level_id.to_upper()
 	var presenting_briefing := show_briefing and _should_show_briefing()
@@ -447,6 +484,24 @@ func switch_level(
 	elif start_direction:
 		_start_initial_direction_sequence()
 	_sync_level_selection()
+	last_level_load_phase_usec["presentation"] = (
+		Time.get_ticks_usec() - level_load_phase_started_usec
+	)
+	last_level_load_phase_usec["total"] = (
+		Time.get_ticks_usec() - level_load_started_usec
+	)
+
+
+func _prewarm_squad_acknowledgements() -> void:
+	if media_director == null:
+		return
+	var warmed_actor_keys: Dictionary = {}
+	for unit: SQUAD_UNIT in units:
+		var actor_key := _media_actor_key(unit.display_name)
+		if actor_key.is_empty() or warmed_actor_keys.has(actor_key):
+			continue
+		warmed_actor_keys[actor_key] = true
+		media_director.prewarm_audio_event("acknowledge", actor_key)
 
 
 func _should_show_startup_level_selector() -> bool:
@@ -540,6 +595,7 @@ func load_imported_level(level_id: String = LEVEL_VIEW.DEFAULT_LEVEL_ID) -> bool
 	buried_enemy_scene_indices.clear()
 	remove_imported_node("ImportedTerrain")
 	remove_imported_node("ImportedEntities")
+	LEGACY_ROW_SLICE_SPRITE_SCRIPT.clear_texture_cache()
 	playable_entities.clear()
 	enemy_entities.clear()
 	ambient_entities.clear()
@@ -723,6 +779,12 @@ func spawn_imported_entities() -> int:
 			var open_door_texture := _load_converted_texture(
 				str(door_profile.get("open_sprite_relative_path", ""))
 			)
+			var closed_door_draw_order := load_entity_draw_order_profile(entity)
+			var open_door_draw_order := load_draw_order_profile_for_preview(
+				_gfl_preview_path(
+					int(door_profile.get("open_gfl_index", 0))
+				)
+			)
 			var door: Node2D = LEGACY_DOOR_SCRIPT.new()
 			if bool(
 				door.call(
@@ -732,6 +794,8 @@ func spawn_imported_entities() -> int:
 					closed_door_texture,
 					open_door_texture,
 					imported_entity_z_index(entity),
+					closed_door_draw_order,
+					open_door_draw_order,
 				)
 			):
 				door.name = "LegacyDoor_%04d" % scene_index
@@ -752,7 +816,12 @@ func spawn_imported_entities() -> int:
 			if str(interactable_profile.get("behavior", "")) == "field_pickup":
 				var pickup: Node2D = FIELD_PICKUP_SCRIPT.new()
 				pickup.name = "FieldPickup_%04d" % scene_index
-				if pickup.configure(interactable_profile, entity, interactable_texture):
+				if pickup.configure(
+					interactable_profile,
+					entity,
+					interactable_texture,
+					load_entity_draw_order_profile(entity),
+				):
 					container.add_child(pickup)
 					field_pickups.append(pickup)
 					spawned += 1
@@ -761,7 +830,12 @@ func spawn_imported_entities() -> int:
 			elif str(interactable_profile.get("behavior", "")) == "explosive_prop":
 				var prop: Node2D = EXPLOSIVE_PROP_SCRIPT.new()
 				prop.name = "ExplosiveProp_%04d" % scene_index
-				if prop.configure(interactable_profile, entity, interactable_texture):
+				if prop.configure(
+					interactable_profile,
+					entity,
+					interactable_texture,
+					load_entity_draw_order_profile(entity),
+				):
 					container.add_child(prop)
 					prop.explosion_requested.connect(_on_world_explosion_requested)
 					explosive_props.append(prop)
@@ -788,6 +862,76 @@ func spawn_imported_entities() -> int:
 		if texture == null:
 			continue
 
+		var sprite_z_index := imported_entity_z_index(entity)
+		if imported_entity_render_queue(entity) == 0:
+			var draw_order_profile := load_entity_draw_order_profile(entity)
+			var frame_size: Variant = draw_order_profile.get(
+				"frame_size",
+				Vector2i.ZERO,
+			)
+			if (
+				not draw_order_profile.is_empty()
+				and frame_size is Vector2i
+				and frame_size
+					== Vector2i(
+						int(round(texture.get_width())),
+						int(round(texture.get_height())),
+					)
+			):
+				var anchor := imported_entity_sprite_anchor(entity, texture)
+				var row_lookup := normalized_draw_order_rows(
+					draw_order_profile.get("draw_order_row_lookup", [])
+				)
+				if draw_order_rows_are_uniform(row_lookup):
+					sprite_z_index = WORLD_DEPTH.normal_z(
+						float(
+							entity.get(
+								"reference_y",
+								entity.get("y", 0.0),
+							)
+						)
+						- anchor.y
+						+ float(row_lookup[0])
+					)
+				elif not row_lookup.is_empty():
+					var row_sprite: Node2D = (
+						LEGACY_ROW_SLICE_SPRITE_SCRIPT.new()
+					)
+					row_sprite.name = (
+						"Entity_%04d" % int(entity["scene_index"])
+					)
+					row_sprite.position = Vector2(
+						float(entity["x"]),
+						float(entity["y"]),
+					)
+					if bool(
+						row_sprite.call(
+							"configure",
+							texture,
+							anchor,
+							float(
+								entity.get(
+									"reference_y",
+									entity.get("y", 0.0),
+								)
+							),
+							row_lookup,
+						)
+					):
+						if (
+							imported_entity_is_dormant_destruction_effect(entity)
+							or imported_entity_is_hidden_trigger(entity)
+						):
+							row_sprite.visible = false
+						if imported_entity_is_dormant_destruction_effect(entity):
+							dormant_destruction_effects_by_scene[
+								scene_index
+							] = row_sprite
+						container.add_child(row_sprite)
+						spawned += 1
+						continue
+					row_sprite.free()
+
 		var sprite := Sprite2D.new()
 		sprite.name = "Entity_%04d" % int(entity["scene_index"])
 		sprite.texture = texture
@@ -796,7 +940,7 @@ func spawn_imported_entities() -> int:
 			texture.get_size() * 0.5
 			- imported_entity_sprite_anchor(entity, texture)
 		)
-		sprite.z_index = imported_entity_z_index(entity)
+		sprite.z_index = sprite_z_index
 		sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		if (
 			imported_entity_is_dormant_destruction_effect(entity)
@@ -814,14 +958,41 @@ static func imported_entity_z_index(entity: Dictionary) -> int:
 	# The first recovered DBL header value is the original four-queue selector.
 	# Queue 1 contains flat ground/shadows, queue 0 shares actor depth sorting,
 	# queue 2 is fixed foreground and queue 3 is topmost.
-	var header_values: Variant = entity.get("database_header_values", [])
-	var queue_id := 0
-	if header_values is Array and not (header_values as Array).is_empty():
-		queue_id = int((header_values as Array)[0])
 	return WORLD_DEPTH.imported_z(
-		queue_id,
+		imported_entity_render_queue(entity),
 		float(entity.get("reference_y", entity.get("y", 0.0))),
 	)
+
+
+static func imported_entity_render_queue(entity: Dictionary) -> int:
+	var header_values: Variant = entity.get("database_header_values", [])
+	if header_values is Array and not (header_values as Array).is_empty():
+		return int((header_values as Array)[0])
+	return 0
+
+
+static func normalized_draw_order_rows(value: Variant) -> Array[int]:
+	var result: Array[int] = []
+	if not value is Array:
+		return result
+	for raw_row: Variant in value as Array:
+		if not raw_row is int and not raw_row is float:
+			return []
+		var row_value := float(raw_row)
+		if not is_finite(row_value) or row_value != float(int(row_value)):
+			return []
+		result.append(int(row_value))
+	return result
+
+
+static func draw_order_rows_are_uniform(rows: Array[int]) -> bool:
+	if rows.is_empty():
+		return false
+	var first := rows[0]
+	for row_index: int in range(1, rows.size()):
+		if rows[row_index] != first:
+			return false
+	return true
 
 
 static func imported_entity_sprite_anchor(
@@ -928,6 +1099,24 @@ func load_entity_action_groups(entity: Dictionary, action_key: String) -> Array[
 	return groups
 
 
+func load_entity_draw_order_profile(entity: Dictionary) -> Dictionary:
+	var preview_path := entity_preview_path(entity)
+	return load_draw_order_profile_for_preview(preview_path)
+
+
+func load_draw_order_profile_for_preview(preview_path: String) -> Dictionary:
+	if preview_path.is_empty():
+		return {}
+	var cache_key := "%s|draw-order|0" % preview_path
+	if imported_animation_cache.has(cache_key):
+		return imported_animation_cache[cache_key] as Dictionary
+	var profile: Dictionary = (
+		IMPORTED_SPRITE_ANIMATION.load_draw_order_profile(preview_path, 0)
+	)
+	imported_animation_cache[cache_key] = profile
+	return profile
+
+
 func _gfl_preview_path(gfl_index: int) -> String:
 	if converted_root.is_empty() or gfl_index <= 0:
 		return ""
@@ -1005,6 +1194,9 @@ func initial_camera_focus() -> Vector2:
 
 
 func spawn_squad() -> void:
+	var spawn_started_usec := Time.get_ticks_usec()
+	var spawn_phase_started_usec := spawn_started_usec
+	last_squad_spawn_phase_usec.clear()
 	if projectile_world != null:
 		_free_level_runtime_node(projectile_world)
 	projectile_world = PROJECTILE_WORLD_SCRIPT.new()
@@ -1038,6 +1230,10 @@ func spawn_squad() -> void:
 	mission_pickups.clear()
 	selected_units.clear()
 	dynamic_occupancy = null
+	last_squad_spawn_phase_usec["cleanup_and_projectile_world"] = (
+		Time.get_ticks_usec() - spawn_phase_started_usec
+	)
+	spawn_phase_started_usec = Time.get_ticks_usec()
 	if navigation_grid != null:
 		dynamic_occupancy = DYNAMIC_OCCUPANCY_GRID.new()
 		var level_id := str(
@@ -1055,6 +1251,10 @@ func spawn_squad() -> void:
 				"bind_dynamic_occupancy"
 			):
 				door.call("bind_dynamic_occupancy", dynamic_occupancy)
+	last_squad_spawn_phase_usec["dynamic_grid"] = (
+		Time.get_ticks_usec() - spawn_phase_started_usec
+	)
+	spawn_phase_started_usec = Time.get_ticks_usec()
 
 	var specifications: Array[Dictionary] = []
 	if terrain_loaded and not playable_entities.is_empty():
@@ -1202,12 +1402,42 @@ func spawn_squad() -> void:
 		_configure_original_backpack(unit, level_id, scene_index, name)
 		_connect_combatant(unit)
 		units.append(unit)
+	last_squad_spawn_phase_usec["players"] = (
+		Time.get_ticks_usec() - spawn_phase_started_usec
+	)
+	spawn_phase_started_usec = Time.get_ticks_usec()
 	_spawn_escorts()
+	last_squad_spawn_phase_usec["escorts"] = (
+		Time.get_ticks_usec() - spawn_phase_started_usec
+	)
+	spawn_phase_started_usec = Time.get_ticks_usec()
 	_spawn_ambient_units()
+	last_squad_spawn_phase_usec["ambient_units"] = (
+		Time.get_ticks_usec() - spawn_phase_started_usec
+	)
+	spawn_phase_started_usec = Time.get_ticks_usec()
 	_spawn_enemies()
+	last_squad_spawn_phase_usec["enemies"] = (
+		Time.get_ticks_usec() - spawn_phase_started_usec
+	)
+	spawn_phase_started_usec = Time.get_ticks_usec()
+	_stage_loaded_animation_footprint_profiles()
+	last_squad_spawn_phase_usec["stage_footprints"] = (
+		Time.get_ticks_usec() - spawn_phase_started_usec
+	)
+	spawn_phase_started_usec = Time.get_ticks_usec()
 	if dynamic_occupancy != null:
 		dynamic_occupancy.finalize_registration()
+	last_squad_spawn_phase_usec["finalize_occupancy"] = (
+		Time.get_ticks_usec() - spawn_phase_started_usec
+	)
+	spawn_phase_started_usec = Time.get_ticks_usec()
+	if dynamic_occupancy != null:
 		_prewarm_authored_patrol_paths()
+	last_squad_spawn_phase_usec["patrol_prewarm"] = (
+		Time.get_ticks_usec() - spawn_phase_started_usec
+	)
+	spawn_phase_started_usec = Time.get_ticks_usec()
 	var target_nodes: Array[Node2D] = []
 	for unit: SQUAD_UNIT in units:
 		target_nodes.append(unit)
@@ -1218,8 +1448,44 @@ func spawn_squad() -> void:
 	_refresh_enemy_corpse_candidates()
 	_refresh_enemy_world_items()
 	_refresh_projectile_world_combatants()
+	last_squad_spawn_phase_usec["runtime_links"] = (
+		Time.get_ticks_usec() - spawn_phase_started_usec
+	)
+	spawn_phase_started_usec = Time.get_ticks_usec()
 	if not units.is_empty():
 		select_only(units[0])
+	last_squad_spawn_phase_usec["initial_selection"] = (
+		Time.get_ticks_usec() - spawn_phase_started_usec
+	)
+	last_squad_spawn_phase_usec["total"] = (
+		Time.get_ticks_usec() - spawn_started_usec
+	)
+
+
+func _stage_loaded_animation_footprint_profiles() -> int:
+	if dynamic_occupancy == null or navigation_grid == null:
+		return 0
+	var staged_count := 0
+	for cache_value: Variant in imported_animation_cache.values():
+		if not cache_value is Array:
+			continue
+		for group_value: Variant in cache_value as Array:
+			if (
+				not group_value is Dictionary
+				or not (group_value as Dictionary).has("movement_lookup")
+				or not (group_value as Dictionary).has("lookup_dimensions")
+			):
+				continue
+			var movement_offsets: Array[Vector2i] = (
+				IMPORTED_SPRITE_ANIMATION.lookup_footprint_offsets(
+					group_value as Dictionary,
+					"movement_lookup",
+					navigation_grid.cell_size,
+				)
+			)
+			if dynamic_occupancy.stage_footprint_clearance(movement_offsets):
+				staged_count += 1
+	return staged_count
 
 
 func _prewarm_authored_patrol_paths() -> void:
@@ -1233,6 +1499,22 @@ func _prewarm_authored_patrol_paths() -> void:
 	for actor: Node2D in patrol_actors:
 		if not bool(actor.get("patrol_enabled")):
 			continue
+		if actor is ENEMY_UNIT:
+			var runtime_timeline_value: Variant = actor.get(
+				"stable_mod_patrol_timeline"
+			)
+			if (
+				runtime_timeline_value is Array
+				and not (runtime_timeline_value as Array).is_empty()
+			):
+				_prewarm_stable_mod_patrol_timeline_paths(
+					actor,
+					runtime_timeline_value as Array,
+				)
+				# Stable runtime evidence supersedes the serialized waypoint
+				# cycle for this actor. Prewarming both spends load time and
+				# retains routes that gameplay will never request.
+				continue
 		var waypoints := actor.get("patrol_waypoints") as PackedVector2Array
 		if waypoints.is_empty():
 			continue
@@ -1246,6 +1528,42 @@ func _prewarm_authored_patrol_paths() -> void:
 			actor.position,
 			waypoints,
 			patrol_index,
+		)
+
+
+func _prewarm_stable_mod_patrol_timeline_paths(
+	actor: Node2D,
+	timeline: Array,
+) -> void:
+	if dynamic_occupancy == null or timeline.size() < 2:
+		return
+	var actor_scene_index := int(actor.get("scene_index"))
+	for target_index: int in range(1, timeline.size()):
+		var previous_value: Variant = timeline[target_index - 1]
+		var target_value: Variant = timeline[target_index]
+		if not previous_value is Dictionary or not target_value is Dictionary:
+			continue
+		var previous_position_value: Variant = (
+			(previous_value as Dictionary).get("position")
+		)
+		var target_position_value: Variant = (
+			(target_value as Dictionary).get("position")
+		)
+		if (
+			not previous_position_value is Vector2
+			or not target_position_value is Vector2
+		):
+			continue
+		var previous_position := previous_position_value as Vector2
+		var target_position := target_position_value as Vector2
+		# Short captured corrections use the original component mover directly
+		# and never ask A* for a route at runtime.
+		if previous_position.distance_to(target_position) <= 48.0:
+			continue
+		dynamic_occupancy.prewarm_runtime_evidence_path_for_scene(
+			actor_scene_index,
+			previous_position,
+			target_position,
 		)
 
 
@@ -3139,6 +3457,18 @@ func _load_legacy_special_visual(gfl_index: int) -> Dictionary:
 								"gfl_index": gfl_index,
 								"runtime_actor_type": runtime_actor_type,
 							}
+							var lookup_tables: Dictionary = (
+								IMPORTED_SPRITE_ANIMATION.normalized_lookup_tables(
+									group
+								)
+							)
+							if not lookup_tables.is_empty():
+								visual["draw_order_row_lookup"] = (
+									lookup_tables.get(
+										"draw_order_rows",
+										[],
+									) as Array
+								).duplicate()
 							imported_animation_cache[cache_key] = visual
 							return visual.duplicate()
 	var preview_relative := "sprites/%s.png" % stem

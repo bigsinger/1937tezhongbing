@@ -10,6 +10,9 @@ const NAVIGATION_GRID_DATA: Script = preload("res://scripts/navigation_grid_data
 const COMBAT_PROFILES: Script = preload("res://scripts/combat_profiles.gd")
 const TACTICAL_SENSES: Script = preload("res://scripts/tactical_senses.gd")
 const DYNAMIC_OCCUPANCY_GRID: Script = preload("res://scripts/dynamic_occupancy_grid.gd")
+const LEGACY_ROW_SLICE_SPRITE: Script = preload(
+	"res://scripts/legacy_row_slice_sprite.gd"
+)
 const SQUAD_UNIT_SCRIPT: Script = preload("res://scripts/squad_unit.gd")
 const ENEMY_UNIT_SCRIPT: Script = preload("res://scripts/enemy_unit.gd")
 const ESCORT_UNIT_SCRIPT: Script = preload("res://scripts/escort_unit.gd")
@@ -427,6 +430,70 @@ func _init() -> void:
 		"SPR lookup dimensions reject truncated masks",
 		failures,
 	)
+	var row_image := Image.create(96, 112, false, Image.FORMAT_RGBA8)
+	row_image.fill(Color.WHITE)
+	var row_texture := ImageTexture.create_from_image(row_image)
+	var row_renderer: Node2D = LEGACY_ROW_SLICE_SPRITE.new()
+	expect(
+		bool(
+			row_renderer.call(
+				"configure",
+				row_texture,
+				Vector2(48, 50),
+				1298.0,
+				[49, 69, 89],
+			)
+		),
+		"RowLookup renderer accepts an exact 32-pixel-per-column SPR",
+		failures,
+	)
+	expect(
+		(
+			int(row_renderer.call("active_part_count")) == 3
+			and row_renderer.call("active_part_positions")
+				== [
+					Vector2(-48, -50),
+					Vector2(-16, -50),
+					Vector2(16, -50),
+				]
+			and row_renderer.call("active_depth_keys")
+				== [
+					MAIN_SCRIPT.WORLD_DEPTH.normal_z(1297.0),
+					MAIN_SCRIPT.WORLD_DEPTH.normal_z(1317.0),
+					MAIN_SCRIPT.WORLD_DEPTH.normal_z(1337.0),
+				]
+		),
+		"RowLookup columns use reference_y - primary.z + row baseline",
+		failures,
+	)
+	expect(
+		(
+			bool(
+				row_renderer.call(
+					"configure",
+					row_texture,
+					Vector2(48, 50),
+					1298.0,
+					[50, 50, 50],
+				)
+			)
+			and int(row_renderer.call("active_part_count")) == 1
+		),
+		"a uniform RowLookup remains one draw item",
+		failures,
+	)
+	expect(
+		int(LEGACY_ROW_SLICE_SPRITE.cached_slice_count()) == 3,
+		"nonuniform RowLookup columns reuse three cached AtlasTextures",
+		failures,
+	)
+	LEGACY_ROW_SLICE_SPRITE.clear_texture_cache()
+	expect(
+		int(LEGACY_ROW_SLICE_SPRITE.cached_slice_count()) == 0,
+		"level teardown releases the per-texture RowLookup slice cache",
+		failures,
+	)
+	row_renderer.free()
 
 	var movement_layer := PackedInt64Array()
 	movement_layer.resize(7 * 5)
@@ -615,6 +682,43 @@ func _init() -> void:
 			and divided_navigation.static_component_redirect_count == 1
 		),
 		"an unreachable destination resolves to the closest reachable side of its wall",
+		failures,
+	)
+	var dynamic_split_layer := PackedInt64Array()
+	dynamic_split_layer.resize(40 * 30)
+	var dynamic_split_navigation: NavigationGridData = (
+		NAVIGATION_GRID_DATA.create_for_tests(
+			40,
+			30,
+			Vector2i(32, 16),
+			dynamic_split_layer,
+		)
+	)
+	dynamic_split_navigation.prepare_astar()
+	for split_y: int in range(30):
+		dynamic_split_navigation.astar.set_point_solid(
+			Vector2i(20, split_y),
+			true,
+		)
+	var dynamic_partial_path := dynamic_split_navigation.find_path(
+		dynamic_split_navigation.cell_to_world(Vector2i(5, 15)),
+		dynamic_split_navigation.cell_to_world(Vector2i(35, 15)),
+		false,
+		true,
+	)
+	expect(
+		(
+			not dynamic_partial_path.is_empty()
+			and dynamic_split_navigation.world_to_cell(
+				dynamic_partial_path[-1]
+			).x < 20
+			and dynamic_split_navigation
+				.dynamic_unreachable_precheck_count == 1
+		),
+		(
+			"a temporary actor-clearance split skips exhaustive legacy "
+			+ "failure while preserving the same reachable-edge route"
+		),
 		failures,
 	)
 
@@ -1654,6 +1758,38 @@ func _init() -> void:
 		80,
 		mask_navigation.cell_to_world(Vector2i(2, 1)),
 	)
+	var bulk_grid: RefCounted = DYNAMIC_OCCUPANCY_GRID.new()
+	bulk_grid.configure(mask_navigation)
+	bulk_grid.register_scene(
+		81,
+		mask_navigation.cell_to_world(Vector2i(2, 1)),
+	)
+	var bulk_movement: Array[Vector2i] = [
+		Vector2i.ZERO,
+		Vector2i(0, 1),
+	]
+	var bulk_sight: Array[Vector2i] = [Vector2i.ZERO]
+	bulk_grid.update_scene_footprint(
+		81,
+		bulk_movement,
+		bulk_sight,
+	)
+	var bulk_cache_was_deferred: bool = (
+		not bool(bulk_grid.registration_finalized)
+		and bulk_grid.footprint_blocked_origins.is_empty()
+		and not bulk_grid.staged_footprint_offsets_by_key.is_empty()
+	)
+	bulk_grid.finalize_registration()
+	expect(
+		(
+			bulk_cache_was_deferred
+			and bool(bulk_grid.registration_finalized)
+			and not bulk_grid.footprint_blocked_origins.is_empty()
+			and bulk_grid.staged_footprint_offsets_by_key.is_empty()
+		),
+		"bulk actor construction defers multi-cell whole-map clearance until one final precompute",
+		failures,
+	)
 	mask_grid.finalize_registration()
 	expect(
 		(
@@ -1843,10 +1979,10 @@ func _init() -> void:
 
 	var prewarm_navigation: NavigationGridData = (
 		NAVIGATION_GRID_DATA.create_for_tests(
-			4,
+			5,
 			1,
 			Vector2i(32, 16),
-			PackedInt64Array([0, 0, 0, 0]),
+			PackedInt64Array([0, 0, 0, 0, 0]),
 		)
 	)
 	var prewarm_grid: RefCounted = DYNAMIC_OCCUPANCY_GRID.new()
@@ -1900,6 +2036,84 @@ func _init() -> void:
 			and prewarm_grid.prewarmed_path_hit_count == 2
 			and prewarm_grid.prewarmed_path_suffix_hit_count == 1,
 		"a collision-displaced patrol resumes the cached route suffix without a full-map search",
+		failures,
+	)
+	prewarm_grid.release_goal(50)
+	expect(
+		prewarm_grid.prewarm_runtime_evidence_path_for_scene(
+			50,
+			prewarm_start,
+			prewarm_destination,
+		)
+			and prewarm_grid.runtime_evidence_path_build_count == 1,
+		"an exact stable-MOD timeline route is computed during level loading",
+		failures,
+	)
+	var evidence_path_query_count_before: int = (
+		prewarm_grid.path_query_count
+	)
+	var evidence_path: PackedVector2Array = (
+		prewarm_grid.find_path_for_scene(
+			50,
+			prewarm_start,
+			prewarm_destination,
+			true,
+		)
+	)
+	expect(
+		not evidence_path.is_empty()
+			and prewarm_grid.runtime_evidence_path_hit_count == 1
+			and prewarm_grid.path_query_count
+				== evidence_path_query_count_before + 1
+			and not prewarm_grid.goal_owners.is_empty(),
+		(
+			"a stable-MOD timeline transition reuses its exact preloaded "
+			+ "static route and preserves live goal reservation"
+		),
+		failures,
+	)
+	prewarm_grid.release_goal(50)
+	var evidence_shift := Vector2(32.0, 0.0)
+	var translated_evidence_path: PackedVector2Array = (
+		prewarm_grid.find_path_for_scene(
+			50,
+			prewarm_start + evidence_shift,
+			prewarm_destination + evidence_shift,
+			true,
+		)
+	)
+	expect(
+		not translated_evidence_path.is_empty()
+			and translated_evidence_path[-1].is_equal_approx(
+				prewarm_destination + evidence_shift
+			)
+			and prewarm_grid.runtime_evidence_translated_hit_count == 1,
+		(
+			"a collision-shifted one-cell actor reuses the same-displacement "
+			+ "evidence route only after every translated step is walkable"
+		),
+		failures,
+	)
+	prewarm_grid.release_goal(50)
+	var evidence_hit_count_before_displacement: int = (
+		prewarm_grid.runtime_evidence_path_hit_count
+	)
+	var displaced_evidence_path: PackedVector2Array = (
+		prewarm_grid.find_path_for_scene(
+			50,
+			evidence_path[1],
+			prewarm_destination,
+			true,
+		)
+	)
+	expect(
+		not displaced_evidence_path.is_empty()
+			and prewarm_grid.runtime_evidence_path_hit_count
+				== evidence_hit_count_before_displacement,
+		(
+			"a displaced timeline actor recomputes from its live coordinate "
+			+ "instead of accepting an approximate evidence-cache suffix"
+		),
 		failures,
 	)
 	var unreachable_values := PackedInt64Array()

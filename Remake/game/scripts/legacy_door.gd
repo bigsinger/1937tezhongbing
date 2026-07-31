@@ -1,6 +1,11 @@
 class_name LegacyDoor
 extends Sprite2D
 
+const LEGACY_ROW_SLICE_SPRITE_SCRIPT: Script = preload(
+	"res://scripts/legacy_row_slice_sprite.gd"
+)
+const WORLD_DEPTH: Script = preload("res://scripts/world_depth.gd")
+
 signal state_changed(door: LegacyDoor, open: bool)
 
 var scene_index := -1
@@ -11,6 +16,12 @@ var closed_texture: Texture2D
 var open_texture: Texture2D
 var closed_anchor := Vector2.ZERO
 var open_anchor := Vector2.ZERO
+var reference_y := 0.0
+var fallback_z_index := 0
+var closed_draw_order_profile: Dictionary = {}
+var open_draw_order_profile: Dictionary = {}
+var row_slice_renderer: Node2D
+var sprite_drawn_by_row_slices := false
 var is_open := false
 var dynamic_occupancy: RefCounted
 var movement_release_cells: Array[Vector2i] = []
@@ -23,6 +34,8 @@ func configure(
 	new_closed_texture: Texture2D,
 	new_open_texture: Texture2D,
 	new_z_index: int,
+	new_closed_draw_order_profile: Dictionary = {},
+	new_open_draw_order_profile: Dictionary = {},
 ) -> bool:
 	if (
 		entity.is_empty()
@@ -49,11 +62,15 @@ func configure(
 		"open_anchor",
 		open_texture.get_size() * 0.5,
 	)
+	closed_draw_order_profile = new_closed_draw_order_profile.duplicate(true)
+	open_draw_order_profile = new_open_draw_order_profile.duplicate(true)
 	position = Vector2(
 		float(entity.get("x", entity.get("reference_x", 0))),
 		float(entity.get("y", entity.get("reference_y", 0))),
 	)
-	z_index = new_z_index
+	reference_y = float(entity.get("reference_y", entity.get("y", position.y)))
+	fallback_z_index = new_z_index
+	z_index = fallback_z_index
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	centered = true
 	is_open = false
@@ -103,10 +120,10 @@ func set_open(value: bool, emit_change: bool = true) -> bool:
 
 
 func contains_parent_point(parent_point: Vector2) -> bool:
-	if is_open or texture == null:
+	if is_open or closed_texture == null:
 		return false
 	var local := parent_point - position
-	var size := texture.get_size()
+	var size := closed_texture.get_size()
 	var source_rect := Rect2(-closed_anchor, size)
 	var minimum_size := Vector2(maxf(size.x, 48.0), maxf(size.y, 40.0))
 	var expansion := (minimum_size - size).max(Vector2.ZERO) * 0.5
@@ -140,9 +157,79 @@ func _apply_navigation_state() -> void:
 
 
 func _apply_visual_state() -> void:
-	texture = open_texture if is_open else closed_texture
+	var active_texture := open_texture if is_open else closed_texture
 	var active_anchor := open_anchor if is_open else closed_anchor
+	var active_draw_order := (
+		open_draw_order_profile
+		if is_open
+		else closed_draw_order_profile
+	)
+	sprite_drawn_by_row_slices = false
+	if not active_draw_order.is_empty():
+		var frame_size: Variant = active_draw_order.get(
+			"frame_size",
+			Vector2i.ZERO,
+		)
+		if (
+			frame_size is Vector2i
+			and frame_size
+				== Vector2i(
+					int(round(active_texture.get_width())),
+					int(round(active_texture.get_height())),
+				)
+		):
+			if row_slice_renderer == null or not is_instance_valid(row_slice_renderer):
+				row_slice_renderer = LEGACY_ROW_SLICE_SPRITE_SCRIPT.new()
+				row_slice_renderer.name = "OriginalRowSlices"
+				add_child(row_slice_renderer)
+			sprite_drawn_by_row_slices = bool(
+				row_slice_renderer.call(
+					"configure",
+					active_texture,
+					active_anchor,
+					reference_y,
+					active_draw_order.get("draw_order_row_lookup", []),
+				)
+			)
+	if sprite_drawn_by_row_slices:
+		texture = null
+		return
+	if row_slice_renderer != null and is_instance_valid(row_slice_renderer):
+		row_slice_renderer.call("clear_visual")
+	texture = active_texture
 	offset = texture.get_size() * 0.5 - active_anchor
+	z_index = fallback_z_index
+	var row_lookup: Variant = active_draw_order.get(
+		"draw_order_row_lookup",
+		[],
+	)
+	if (
+		row_lookup is Array
+		and not (row_lookup as Array).is_empty()
+		and _rows_are_uniform(row_lookup as Array)
+	):
+		z_index = WORLD_DEPTH.normal_z(
+			reference_y - active_anchor.y + float((row_lookup as Array)[0])
+		)
+
+
+func active_visual_texture() -> Texture2D:
+	return open_texture if is_open else closed_texture
+
+
+static func _rows_are_uniform(rows: Array) -> bool:
+	if rows.is_empty():
+		return false
+	if not rows[0] is int and not rows[0] is float:
+		return false
+	var first := float(rows[0])
+	for row_index: int in range(1, rows.size()):
+		if (
+			(not rows[row_index] is int and not rows[row_index] is float)
+			or float(rows[row_index]) != first
+		):
+			return false
+	return true
 
 
 func _derive_release_cells(
