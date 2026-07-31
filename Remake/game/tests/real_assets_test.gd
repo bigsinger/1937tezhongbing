@@ -54,6 +54,7 @@ const PLAYABLE_NAMES := {
 }
 const EXPECTED_ENTITY_COUNT := 19199
 const EXPECTED_SPRITE_COUNT := 980
+const EXPECTED_ENTITY_SPRITE_COUNT := 704
 const EXPECTED_GROUP_COUNT := 2775
 const EXPECTED_FRAME_COUNT := 11898
 const EXPECTED_MANUAL_CORRECTION_COUNT := 17858
@@ -216,6 +217,7 @@ func _init() -> void:
 		"all 17,858 Layer 5 editor correction markers are preserved",
 	)
 	validate_sprite_manifests()
+	validate_all_entity_sprite_anchors()
 	validate_runtime_actor_sprite_actions()
 	validate_original_cursor_asset()
 	validate_special_action_assets()
@@ -382,6 +384,83 @@ func validate_sprite_manifests() -> void:
 		movement_triplet_count == 373
 		and usable_movement_triplet_count == movement_triplet_count,
 		"all 373 walk/crawl groups expose usable corrected X/Z movement components",
+	)
+
+
+func validate_all_entity_sprite_anchors() -> void:
+	var expected_anchor_by_preview: Dictionary = {}
+	var mismatch_samples: Array[String] = []
+	var validated_entity_count := 0
+	for level_id: String in LEVEL_IDS:
+		var level: Dictionary = IMPORTED_LEVEL_DATA.load_level(level_id)
+		var level_path: String = ProjectSettings.globalize_path(
+			IMPORTED_LEVEL_DATA.level_path(level_id)
+		)
+		for entity_value: Variant in level.get("entities", []) as Array:
+			var entity := entity_value as Dictionary
+			var relative_preview := str(entity.get("sprite_preview", ""))
+			var preview_path := (
+				level_path
+				. get_base_dir()
+				. path_join(relative_preview)
+				. simplify_path()
+			)
+			if not expected_anchor_by_preview.has(preview_path):
+				var manifest_path: String = (
+					IMPORTED_SPRITE_ANIMATION.sprite_manifest_path(preview_path)
+				)
+				var manifest: Dictionary = load_json_dictionary(manifest_path)
+				var groups := manifest.get("groups", []) as Array
+				var expected_preview_anchor := Vector2i(-1, -1)
+				if not groups.is_empty():
+					var primary_triplet := (
+						(groups[0] as Dictionary).get("primary_triplet", []) as Array
+					)
+					if primary_triplet.size() == 3:
+						expected_preview_anchor = Vector2i(
+							int(primary_triplet[0]),
+							int(primary_triplet[2]),
+						)
+				expected_anchor_by_preview[preview_path] = expected_preview_anchor
+
+			var raw_anchor := entity.get("sprite_anchor", {}) as Dictionary
+			var actual_anchor := Vector2i(
+				int(raw_anchor.get("x", -1)),
+				int(raw_anchor.get("y", -1)),
+			)
+			var expected_anchor := (
+				expected_anchor_by_preview[preview_path] as Vector2i
+			)
+			if actual_anchor != expected_anchor and mismatch_samples.size() < 8:
+				mismatch_samples.append(
+					"%s scene %d expected %s but has %s"
+					% [
+						level_id,
+						int(entity.get("scene_index", -1)),
+						expected_anchor,
+						actual_anchor,
+					]
+				)
+			validated_entity_count += 1
+
+	expect(
+		validated_entity_count == EXPECTED_ENTITY_COUNT,
+		"all 19,199 entities participate in SPR-anchor validation",
+	)
+	expect(
+		expected_anchor_by_preview.size() == EXPECTED_ENTITY_SPRITE_COUNT,
+		"entity anchors cover all 704 SPR resources used by the twelve levels",
+	)
+	expect(
+		mismatch_samples.is_empty(),
+		(
+			"all entity positions use the original first-group SPR X/Z anchor"
+			+ (
+				" (samples: %s)" % "; ".join(mismatch_samples)
+				if not mismatch_samples.is_empty()
+				else ""
+			)
+		),
 	)
 
 

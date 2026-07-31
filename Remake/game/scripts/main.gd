@@ -305,6 +305,7 @@ var legacy_ai_control_effects: Array[Node] = []
 var legacy_deployment_targets: Array[Node2D] = []
 var legacy_burial_caches: Array[Node2D] = []
 var legacy_doors: Array[Node2D] = []
+var dormant_destruction_effects_by_scene: Dictionary = {}
 var buried_enemy_scene_indices: Dictionary = {}
 var field_inventory: Dictionary = {}
 var selected_backpack_item_id := 0
@@ -530,6 +531,7 @@ func load_imported_level(level_id: String = LEVEL_VIEW.DEFAULT_LEVEL_ID) -> bool
 			_free_level_runtime_node(burial_cache)
 	legacy_burial_caches.clear()
 	legacy_doors.clear()
+	dormant_destruction_effects_by_scene.clear()
 	_clear_original_pickup_order()
 	field_pickups.clear()
 	explosive_props.clear()
@@ -786,8 +788,19 @@ func spawn_imported_entities() -> int:
 		sprite.name = "Entity_%04d" % int(entity["scene_index"])
 		sprite.texture = texture
 		sprite.position = Vector2(float(entity["x"]), float(entity["y"]))
+		sprite.offset = (
+			texture.get_size() * 0.5
+			- imported_entity_sprite_anchor(entity, texture)
+		)
 		sprite.z_index = imported_entity_z_index(entity)
 		sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		if (
+			imported_entity_is_dormant_destruction_effect(entity)
+			or imported_entity_is_hidden_trigger(entity)
+		):
+			sprite.visible = false
+		if imported_entity_is_dormant_destruction_effect(entity):
+			dormant_destruction_effects_by_scene[scene_index] = sprite
 		container.add_child(sprite)
 		spawned += 1
 	return spawned
@@ -805,6 +818,47 @@ static func imported_entity_z_index(entity: Dictionary) -> int:
 		queue_id,
 		float(entity.get("reference_y", entity.get("y", 0.0))),
 	)
+
+
+static func imported_entity_sprite_anchor(
+	entity: Dictionary,
+	texture: Texture2D,
+) -> Vector2:
+	var value: Variant = entity.get("sprite_anchor", {})
+	if value is Dictionary:
+		var anchor := value as Dictionary
+		if anchor.has("x") and anchor.has("y"):
+			return Vector2(
+				float(anchor["x"]),
+				float(anchor["y"]),
+			)
+	return texture.get_size() * 0.5 if texture != null else Vector2.ZERO
+
+
+static func imported_entity_is_dormant_destruction_effect(
+	entity: Dictionary,
+) -> bool:
+	var header_values: Variant = entity.get("database_header_values", [])
+	if not header_values is Array or (header_values as Array).size() < 3:
+		return false
+	# DBL runtime types 66/67/68/77 are the four 残毁效果 overlays. The
+	# original scene registers them as dormant replacements and only exposes
+	# them after the paired destructible has resolved; drawing them at load
+	# punches black "damage" holes through otherwise intact roofs and walls.
+	return int((header_values as Array)[2]) in [66, 67, 68, 77]
+
+
+static func imported_entity_is_hidden_trigger(entity: Dictionary) -> bool:
+	# These DBL entries are nonvisual world detectors. DBL 1018 ("标注")
+	# is deliberately absent: its red map marker is visible in the original.
+	return int(entity.get("database_entry_id", 0)) in [
+		1001, # buried-state detector
+		1008, # line-of-sight detector
+		1010, # entrance detector
+		1011, # enemy-spawn detector
+		1019, # explosion detector
+		1020, # exit detector
+	]
 
 
 func is_playable_name(display_name: String) -> bool:
@@ -7004,6 +7058,11 @@ func _draw_selection_marquee() -> void:
 
 
 func _draw_mission_markers() -> void:
+	# Imported levels already contain the original marker sprites (for example
+	# DBL 1018's red 标注). Large editorial circles obscure those sprites and
+	# were never part of the original battlefield presentation.
+	if terrain_loaded:
+		return
 	var raw_bindings: Variant = current_mission.get("scene_bindings", {})
 	if not raw_bindings is Dictionary:
 		return

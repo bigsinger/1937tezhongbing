@@ -14,6 +14,7 @@ const SQUAD_UNIT_SCRIPT: Script = preload("res://scripts/squad_unit.gd")
 const ENEMY_UNIT_SCRIPT: Script = preload("res://scripts/enemy_unit.gd")
 const ESCORT_UNIT_SCRIPT: Script = preload("res://scripts/escort_unit.gd")
 const AMBIENT_UNIT_SCRIPT: Script = preload("res://scripts/ambient_unit.gd")
+const MAIN_SCRIPT: Script = preload("res://scripts/main.gd")
 const MAIN_SCENE: PackedScene = preload("res://scenes/main.tscn")
 
 var check_count: int = 0
@@ -128,6 +129,7 @@ func _init() -> void:
 				"reference_x": 1968,
 				"reference_y": 232,
 				"sprite_preview": "sprites/0925.png",
+				"sprite_anchor": {"x": 24, "y": 47},
 				"patrol_waypoints": [{"x": 61, "y": 14}, {"x": 62, "y": 14}],
 				"patrol": {"current_waypoint_index": 1, "persistent_flag": 1, "enabled": true},
 				"faction_id": 1,
@@ -190,6 +192,41 @@ func _init() -> void:
 		failures
 	)
 	expect(
+		parsed_entity["sprite_anchor"] == {"x": 24, "y": 47},
+		"imported entity preserves its recovered SPR primary X/Z anchor",
+		failures,
+	)
+	var anchor_image := Image.create(64, 96, false, Image.FORMAT_RGBA8)
+	var anchor_texture := ImageTexture.create_from_image(anchor_image)
+	expect(
+		MAIN_SCRIPT.imported_entity_sprite_anchor(
+			parsed_entity,
+			anchor_texture,
+		) == Vector2(24.0, 47.0),
+		"static imported sprites use the recovered anchor instead of their center",
+		failures,
+	)
+	expect(
+		MAIN_SCRIPT.imported_entity_is_dormant_destruction_effect(
+			{"database_header_values": [2, 0, 66, 0]},
+		)
+		and not MAIN_SCRIPT.imported_entity_is_dormant_destruction_effect(
+			{"database_header_values": [0, 0, 0, 0]},
+		),
+		"destruction overlays stay dormant until their paired lifecycle activates",
+		failures,
+	)
+	expect(
+		MAIN_SCRIPT.imported_entity_is_hidden_trigger(
+			{"database_entry_id": 1020},
+		)
+		and not MAIN_SCRIPT.imported_entity_is_hidden_trigger(
+			{"database_entry_id": 1018},
+		),
+		"nonvisual task detectors stay hidden while original red markers remain visible",
+		failures,
+	)
+	expect(
 		(parsed_entity["patrol_waypoints"] as Array)[1] == {"x": 62, "y": 14},
 		"imported entity parses patrol waypoints",
 		failures
@@ -211,6 +248,13 @@ func _init() -> void:
 		IMPORTED_LEVEL_DATA.is_valid_dictionary(array_compatible_level),
 		"imported-level parser accepts coordinate-array compatibility form",
 		failures
+	)
+	var invalid_sprite_anchor: Dictionary = synthetic_level.duplicate(true)
+	(invalid_sprite_anchor["entities"] as Array)[0]["sprite_anchor"] = {"x": 24}
+	expect(
+		IMPORTED_LEVEL_DATA.parse_dictionary(invalid_sprite_anchor).is_empty(),
+		"malformed imported sprite anchors are rejected",
+		failures,
 	)
 	var wrong_schema: Dictionary = synthetic_level.duplicate(true)
 	wrong_schema["schema_version"] = 2

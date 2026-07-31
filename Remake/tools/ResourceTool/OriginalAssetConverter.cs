@@ -30,6 +30,8 @@ internal sealed record ConvertedSpriteSummary(
     int GflIndex,
     string ResourceName,
     uint SerializationVersion,
+    int PreviewAnchorX,
+    int PreviewAnchorY,
     int GroupCount,
     int FrameCount,
     string Manifest);
@@ -182,6 +184,8 @@ internal static class OriginalAssetConverter
         var spritePreviews = spriteEntries.ToDictionary(
             entry => entry.Index,
             entry => SpriteOutputPath(spriteDirectory, entry));
+        var spriteMetadata = spriteSummaries.ToDictionary(
+            sprite => sprite.GflIndex);
         var levelsRoot = System.IO.Path.Combine(convertedRoot, "levels");
         var levelSummaries = Enumerable.Range(0, ExpectedFormalLevelCount)
             .Select(levelIndex => ConvertLevel(
@@ -191,7 +195,8 @@ internal static class OriginalAssetConverter
                 database,
                 databaseResources,
                 tileCatalog,
-                spritePreviews))
+                spritePreviews,
+                spriteMetadata))
             .ToArray();
         var levelManifestPath = System.IO.Path.Combine(levelsRoot, "index.json");
         WriteJson(levelManifestPath, new
@@ -253,7 +258,8 @@ internal static class OriginalAssetConverter
         DblDatabase database,
         IReadOnlyDictionary<int, GflEntry> databaseResources,
         TerrainTileCatalog tileCatalog,
-        IReadOnlyDictionary<int, string> spritePreviews)
+        IReadOnlyDictionary<int, string> spritePreviews,
+        IReadOnlyDictionary<int, ConvertedSpriteSummary> spriteMetadata)
     {
         var levelId = $"m{levelIndex:D3}";
         var levelDirectory = System.IO.Path.Combine(levelsRoot, levelId);
@@ -285,6 +291,13 @@ internal static class OriginalAssetConverter
             var spritePreview = resource.Type == "SPR1"
                 ? RelativePath(levelDirectory, spritePreviews[resource.Index])
                 : string.Empty;
+            ConvertedSpriteSummary? spriteSummary = null;
+            if (resource.Type == "SPR1" &&
+                !spriteMetadata.TryGetValue(resource.Index, out spriteSummary))
+            {
+                throw new InvalidDataException(
+                    $"SPR1 resource {resource.Index} has no converted metadata.");
+            }
             var patrolWaypoints = entity.Patrol?.Waypoints.Select(point => new
             {
                 x = point.X,
@@ -348,6 +361,13 @@ internal static class OriginalAssetConverter
                     y = entity.ReferenceY
                 },
                 sprite_preview = spritePreview,
+                sprite_anchor = spriteSummary is null
+                    ? null
+                    : new
+                    {
+                        x = spriteSummary.PreviewAnchorX,
+                        y = spriteSummary.PreviewAnchorY
+                    },
                 patrol_waypoints = patrolWaypoints,
                 patrol
             };
@@ -713,6 +733,8 @@ internal static class OriginalAssetConverter
             entry.Index,
             entry.OriginalName,
             sprite.SerializationVersion,
+            sprite.Groups[0].PrimaryTriplet[0],
+            sprite.Groups[0].PrimaryTriplet[2],
             sprite.Groups.Count,
             sprite.FrameCount,
             RelativePath(convertedRoot, manifestPath));

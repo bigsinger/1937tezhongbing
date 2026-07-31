@@ -146,6 +146,20 @@ func _set_original_texture(texture: Texture2D) -> void:
 		add_child(_original_sprite)
 	_original_sprite.texture = texture
 	_original_sprite.visible = texture != null and not has_exploded
+	if texture != null:
+		_original_sprite.offset = (
+			texture.get_size() * 0.5
+			- _entity_sprite_anchor(texture)
+		)
+
+
+func _entity_sprite_anchor(texture: Texture2D) -> Vector2:
+	var value: Variant = entity_metadata.get("sprite_anchor", {})
+	if value is Dictionary:
+		var anchor := value as Dictionary
+		if anchor.has("x") and anchor.has("y"):
+			return Vector2(float(anchor["x"]), float(anchor["y"]))
+	return texture.get_size() * 0.5
 
 
 func _draw() -> void:

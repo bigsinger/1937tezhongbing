@@ -18,6 +18,8 @@ internal static class ModRegressionProbe
 {
     private const uint ProcessVmRead = 0x0010;
     private const uint ProcessQueryInformation = 0x0400;
+    private const uint Th32csSnapModule = 0x00000008;
+    private const uint Th32csSnapModule32 = 0x00000010;
     private const uint PclientOnly = 0x00000001;
     private const uint SwpNoSize = 0x0001;
     private const uint SwpNoMove = 0x0002;
@@ -128,6 +130,23 @@ internal static class ModRegressionProbe
         public ulong OtherTransferCount;
     }
 
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct ModuleEntry32
+    {
+        public uint Size;
+        public uint ModuleId;
+        public uint ProcessId;
+        public uint GlobalUsageCount;
+        public uint ProcessUsageCount;
+        public IntPtr BaseAddress;
+        public uint BaseSize;
+        public IntPtr ModuleHandle;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)]
+        public string ModuleName;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+        public string ExecutablePath;
+    }
+
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern IntPtr OpenProcess(
         uint access, bool inherit, int processId);
@@ -139,6 +158,26 @@ internal static class ModRegressionProbe
 
     [DllImport("kernel32.dll")]
     private static extern bool CloseHandle(IntPtr handle);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr CreateToolhelp32Snapshot(
+        uint flags, uint processId);
+
+    [DllImport(
+        "kernel32.dll",
+        CharSet = CharSet.Unicode,
+        SetLastError = true,
+        EntryPoint = "Module32FirstW")]
+    private static extern bool Module32First(
+        IntPtr snapshot, ref ModuleEntry32 entry);
+
+    [DllImport(
+        "kernel32.dll",
+        CharSet = CharSet.Unicode,
+        SetLastError = true,
+        EntryPoint = "Module32NextW")]
+    private static extern bool Module32Next(
+        IntPtr snapshot, ref ModuleEntry32 entry);
 
     [DllImport("kernel32.dll")]
     private static extern bool GetProcessIoCounters(
@@ -339,6 +378,8 @@ internal static class ModRegressionProbe
                 "[RETURN_CELL_X RETURN_CELL_Y]] " +
                 "[--briefing-only] [--movement-only] " +
                 "[--inventory-only] " +
+                "[--visual-capture-only " +
+                "--visual-camera-x=X --visual-camera-y=Y] " +
                 "[--identity-catalog=PATH --parity-patrol-only | " +
                 "--parity-contact-only | --parity-pickup-only | " +
                 "--parity-attack-only --parity-scenario=ID " +
@@ -371,6 +412,43 @@ internal static class ModRegressionProbe
                 "--inventory-only",
                 StringComparison.OrdinalIgnoreCase);
         });
+        bool visualCaptureOnly = args.Any(delegate(string argument)
+        {
+            return argument.Equals(
+                "--visual-capture-only",
+                StringComparison.OrdinalIgnoreCase);
+        });
+        int visualCameraX = -1;
+        int visualCameraY = -1;
+        string visualCameraXValue = ArgumentValue(
+            args, "--visual-camera-x=");
+        string visualCameraYValue = ArgumentValue(
+            args, "--visual-camera-y=");
+        if (!String.IsNullOrWhiteSpace(visualCameraXValue) &&
+            !int.TryParse(
+                visualCameraXValue,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out visualCameraX))
+        {
+            throw new InvalidOperationException(
+                "Visual camera X must be an integer.");
+        }
+        if (!String.IsNullOrWhiteSpace(visualCameraYValue) &&
+            !int.TryParse(
+                visualCameraYValue,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out visualCameraY))
+        {
+            throw new InvalidOperationException(
+                "Visual camera Y must be an integer.");
+        }
+        if ((visualCameraX >= 0) != (visualCameraY >= 0))
+        {
+            throw new InvalidOperationException(
+                "Visual camera coordinates must be supplied as an X/Y pair.");
+        }
         int movementCellX;
         int movementCellY;
         DefaultMovementTarget(
@@ -463,6 +541,14 @@ internal static class ModRegressionProbe
             throw new InvalidOperationException(
                 "Inventory-only cannot be combined with briefing-only " +
                 "or parity movement scenarios.");
+        }
+        if (visualCaptureOnly &&
+            (briefingOnly || movementOnly || inventoryOnly ||
+             parityModeCount > 0))
+        {
+            throw new InvalidOperationException(
+                "Visual-capture-only cannot be combined with another " +
+                "specialized probe mode.");
         }
         int patrolObservationMilliseconds = 1000;
         string patrolObservationValue = ArgumentValue(
@@ -813,6 +899,16 @@ internal static class ModRegressionProbe
                         gameplayViewportHeight;
                 AddStage(
                     stages, game, process, imageBase, clock,
+                    "initial_camera_synchronized",
+                    cameraStateSynchronized,
+                    "camera=(" + spawnCameraX + "," +
+                    spawnCameraY + "); viewport=(" +
+                    gameplayViewportWidth + "," +
+                    gameplayViewportHeight + "); render=(" +
+                    spawnScreenWidth + "," + spawnScreenHeight +
+                    "); player_visible=" + cameraShowsPlayer);
+                AddStage(
+                    stages, game, process, imageBase, clock,
                     "initial_camera_contains_player",
                     cameraShowsPlayer,
                     spawnStart == null
@@ -826,6 +922,108 @@ internal static class ModRegressionProbe
                           "); render=(" + spawnScreenWidth + "," +
                           spawnScreenHeight + "); synchronized=" +
                           cameraStateSynchronized);
+
+                if (visualCaptureOnly)
+                {
+                    bool requestedCameraReady = true;
+                    int visualCameraLeft = spawnCameraX;
+                    int visualCameraTop = spawnCameraY;
+                    if (visualCameraX >= 0 && visualCameraY >= 0)
+                    {
+                        requestedCameraReady =
+                            PanReplayCameraToWorldPoint(
+                                process,
+                                imageBase,
+                                window,
+                                visualCameraX,
+                                visualCameraY,
+                                spawnScreenWidth,
+                                spawnScreenHeight,
+                                1200,
+                                out visualCameraLeft,
+                                out visualCameraTop);
+                    }
+                    Thread.Sleep(250);
+                    string copiedScreenshot = Path.Combine(
+                        outputDirectory,
+                        "02-gameplay-surface.png");
+                    string surfaceEvidence;
+                    bool surfaceCaptured =
+                        TryCaptureCncDdrawPrimarySurface(
+                            game,
+                            process,
+                            spawnScreenWidth,
+                            spawnScreenHeight,
+                            copiedScreenshot,
+                            out surfaceEvidence);
+                    AddStage(
+                        stages,
+                        game,
+                        process,
+                        imageBase,
+                        clock,
+                        "ddraw_primary_surface_captured",
+                        requestedCameraReady &&
+                        surfaceCaptured &&
+                        new FileInfo(copiedScreenshot).Length > 0,
+                        "remote_read_only=true; camera=(" +
+                        visualCameraLeft + "," +
+                        visualCameraTop + "); output=" +
+                        copiedScreenshot + "; " +
+                        surfaceEvidence);
+                    WriteVisualCaptureMetadata(
+                        outputDirectory,
+                        selectorLevel,
+                        route.EngineMission,
+                        visualCameraLeft,
+                        visualCameraTop,
+                        spawnScreenWidth,
+                        spawnScreenHeight,
+                        gameplayViewportWidth,
+                        gameplayViewportHeight,
+                        copiedScreenshot,
+                        surfaceCaptured,
+                        surfaceEvidence);
+
+                    samplerStop = true;
+                    sampler.Join(1500);
+                    bool visualCursorClipSafe;
+                    lock (perf)
+                        visualCursorClipSafe = perf.All(
+                            delegate(PerfSample sample)
+                            {
+                                return !sample.CursorClipRestricted;
+                            });
+                    string[] requiredVisualStages =
+                    {
+                        "mission_started",
+                        "gameplay_scene_resumed",
+                        "initial_camera_synchronized",
+                        "ddraw_primary_surface_captured"
+                    };
+                    exitCode = stages
+                        .Where(delegate(Stage stage)
+                        {
+                            return requiredVisualStages.Contains(
+                                stage.Name);
+                        })
+                        .All(delegate(Stage stage)
+                        {
+                            return stage.Sent &&
+                                stage.ProcessResponding;
+                        }) &&
+                        visualCursorClipSafe ? 0 : 1;
+                    WriteArtifacts(
+                        outputDirectory,
+                        selectorLevel,
+                        route.EngineMission,
+                        stages,
+                        perf,
+                        transitionsLogged: false,
+                        replayConsumed: true,
+                        passed: exitCode == 0);
+                    return exitCode;
+                }
 
                 WriteActorStateSnapshot(
                     process,
@@ -1890,6 +2088,383 @@ internal static class ModRegressionProbe
             Thread.Sleep(50);
         }
         return false;
+    }
+
+    private static bool TryCaptureCncDdrawPrimarySurface(
+        Process game,
+        IntPtr process,
+        int width,
+        int height,
+        string outputPath,
+        out string evidence)
+    {
+        evidence = "";
+        try
+        {
+            string ddrawPath;
+            long ddrawBase;
+            string loadedModules;
+            if (!TryFindRemoteModule(
+                    game.Id,
+                    "ddraw.dll",
+                    out ddrawPath,
+                    out ddrawBase,
+                    out loadedModules))
+            {
+                evidence = "ddraw_module=missing; modules=" +
+                    loadedModules;
+                return false;
+            }
+            uint exportRva = ResolvePeExportRva(
+                ddrawPath,
+                "pvBmpBits");
+            if (exportRva == 0)
+            {
+                evidence = "pvBmpBits=missing";
+                return false;
+            }
+            long pointerAddress =
+                ddrawBase + exportRva;
+            byte[] pointerBytes =
+                ReadBytes(process, pointerAddress, 4);
+            if (pointerBytes.Length != 4)
+            {
+                evidence = "pvBmpBits=unreadable";
+                return false;
+            }
+            uint surfaceAddress =
+                BitConverter.ToUInt32(pointerBytes, 0);
+            if (surfaceAddress == 0 || width <= 0 || height <= 0)
+            {
+                evidence = "surface=unavailable";
+                return false;
+            }
+            int sourceStride = checked(width * 2);
+            byte[] source = ReadBytes(
+                process,
+                surfaceAddress,
+                checked(sourceStride * height));
+            if (source.Length != sourceStride * height)
+            {
+                evidence = "surface=short_read";
+                return false;
+            }
+
+            using (var bitmap = new Bitmap(
+                width, height, PixelFormat.Format24bppRgb))
+            {
+                Rectangle area =
+                    new Rectangle(0, 0, width, height);
+                BitmapData data = bitmap.LockBits(
+                    area,
+                    ImageLockMode.WriteOnly,
+                    PixelFormat.Format24bppRgb);
+                try
+                {
+                    int destinationStride =
+                        Math.Abs(data.Stride);
+                    byte[] destination = new byte[
+                        checked(destinationStride * height)];
+                    for (int y = 0; y < height; y++)
+                    {
+                        int sourceRow = y * sourceStride;
+                        int destinationRow =
+                            y * destinationStride;
+                        for (int x = 0; x < width; x++)
+                        {
+                            ushort pixel = BitConverter.ToUInt16(
+                                source,
+                                sourceRow + x * 2);
+                            int destinationOffset =
+                                destinationRow + x * 3;
+                            destination[destinationOffset] =
+                                (byte)((pixel & 0x1F) * 255 / 31);
+                            destination[destinationOffset + 1] =
+                                (byte)(((pixel >> 5) & 0x3F) *
+                                    255 / 63);
+                            destination[destinationOffset + 2] =
+                                (byte)(((pixel >> 11) & 0x1F) *
+                                    255 / 31);
+                        }
+                    }
+                    Marshal.Copy(
+                        destination,
+                        0,
+                        data.Scan0,
+                        destination.Length);
+                }
+                finally
+                {
+                    bitmap.UnlockBits(data);
+                }
+                bitmap.Save(outputPath, ImageFormat.Png);
+            }
+            evidence = "module=" + Path.GetFileName(ddrawPath) +
+                "; export_rva=0x" +
+                exportRva.ToString(
+                    "X8", CultureInfo.InvariantCulture) +
+                "; surface=0x" +
+                surfaceAddress.ToString(
+                    "X8", CultureInfo.InvariantCulture) +
+                "; format=RGB565";
+            return true;
+        }
+        catch (Exception ex)
+        {
+            evidence = ex.GetType().Name + ": " + ex.Message;
+            return false;
+        }
+    }
+
+    private static bool TryFindRemoteModule(
+        int processId,
+        string moduleName,
+        out string modulePath,
+        out long baseAddress,
+        out string loadedModules)
+    {
+        modulePath = "";
+        baseAddress = 0;
+        var names = new List<string>();
+        IntPtr snapshot = CreateToolhelp32Snapshot(
+            Th32csSnapModule | Th32csSnapModule32,
+            unchecked((uint)processId));
+        if (snapshot == new IntPtr(-1))
+        {
+            loadedModules = "snapshot_error_" +
+                Marshal.GetLastWin32Error().ToString(
+                    CultureInfo.InvariantCulture);
+            return false;
+        }
+        try
+        {
+            var entry = new ModuleEntry32();
+            entry.Size = unchecked((uint)Marshal.SizeOf(entry));
+            if (!Module32First(snapshot, ref entry))
+            {
+                loadedModules = "enumeration_error_" +
+                    Marshal.GetLastWin32Error().ToString(
+                        CultureInfo.InvariantCulture);
+                return false;
+            }
+            do
+            {
+                if (names.Count < 24)
+                    names.Add(entry.ModuleName ?? "");
+                if (String.Equals(
+                        entry.ModuleName,
+                        moduleName,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    modulePath = entry.ExecutablePath;
+                    baseAddress = entry.BaseAddress.ToInt64();
+                    loadedModules = String.Join(
+                        ",", names.ToArray());
+                    return true;
+                }
+                entry.Size =
+                    unchecked((uint)Marshal.SizeOf(entry));
+            }
+            while (Module32Next(snapshot, ref entry));
+        }
+        finally
+        {
+            CloseHandle(snapshot);
+        }
+        loadedModules = String.Join(",", names.ToArray());
+        return false;
+    }
+
+    private static uint ResolvePeExportRva(
+        string modulePath,
+        string exportName)
+    {
+        byte[] image = File.ReadAllBytes(modulePath);
+        if (image.Length < 0x100 ||
+            BitConverter.ToUInt16(image, 0) != 0x5A4D)
+            return 0;
+        int peOffset = BitConverter.ToInt32(image, 0x3C);
+        if (peOffset < 0 ||
+            peOffset + 24 > image.Length ||
+            BitConverter.ToUInt32(image, peOffset) != 0x00004550)
+            return 0;
+        int optionalHeader = peOffset + 24;
+        ushort magic =
+            BitConverter.ToUInt16(image, optionalHeader);
+        int exportDirectoryEntry = optionalHeader +
+            (magic == 0x10B ? 96 : magic == 0x20B ? 112 : -1);
+        if (exportDirectoryEntry < optionalHeader ||
+            exportDirectoryEntry + 8 > image.Length)
+            return 0;
+        uint exportDirectoryRva =
+            BitConverter.ToUInt32(image, exportDirectoryEntry);
+        if (exportDirectoryRva == 0)
+            return 0;
+        int exportDirectory = PeRvaToFileOffset(
+            image, peOffset, exportDirectoryRva);
+        if (exportDirectory < 0 ||
+            exportDirectory + 40 > image.Length)
+            return 0;
+        uint nameCount =
+            BitConverter.ToUInt32(image, exportDirectory + 24);
+        uint functionTableRva =
+            BitConverter.ToUInt32(image, exportDirectory + 28);
+        uint nameTableRva =
+            BitConverter.ToUInt32(image, exportDirectory + 32);
+        uint ordinalTableRva =
+            BitConverter.ToUInt32(image, exportDirectory + 36);
+        int functionTable = PeRvaToFileOffset(
+            image, peOffset, functionTableRva);
+        int nameTable = PeRvaToFileOffset(
+            image, peOffset, nameTableRva);
+        int ordinalTable = PeRvaToFileOffset(
+            image, peOffset, ordinalTableRva);
+        if (functionTable < 0 ||
+            nameTable < 0 ||
+            ordinalTable < 0)
+            return 0;
+        for (uint index = 0; index < nameCount; index++)
+        {
+            int nameEntry = checked(
+                nameTable + (int)index * 4);
+            int ordinalEntry = checked(
+                ordinalTable + (int)index * 2);
+            if (nameEntry + 4 > image.Length ||
+                ordinalEntry + 2 > image.Length)
+                return 0;
+            uint nameRva =
+                BitConverter.ToUInt32(image, nameEntry);
+            int nameOffset = PeRvaToFileOffset(
+                image, peOffset, nameRva);
+            if (!ReadPeAsciiString(image, nameOffset).Equals(
+                    exportName,
+                    StringComparison.Ordinal))
+                continue;
+            ushort ordinal =
+                BitConverter.ToUInt16(image, ordinalEntry);
+            int functionEntry = checked(
+                functionTable + ordinal * 4);
+            if (functionEntry + 4 > image.Length)
+                return 0;
+            return BitConverter.ToUInt32(
+                image, functionEntry);
+        }
+        return 0;
+    }
+
+    private static void WriteVisualCaptureMetadata(
+        string outputDirectory,
+        int selectorLevel,
+        int engineMission,
+        int cameraLeft,
+        int cameraTop,
+        int surfaceWidth,
+        int surfaceHeight,
+        int mapViewportWidth,
+        int mapViewportHeight,
+        string screenshotPath,
+        bool passed,
+        string evidence)
+    {
+        string screenshotHash = "";
+        if (passed && File.Exists(screenshotPath))
+        {
+            using (SHA256 sha = SHA256.Create())
+            using (FileStream stream = File.OpenRead(screenshotPath))
+                screenshotHash = BitConverter.ToString(
+                    sha.ComputeHash(stream)).Replace("-", "");
+        }
+        var json = new StringBuilder();
+        json.Append("{\n");
+        json.Append("  \"schema_version\": 1,\n");
+        json.Append("  \"runtime\": \"stable_mod\",\n");
+        json.AppendFormat(
+            CultureInfo.InvariantCulture,
+            "  \"selector_level\": {0},\n" +
+            "  \"engine_mission\": {1},\n" +
+            "  \"camera_left\": {2},\n" +
+            "  \"camera_top\": {3},\n" +
+            "  \"surface\": [{4}, {5}],\n" +
+            "  \"map_viewport\": [{6}, {7}],\n",
+            selectorLevel,
+            engineMission,
+            cameraLeft,
+            cameraTop,
+            surfaceWidth,
+            surfaceHeight,
+            mapViewportWidth,
+            mapViewportHeight);
+        json.Append(
+            "  \"input_isolation\": " +
+            "\"read-only-process-memory; no global input\",\n");
+        json.Append(
+            "  \"pixel_format\": \"RGB565\",\n");
+        json.Append(
+            "  \"screenshot\": \"" +
+            Escape(screenshotPath) + "\",\n");
+        json.Append(
+            "  \"screenshot_sha256\": \"" +
+            Escape(screenshotHash) + "\",\n");
+        json.Append(
+            "  \"evidence\": \"" +
+            Escape(evidence) + "\",\n");
+        json.Append(
+            "  \"passed\": " +
+            (passed ? "true" : "false") + "\n");
+        json.Append("}\n");
+        File.WriteAllText(
+            Path.Combine(
+                outputDirectory,
+                "visual-capture.json"),
+            json.ToString(),
+            new UTF8Encoding(false));
+    }
+
+    private static int PeRvaToFileOffset(
+        byte[] image,
+        int peOffset,
+        uint rva)
+    {
+        ushort sectionCount =
+            BitConverter.ToUInt16(image, peOffset + 6);
+        ushort optionalHeaderSize =
+            BitConverter.ToUInt16(image, peOffset + 20);
+        int sectionTable =
+            peOffset + 24 + optionalHeaderSize;
+        for (int index = 0; index < sectionCount; index++)
+        {
+            int section = sectionTable + index * 40;
+            if (section + 40 > image.Length)
+                return -1;
+            uint virtualSize =
+                BitConverter.ToUInt32(image, section + 8);
+            uint virtualAddress =
+                BitConverter.ToUInt32(image, section + 12);
+            uint rawSize =
+                BitConverter.ToUInt32(image, section + 16);
+            uint rawOffset =
+                BitConverter.ToUInt32(image, section + 20);
+            uint span = Math.Max(virtualSize, rawSize);
+            if (rva >= virtualAddress &&
+                (ulong)rva <
+                    (ulong)virtualAddress + span)
+                return checked(
+                    (int)(rawOffset + rva - virtualAddress));
+        }
+        return rva < image.Length ? (int)rva : -1;
+    }
+
+    private static string ReadPeAsciiString(
+        byte[] image,
+        int offset)
+    {
+        if (offset < 0 || offset >= image.Length)
+            return "";
+        int end = offset;
+        while (end < image.Length && image[end] != 0)
+            end++;
+        return Encoding.ASCII.GetString(
+            image, offset, end - offset);
     }
 
     private static IntPtr WaitForWindow(Process game, TimeSpan timeout)

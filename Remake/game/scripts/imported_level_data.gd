@@ -222,6 +222,12 @@ static func _parse_entity(source: Dictionary) -> Dictionary:
 		sprite_preview = ""
 	elif not sprite_preview is String:
 		return {}
+	var sprite_anchor: Dictionary = {}
+	var raw_sprite_anchor: Variant = source.get("sprite_anchor")
+	if raw_sprite_anchor != null:
+		sprite_anchor = _parse_point(raw_sprite_anchor)
+		if sprite_anchor.is_empty():
+			return {}
 	var database_header_values: Array[int] = []
 	var raw_database_header_values: Variant = source.get("database_header_values", [])
 	if not raw_database_header_values is Array:
@@ -307,6 +313,7 @@ static func _parse_entity(source: Dictionary) -> Dictionary:
 		"reference_x": int(reference_x),
 		"reference_y": int(reference_y),
 		"sprite_preview": sprite_preview as String,
+		"sprite_anchor": sprite_anchor,
 		"database_header_values": database_header_values,
 		"patrol_waypoints": patrol_waypoints,
 		"patrol_current_waypoint_index": patrol_current_waypoint_index,

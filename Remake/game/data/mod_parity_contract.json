@@ -19,8 +19,8 @@
     {
       "id": "map_layers_and_rendering",
       "status": "partial",
-      "evidence": ["VWF L1-L5 import", "DBL four render queues", "twelve-level structural and artifact-hash fidelity baseline", "seven recovered closed/open door sprite pairs with original-anchor alignment"],
-      "gaps": ["1024x768 and 1920x1080 pixel baselines", "remaining wall/door/foreground occlusion pixel cases", "multi-layer SPR baseline calibration"]
+      "evidence": ["VWF L1-L5 import", "DBL four render queues", "twelve-level structural and artifact-hash fidelity baseline", "seven recovered closed/open door sprite pairs with original-anchor alignment", "read-only stable-MOD RGB565 versus offscreen Remake 1024x708 visual gate across m000-m011 with 97.46%-99.03% near-match pixels and no black-hole regression", "all 19,199 entity placements use the first-group SPR X/Z anchor across the 704 resources used by the twelve levels"],
+      "gaps": ["1920x1080 pixel baseline", "dynamic multi-layer actor occlusion calibration"]
     },
     {
       "id": "actors_and_animation",

@@ -29,6 +29,9 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 ```
 
 - `GameFrameProbe.cs`：启动游戏、自动进入第一关并采集进程响应、CPU 和读取量；可选桌面画面差分；
+- `ModRegressionProbe.cs --visual-capture-only`：从隔离 MOD 进程只读解析
+  cnc-ddraw 的 `pvBmpBits` 导出并保存 1024×768 RGB565 主表面，同时记录
+  原版相机和 1024×708 地图区；不会截取桌面、抢占焦点或发送全局输入；
 - `Test-Fullscreen.ps1`：通过 cnc-ddraw 的窗口消息验证窗口/全屏尺寸切换；
 - PresentMon 原始帧时间数据位于 `../results/`。测试使用 Intel PresentMon 1.10.0，仓库只保留结果，不重复分发其可执行文件。
 

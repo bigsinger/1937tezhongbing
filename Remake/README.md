@@ -182,6 +182,16 @@ godot --path .\game -- --level=m007
 .\tools\Run-RealAssetTests.cmd C:\path\to\Godot_v4.7.1-stable_win64_console.exe
 ```
 
+### 十二关静态视觉差分
+
+`tools/Capture-VisualParity.ps1` 会从隔离的稳定 MOD 进程只读提取
+cnc-ddraw RGB565 主表面，读取原版实际相机坐标，再让 Remake 在屏幕外窗口
+渲染同一关、同一视口。它不截取桌面、不激活窗口，也不发送全局键鼠输入。
+目前 m000—m011 已全部通过严格门禁：地图区近似像素为
+97.46%—99.03%，边缘相关度为 0.9448—0.9862，黑洞像素均低于
+0.043%。逐关报告、门限和复现命令见
+[视觉等价验证](docs/VISUAL_PARITY.md)。
+
 ### MOD/Remake 行为差分
 
 导入稳定 MOD 资源后，可以重放第一关已固化的无遮挡移动与树边绕行轨迹：

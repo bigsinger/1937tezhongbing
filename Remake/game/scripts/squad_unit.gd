@@ -2116,10 +2116,14 @@ func _active_legacy_sprite_triplets() -> Dictionary:
 
 
 func _draw() -> void:
-	draw_flat_ellipse(Vector2(0.0, 8.0), Vector2(20.0, 10.0), Color(0.0, 0.0, 0.0, 0.35))
 	if sprite_texture != null:
 		draw_texture(sprite_texture, -sprite_anchor)
 	else:
+		draw_flat_ellipse(
+			Vector2(0.0, 8.0),
+			Vector2(20.0, 10.0),
+			Color(0.0, 0.0, 0.0, 0.35),
+		)
 		draw_circle(Vector2.ZERO, 15.0, body_color)
 		draw_circle(Vector2(0.0, -12.0), 8.0, body_color.lightened(0.18))
 		draw_line(Vector2(-8.0, 1.0), Vector2(11.0, 1.0), Color(0.13, 0.12, 0.09), 4.0)
