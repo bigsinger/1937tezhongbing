@@ -483,8 +483,38 @@ char gbk_name[256]
 - `1937m012.vwf` 实际是 ZIP，内容属于 EA Sports 1997《FIFA 足球经理》中文文件；
 - `1937m013.vwf`—`1937m015.vwf` 实际是 RIFF/CDXA MPEG 媒体；
 - 原程序没有引用 012—015，导入器明确排除它们；
-- `*.SAV` 和 `M1937.SI0` 是运行生成数据；已审计 SAV 按已知结构精确结束，没有附加任务图，`M1937.SI0` 中可识别的 IBLOCK 是 320×240 存档缩略图；
+- `*.SAV` 和 `M1937.SI#` 是运行生成数据，不属于关卡；
 - `1937Intro.svt` 和 `GamekingLogo.svt` 是 MPEG Program Stream，可交给现代视频解码器。
+
+## 原版 SAV/SI
+
+`*.SAV` 已确认为完整 VWF 世界快照，而不是未知前缀或附加块。它沿用同一
+VWF 头、五层地形和 SLIST1，并在已知结构末尾精确 EOF。原版会重写 L2/L3
+中的动态角色足印，因此存档归属关卡必须只用不变的 L1 地表层 SHA-256
+识别，并要求在 m000—m011 中恰好匹配一关。
+
+SLIST 实体差分确认 `reference_x/reference_y` 保存当前世界位置，
+`world_x/world_y` 仍可保留初始/编排值；方向、生死、匍匐、ext1 反应、
+ext2 当前攻击和 ext3 当前生命均可直接恢复。实体后的四个辅助数组不是
+逐项交错结构，而是：
+
+```text
+presence
+count
+uint32 item_ids[count]
+uint32 quantities[count]
+uint32 quantity_modes[count]
+```
+
+数组 0 对应当前背包（运行时 `+0x228`），数组 1 对应当前武器
+（`+0x22C`）；数组 2/3 属于模板/兴趣状态，不能误当第二份玩家库存。
+
+同编号 `M1937.SI#` 是无外层签名的嵌入 IBLOCK，固定为 320×240 RGB565，
+并在图像负载后精确 EOF。`LegacySaveSnapshot`、`LegacySavePreview` 和
+`ResourceTool import-save` 共同把这些状态转换为 Remake schema 1。
+三组正式 SAV/SI 已通过产品存档加载器和真实转换关卡恢复门禁；详细用法及
+无法从世界快照唯一推出的任务历史边界见
+[原版 SAV/SI 存档导入](LEGACY_SAVE_IMPORT.md)。
 
 ## 验证方式与剩余研究
 
@@ -500,6 +530,7 @@ char gbk_name[256]
    统计、MOD 轨迹与十二关像素差分确认并接入；仍需研究少数特殊攻击过渡和
    全局随机调用顺序；
 4. 射击、救援、任务击毙/掉落、带拾取者的物品、爆破/占点和出口已经接入通用任务运行时；m006/m008/m009/m011 稳定/修复双规则、必要队员/护送者、m010 四区存在性和七关炸药策略已经定案，仍需校准触发节奏和演出；
-5. 基础攻击/友军死亡警报已经接入；仍需研究声音遮挡、尸体发现、难度、剧情对白、镜头演出和存档格式。
+5. 原版 SAV/SI 的世界快照、缩略图、角色/容器差分和单向导入已恢复；
+   仍需研究声音遮挡、尸体发现、难度、剧情对白与镜头演出。
 
 社区研究线索：[Revora 的 Mission 1937 modding 讨论](https://forums.revora.net/topic/101296-help-mission-1937-modding-chinese-related-stuff/)。论坛附件及其中的原版提取资产不会进入本仓库。

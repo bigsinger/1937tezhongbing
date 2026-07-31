@@ -82,7 +82,18 @@ internal static class VwfSceneListSyntheticTests
             entity.Patrol?.Waypoints[1] ?? throw new InvalidOperationException("Patrol fixture was not parsed."),
             "SLIST1 patrol waypoint",
             ref checks);
-        Equal(1u, entity.AuxiliaryArrayLengths[0], "SLIST1 auxiliary array length", ref checks);
+        Equal(2u, entity.AuxiliaryArrayLengths[0], "SLIST1 auxiliary array length", ref checks);
+        Equal(4, entity.AuxiliaryArrays.Count, "SLIST1 auxiliary array count", ref checks);
+        Equal(
+            new VwfAuxiliaryEntry(50, 2, 0),
+            entity.AuxiliaryArrays[0][0],
+            "SLIST1 auxiliary inventory entry",
+            ref checks);
+        Equal(
+            new VwfAuxiliaryEntry(51, 1, 1),
+            entity.AuxiliaryArrays[0][1],
+            "SLIST1 auxiliary second inventory entry",
+            ref checks);
         Equal(1u, entity.ExtendedDataPresence, "SLIST1 extended-data presence", ref checks);
         Equal(41, entity.ExtendedFields.Count, "SLIST1 extended field count", ref checks);
         Equal(17u, entity.ReactionState, "SLIST1 reaction state ext1", ref checks);
@@ -211,8 +222,13 @@ internal static class VwfSceneListSyntheticTests
         writer.Write(0x5A5A5A5Au);
         writer.Write(new byte[23 * sizeof(uint)]);
         writer.Write(1u);
+        writer.Write(2u);
+        writer.Write(50u);
+        writer.Write(51u);
+        writer.Write(2u);
         writer.Write(1u);
-        writer.Write(new byte[12]);
+        writer.Write(0u);
+        writer.Write(1u);
         for (var arrayIndex = 1; arrayIndex < 4; arrayIndex++)
         {
             writer.Write(1u);

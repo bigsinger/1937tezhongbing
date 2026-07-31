@@ -141,6 +141,45 @@ func _test_settings_defaults_and_round_trip(failures: Array[String]) -> void:
 		"save-slot timestamps are converted from UTC to the supplied local-zone bias",
 		failures,
 	)
+	_expect(
+		SAVE_SLOT_SELECTOR._display_slot_name("legacy_002")
+			== "原版导入 002",
+		"converted original saves receive an explicit selector label",
+		failures,
+	)
+	var imported_selector = SAVE_SLOT_SELECTOR.new()
+	root.add_child(imported_selector)
+	var imported_summary: Array[Dictionary] = [
+		{
+			"slot_id": "legacy_002",
+			"level_id": "m000",
+			"elapsed_seconds": 0.0,
+			"saved_at_unix": 1,
+			"saved_at_unix_msec": 1000,
+			"revision": 1,
+			"recovered": false,
+		}
+	]
+	imported_selector.configure(
+		SAVE_SLOT_SELECTOR.Mode.LOAD,
+		imported_summary,
+	)
+	_expect(
+		imported_selector.slot_buttons.has("legacy_002"),
+		"load selector exposes an installed original-save conversion",
+		failures,
+	)
+	imported_selector.configure(
+		SAVE_SLOT_SELECTOR.Mode.SAVE,
+		imported_summary,
+	)
+	_expect(
+		not imported_selector.slot_buttons.has("legacy_002")
+		and imported_selector.slot_buttons.size() == 10,
+		"save selector keeps imported original slots read-only",
+		failures,
+	)
+	imported_selector.queue_free()
 	var path := test_root + "/settings.json"
 	var settings = GAME_SETTINGS.new()
 	var missing: Dictionary = settings.load_from_disk(path)

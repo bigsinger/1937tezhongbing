@@ -267,6 +267,15 @@ m004 的计划书携带者已由物品 101/VWF 携带记录定案为 scene 2637�
 
 `atomic_json_store.gd` 的顺序必须保持“同目录临时文件写入 → 关闭并重新读取校验 → 有效旧主文件轮换为 `.bak` → 安装新主文件”。损坏主文件隔离为 `.corrupt`，不得挤掉有效备份；读取主文件失败时应回退 `.bak`。任何 schema 变更都要增加迁移和损坏/备份测试，禁止靠放宽 JSON 校验兼容旧档。
 
+原版存档导入由 `LegacySaveSnapshot`、`LegacySavePreview` 和
+`ResourceTool import-save` 承担。SAV 必须按 L1 唯一匹配正式关卡，SLIST
+及 SI 必须精确 EOF；四个辅助容器必须按 item/quantity/mode 三个平行数组
+读取，不能退回交错记录解释。`tools/Test-LegacySaveCompatibility.ps1`
+会转换三组正式 SAV/SI，先通过 `GameSaveStore`，再在真实关卡中调用
+`apply_after_level_loaded()` 核对角色、容器、埋藏物、拾取物和镜头。
+导入槽只在读取页出现，防止原始转换被菜单直接覆盖。用户流程见
+[原版 SAV/SI 存档导入](LEGACY_SAVE_IMPORT.md)。
+
 ## 媒体开发工作流
 
 完整导入会生成 `LocalAssets/converted/legacy-media-catalog.json`，记录十二张简报、十二张目标图、三张结局图、128 个 WAV 和五段已审计旧视频的元数据。原 WAV、PNG、SVT/VWF 媒体及转码 OGV 均留在被忽略的 `LocalAssets`，不能提交到 Git。

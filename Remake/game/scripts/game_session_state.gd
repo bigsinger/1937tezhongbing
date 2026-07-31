@@ -8,6 +8,7 @@ extends RefCounted
 ## `apply_after_level_loaded()` so the imported level supplies those resources.
 
 const COMBAT_INVENTORY: Script = preload("res://scripts/combat_inventory.gd")
+const COMBAT_PROFILES: Script = preload("res://scripts/combat_profiles.gd")
 const BACKPACK_INVENTORY: Script = preload("res://scripts/backpack_inventory.gd")
 const LAND_MINE: Script = preload("res://scripts/land_mine.gd")
 const LEGACY_SPECIAL_ACTION_PROFILES: Script = preload("res://scripts/legacy_special_action_profiles.gd")
@@ -158,6 +159,7 @@ static func _capture_actor(actor: Node2D, group_name: String) -> Dictionary:
 		"is_alive": bool(actor.get("is_alive")),
 		"is_crawling": bool(actor.get("is_crawling")),
 		"is_running": bool(actor.get("is_running")),
+		"animation_group_index": int(actor.get("animation_group_index")),
 		"move_speed": maxf(float(actor.get("move_speed")), 0.0),
 		"selected": (
 			bool(actor.get("selected"))
@@ -608,6 +610,14 @@ static func _restore_actor(game: Node, actor: Node2D, record: Dictionary, group_
 	actor.set("is_running", bool(record.get("is_running", true)))
 	if actor.has_method("_apply_movement_mode"):
 		actor.call("_apply_movement_mode")
+	if (
+		record.has("animation_group_index")
+		and actor.has_method("set_animation_group")
+	):
+		actor.call(
+			"set_animation_group",
+			clampi(int(record["animation_group_index"]), 0, 7),
+		)
 	actor.set(
 		"move_speed",
 		maxf(float(record.get("move_speed", actor.get("move_speed"))), 0.0),
@@ -625,6 +635,41 @@ static func _restore_actor(game: Node, actor: Node2D, record: Dictionary, group_
 		actor.set("pending_hit_forced", false)
 	if record.get("inventory") is Dictionary:
 		_restore_inventory(game, actor, record)
+	if record.has("original_active_attack_type"):
+		var original_attack_type := int(
+			record.get("original_active_attack_type", 0)
+		)
+		if original_attack_type <= 0:
+			actor.set("weapon_profile", {})
+			actor.set("attack_groups", [])
+		else:
+			var original_weapon_profile: Dictionary = (
+				COMBAT_PROFILES.weapon_profile_for_attack_type(
+					original_attack_type
+				)
+			)
+			if not original_weapon_profile.is_empty():
+				actor.set(
+					"weapon_profile",
+					original_weapon_profile.duplicate(true),
+				)
+				actor.set(
+					"attack_groups",
+					(
+						game.call(
+							"_attack_groups_for_unit",
+							actor,
+							str(
+								original_weapon_profile.get(
+									"action_key",
+									"",
+								)
+							),
+						)
+						if game.has_method("_attack_groups_for_unit")
+						else []
+					),
+				)
 	if record.get("backpack_inventory") is Dictionary:
 		_restore_backpack(actor, record)
 	if (

@@ -5,6 +5,11 @@ namespace Mission1937.Remake.Resources;
 
 public sealed record VwfGridPoint(uint X, uint Y);
 
+public sealed record VwfAuxiliaryEntry(
+    uint ItemId,
+    uint Quantity,
+    uint QuantityMode);
+
 public sealed record VwfPatrolData(
     uint Signature,
     uint FormatVersion,
@@ -40,7 +45,7 @@ public sealed record VwfSceneEntity(
     int ReferenceY,
     uint ExtendedDataPresence,
     IReadOnlyList<uint> ExtendedFields,
-    IReadOnlyList<uint> AuxiliaryArrayLengths,
+    IReadOnlyList<IReadOnlyList<VwfAuxiliaryEntry>> AuxiliaryArrays,
     VwfPatrolData? Patrol,
     DblEntry? DatabaseEntry)
 {
@@ -48,6 +53,10 @@ public sealed record VwfSceneEntity(
     public uint ReactionState => ExtendedFields[1];
     public uint DefaultAttackType => ExtendedFields[2];
     public uint CurrentHitPoints => ExtendedFields[3];
+    public IReadOnlyList<uint> AuxiliaryArrayLengths =>
+        AuxiliaryArrays
+            .Select(array => checked((uint)array.Count))
+            .ToArray();
 }
 
 public sealed class VwfSceneList
@@ -235,20 +244,40 @@ public sealed class VwfSceneList
             ExtendedTailByteCount,
             $"SLIST1 entity {sceneIndex} extended data tail");
 
-        var auxiliaryArrayLengths = new uint[4];
-        for (var arrayIndex = 0; arrayIndex < auxiliaryArrayLengths.Length; arrayIndex++)
+        IReadOnlyList<VwfAuxiliaryEntry>[] auxiliaryArrays =
+            new IReadOnlyList<VwfAuxiliaryEntry>[4];
+        for (var arrayIndex = 0; arrayIndex < auxiliaryArrays.Length; arrayIndex++)
         {
             if (!reader.ReadPresence($"SLIST1 entity {sceneIndex} auxiliary array {arrayIndex}"))
             {
+                auxiliaryArrays[arrayIndex] = Array.Empty<VwfAuxiliaryEntry>();
                 continue;
             }
 
             var length = reader.ReadUInt32(
                 $"SLIST1 entity {sceneIndex} auxiliary array {arrayIndex} length");
-            auxiliaryArrayLengths[arrayIndex] = length;
-            reader.Skip(
-                CheckedByteCount(length, 12, $"SLIST1 entity {sceneIndex} auxiliary array {arrayIndex}"),
+            _ = CheckedByteCount(
+                length,
+                12,
                 $"SLIST1 entity {sceneIndex} auxiliary array {arrayIndex}");
+            var entries = new VwfAuxiliaryEntry[checked((int)length)];
+            var itemIds = reader.ReadUInt32Array(
+                entries.Length,
+                $"SLIST1 entity {sceneIndex} auxiliary array {arrayIndex} item IDs");
+            var quantities = reader.ReadUInt32Array(
+                entries.Length,
+                $"SLIST1 entity {sceneIndex} auxiliary array {arrayIndex} quantities");
+            var quantityModes = reader.ReadUInt32Array(
+                entries.Length,
+                $"SLIST1 entity {sceneIndex} auxiliary array {arrayIndex} quantity modes");
+            for (var entryIndex = 0; entryIndex < entries.Length; entryIndex++)
+            {
+                entries[entryIndex] = new VwfAuxiliaryEntry(
+                    itemIds[entryIndex],
+                    quantities[entryIndex],
+                    quantityModes[entryIndex]);
+            }
+            auxiliaryArrays[arrayIndex] = entries;
         }
 
         return new VwfSceneEntity(
@@ -266,7 +295,7 @@ public sealed class VwfSceneList
             ReadInt32(prefix, 112),
             extendedDataPresence,
             extendedFields,
-            auxiliaryArrayLengths,
+            auxiliaryArrays,
             patrol,
             databaseEntry);
     }

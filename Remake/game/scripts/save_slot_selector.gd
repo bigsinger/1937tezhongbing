@@ -81,6 +81,17 @@ func _rebuild_rows() -> void:
 					special_slot_id,
 					summaries_by_id[special_slot_id] as Dictionary,
 				)
+		var imported_slot_ids: Array[String] = []
+		for raw_slot_id: Variant in summaries_by_id.keys():
+			var candidate := str(raw_slot_id)
+			if candidate.begins_with("legacy_"):
+				imported_slot_ids.append(candidate)
+		imported_slot_ids.sort()
+		for imported_slot_id: String in imported_slot_ids:
+			_add_slot_button(
+				imported_slot_id,
+				summaries_by_id[imported_slot_id] as Dictionary,
+			)
 
 
 func _add_slot_button(slot_id: String, summary: Dictionary) -> void:
@@ -135,6 +146,8 @@ static func _display_slot_name(slot_id: String) -> String:
 		return "快速存档"
 	if slot_id == "autosave":
 		return "自动存档"
+	if slot_id.begins_with("legacy_"):
+		return "原版导入 %s" % slot_id.trim_prefix("legacy_").to_upper()
 	if slot_id.begins_with("slot_"):
 		return "存档 %d" % int(slot_id.trim_prefix("slot_"))
 	return slot_id

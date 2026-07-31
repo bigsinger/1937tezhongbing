@@ -30,6 +30,7 @@ internal static class Program
             _checks += SprAnimationSemanticsTests.Run();
             _checks += LegacyMediaCatalogTests.Run(temporaryDirectory);
             _checks += VwfSceneListSyntheticTests.Run(temporaryDirectory);
+            _checks += LegacySaveFormatTests.Run(temporaryDirectory);
             _checks += VwfNavigationGridSyntheticTests.Run();
             _checks += TerrainRasterizerSyntheticTests.Run();
             Console.WriteLine($"Resource format tests passed ({_checks} checks). No original game data was used.");

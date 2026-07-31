@@ -38,6 +38,8 @@ internal static class Program
         {
             "inspect" => Inspect(args),
             "inspect-vwf" => InspectVwf(args),
+            "inspect-save" => InspectSave(args),
+            "import-save" => ImportSave(args),
             "world-pickup-baseline" => WorldPickupBaseline(args),
             "list-gfl" => ListGfl(args),
             "extract-gfl" => ExtractGfl(args),
@@ -101,8 +103,8 @@ internal static class Program
         RequireArgumentCount(
             args,
             2,
-            6,
-            "inspect-vwf <path.vwf> [1937db.dbl] [--entities] [--patrols] [--extended]");
+            8,
+            "inspect-vwf <path.vwf> [1937db.dbl] [--entities] [--patrols] [--extended] [--auxiliary] [--scene=N]");
         var vwfPath = System.IO.Path.GetFullPath(args[1]);
         var entityDetails = args.Any(argument =>
             argument.Equals(
@@ -116,6 +118,25 @@ internal static class Program
             argument.Equals(
                 "--extended",
                 StringComparison.OrdinalIgnoreCase));
+        var auxiliaryDetails = args.Any(argument =>
+            argument.Equals(
+                "--auxiliary",
+                StringComparison.OrdinalIgnoreCase));
+        var sceneArgument = args.FirstOrDefault(argument =>
+            argument.StartsWith(
+                "--scene=",
+                StringComparison.OrdinalIgnoreCase));
+        int? sceneFilter = null;
+        if (sceneArgument is not null)
+        {
+            if (!int.TryParse(sceneArgument["--scene=".Length..], out var parsedScene)
+                || parsedScene < 0)
+            {
+                throw new ArgumentException(
+                    $"Invalid scene filter '{sceneArgument}'. Expected --scene=<non-negative integer>.");
+            }
+            sceneFilter = parsedScene;
+        }
         var databaseArgument = args
             .Skip(2)
             .FirstOrDefault(argument =>
@@ -127,6 +148,12 @@ internal static class Program
                     StringComparison.OrdinalIgnoreCase) &&
                 !argument.Equals(
                     "--extended",
+                    StringComparison.OrdinalIgnoreCase) &&
+                !argument.Equals(
+                    "--auxiliary",
+                    StringComparison.OrdinalIgnoreCase) &&
+                !argument.StartsWith(
+                    "--scene=",
                     StringComparison.OrdinalIgnoreCase));
         DblDatabase? database = databaseArgument is not null
             ? DblDatabase.Open(System.IO.Path.GetFullPath(databaseArgument))
@@ -134,6 +161,15 @@ internal static class Program
         var world = VwfWorldHeader.Open(vwfPath);
         var terrain = VwfTerrainGrid.Open(vwfPath, database);
         var sceneList = VwfSceneList.Open(vwfPath, database);
+        var selectedEntities = sceneList.Entities
+            .Where(entity =>
+                sceneFilter is null || entity.SceneIndex == sceneFilter.Value)
+            .ToArray();
+        if (sceneFilter is not null && selectedEntities.Length == 0)
+        {
+            throw new InvalidDataException(
+                $"Scene {sceneFilter.Value} is not a present entity slot in {vwfPath}.");
+        }
         var factionCounts = sceneList.Entities
             .GroupBy(entity => entity.ExtendedFields.Count > 8 ? entity.ExtendedFields[8] : 0)
             .OrderBy(group => group.Key)
@@ -170,8 +206,8 @@ internal static class Program
         if (entityDetails)
         {
             Console.WriteLine(
-                "Entities: scene,database_id,world_x,world_y,direction,faction,death");
-            foreach (var entity in sceneList.Entities)
+                "Entities: scene,database_id,world_x,world_y,reference_x,reference_y,direction,faction,death");
+            foreach (var entity in selectedEntities)
             {
                 var faction = entity.ExtendedFields.Count > 8
                     ? entity.ExtendedFields[8]
@@ -179,6 +215,7 @@ internal static class Program
                 Console.WriteLine(
                     $"  {entity.SceneIndex},{entity.DatabaseEntryId}," +
                     $"{entity.WorldX},{entity.WorldY}," +
+                    $"{entity.ReferenceX},{entity.ReferenceY}," +
                     $"{entity.DirectionIndex},{faction},{entity.DeathState}");
             }
         }
@@ -186,7 +223,8 @@ internal static class Program
         {
             Console.WriteLine(
                 "Patrols: scene,current,persistent,cached_x,cached_y,waypoints");
-            foreach (var entity in patrolEntities)
+            foreach (var entity in patrolEntities.Where(entity =>
+                         sceneFilter is null || entity.SceneIndex == sceneFilter.Value))
             {
                 var patrol = entity.Patrol!;
                 Console.WriteLine(
@@ -205,13 +243,245 @@ internal static class Program
         {
             Console.WriteLine(
                 "Extended fields: scene,database_id,presence,field_0..field_40");
-            foreach (var entity in sceneList.Entities)
+            foreach (var entity in selectedEntities)
             {
                 Console.WriteLine(
                     $"  {entity.SceneIndex},{entity.DatabaseEntryId}," +
                     $"{entity.ExtendedDataPresence}," +
                     string.Join(",", entity.ExtendedFields));
             }
+        }
+        if (auxiliaryDetails)
+        {
+            Console.WriteLine(
+                "Auxiliary entries: scene,array,index,item_id,quantity,quantity_mode");
+            foreach (var entity in selectedEntities)
+            {
+                for (var arrayIndex = 0;
+                     arrayIndex < entity.AuxiliaryArrays.Count;
+                     arrayIndex++)
+                {
+                    var entries = entity.AuxiliaryArrays[arrayIndex];
+                    for (var entryIndex = 0; entryIndex < entries.Count; entryIndex++)
+                    {
+                        var entry = entries[entryIndex];
+                        Console.WriteLine(
+                            $"  {entity.SceneIndex},{arrayIndex},{entryIndex}," +
+                            $"{entry.ItemId},{entry.Quantity},{entry.QuantityMode}");
+                    }
+                }
+            }
+        }
+        return 0;
+    }
+
+    private static int InspectSave(string[] args)
+    {
+        RequireArgumentCount(
+            args,
+            3,
+            6,
+            "inspect-save <path.SAV> <game-directory> [1937db.dbl] [M1937.SI#] [--entities]");
+        var savePath = System.IO.Path.GetFullPath(args[1]);
+        var gameDirectory = System.IO.Path.GetFullPath(args[2]);
+        var entityDetails = args.Any(argument =>
+            argument.Equals(
+                "--entities",
+                StringComparison.OrdinalIgnoreCase));
+        var databaseArgument = args
+            .Skip(3)
+            .FirstOrDefault(argument =>
+                argument.EndsWith(
+                    ".dbl",
+                    StringComparison.OrdinalIgnoreCase));
+        var defaultDatabasePath = System.IO.Path.Combine(
+            gameDirectory,
+            "1937Database.dbl");
+        DblDatabase? database = null;
+        if (databaseArgument is not null)
+        {
+            database = DblDatabase.Open(
+                System.IO.Path.GetFullPath(databaseArgument));
+        }
+        else if (File.Exists(defaultDatabasePath))
+        {
+            database = DblDatabase.Open(defaultDatabasePath);
+        }
+
+        var previewArgument = args
+            .Skip(3)
+            .FirstOrDefault(argument =>
+                System.IO.Path.GetFileName(argument).StartsWith(
+                    "M1937.SI",
+                    StringComparison.OrdinalIgnoreCase));
+        LegacySavePreview? preview = previewArgument is null
+            ? null
+            : LegacySavePreview.Open(
+                System.IO.Path.GetFullPath(previewArgument));
+        var snapshot = LegacySaveSnapshot.Open(
+            savePath,
+            gameDirectory,
+            database);
+        var actorStates = snapshot.SceneList.Entities
+            .Where(entity =>
+                entity.HasExtendedData &&
+                (entity.AuxiliaryArrays[0].Count > 0 ||
+                 entity.AuxiliaryArrays[1].Count > 0 ||
+                 entity.CurrentHitPoints > 0))
+            .ToArray();
+
+        Console.WriteLine($"Save: {snapshot.Path}");
+        Console.WriteLine(
+            $"Level: {snapshot.Level.LevelId} " +
+            $"(selector {snapshot.Level.LevelIndex + 1})");
+        Console.WriteLine(
+            $"Terrain SHA-256: {snapshot.Level.TerrainSha256}");
+        Console.WriteLine(
+            $"Camera viewport: " +
+            $"({snapshot.World.ViewportLeft},{snapshot.World.ViewportTop})-" +
+            $"({snapshot.World.ViewportRight},{snapshot.World.ViewportBottom})");
+        Console.WriteLine(
+            $"Scenes: base {snapshot.BaseSceneList.Entities.Count}, " +
+            $"saved {snapshot.SceneList.Entities.Count}, " +
+            $"removed {snapshot.RemovedSceneIndices.Count}, " +
+            $"added {snapshot.AddedEntities.Count}, " +
+            $"changed {snapshot.ChangedEntities.Count}");
+        Console.WriteLine(
+            $"State-bearing entities: {actorStates.Length}");
+        if (preview is not null)
+        {
+            Console.WriteLine(
+                $"Preview: {preview.Image.Width}x{preview.Image.Height} " +
+                $"{preview.Image.BitsPerPixel}-bit RGB565, " +
+                $"alpha={preview.Image.HasAlphaPlane}");
+        }
+
+        if (entityDetails)
+        {
+            Console.WriteLine(
+                "Changed entities: scene,db,reference_x,reference_y,direction,death,crawl,hp,backpack,weapon");
+            var savedByScene = snapshot.SceneList.Entities.ToDictionary(
+                entity => entity.SceneIndex);
+            foreach (var change in snapshot.ChangedEntities)
+            {
+                var saved = savedByScene[change.SceneIndex];
+                Console.WriteLine(
+                    $"  {saved.SceneIndex},{saved.DatabaseEntryId}," +
+                    $"{saved.ReferenceX},{saved.ReferenceY}," +
+                    $"{saved.DirectionIndex},{saved.DeathState}," +
+                    $"{saved.CrawlState},{saved.CurrentHitPoints}," +
+                    $"{saved.AuxiliaryArrays[0].Count}," +
+                    $"{saved.AuxiliaryArrays[1].Count}");
+            }
+            Console.WriteLine(
+                "Removed scenes: " +
+                string.Join(",", snapshot.RemovedSceneIndices));
+            Console.WriteLine(
+                "Added scenes: " +
+                string.Join(
+                    ",",
+                    snapshot.AddedEntities.Select(
+                        entity =>
+                            $"{entity.SceneIndex}:{entity.DatabaseEntryId}")));
+        }
+
+        return 0;
+    }
+
+    private static int ImportSave(string[] args)
+    {
+        RequireArgumentCount(
+            args,
+            4,
+            7,
+            "import-save <path.SAV> <game-directory> <output.json> [M1937.SI#] [--slot=legacy_N] [--data-dir=<Remake/game/data>]");
+        var savePath = System.IO.Path.GetFullPath(args[1]);
+        var gameDirectory = System.IO.Path.GetFullPath(args[2]);
+        var outputPath = System.IO.Path.GetFullPath(args[3]);
+        var slotArgument = args
+            .Skip(4)
+            .FirstOrDefault(argument =>
+                argument.StartsWith(
+                    "--slot=",
+                    StringComparison.OrdinalIgnoreCase));
+        var slotId = slotArgument is null
+            ? $"legacy_{System.IO.Path.GetFileNameWithoutExtension(savePath).ToLowerInvariant()}"
+            : slotArgument["--slot=".Length..];
+        var dataDirectoryArgument = args
+            .Skip(4)
+            .FirstOrDefault(argument =>
+                argument.StartsWith(
+                    "--data-dir=",
+                    StringComparison.OrdinalIgnoreCase));
+        var dataDirectory = dataDirectoryArgument is null
+            ? System.IO.Path.GetFullPath(
+                System.IO.Path.Combine(
+                    "Remake",
+                    "game",
+                    "data"))
+            : System.IO.Path.GetFullPath(
+                dataDirectoryArgument["--data-dir=".Length..]);
+        var previewArgument = args
+            .Skip(4)
+            .FirstOrDefault(argument =>
+                !argument.StartsWith(
+                    "--",
+                    StringComparison.Ordinal) &&
+                System.IO.Path.GetFileName(argument).StartsWith(
+                    "M1937.SI",
+                    StringComparison.OrdinalIgnoreCase));
+        var preview = previewArgument is null
+            ? null
+            : LegacySavePreview.Open(
+                System.IO.Path.GetFullPath(previewArgument));
+        var databasePath = System.IO.Path.Combine(
+            gameDirectory,
+            "1937Database.dbl");
+        var database = DblDatabase.Open(databasePath);
+        var snapshot = LegacySaveSnapshot.Open(
+            savePath,
+            gameDirectory,
+            database);
+        var result = LegacySaveImporter.Build(
+            snapshot,
+            dataDirectory,
+            slotId,
+            preview);
+
+        var outputDirectory = System.IO.Path.GetDirectoryName(
+            outputPath);
+        if (!string.IsNullOrEmpty(outputDirectory))
+        {
+            Directory.CreateDirectory(outputDirectory);
+        }
+        File.WriteAllText(
+            outputPath,
+            result.Document.ToJsonString(JsonOptions) +
+                Environment.NewLine,
+            new System.Text.UTF8Encoding(
+                encoderShouldEmitUTF8Identifier: false));
+        if (preview is not null)
+        {
+            preview.Image.SavePng(
+                System.IO.Path.ChangeExtension(
+                    outputPath,
+                    ".preview.png"));
+        }
+
+        Console.WriteLine(
+            $"Imported original {snapshot.Level.LevelId} save as slot '{slotId}'.");
+        Console.WriteLine(
+            $"Actors {result.ActorCount}, dynamic enemies {result.DynamicEnemyCount}, " +
+            $"buried {result.BuriedEnemyCount}, remaining pickups {result.RemainingPickupCount}, " +
+            $"inferred objectives {result.InferredObjectiveCount}.");
+        Console.WriteLine($"Wrote: {outputPath}");
+        if (preview is not null)
+        {
+            Console.WriteLine(
+                "Preview: " +
+                System.IO.Path.ChangeExtension(
+                    outputPath,
+                    ".preview.png"));
         }
         return 0;
     }
@@ -618,7 +888,11 @@ internal static class Program
         Console.WriteLine(
             "  world-pickup-baseline <1937db.dbl> <output.json>");
         Console.WriteLine(
-            "  inspect-vwf <path.vwf> [1937db.dbl] [--entities] [--patrols] [--extended]");
+            "  inspect-vwf <path.vwf> [1937db.dbl] [--entities] [--patrols] [--extended] [--auxiliary] [--scene=N]");
+        Console.WriteLine(
+            "  inspect-save <path.SAV> <game-directory> [1937db.dbl] [M1937.SI#] [--entities]");
+        Console.WriteLine(
+            "  import-save <path.SAV> <game-directory> <output.json> [M1937.SI#] [--slot=legacy_N] [--data-dir=<Remake/game/data>]");
         Console.WriteLine(
             "  list-gfl <1937Resources.GFL> [InterMedia.GFL] [--all]");
         Console.WriteLine("  extract-gfl <1937Resources.GFL> <output-directory> [InterMedia.GFL]");

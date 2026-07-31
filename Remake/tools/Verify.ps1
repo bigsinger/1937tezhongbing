@@ -220,6 +220,10 @@ if ($LASTEXITCODE -ne 0) {
     throw "Godot save and settings tests failed with exit code $LASTEXITCODE."
 }
 
+& (Join-Path $PSScriptRoot 'Test-LegacySaveCompatibility.ps1') `
+    -GodotExecutable $GodotExecutable `
+    -NoBuild
+
 if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
     & (Join-Path $PSScriptRoot 'Build-LevelFidelityBaselines.ps1') -Verify
 
