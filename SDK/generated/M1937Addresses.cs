@@ -32,6 +32,7 @@ namespace Mission1937.SDK.Generated
         public const long UnregisterActorLookup = 0x00052360L;
         public const long RightDragSelection = 0x0004C800L;
         public const long SmoothScroll = 0x0004C9B0L;
+        public const long SetCameraOrigin = 0x0004A870L;
         public const long WorldInputDispatch = 0x0004CB80L;
         public const long SetScrollVelocityLimit = 0x0004AB10L;
         public const long WorldResolveHoverTarget = 0x0004C050L;

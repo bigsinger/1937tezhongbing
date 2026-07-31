@@ -41,6 +41,7 @@ else {
 }
 & (Join-Path $PSScriptRoot 'Test-RuntimeParityTrace.ps1')
 & (Join-Path $PSScriptRoot 'Test-VisualParityTool.ps1')
+& (Join-Path $PSScriptRoot 'Test-VisualParityBaseline.ps1')
 
 $modResource = Join-Path `
     ([System.IO.Path]::GetDirectoryName($remakeRoot)) `

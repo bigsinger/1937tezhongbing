@@ -19,8 +19,8 @@
     {
       "id": "map_layers_and_rendering",
       "status": "partial",
-      "evidence": ["VWF L1-L5 import", "DBL four render queues", "twelve-level structural and artifact-hash fidelity baseline", "seven recovered closed/open door sprite pairs with original-anchor alignment", "read-only stable-MOD RGB565 versus offscreen Remake 1024x708 visual gate across m000-m011 with 97.46%-99.03% near-match pixels and no black-hole regression", "all 19,199 entity placements use the first-group SPR X/Z anchor across the 704 resources used by the twelve levels"],
-      "gaps": ["1920x1080 pixel baseline", "dynamic multi-layer actor occlusion calibration"]
+      "evidence": ["VWF L1-L5 import", "DBL four render queues", "twelve-level structural and artifact-hash fidelity baseline", "seven recovered closed/open door sprite pairs with original-anchor alignment", "read-only stable-MOD RGB565 versus offscreen Remake 1024x768 world baseline across m000-m011 with 98.04%-99.12% near-match pixels and no black-hole regression", "1920x1080 modern viewport baseline assembled from 48 safe 1024x768 stable-MOD camera tiles with 96.20%-98.61% near-match pixels, minimum 0.9416 edge correlation, maximum 0.0567% black-hole pixels and zero failed tiles", "original sub_44A870 camera setter fixed in the SDK so terrain, foreground and auxiliary viewports redraw coherently", "all 19,199 entity placements use the first-group SPR X/Z anchor across the 704 resources used by the twelve levels"],
+      "gaps": ["dynamic multi-layer actor occlusion calibration"]
     },
     {
       "id": "actors_and_animation",
@@ -73,8 +73,8 @@
     {
       "id": "menus_hud_minimap_and_cursor",
       "status": "partial",
-      "evidence": ["pause/failure menus", "F1/F7", "right-side inventory", "live minimap", "12-level viewport-input open/close coverage for W/A grids, M minimap, F1 guide, Esc pause and automatic failure menu", "GFL 16 mouse.spr runtime type 55 with all recovered serials 0/1/2/3/4/6/8/9/10", "S eye serial 8, B hand serial 4, move/target/door/blocked context selection", "overhead fixed-tick burial progress", "app-local cursor presentation with no pointer capture, clipping, warping, or desktop-coordinate fallback"],
-      "gaps": ["1024x768 pixel baselines", "1920x1080 baselines", "hotspot and animation pixel parity for every contextual cursor"]
+      "evidence": ["pause/failure menus", "F1/F7", "right-side inventory", "live minimap", "12-level viewport-input open/close coverage for W/A grids, M minimap, F1 guide, Esc pause and automatic failure menu", "GFL 16 mouse.spr runtime type 55 with all recovered serials 0/1/2/3/4/6/8/9/10", "S eye serial 8, B hand serial 4, move/target/door/blocked context selection", "overhead fixed-tick burial progress", "app-local cursor presentation with no pointer capture, clipping, warping, or desktop-coordinate fallback", "1024x768 and tiled 1920x1080 world-rendering pixel baselines explicitly exclude the original top HUD and bottom toolbar for separate UI calibration"],
+      "gaps": ["1024x768 complete menu/HUD pixel baselines", "1920x1080 complete menu/HUD pixel baselines", "hotspot and animation pixel parity for every contextual cursor"]
     },
     {
       "id": "save_load_settings_and_progression",

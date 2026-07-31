@@ -733,6 +733,38 @@ internal static class ModRegressionProbe
                     TimeSpan.FromSeconds(12));
                 Thread.Sleep(550);
                 string briefingCaptureHash = "";
+                string briefingSurfaceHash = "";
+                bool briefingSurfaceNonBlank = false;
+                string briefingSurfaceEvidence = "";
+                int briefingSurfaceWidth = ReadInt(
+                    process, imageBase + EngineAddresses.ScreenWidth);
+                int briefingSurfaceHeight = ReadInt(
+                    process, imageBase + EngineAddresses.ScreenHeight);
+                if (briefingSurfaceWidth < 320 ||
+                    briefingSurfaceWidth > 4096)
+                    briefingSurfaceWidth = 1024;
+                if (briefingSurfaceHeight < 200 ||
+                    briefingSurfaceHeight > 2160)
+                    briefingSurfaceHeight = 768;
+                using (CaptureResult briefingSurface =
+                    CaptureCncDdrawPrimarySurface(
+                        game,
+                        process,
+                        briefingSurfaceWidth,
+                        briefingSurfaceHeight,
+                        out briefingSurfaceEvidence))
+                {
+                    if (briefingSurface != null)
+                    {
+                        briefingSurfaceHash = briefingSurface.Sha256;
+                        briefingSurfaceNonBlank =
+                            briefingSurface.NonBlank;
+                        SaveCapture(
+                            briefingSurface,
+                            Path.Combine(
+                                outputDirectory,
+                                "00-text-briefing-surface.jpg"));
+                    }
                 using (CaptureResult briefing = CaptureWindow(window))
                 {
                     briefingCaptureHash =
@@ -749,18 +781,25 @@ internal static class ModRegressionProbe
                         briefingEntered &&
                         (briefingOnly
                             ? briefingActors == 0 &&
-                              briefing != null &&
-                              briefing.NonBlank
+                              (briefingSurfaceNonBlank ||
+                               (briefing != null &&
+                                briefing.NonBlank))
                             : briefingActors > 0 ||
+                              briefingSurfaceNonBlank ||
                               (briefing != null &&
                                briefing.NonBlank)),
                         "same_main_window=true; external_dialog=false; " +
                         "world_actors=" + briefingActors +
                         "; automated_skip=" + (briefingActors > 0) +
-                        "; non_blank=" +
+                        "; window_non_blank=" +
                         (briefing != null && briefing.NonBlank) +
-                        "; hash=" +
-                        (briefing == null ? "" : briefing.Sha256));
+                        "; window_hash=" +
+                        (briefing == null ? "" : briefing.Sha256) +
+                        "; surface_non_blank=" +
+                        briefingSurfaceNonBlank +
+                        "; surface_hash=" + briefingSurfaceHash +
+                        "; " + briefingSurfaceEvidence);
+                }
                 }
                 if (briefingOnly)
                 {
@@ -802,32 +841,84 @@ internal static class ModRegressionProbe
                 PostMessage(
                     window, WmSetFocus, IntPtr.Zero, IntPtr.Zero);
                 bool briefingContinueSent = PulseMouseButton(window, 0);
-                Thread.Sleep(1200);
+                bool briefingStateAdvanced = WaitUntil(
+                    delegate()
+                    {
+                        return ReadWorldActorCount(
+                            process, imageBase) > 0;
+                    },
+                    TimeSpan.FromSeconds(Math.Min(
+                        12.0, Math.Max(4.0, maximumSeconds * 0.2))));
                 bool briefingVisualChanged = false;
                 string missionMenuHash = "";
+                string missionMenuSurfaceHash = "";
+                bool missionMenuSurfaceNonBlank = false;
+                string missionMenuSurfaceEvidence = "";
+                using (CaptureResult missionMenuSurface =
+                    CaptureCncDdrawPrimarySurface(
+                        game,
+                        process,
+                        briefingSurfaceWidth,
+                        briefingSurfaceHeight,
+                        out missionMenuSurfaceEvidence))
+                {
+                    if (missionMenuSurface != null)
+                    {
+                        missionMenuSurfaceHash =
+                            missionMenuSurface.Sha256;
+                        missionMenuSurfaceNonBlank =
+                            missionMenuSurface.NonBlank;
+                        briefingVisualChanged =
+                            missionMenuSurface.NonBlank &&
+                            !String.Equals(
+                                briefingSurfaceHash,
+                                missionMenuSurface.Sha256,
+                                StringComparison.OrdinalIgnoreCase);
+                        SaveCapture(
+                            missionMenuSurface,
+                            Path.Combine(
+                                outputDirectory,
+                                "01-mission-menu-surface.jpg"));
+                    }
                 using (CaptureResult missionMenu = CaptureWindow(window))
                 {
                     missionMenuHash =
                         missionMenu == null ? "" : missionMenu.Sha256;
                     briefingVisualChanged =
-                        missionMenu != null &&
-                        !String.Equals(
-                            briefingCaptureHash,
-                            missionMenu.Sha256,
-                            StringComparison.OrdinalIgnoreCase);
+                        briefingVisualChanged ||
+                        (missionMenu != null &&
+                         missionMenu.NonBlank &&
+                         !String.Equals(
+                             briefingCaptureHash,
+                             missionMenu.Sha256,
+                             StringComparison.OrdinalIgnoreCase));
                     SaveCapture(
                         missionMenu,
                         Path.Combine(
                             outputDirectory, "01-mission-menu.jpg"));
                 }
+                }
                 AddStage(
                     stages, game, process, imageBase, clock,
                     "briefing_dismissed",
-                    briefingContinueSent && briefingVisualChanged,
+                    briefingContinueSent &&
+                    (briefingStateAdvanced ||
+                     briefingVisualChanged),
                     "process_local_mouse=true; visual_changed=" +
-                    briefingVisualChanged + "; briefing_hash=" +
-                    briefingCaptureHash + "; mission_menu_hash=" +
-                    missionMenuHash);
+                    briefingVisualChanged +
+                    "; world_state_advanced=" +
+                    briefingStateAdvanced +
+                    "; window_briefing_hash=" +
+                    briefingCaptureHash +
+                    "; window_mission_menu_hash=" +
+                    missionMenuHash +
+                    "; surface_briefing_hash=" +
+                    briefingSurfaceHash +
+                    "; surface_mission_menu_hash=" +
+                    missionMenuSurfaceHash +
+                    "; surface_non_blank=" +
+                    missionMenuSurfaceNonBlank +
+                    "; " + missionMenuSurfaceEvidence);
 
                 bool missionStarted = WaitUntil(
                     delegate()
@@ -901,20 +992,19 @@ internal static class ModRegressionProbe
                 WaitUntil(
                     delegate()
                     {
-                        ActorSnapshot candidate =
-                            FindPlayerActor(process, imageBase);
-                        if (candidate == null)
-                            return false;
                         int currentCameraX = ReadInt(
                             process,
                             imageBase + EngineAddresses.CameraX);
                         int currentCameraY = ReadInt(
                             process,
                             imageBase + EngineAddresses.CameraY);
-                        return candidate.WorldX - currentCameraX >= 0 &&
-                            candidate.WorldX - currentCameraX < 1024 &&
-                            candidate.WorldY - currentCameraY >= 0 &&
-                            candidate.WorldY - currentCameraY < 688;
+                        return FindPlayerActorInViewport(
+                            process,
+                            imageBase,
+                            currentCameraX,
+                            currentCameraY,
+                            1024,
+                            688) != null;
                     },
                     TimeSpan.FromSeconds(2));
                 ActorSnapshot spawnStart =
@@ -937,6 +1027,12 @@ internal static class ModRegressionProbe
                 int gameplayViewportHeight = viewportController > 0
                     ? ReadInt(process, viewportAddress + 0x2C)
                     : spawnScreenHeight - 80;
+                int gameplayWorldWidth = viewportController > 0
+                    ? ReadInt(process, viewportAddress + 0x54)
+                    : -1;
+                int gameplayWorldHeight = viewportController > 0
+                    ? ReadInt(process, viewportAddress + 0x58)
+                    : -1;
                 bool cameraStateSynchronized =
                     viewportController > 0 &&
                     ReadInt(process, viewportAddress + 0x30) ==
@@ -947,15 +1043,17 @@ internal static class ModRegressionProbe
                         spawnCameraX &&
                     ReadInt(process, viewportAddress + 0x48) ==
                         spawnCameraY;
+                ActorSnapshot cameraPlayer =
+                    FindPlayerActorInViewport(
+                        process,
+                        imageBase,
+                        spawnCameraX,
+                        spawnCameraY,
+                        gameplayViewportWidth,
+                        gameplayViewportHeight);
                 bool cameraShowsPlayer =
-                    spawnStart != null &&
                     cameraStateSynchronized &&
-                    spawnStart.WorldX - spawnCameraX >= 0 &&
-                    spawnStart.WorldX - spawnCameraX <
-                        gameplayViewportWidth &&
-                    spawnStart.WorldY - spawnCameraY >= 0 &&
-                    spawnStart.WorldY - spawnCameraY <
-                        gameplayViewportHeight;
+                    cameraPlayer != null;
                 AddStage(
                     stages, game, process, imageBase, clock,
                     "initial_camera_synchronized",
@@ -965,17 +1063,25 @@ internal static class ModRegressionProbe
                     gameplayViewportWidth + "," +
                     gameplayViewportHeight + "); render=(" +
                     spawnScreenWidth + "," + spawnScreenHeight +
-                    "); player_visible=" + cameraShowsPlayer);
+                    "); world=(" + gameplayWorldWidth + "," +
+                    gameplayWorldHeight + "); player_visible=" +
+                    cameraShowsPlayer);
                 AddStage(
                     stages, game, process, imageBase, clock,
                     "initial_camera_contains_player",
                     cameraShowsPlayer,
-                    spawnStart == null
-                        ? "player actor was not readable"
+                    cameraPlayer == null
+                        ? "no live friendly actor was inside the " +
+                          "initial viewport"
                         : "camera=(" + spawnCameraX + "," +
-                          spawnCameraY + "); player=(" +
-                          spawnStart.WorldX + "," +
-                          spawnStart.WorldY + "); viewport=(" +
+                          spawnCameraY + "); visible_player=(" +
+                          cameraPlayer.WorldX + "," +
+                          cameraPlayer.WorldY +
+                          "); runtime_index=" +
+                          cameraPlayer.SceneIndex +
+                          "; runtime_type=" +
+                          cameraPlayer.RuntimeType +
+                          "; viewport=(" +
                           gameplayViewportWidth + "," +
                           gameplayViewportHeight +
                           "); render=(" + spawnScreenWidth + "," +
@@ -1002,7 +1108,11 @@ internal static class ModRegressionProbe
                                 out visualCameraLeft,
                                 out visualCameraTop);
                     }
-                    Thread.Sleep(250);
+                    // The RGB565 primary surface can briefly contain a
+                    // strip-scroll intermediate frame (HUD rows copied into
+                    // the world) after a camera jump. Wait through several
+                    // original 30 Hz composition cycles before sampling.
+                    Thread.Sleep(1000);
                     string copiedScreenshot = Path.Combine(
                         outputDirectory,
                         "02-gameplay-surface.png");
@@ -1780,7 +1890,10 @@ internal static class ModRegressionProbe
                                        "\"escape_timeouts\":") +
                                    SumCounter(
                                        current,
-                                       "\"search_completed\":") >=
+                                       "\"search_completed\":") +
+                                   SumCounter(
+                                       current,
+                                       "\"reacquisitions\":") >=
                                    maximumReinforcements;
                         }, TimeSpan.FromSeconds(21));
                 aiTelemetry = ReadSharedText(telemetryPath);
@@ -1796,8 +1909,11 @@ internal static class ModRegressionProbe
                     aiTelemetry, "\"escape_timeouts\":");
                 long searchCompleted = SumCounter(
                     aiTelemetry, "\"search_completed\":");
+                long targetReacquisitions = SumCounter(
+                    aiTelemetry, "\"reacquisitions\":");
                 long escapeSuccesses =
-                    escapeTimeouts + searchCompleted;
+                    escapeTimeouts + searchCompleted +
+                    targetReacquisitions;
                 long escapeTrials =
                     maximumReinforcements;
                 bool boundedReinforcements =
@@ -1829,6 +1945,9 @@ internal static class ModRegressionProbe
                         CultureInfo.InvariantCulture) +
                     "; escape_successes=" +
                     escapeSuccesses.ToString(
+                        CultureInfo.InvariantCulture) +
+                    "; target_reacquisitions=" +
+                    targetReacquisitions.ToString(
                         CultureInfo.InvariantCulture) +
                     "; ai_tick_max_us=" +
                     aiTickMaximum.ToString(
@@ -2317,6 +2436,24 @@ internal static class ModRegressionProbe
         string outputPath,
         out string evidence)
     {
+        using (CaptureResult capture =
+            CaptureCncDdrawPrimarySurface(
+                game, process, width, height, out evidence))
+        {
+            if (capture == null || capture.Bitmap == null)
+                return false;
+            capture.Bitmap.Save(outputPath, ImageFormat.Png);
+            return true;
+        }
+    }
+
+    private static CaptureResult CaptureCncDdrawPrimarySurface(
+        Process game,
+        IntPtr process,
+        int width,
+        int height,
+        out string evidence)
+    {
         evidence = "";
         try
         {
@@ -2332,7 +2469,7 @@ internal static class ModRegressionProbe
             {
                 evidence = "ddraw_module=missing; modules=" +
                     loadedModules;
-                return false;
+                return null;
             }
             uint exportRva = ResolvePeExportRva(
                 ddrawPath,
@@ -2340,7 +2477,7 @@ internal static class ModRegressionProbe
             if (exportRva == 0)
             {
                 evidence = "pvBmpBits=missing";
-                return false;
+                return null;
             }
             long pointerAddress =
                 ddrawBase + exportRva;
@@ -2349,14 +2486,14 @@ internal static class ModRegressionProbe
             if (pointerBytes.Length != 4)
             {
                 evidence = "pvBmpBits=unreadable";
-                return false;
+                return null;
             }
             uint surfaceAddress =
                 BitConverter.ToUInt32(pointerBytes, 0);
             if (surfaceAddress == 0 || width <= 0 || height <= 0)
             {
                 evidence = "surface=unavailable";
-                return false;
+                return null;
             }
             int sourceStride = checked(width * 2);
             byte[] source = ReadBytes(
@@ -2366,11 +2503,12 @@ internal static class ModRegressionProbe
             if (source.Length != sourceStride * height)
             {
                 evidence = "surface=short_read";
-                return false;
+                return null;
             }
 
-            using (var bitmap = new Bitmap(
-                width, height, PixelFormat.Format24bppRgb))
+            var bitmap = new Bitmap(
+                width, height, PixelFormat.Format24bppRgb);
+            try
             {
                 Rectangle area =
                     new Rectangle(0, 0, width, height);
@@ -2416,22 +2554,47 @@ internal static class ModRegressionProbe
                 {
                     bitmap.UnlockBits(data);
                 }
-                bitmap.Save(outputPath, ImageFormat.Png);
+                byte[] pixels = BitmapBytes(bitmap);
+                string hash;
+                using (SHA256 sha = SHA256.Create())
+                    hash = BitConverter.ToString(
+                        sha.ComputeHash(pixels)).Replace("-", "");
+                int largestDarkComponent;
+                double darkPixelRatio;
+                AnalyzeMapDarkResidue(
+                    bitmap,
+                    out largestDarkComponent,
+                    out darkPixelRatio);
+                var capture = new CaptureResult
+                {
+                    Bitmap = bitmap,
+                    Sha256 = hash,
+                    NonBlank = HasVisualRange(pixels),
+                    LargestDarkComponentPixels =
+                        largestDarkComponent,
+                    DarkPixelRatio = darkPixelRatio
+                };
+                bitmap = null;
+                evidence = "module=" + Path.GetFileName(ddrawPath) +
+                    "; export_rva=0x" +
+                    exportRva.ToString(
+                        "X8", CultureInfo.InvariantCulture) +
+                    "; surface=0x" +
+                    surfaceAddress.ToString(
+                        "X8", CultureInfo.InvariantCulture) +
+                    "; format=RGB565";
+                return capture;
             }
-            evidence = "module=" + Path.GetFileName(ddrawPath) +
-                "; export_rva=0x" +
-                exportRva.ToString(
-                    "X8", CultureInfo.InvariantCulture) +
-                "; surface=0x" +
-                surfaceAddress.ToString(
-                    "X8", CultureInfo.InvariantCulture) +
-                "; format=RGB565";
-            return true;
+            finally
+            {
+                if (bitmap != null)
+                    bitmap.Dispose();
+            }
         }
         catch (Exception ex)
         {
             evidence = ex.GetType().Name + ": " + ex.Message;
-            return false;
+            return null;
         }
     }
 
@@ -3158,6 +3321,56 @@ internal static class ModRegressionProbe
                 continue;
             var snapshot = ReadActor(process, actor);
             if (snapshot == null)
+                continue;
+            snapshot.SceneIndex = index;
+            if (snapshot.RuntimeType == 1)
+                return snapshot;
+            if (fallback == null)
+                fallback = snapshot;
+        }
+        return fallback;
+    }
+
+    private static ActorSnapshot FindPlayerActorInViewport(
+        IntPtr process,
+        long imageBase,
+        int cameraX,
+        int cameraY,
+        int viewportWidth,
+        int viewportHeight)
+    {
+        if (viewportWidth <= 0 || viewportHeight <= 0)
+            return null;
+        int worldValue = ReadInt(
+            process, imageBase + EngineAddresses.WorldRoot);
+        if (worldValue == 0 || worldValue == int.MinValue)
+            return null;
+        long world = (long)(uint)worldValue;
+        int actorArrayValue = ReadInt(process, world + 0x18);
+        int count = ReadInt(process, world + 0x3C);
+        if (actorArrayValue == 0 ||
+            actorArrayValue == int.MinValue ||
+            count <= 0 ||
+            count > 4096)
+            return null;
+        long actorArray = (long)(uint)actorArrayValue;
+        ActorSnapshot fallback = null;
+        for (int index = 0; index < count; ++index)
+        {
+            int actorValue = ReadInt(
+                process, actorArray + index * 4L);
+            if (actorValue == 0 || actorValue == int.MinValue)
+                continue;
+            long actor = (long)(uint)actorValue;
+            if (ReadInt(process, actor + ActorFactionOffset) != 3 ||
+                ReadInt(process, actor + ActorDeadOffset) != 0)
+                continue;
+            ActorSnapshot snapshot = ReadActor(process, actor);
+            if (snapshot == null ||
+                snapshot.WorldX < cameraX ||
+                snapshot.WorldX >= cameraX + viewportWidth ||
+                snapshot.WorldY < cameraY ||
+                snapshot.WorldY >= cameraY + viewportHeight)
                 continue;
             snapshot.SceneIndex = index;
             if (snapshot.RuntimeType == 1)

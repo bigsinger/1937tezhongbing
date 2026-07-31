@@ -29,6 +29,7 @@
     {"name": "UnregisterActorLookup", "rva": "0x00052360", "kind": "function", "confidence": "decompiled"},
     {"name": "RightDragSelection", "rva": "0x0004C800", "kind": "function", "confidence": "decompiled"},
     {"name": "SmoothScroll", "rva": "0x0004C9B0", "kind": "function", "confidence": "observed"},
+    {"name": "SetCameraOrigin", "rva": "0x0004A870", "kind": "function", "confidence": "decompiled"},
     {"name": "WorldInputDispatch", "rva": "0x0004CB80", "kind": "function", "confidence": "decompiled"},
     {"name": "SetScrollVelocityLimit", "rva": "0x0004AB10", "kind": "function", "confidence": "decompiled"},
     {"name": "WorldResolveHoverTarget", "rva": "0x0004C050", "kind": "function", "confidence": "decompiled"},

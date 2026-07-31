@@ -2392,13 +2392,44 @@ void ClearEnhancedSearchStates() {
     memset(g_search_states, 0, sizeof(g_search_states));
 }
 
-void StartEnhancedSearch(
+void RetainSearchStatesInActorTable(
+    m1937::sdk::RuntimeActorV1 **actors,
+    int actor_count) {
+    for (auto &state : g_search_states) {
+        if (state.actor == 0) {
+            continue;
+        }
+        bool retained = false;
+        for (int index = 0; index < actor_count; ++index) {
+            if (reinterpret_cast<std::uintptr_t>(actors[index]) ==
+                state.actor) {
+                retained = true;
+                break;
+            }
+        }
+        if (!retained) {
+            state = EnhancedSearchState{};
+        }
+    }
+}
+
+bool StartEnhancedSearch(
     m1937::sdk::RuntimeActorV1 *actor,
     int anchor_x, int anchor_y, int direction,
     bool intercept, int first_x, int first_y) {
-    auto *state = FindSearchState(actor, true);
+    auto *state = FindSearchState(actor, false);
+    // A last-known observation is immutable for the lifetime of its bounded
+    // search. Crowded missions can propagate the same alarm every frame; if
+    // those repeats reset started_at, the timeout never expires and the
+    // nearest guards remain permanently commandeered. Preserve the active
+    // search until it completes, times out or the original engine reacquires
+    // a target.
+    if (state && state->started_at != 0) {
+        return false;
+    }
+    state = FindSearchState(actor, true);
     if (!state) {
-        return;
+        return false;
     }
     state->anchor_x = anchor_x;
     state->anchor_y = anchor_y;
@@ -2421,6 +2452,7 @@ void StartEnhancedSearch(
         AssignSearchGoal(actor, first_x, first_y);
     }
     InterlockedIncrement(&g_telemetry.ai_searches_started);
+    return true;
 }
 
 using OriginalAlertPropagationProc =
@@ -2516,6 +2548,7 @@ int __fastcall EnhancedAlertPropagation(
             observation, tuning, search_points,
             sizeof(search_points) / sizeof(search_points[0]));
 
+    int searches_started = 0;
     for (int index = 0; index < selected_count; ++index) {
         auto *candidate =
             reinterpret_cast<m1937::sdk::RuntimeActorV1 *>(
@@ -2530,17 +2563,15 @@ int __fastcall EnhancedAlertPropagation(
             goal_y = search_points[index - 1].y;
             intercept = index == 1;
         }
-        if (intercept) {
-            InterlockedIncrement(&g_telemetry.ai_intercepts);
+        if (StartEnhancedSearch(
+                candidate, anchor_x, anchor_y, direction,
+                intercept, goal_x, goal_y)) {
+            candidate->interest_actor_address = 0;
+            if (intercept) {
+                InterlockedIncrement(&g_telemetry.ai_intercepts);
+            }
+            ++searches_started;
         }
-        candidate->goal_kind = 1;
-        candidate->interest_actor_address = 0;
-        candidate->command_variant = 1;
-        candidate->command_pending = 1;
-        candidate->search_or_return_active = 1;
-        StartEnhancedSearch(
-            candidate, anchor_x, anchor_y, direction,
-            intercept, goal_x, goal_y);
     }
     if (selected_count > 0) {
         source->search_delay_counter = 0;
@@ -2550,7 +2581,7 @@ int __fastcall EnhancedAlertPropagation(
     }
     InterlockedIncrement(&g_telemetry.ai_alerts);
     InterlockedExchangeAdd(
-        &g_telemetry.ai_reinforcements, selected_count);
+        &g_telemetry.ai_reinforcements, searches_started);
     return 1;
 }
 
@@ -2660,12 +2691,22 @@ void TickEnhancedEnemyAI() {
         has_world
             ? reinterpret_cast<std::uintptr_t>(current_actors)
             : 0;
-    if (mission != g_ai_last_mission ||
-        current_actor_table != g_ai_actor_table) {
+    if (mission != g_ai_last_mission) {
         ClearEnhancedSearchStates();
         g_ai_last_mission = mission;
-        g_ai_actor_table = current_actor_table;
+    } else if (current_actor_table != g_ai_actor_table) {
+        // Several original missions resize/reallocate the actor pointer table
+        // while keeping the actor objects alive. Clearing every search on a
+        // table-address change starves its timeout under repeated alarms.
+        // Retain only pointers that are still present in the new table.
+        if (has_world) {
+            RetainSearchStatesInActorTable(
+                current_actors, current_actor_count);
+        } else {
+            ClearEnhancedSearchStates();
+        }
     }
+    g_ai_actor_table = current_actor_table;
     const int timeout = ConfiguredSearchTimeoutMs();
     for (auto &state : g_search_states) {
         if (state.actor == 0) {
@@ -2673,9 +2714,22 @@ void TickEnhancedEnemyAI() {
         }
         auto *actor =
             reinterpret_cast<m1937::sdk::RuntimeActorV1 *>(state.actor);
-        if (!IsReadableRange(actor, sizeof(*actor)) ||
-            actor->dead_or_disabled != 0) {
+        if (!IsReadableRange(actor, sizeof(*actor))) {
             state = EnhancedSearchState{};
+            continue;
+        }
+        // Some missions temporarily mark an actor disabled while changing
+        // scripted state. Dropping the search immediately lets the next
+        // repeated alarm recreate it from zero forever. Keep the immutable
+        // observation and allow its normal timeout to retire the state.
+        if (actor->dead_or_disabled != 0) {
+            if (timeout > 0 &&
+                now - state.started_at >=
+                    static_cast<DWORD>(timeout)) {
+                state = EnhancedSearchState{};
+                InterlockedIncrement(
+                    &g_telemetry.ai_escape_timeouts);
+            }
             continue;
         }
         if (state.pending_activation) {
@@ -3280,29 +3334,57 @@ void HandleWindowReplayMessage(const MSG &message) {
                 static_cast<unsigned short>(LOWORD(message.lParam));
             const int world_y =
                 static_cast<unsigned short>(HIWORD(message.lParam));
+            auto *controller_fields =
+                reinterpret_cast<std::int32_t *>(controller);
+            // sub_44A870 clamps against this[10]-this[8] and
+            // this[11]-this[9]. The public +0x28/+0x2C values are right and
+            // bottom bounds, not reliable spans when a mission has a
+            // non-zero viewport origin (m009 uses 302 horizontal pixels).
+            const int viewport_span_width =
+                controller_fields[10] - controller_fields[8];
+            const int viewport_span_height =
+                controller_fields[11] - controller_fields[9];
+            if (viewport_span_width <= 0 || viewport_span_height <= 0 ||
+                controller->world_width < viewport_span_width ||
+                controller->world_height < viewport_span_height)
+                break;
             const int camera_left = std::clamp(
                 world_x - controller->viewport_width / 2,
                 0,
-                controller->world_width - controller->viewport_width);
+                controller->world_width - viewport_span_width);
             const int camera_top = std::clamp(
                 world_y - controller->viewport_height / 2,
                 0,
-                controller->world_height - controller->viewport_height);
-            controller->camera_left = camera_left;
-            controller->camera_top = camera_top;
-            controller->camera_right =
-                camera_left + controller->viewport_width;
-            controller->camera_bottom =
-                camera_top + controller->viewport_height;
-            controller->input_camera_left = camera_left;
-            controller->input_camera_top = camera_top;
-            *reinterpret_cast<int *>(
-                g_executable_base + m1937::sdk::rva::camera_x) =
-                camera_left;
-            *reinterpret_cast<int *>(
-                g_executable_base + m1937::sdk::rva::camera_y) =
-                camera_top;
-            centered = true;
+                controller->world_height - viewport_span_height);
+            using SetCameraOriginFn = int(__thiscall *)(
+                m1937::sdk::RuntimeViewportControllerV1 *, int, int);
+            auto set_camera_origin =
+                reinterpret_cast<SetCameraOriginFn>(
+                    g_executable_base +
+                    m1937::sdk::rva::set_camera_origin);
+            // sub_44A870 is the original camera setter. Besides updating the
+            // public bounds it calls the terrain, foreground and auxiliary
+            // viewport scroll hooks, preventing mixed old/new layer caches.
+            // This isolated replay command never moves the system cursor.
+            // A horizontal-only jump can take the legacy strip renderer's
+            // incremental path and retain unloaded rows (notably mission
+            // m009). Prime the requested X at an alternate Y first; the
+            // original setter then refreshes both scroll axes before the
+            // final exact origin.
+            int prime_top = 0;
+            if (camera_top == 0 && controller->world_height > 1) {
+                prime_top = controller->viewport_height / 2;
+                if (prime_top < 1)
+                    prime_top = 1;
+                if (prime_top >= controller->world_height)
+                    prime_top = controller->world_height - 1;
+            }
+            if (prime_top != camera_top)
+                set_camera_origin(controller, camera_left, prime_top);
+            set_camera_origin(controller, camera_left, camera_top);
+            centered =
+                controller->camera_left == camera_left &&
+                controller->camera_top == camera_top;
         }
         RecordDiagnostic(
             "replay_camera",

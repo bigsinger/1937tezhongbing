@@ -13,6 +13,10 @@ param(
 
     [int]$RegionTop = 0,
     [int]$RegionBottom = 708,
+    [ValidateRange(0, 7680)]
+    [int]$CandidateLeft = 0,
+    [ValidateRange(0, 4320)]
+    [int]$CandidateTop = 0,
     [double]$MaximumMeanAbsoluteError = 20.0,
     [double]$MinimumNearMatchRatio = 0.70,
     [double]$MinimumEdgeCorrelation = 0.90,
@@ -45,6 +49,8 @@ public sealed class Mission1937VisualParityResultV1
     public int Height;
     public int RegionTop;
     public int RegionBottom;
+    public int CandidateLeft;
+    public int CandidateTop;
     public long ComparedPixels;
     public double MeanAbsoluteError;
     public double NearMatchRatio;
@@ -59,15 +65,16 @@ public static class Mission1937VisualParityV1
         string candidatePath,
         string contactSheetPath,
         int regionTop,
-        int regionBottom)
+        int regionBottom,
+        int candidateLeft,
+        int candidateTop)
     {
         using (var referenceSource = new Bitmap(referencePath))
         using (var candidateSource = new Bitmap(candidatePath))
         {
-            if (referenceSource.Width != candidateSource.Width ||
-                referenceSource.Height != candidateSource.Height)
+            if (candidateLeft < 0 || candidateTop < 0)
                 throw new InvalidOperationException(
-                    "Visual parity images must have identical dimensions.");
+                    "Candidate crop offsets must not be negative.");
 
             int width = referenceSource.Width;
             int height = referenceSource.Height;
@@ -76,6 +83,11 @@ public static class Mission1937VisualParityV1
             if (bottom - top < 3 || width < 3)
                 throw new InvalidOperationException(
                     "Visual parity comparison region is too small.");
+            if (candidateLeft + width > candidateSource.Width ||
+                candidateTop + bottom > candidateSource.Height)
+                throw new InvalidOperationException(
+                    "Candidate image does not contain the requested " +
+                    "comparison crop.");
 
             using (var reference = Normalize(referenceSource))
             using (var candidate = Normalize(candidateSource))
@@ -96,15 +108,23 @@ public static class Mission1937VisualParityV1
                 byte[] difference = new byte[
                     checked(referenceStride * height)];
 
-                for (int y = 0; y < height; y++)
+                // Only the requested world region is part of the
+                // comparison. A lower modern-viewport tile can end at
+                // candidateSource.Height before the reference image's
+                // legacy HUD rows; those excluded rows must not be read.
+                for (int y = 0; y < bottom; y++)
                 {
                     int referenceRow = y * referenceStride;
-                    int candidateRow = y * candidateStride;
+                        int candidateYCoordinate = y + candidateTop;
+                        int candidateRow =
+                            candidateYCoordinate * candidateStride;
                     int lumaRow = y * width;
                     for (int x = 0; x < width; x++)
                     {
                         int referenceOffset = referenceRow + x * 3;
-                        int candidateOffset = candidateRow + x * 3;
+                        int candidateXCoordinate = x + candidateLeft;
+                        int candidateOffset =
+                            candidateRow + candidateXCoordinate * 3;
                         int db = Math.Abs(
                             referenceBytes[referenceOffset] -
                             candidateBytes[candidateOffset]);
@@ -205,8 +225,28 @@ public static class Mission1937VisualParityV1
                         Graphics.FromImage(contactSheet))
                     {
                         graphics.DrawImageUnscaled(reference, 0, 0);
-                        graphics.DrawImageUnscaled(
-                            candidate, width, 0);
+                        graphics.FillRectangle(
+                            Brushes.Black,
+                            width,
+                            0,
+                            width,
+                            height);
+                        int candidateCropHeight = Math.Min(
+                            height,
+                            candidate.Height - candidateTop);
+                        graphics.DrawImage(
+                            candidate,
+                            new Rectangle(
+                                width,
+                                0,
+                                width,
+                                candidateCropHeight),
+                            new Rectangle(
+                                candidateLeft,
+                                candidateTop,
+                                width,
+                                candidateCropHeight),
+                            GraphicsUnit.Pixel);
                         graphics.DrawImageUnscaled(
                             differenceBitmap, width * 2, 0);
                         contactSheet.Save(
@@ -221,6 +261,8 @@ public static class Mission1937VisualParityV1
                     Height = height,
                     RegionTop = top,
                     RegionBottom = bottom,
+                    CandidateLeft = candidateLeft,
+                    CandidateTop = candidateTop,
                     ComparedPixels = comparedPixels,
                     MeanAbsoluteError =
                         channelError / (double)(comparedPixels * 3),
@@ -338,7 +380,9 @@ $metrics = [Mission1937VisualParityV1]::Compare(
     $CandidateImage,
     $contactSheet,
     $RegionTop,
-    $RegionBottom)
+    $RegionBottom,
+    $CandidateLeft,
+    $CandidateTop)
 $passed = (
     $metrics.MeanAbsoluteError -le $MaximumMeanAbsoluteError -and
     $metrics.NearMatchRatio -ge $MinimumNearMatchRatio -and
@@ -350,6 +394,9 @@ $result = [pscustomobject][ordered]@{
     reference = $ReferenceImage
     candidate = $CandidateImage
     dimensions = @($metrics.Width, $metrics.Height)
+    candidate_crop = @(
+        $metrics.CandidateLeft,
+        $metrics.CandidateTop)
     region = [pscustomobject][ordered]@{
         top = $metrics.RegionTop
         bottom = $metrics.RegionBottom
