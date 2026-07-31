@@ -154,6 +154,12 @@ $scenarios = @(
         parity_flag = '--parity-attack-only'
     },
     [pscustomobject]@{
+        id = 'm007-special-attention-attack-inventory-v1'
+        level_id = 'm007'
+        selector_level = 8
+        parity_flag = '--parity-attack-only'
+    },
+    [pscustomobject]@{
         id = 'm010-dagger-attack-inventory-v1'
         level_id = 'm010'
         selector_level = 11

@@ -46,6 +46,9 @@ const LEGACY_SPECIAL_WORLD_OBJECT_SCRIPT: Script = preload("res://scripts/legacy
 const LEGACY_EXPLOSION_VISUAL_RULES: Script = preload(
 	"res://scripts/legacy_explosion_visual_rules.gd"
 )
+const LEGACY_CRT_RANDOM_CATALOG: Script = preload(
+	"res://scripts/generated/legacy_crt_random_catalog.gd"
+)
 const LEGACY_EXPLOSION_EFFECT_SCRIPT: Script = preload(
 	"res://scripts/legacy_explosion_effect.gd"
 )
@@ -299,6 +302,9 @@ var last_formation_move_event_usec := 0
 var last_level_load_phase_usec: Dictionary = {}
 var last_squad_spawn_phase_usec: Dictionary = {}
 var legacy_crt_random_state := 1
+var legacy_crt_random_draw_index := 0
+var legacy_crt_random_trace_enabled := false
+var legacy_crt_random_trace: Array[Dictionary] = []
 var field_pickups: Array[Node2D] = []
 var original_pickup_order_target: Node2D
 var original_pickup_order_collector: SQUAD_UNIT
@@ -333,6 +339,12 @@ var runtime_settings: Dictionary = {
 
 
 func _ready() -> void:
+	legacy_crt_random_trace_enabled = (
+		OS.get_environment("M1937_REMAKE_RNG_TRACE") == "1"
+		or "--trace-legacy-rng" in (
+			OS.get_cmdline_args() + OS.get_cmdline_user_args()
+		)
+	)
 	_initialize_persistence()
 	_create_media_director()
 	_create_game_shell()
@@ -347,6 +359,97 @@ func _ready() -> void:
 	if startup_level_selection_pending:
 		call_deferred("_open_level_selector", true)
 	queue_redraw()
+
+
+func next_legacy_crt_random(call_site_rva: int) -> Dictionary:
+	var metadata: Dictionary = (
+		LEGACY_CRT_RANDOM_CATALOG.metadata_for_rva(call_site_rva)
+	)
+	if metadata.is_empty():
+		push_error(
+			"拒绝消费未登记的原版 CRT rand 调用点：0x%08X"
+			% call_site_rva
+		)
+		return {}
+	var state_before := legacy_crt_random_state
+	var state_after: int = LEGACY_CRT_RANDOM_CATALOG.next_state(
+		state_before
+	)
+	var random_value: int = LEGACY_CRT_RANDOM_CATALOG.random_value(
+		state_after
+	)
+	legacy_crt_random_state = state_after
+	legacy_crt_random_draw_index += 1
+	var draw := {
+		"draw_index": legacy_crt_random_draw_index,
+		"call_site_rva": call_site_rva,
+		"state_before": state_before,
+		"state": state_after,
+		"value": random_value,
+		"domain": str(metadata.get("domain", "")),
+		"purpose": str(metadata.get("purpose", "")),
+	}
+	_record_legacy_crt_random_draw(draw)
+	return draw
+
+
+func commit_legacy_crt_random_draws(draws: Array) -> bool:
+	var expected_state := legacy_crt_random_state
+	var verified: Array[Dictionary] = []
+	for raw_draw: Variant in draws:
+		if not raw_draw is Dictionary:
+			push_error("原版 CRT rand 批次包含非字典记录")
+			return false
+		var draw := raw_draw as Dictionary
+		var call_site_rva := int(draw.get("call_site_rva", 0))
+		var metadata: Dictionary = (
+			LEGACY_CRT_RANDOM_CATALOG.metadata_for_rva(call_site_rva)
+		)
+		if metadata.is_empty():
+			push_error(
+				"原版 CRT rand 批次包含未登记调用点：0x%08X"
+				% call_site_rva
+			)
+			return false
+		var state_before := expected_state
+		expected_state = LEGACY_CRT_RANDOM_CATALOG.next_state(expected_state)
+		var expected_value: int = (
+			LEGACY_CRT_RANDOM_CATALOG.random_value(expected_state)
+		)
+		if (
+			int(draw.get("state", -1)) != expected_state
+			or int(draw.get("value", -1)) != expected_value
+		):
+			push_error(
+				(
+					"原版 CRT rand 批次状态不连续：调用点 0x%08X，"
+					+ "期望 state=0x%08X/value=%d"
+				)
+				% [call_site_rva, expected_state, expected_value]
+			)
+			return false
+		verified.append({
+			"call_site_rva": call_site_rva,
+			"state_before": state_before,
+			"state": expected_state,
+			"value": expected_value,
+			"domain": str(metadata.get("domain", "")),
+			"purpose": str(metadata.get("purpose", "")),
+		})
+	for draw: Dictionary in verified:
+		legacy_crt_random_draw_index += 1
+		draw["draw_index"] = legacy_crt_random_draw_index
+		_record_legacy_crt_random_draw(draw)
+	legacy_crt_random_state = expected_state
+	return true
+
+
+func _record_legacy_crt_random_draw(draw: Dictionary) -> void:
+	if not legacy_crt_random_trace_enabled:
+		return
+	legacy_crt_random_trace.append(draw.duplicate(true))
+	if legacy_crt_random_trace.size() > 4096:
+		legacy_crt_random_trace.pop_front()
 
 
 func _exit_tree() -> void:
@@ -3739,7 +3842,18 @@ func _spawn_legacy_explosion_effect(
 		effect.queue_free()
 		return null
 	if update_global_random_state:
-		legacy_crt_random_state = next_random_state
+		var draws: Array = (
+			effect.call("take_crt_random_draws")
+			if effect.has_method("take_crt_random_draws")
+			else []
+		)
+		if (
+			not commit_legacy_crt_random_draws(draws)
+			or legacy_crt_random_state != next_random_state
+		):
+			push_error("actor 62 爆炸效果的全局 CRT rand 批次不连续")
+			effect.queue_free()
+			return null
 	legacy_explosion_effects.append(effect)
 	effect.tree_exited.connect(
 		Callable(self, "_on_legacy_explosion_effect_exited").bind(effect)
@@ -3912,12 +4026,22 @@ func _add_legacy_special_visual_burst(
 		or not source.has_method("add_recovered_visual_burst")
 	):
 		return
-	legacy_crt_random_state = int(source.call(
+	var next_random_state := int(source.call(
 		"add_recovered_visual_burst",
 		effect_family,
 		center_world_position,
 		legacy_crt_random_state,
 	))
+	var draws: Array = (
+		source.call("take_crt_random_draws")
+		if source.has_method("take_crt_random_draws")
+		else []
+	)
+	if (
+		not commit_legacy_crt_random_draws(draws)
+		or legacy_crt_random_state != next_random_state
+	):
+		push_error("特殊部署对象的全局 CRT rand 批次不连续")
 
 
 static func _legacy_special_band_contains(band: Dictionary, offset: Vector2) -> bool:

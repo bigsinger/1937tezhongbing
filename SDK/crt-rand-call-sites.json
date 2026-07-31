@@ -1,0 +1,432 @@
+{
+  "schema_version": 1,
+  "address_kind": "rva_from_loaded_M1937_exe_base",
+  "generator": "Microsoft Visual C runtime LCG used by M1937.exe",
+  "initial_state": 1,
+  "formula": {
+    "next_state": "(state * 214013 + 2531011) & 0xffffffff",
+    "return_value": "(next_state >> 16) & 0x7fff"
+  },
+  "supported_executable_sha256": "F4DD1131DF6C993C01EA011F9439BC725E6DC6491B5FBBA47724D7D5B64DA3F3",
+  "direct_call_site_count": 119,
+  "callers": [
+    {
+      "caller_rva": "0x000031C0",
+      "engine_symbol": "sub_4031C0",
+      "semantic_name": "load_mission_and_debug_screen",
+      "domain": "debug_ui",
+      "formal_missions": false,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "invalid_mission_debug_statistics", "sites": ["0x000032ED", "0x000032FF", "0x00003311", "0x00003327", "0x0000335F"]}
+      ]
+    },
+    {
+      "caller_rva": "0x00006A50",
+      "engine_symbol": "sub_406A50",
+      "semantic_name": "select_level_music",
+      "domain": "audio_media",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "music_index_rand_mod_6_plus_2", "sites": ["0x00006A73"]}
+      ]
+    },
+    {
+      "caller_rva": "0x00050910",
+      "engine_symbol": "sub_450910",
+      "semantic_name": "initialize_actor_base_state",
+      "domain": "actor_initialization",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "initial_idle_limit_rand_mod_160", "sites": ["0x00050967"]},
+        {"purpose": "initial_facing_rand_mod_9_plus_1_clamped_to_8", "sites": ["0x00050980"]}
+      ]
+    },
+    {
+      "caller_rva": "0x00050AC0",
+      "engine_symbol": "sub_450AC0",
+      "semantic_name": "reset_actor_base_state",
+      "domain": "actor_initialization",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "reset_idle_limit_rand_mod_160", "sites": ["0x00050B64"]},
+        {"purpose": "reset_facing_rand_mod_9_plus_1_clamped_to_8", "sites": ["0x00050B7D"]}
+      ]
+    },
+    {
+      "caller_rva": "0x000533F0",
+      "engine_symbol": "sub_4533F0",
+      "semantic_name": "initialize_actor_ai_state",
+      "domain": "actor_initialization",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "initial_ai_phase_rand_mod_60", "sites": ["0x0005340B"]},
+        {"purpose": "initial_reaction_limit_rand_mod_40_plus_40", "sites": ["0x0005358B"]}
+      ]
+    },
+    {
+      "caller_rva": "0x00053650",
+      "engine_symbol": "sub_453650",
+      "semantic_name": "reset_actor_ai_state",
+      "domain": "actor_initialization",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "reset_ai_phase_rand_mod_60", "sites": ["0x00053655"]},
+        {"purpose": "reset_reaction_limit_rand_mod_40_plus_40", "sites": ["0x000537A3"]}
+      ]
+    },
+    {
+      "caller_rva": "0x00055200",
+      "engine_symbol": "sub_455200",
+      "semantic_name": "update_local_observation_search",
+      "domain": "enemy_ai",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "candidate_scan_gate_rand_mod_2", "sites": ["0x00055216"]},
+        {"purpose": "search_x_magnitude_rand_mod_128_plus_64", "sites": ["0x0005528C"]},
+        {"purpose": "search_y_magnitude_rand_mod_64_plus_32", "sites": ["0x000552A3"]},
+        {"purpose": "search_x_sign_rand_mod_2", "sites": ["0x000552BA"]},
+        {"purpose": "search_y_sign_rand_mod_2", "sites": ["0x000552D1"]}
+      ]
+    },
+    {
+      "caller_rva": "0x00055930",
+      "engine_symbol": "sub_455930",
+      "semantic_name": "update_actor_path_command",
+      "domain": "navigation",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "blocked_retry_x_rand_mod_128", "sites": ["0x00055BFB"]},
+        {"purpose": "blocked_retry_y_rand_mod_64", "sites": ["0x00055C0F"]},
+        {"purpose": "blocked_retry_x_sign_rand_mod_2", "sites": ["0x00055C23"]},
+        {"purpose": "blocked_retry_y_sign_rand_mod_2", "sites": ["0x00055C3A"]}
+      ]
+    },
+    {
+      "caller_rva": "0x00056070",
+      "engine_symbol": "sub_456070",
+      "semantic_name": "update_actor_movement_and_facing",
+      "domain": "actor_ai",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "stationary_idle_limit_rand_mod_160_plus_40", "sites": ["0x00056105"]},
+        {"purpose": "path_state_3_limit_rand_mod_60", "sites": ["0x0005614F"]}
+      ]
+    },
+    {
+      "caller_rva": "0x00058270",
+      "engine_symbol": "sub_458270",
+      "semantic_name": "apply_world_item_effect",
+      "domain": "world_items",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "item_52_distraction_limit_rand_mod_40_plus_80", "sites": ["0x000582BC"]},
+        {"purpose": "item_82_83_distraction_limit_rand_mod_40_plus_80", "sites": ["0x000582FA"]}
+      ]
+    },
+    {
+      "caller_rva": "0x000587E0",
+      "engine_symbol": "sub_4587E0",
+      "semantic_name": "advance_actor_route",
+      "domain": "navigation",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "next_route_wait_rand_mod_160_plus_40", "sites": ["0x00058946"]}
+      ]
+    },
+    {
+      "caller_rva": "0x00059290",
+      "engine_symbol": "sub_459290",
+      "semantic_name": "update_normal_guming",
+      "domain": "disguise",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "temporary_state_limit_rand_mod_40_plus_20", "sites": ["0x00059343"]}
+      ]
+    },
+    {
+      "caller_rva": "0x00059370",
+      "engine_symbol": "sub_459370",
+      "semantic_name": "update_disguised_guming",
+      "domain": "disguise",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "temporary_state_limit_rand_mod_40_plus_20", "sites": ["0x000593E1"]}
+      ]
+    },
+    {
+      "caller_rva": "0x0005B950",
+      "engine_symbol": "sub_45B950",
+      "semantic_name": "load_actor_runtime_state",
+      "domain": "actor_initialization",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "load_facing_rand_mod_9_clamped_to_at_least_1", "sites": ["0x0005BBBC"]}
+      ]
+    },
+    {
+      "caller_rva": "0x0005BD40",
+      "engine_symbol": "sub_45BD40",
+      "semantic_name": "reload_actor_runtime_state",
+      "domain": "actor_initialization",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "reload_facing_rand_mod_9_clamped_to_at_least_1", "sites": ["0x0005BFAC"]}
+      ]
+    },
+    {
+      "caller_rva": "0x0005C710",
+      "engine_symbol": "sub_45C710",
+      "semantic_name": "update_enemy_ai",
+      "domain": "enemy_ai",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "observation_marker_scan_gate_rand_mod_2", "sites": ["0x0005C81C"]},
+        {"purpose": "tracked_target_face_gate_rand_mod_20", "sites": ["0x0005C998"]},
+        {"purpose": "tracked_target_reaction_limit_rand_mod_20_plus_20", "sites": ["0x0005CB2B"]},
+        {"purpose": "item_investigation_limit_rand_mod_40_plus_20", "sites": ["0x0005CB60"]},
+        {"purpose": "corpse_investigation_animation_gate_rand_mod_3", "sites": ["0x0005CB9C"]},
+        {"purpose": "corpse_reaction_limit_rand_mod_40_plus_40", "sites": ["0x0005CC69"]},
+        {"purpose": "search_continue_limit_rand_mod_40_plus_40", "sites": ["0x0005CCCD"]},
+        {"purpose": "idle_search_limit_rand_mod_40_plus_40", "sites": ["0x0005CD01"]}
+      ]
+    },
+    {
+      "caller_rva": "0x0005CE90",
+      "engine_symbol": "sub_45CE90",
+      "semantic_name": "update_secondary_enemy_search",
+      "domain": "enemy_ai",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "candidate_scan_gate_rand_mod_2", "sites": ["0x0005CEA6"]},
+        {"purpose": "search_x_magnitude_rand_mod_128_plus_64", "sites": ["0x0005CF33"]},
+        {"purpose": "search_y_magnitude_rand_mod_64_plus_32", "sites": ["0x0005CF4A"]},
+        {"purpose": "search_x_sign_rand_mod_2", "sites": ["0x0005CF61"]},
+        {"purpose": "search_y_sign_rand_mod_2", "sites": ["0x0005CF78"]}
+      ]
+    },
+    {
+      "caller_rva": "0x0005D060",
+      "engine_symbol": "sub_45D060",
+      "semantic_name": "choose_local_search_point",
+      "domain": "enemy_ai",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "search_x_rand_mod_requested_span", "sites": ["0x0005D08F"]},
+        {"purpose": "search_y_rand_mod_half_requested_span", "sites": ["0x0005D09D"]},
+        {"purpose": "search_x_sign_rand_mod_2", "sites": ["0x0005D0B4"]},
+        {"purpose": "search_y_sign_rand_mod_2", "sites": ["0x0005D0CB"]},
+        {"purpose": "next_search_limit_rand_mod_160_plus_40", "sites": ["0x0005D15F"]}
+      ]
+    },
+    {
+      "caller_rva": "0x0005D330",
+      "engine_symbol": "sub_45D330",
+      "semantic_name": "continue_target_pursuit",
+      "domain": "enemy_ai",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "runtime_type_56_pursuit_delay_rand_mod_10", "sites": ["0x0005D394"]},
+        {"purpose": "pursuit_far_target_gate_rand_mod_10", "sites": ["0x0005D47E"]}
+      ]
+    },
+    {
+      "caller_rva": "0x0005D610",
+      "engine_symbol": "sub_45D610",
+      "semantic_name": "select_actor_animation_family_a",
+      "domain": "actor_animation",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "runtime_type_specific_two_way_serial_selection", "sites": ["0x0005D64F", "0x0005D67C", "0x0005D6A9", "0x0005D6D6"]}
+      ]
+    },
+    {
+      "caller_rva": "0x0005D7B0",
+      "engine_symbol": "sub_45D7B0",
+      "semantic_name": "select_actor_animation_family_b",
+      "domain": "actor_animation",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "runtime_type_specific_two_way_serial_selection", "sites": ["0x0005D7CF", "0x0005D7F8", "0x0005D821", "0x0005D855"]}
+      ]
+    },
+    {
+      "caller_rva": "0x0005D900",
+      "engine_symbol": "sub_45D900",
+      "semantic_name": "select_actor_animation_family_c",
+      "domain": "actor_animation",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "runtime_type_specific_two_way_serial_selection", "sites": ["0x0005D921", "0x0005D960", "0x0005D989", "0x0005D9BD"]}
+      ]
+    },
+    {
+      "caller_rva": "0x0005DA60",
+      "engine_symbol": "sub_45DA60",
+      "semantic_name": "select_actor_animation_family_d",
+      "domain": "actor_animation",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "runtime_type_specific_two_way_serial_selection", "sites": ["0x0005DA81", "0x0005DAAA", "0x0005DAD3", "0x0005DB07", "0x0005DB3B"]}
+      ]
+    },
+    {
+      "caller_rva": "0x0005DDA0",
+      "engine_symbol": "sub_45DDA0",
+      "semantic_name": "propagate_alert",
+      "domain": "enemy_ai",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "recipient_reaction_limit_rand_mod_40_plus_40", "sites": ["0x0005DF71"]}
+      ]
+    },
+    {
+      "caller_rva": "0x0005DFC0",
+      "engine_symbol": "sub_45DFC0",
+      "semantic_name": "investigate_nearby_special_actor",
+      "domain": "enemy_ai",
+      "formal_missions": true,
+      "confidence": "disassembled",
+      "operations": [
+        {"purpose": "investigation_x_magnitude_rand_mod_128_plus_64", "sites": ["0x0005E078"]},
+        {"purpose": "investigation_y_magnitude_rand_mod_64_plus_32", "sites": ["0x0005E08F"]},
+        {"purpose": "investigation_x_sign_rand_mod_2", "sites": ["0x0005E0A6"]},
+        {"purpose": "investigation_y_sign_rand_mod_2", "sites": ["0x0005E0BD"]}
+      ]
+    },
+    {
+      "caller_rva": "0x0005FD10",
+      "engine_symbol": "sub_45FD10",
+      "semantic_name": "reset_ambient_particle_field",
+      "domain": "ambient_visuals",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "primary_particle_x", "sites": ["0x0005FD2C"]},
+        {"purpose": "primary_particle_y", "sites": ["0x0005FD41"]},
+        {"purpose": "primary_particle_alpha_rand_mod_60_plus_100", "sites": ["0x0005FD54"]},
+        {"purpose": "primary_particle_lifetime_rand_mod_250_plus_250", "sites": ["0x0005FD6A"]},
+        {"purpose": "primary_particle_speed_rand_mod_8_plus_6", "sites": ["0x0005FD7F"]},
+        {"purpose": "primary_particle_size", "sites": ["0x0005FDA8"]},
+        {"purpose": "secondary_particle_x", "sites": ["0x0005FDDB"]},
+        {"purpose": "secondary_particle_y", "sites": ["0x0005FDEE"]},
+        {"purpose": "secondary_particle_alpha_rand_mod_70_minus_76", "sites": ["0x0005FE02"]},
+        {"purpose": "secondary_particle_lifetime_rand_mod_2_plus_1", "sites": ["0x0005FE19"]}
+      ]
+    },
+    {
+      "caller_rva": "0x0005FF20",
+      "engine_symbol": "sub_45FF20",
+      "semantic_name": "update_ambient_particle_field",
+      "domain": "ambient_visuals",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "flash_gate_rand_mod_500", "sites": ["0x0005FF45"]},
+        {"purpose": "weather_phase_gate_rand_mod_250", "sites": ["0x0005FF65"]},
+        {"purpose": "secondary_draw_x_jitter_rand_mod_2", "sites": ["0x000600F0"]},
+        {"purpose": "secondary_draw_y_jitter_rand_mod_2", "sites": ["0x00060105"]},
+        {"purpose": "primary_decay_component_rand_mod_19", "sites": ["0x000601D6"]},
+        {"purpose": "primary_decay_component_rand_mod_20", "sites": ["0x000601E5"]},
+        {"purpose": "primary_decay_tail", "sites": ["0x00060202"]},
+        {"purpose": "primary_respawn_x", "sites": ["0x0006026D"]},
+        {"purpose": "primary_respawn_y", "sites": ["0x00060291"]},
+        {"purpose": "primary_respawn_alpha_rand_mod_80_plus_80", "sites": ["0x000602A7"]},
+        {"purpose": "primary_respawn_lifetime_rand_mod_250_plus_250", "sites": ["0x000602BC"]},
+        {"purpose": "primary_respawn_speed_rand_mod_8_plus_6", "sites": ["0x000602D1"]},
+        {"purpose": "primary_respawn_size", "sites": ["0x000602FA"]},
+        {"purpose": "secondary_respawn_x", "sites": ["0x00060374"]},
+        {"purpose": "secondary_respawn_y", "sites": ["0x00060396"]},
+        {"purpose": "secondary_respawn_alpha_rand_mod_70_minus_76", "sites": ["0x000603AD"]},
+        {"purpose": "secondary_respawn_lifetime_rand_mod_2_plus_1", "sites": ["0x000603C4"]}
+      ]
+    },
+    {
+      "caller_rva": "0x00061D10",
+      "engine_symbol": "sub_461D10",
+      "semantic_name": "choose_matching_sprite_relation",
+      "domain": "scene_visuals",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "matching_candidate_index_rand_mod_count", "sites": ["0x00061DFC"]},
+        {"purpose": "equal_relation_orientation_rand_mod_4", "sites": ["0x00061E3A"]}
+      ]
+    },
+    {
+      "caller_rva": "0x00064120",
+      "engine_symbol": "sub_464120",
+      "semantic_name": "initialize_effect_particle",
+      "domain": "effect_visuals",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "effect_repeat_or_style_rand_mod_3_plus_2", "sites": ["0x00064138"]}
+      ]
+    },
+    {
+      "caller_rva": "0x00064580",
+      "engine_symbol": "sub_464580",
+      "semantic_name": "choose_effect_particle_position",
+      "domain": "effect_visuals",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "initial_angle_rand_mod_360", "sites": ["0x0006458D"]},
+        {"purpose": "x_jitter_positive_or_negative_branch", "sites": ["0x000645F2", "0x00064604"]},
+        {"purpose": "y_jitter_positive_or_negative_branch", "sites": ["0x0006461C", "0x0006463A"]}
+      ]
+    },
+    {
+      "caller_rva": "0x00064730",
+      "engine_symbol": "sub_464730",
+      "semantic_name": "populate_explosion_particles",
+      "domain": "combat_effects",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "particle_attempt_count_max_rand_mod_3_one", "sites": ["0x00064744"]},
+        {"purpose": "particle_runtime_type_variant_rand_mod_3", "sites": ["0x0006476E"]},
+        {"purpose": "x_sign_rand_mod_2", "sites": ["0x000647FB"]},
+        {"purpose": "y_sign_rand_mod_2", "sites": ["0x0006480F"]},
+        {"purpose": "x_magnitude_positive_or_negative_branch", "sites": ["0x00064841", "0x00064861"]},
+        {"purpose": "y_magnitude_positive_or_negative_branch", "sites": ["0x00064883", "0x000648B0"]}
+      ]
+    },
+    {
+      "caller_rva": "0x000653B0",
+      "engine_symbol": "sub_4653B0",
+      "semantic_name": "create_random_effect_cluster",
+      "domain": "effect_visuals",
+      "formal_missions": true,
+      "confidence": "decompiled",
+      "operations": [
+        {"purpose": "effect_count_max_rand_mod_8_one", "sites": ["0x000653D2"]},
+        {"purpose": "effect_runtime_type_rand_mod_5_plus_72", "sites": ["0x00065402"]}
+      ]
+    }
+  ]
+}

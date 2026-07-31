@@ -216,6 +216,61 @@ int main(int argc, char** argv) {
             "mission route lookup accepted an invalid level", checks);
 
         {
+        using namespace m1937::sdk::crt_random;
+        require(
+            call_site_count == 119,
+            "CRT rand direct call-site count mismatch", checks);
+        auto state = step(initial_state);
+        require(
+            value(state) == 41,
+            "CRT rand default first value mismatch", checks);
+        state = step(state);
+        require(
+            value(state) == 18467,
+            "CRT rand default second value mismatch", checks);
+        std::uintptr_t previous_rva = 0;
+        std::size_t formal_site_count = 0;
+        for (const auto& site : call_sites) {
+            require(
+                site.rva > previous_rva &&
+                    site.caller_rva <= site.rva &&
+                    site.engine_symbol && *site.engine_symbol &&
+                    site.semantic_name && *site.semantic_name &&
+                    site.domain && *site.domain &&
+                    site.purpose && *site.purpose &&
+                    site.confidence && *site.confidence,
+                "CRT rand call-site metadata is incomplete or unsorted",
+                checks);
+            previous_rva = site.rva;
+            if (site.formal_missions)
+                formal_site_count++;
+            const auto* instruction = file.at_rva(
+                static_cast<std::uint32_t>(site.rva), 5);
+            require(
+                instruction[0] == std::byte{0xE8},
+                "CRT rand catalog entry is not a relative CALL", checks);
+            std::int32_t displacement = 0;
+            std::memcpy(
+                &displacement, instruction + 1,
+                sizeof(displacement));
+            const auto target =
+                static_cast<std::int64_t>(site.rva) + 5 +
+                displacement;
+            require(
+                target ==
+                    static_cast<std::int64_t>(
+                        m1937::sdk::rva::crt_rand) &&
+                    find_call_site(site.rva) == &site,
+                "CRT rand relative CALL target or lookup mismatch",
+                checks);
+        }
+        require(
+            formal_site_count == 114 &&
+                find_call_site(0) == nullptr,
+            "CRT rand formal-mission classification mismatch", checks);
+        }
+
+        {
         using namespace m1937::sdk::input;
         require(
             original_action_binding_count == 28 &&

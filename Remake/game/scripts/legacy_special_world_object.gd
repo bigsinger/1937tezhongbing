@@ -62,6 +62,7 @@ var resolved_visual_catalog: Dictionary = {}
 var resolved_particles: Array[Dictionary] = []
 var resolved_visual_burst_count := 0
 var visual_random_state := 1
+var crt_random_draws: Array[Dictionary] = []
 var visual_world_size := Vector2.ZERO
 
 
@@ -105,6 +106,7 @@ func configure(
 	resolved_visual_burst_count = 0
 	visual_world_size = new_visual_world_size
 	visual_random_state = new_visual_random_state
+	crt_random_draws.clear()
 	original_frames.clear()
 	original_anchor = Vector2.ZERO
 	original_frame_hold_ticks = 1
@@ -260,6 +262,9 @@ func add_recovered_visual_burst(
 	if plan.is_empty():
 		return visual_random_state
 	visual_random_state = int(plan.get("next_random_state", start_state))
+	for raw_draw: Variant in plan.get("random_draws", []) as Array:
+		if raw_draw is Dictionary:
+			crt_random_draws.append((raw_draw as Dictionary).duplicate(true))
 	resolved_visual_burst_count += 1
 	for raw_particle: Variant in plan.get("particles", []) as Array:
 		if not raw_particle is Dictionary:
@@ -305,6 +310,12 @@ func add_recovered_visual_burst(
 		})
 	queue_redraw()
 	return visual_random_state
+
+
+func take_crt_random_draws() -> Array[Dictionary]:
+	var result := crt_random_draws.duplicate(true)
+	crt_random_draws.clear()
+	return result
 
 
 func resolved_particle_count() -> int:

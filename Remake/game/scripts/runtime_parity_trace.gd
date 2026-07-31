@@ -238,12 +238,21 @@ func _capture_actor(
 			"combat_action": int(_read_property(actor, "combat_action", 0)),
 			"movement_path_index": movement_path_index,
 			"movement_active": 1 if movement_active else 0,
+			"path_override_active": (
+				1
+				if (
+					actor.has_method("is_special_controlled")
+					and bool(actor.call("is_special_controlled"))
+				)
+				else 0
+			),
 			"target_status": 0,
 			"selected_for_command": 1 if selected else 0,
 			"search_or_return_active": 1 if behavior_state == 3 else 0,
 			"contact_state": 1 if has_live_target and behavior_state in [1, 2] else 0,
 			"target_lost": 0 if has_live_target else 1,
 			"reaction_state": maxi(behavior_state, 0),
+			"runtime_type": int(_read_property(actor, "runtime_actor_type", 0)),
 			"current_hit_points": int(_read_property(actor, "current_hit_points", 0)),
 			"default_attack_type": int(captured_weapon.get("attack_type", 0)),
 			"damage_event_count": int(_read_property(actor, "damage_event_count", 0)),

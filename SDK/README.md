@@ -38,6 +38,9 @@ PE 指纹和原始指令字节。
   伤害免疫；
 - `address-catalog.json` 是地址的唯一机器源；生成器同时产出 C++ 头文件
   和 C# 探针常量；
+- `crt-rand-call-sites.json` 固定受支持 EXE 中 119 个直接 MSVCRT
+  `rand()` 调用点、32 个调用者及已恢复语义；生成器同时产出 C++ 与
+  Godot 目录，并提供精确的 MSVC LCG 状态/返回值接口；
 - `mission-routes.json` 统一描述 1—12 关的选择器编号、原引擎任务和
   VWF 文件要求；
 - `schemas/runtime-parity-trace-v1.schema.json` 固定 MOD 与 Remake 共用的
@@ -86,9 +89,11 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 
 - `include/M1937SDK/Addresses.hpp`
 - `include/M1937SDK/MissionRoutes.hpp`
+- `include/M1937SDK/CrtRandom.hpp`
 - `generated/M1937Addresses.cs`
 - `generated/M1937MissionRoutes.cs`
 - `Patch/src/level-selector/关卡名称.json`
+- `Remake/game/scripts/generated/legacy_crt_random_catalog.gd`
 
 跨运行时轨迹不是地址清单生成物；其 schema 由 SDK 版本化维护，MOD
 只读探针与 Remake 回放器共同消费。已证明的原版对象映射才能写入轨迹，
@@ -127,7 +132,8 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 地址文档，而是 MOD 增强层的公共底座。
 
 `RuntimeActorV1` 现已固定角色世界坐标、导航网格缓存、地面命令、
-寻路状态、当前生命、默认攻击类型、接敌/丢失状态、解析后目标和八方向
+寻路状态、当前生命、`+0x204` 当前命中帧攻击类型、`+0x20C` UI/默认
+攻击类型、接敌/丢失状态、解析后目标和八方向
 朝向字段，以及 `+0x228` 物品容器、`+0x22C` 武器容器两个独立指针。
 结构尾部现完整固定到 `0x2A0`：`+0x28C` 服装切换、`+0x290` 注意力保持、
 `+0x294/+0x298/+0x29C` 伪装恢复状态/上限/计数。
@@ -151,6 +157,9 @@ DBL 1003/物品 53 仍明确归入可受伤汽油桶生命周期，不会误作�
 固定；runtime type 102 无匹配 SPR，必须保留“消费随机数但不生成粒子”的
 语义。相关函数入口和 `SpecialAttentionSource` 全局量均由
 `address-catalog.json` 生成到 C++/C# 常量，补丁和 Remake 不再各自复制魔数。
+原版所有 119 个直接 `rand()` 调用点另由 `crt-rand-call-sites.json`
+统一登记；Remake 的爆炸路径按调用点标签提交到一个可存档、可回放的全局
+MSVCRT LCG 流，未登记地址会拒绝消费，避免各系统私有随机数悄悄破坏顺序。
 
 `Disguise.hpp` 固化古明 type 10/GFL 270 与 type 91/GFL 272 的双向换装表、
 军服 54/青衫 92/项目 99 的容器变化、严格 101 tick 切换与恢复、手枪/匕首

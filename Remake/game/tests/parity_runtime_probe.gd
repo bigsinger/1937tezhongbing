@@ -2,6 +2,9 @@ extends SceneTree
 
 const MAIN_SCENE: PackedScene = preload("res://scenes/main.tscn")
 const TRACE_SCRIPT: Script = preload("res://scripts/runtime_parity_trace.gd")
+const COMBAT_PROFILES: Script = preload("res://scripts/combat_profiles.gd")
+const ORIGINAL_ITEMS: Script = preload("res://scripts/original_initial_item_inventory.gd")
+const LEGACY_DISGUISE_RULES: Script = preload("res://scripts/legacy_disguise_rules.gd")
 
 const OUTPUT_ARGUMENT_PREFIX := "--output-dir="
 const MOVE_SPEED_ARGUMENT_PREFIX := "--move-speed="
@@ -71,6 +74,38 @@ const WEAPON_ATTACK_SCENARIOS := {
 		"description": (
 			"Select Daniu scene 2629, equip the original dart and attack "
 			+ "stationary scene 2685; capture its mode-0 item consumption."
+		),
+	},
+	"m007-slingshot-attack-inventory-v1": {
+		"player_scene": 2298,
+		"target_scene": 2287,
+		"attack_type": 7,
+		"item_id": 42,
+		"before_quantity": 1,
+		"after_quantity": 1,
+		"require_target_damage": true,
+		"description": (
+			"Select Tiedan scene 2298, equip his original durable slingshot, "
+			+ "and attack live scene 2287; verify item 42 remains owned and "
+			+ "the projectile commits target damage."
+		),
+	},
+	"m007-special-attention-attack-inventory-v1": {
+		"player_scene": 2389,
+		"target_scene": 2298,
+		"target_is_player": true,
+		"attack_type": 11,
+		"item_id": 99,
+		"before_quantity": 1,
+		"after_quantity": 1,
+		"complete_guming_disguise": true,
+		"require_attention_hold": true,
+		"force_target": true,
+		"description": (
+			"Complete Gu Ming scene 2389's original uniform transition, "
+			+ "then force-target adjacent scene 2298 with type 11; verify "
+			+ "the attention hold "
+			+ "and durable item 99."
 		),
 	},
 	"m010-dagger-attack-inventory-v1": {
@@ -532,12 +567,78 @@ func _run_weapon_attack_probe(
 	var after_expected := int(scenario.get("after_quantity", -1))
 	var is_deployment := scenario.has("world_point")
 	var attacker := _player_for_scene(main, player_scene)
-	var target = null if is_deployment else _enemy_for_scene(main, target_scene)
+	var target = null
+	if not is_deployment:
+		target = (
+			_combatant_for_scene(main, target_scene)
+			if bool(scenario.get("target_is_player", false))
+			else _enemy_for_scene(main, target_scene)
+		)
 	_expect(attacker != null, "weapon parity player scene %d exists" % player_scene)
 	if not is_deployment:
 		_expect(target != null, "weapon parity target scene %d exists" % target_scene)
 	if attacker != null and (is_deployment or target != null):
 		main.call("select_only", attacker)
+		if bool(scenario.get("seed_original_weapon", false)):
+			var seeded_profile: Dictionary = (
+				COMBAT_PROFILES.weapon_profile_for_attack_type(attack_type)
+			)
+			var seeded_groups: Array[Dictionary] = (
+				main.call(
+					"_attack_groups_for_unit",
+					attacker,
+					str(seeded_profile.get("action_key", "")),
+				)
+				as Array[Dictionary]
+			)
+			_expect(
+				bool(
+					attacker.call(
+						"register_original_inventory_weapon",
+						seeded_profile,
+						seeded_groups,
+						before_expected,
+						1,
+						false,
+					)
+				),
+				"scene %d receives original durable item %d" % [
+					player_scene,
+					item_id,
+				],
+			)
+		if bool(scenario.get("complete_guming_disguise", false)):
+			var backpack: Variant = attacker.get("backpack_inventory")
+			_expect(backpack != null, "Gu Ming backpack exists for disguise parity")
+			if backpack != null:
+				if not bool(backpack.call("has_item", 54)):
+					attacker.call("add_backpack_item", 54, 1, 0)
+				_expect(
+					bool(
+						main.call(
+							"_use_original_backpack_item",
+							attacker,
+							54,
+							ORIGINAL_ITEMS.item_profile(54),
+						)
+					),
+					"Gu Ming begins the original uniform transition",
+				)
+				for unused_tick: int in range(
+					LEGACY_DISGUISE_RULES.CHANGE_TICK_LIMIT + 1
+				):
+					attacker.call(
+						"advance_original_disguise_transition",
+						(
+							LEGACY_DISGUISE_RULES.ORIGINAL_ACTOR_TICK_SECONDS
+							+ 0.000001
+						),
+					)
+				_expect(
+					int(attacker.get("runtime_actor_type")) == 91
+					and int(attacker.get("faction_id")) == 1,
+					"Gu Ming reaches authentic type 91 enemy-uniform state",
+				)
 		_expect(
 			bool(attacker.call("equip_attack_type", attack_type)),
 			"scene %d equips original attack type %d" % [
@@ -549,6 +650,9 @@ func _run_weapon_attack_probe(
 			attacker,
 			"weapon_entries",
 			item_id,
+		)
+		var before_target_hit_points := (
+			int(target.get("current_hit_points")) if target != null else -1
 		)
 		_expect(
 			before_quantity == before_expected,
@@ -575,10 +679,42 @@ func _run_weapon_attack_probe(
 				"attack type %d accepts the original deployment point" % attack_type,
 			)
 		else:
-			main.call("issue_attack_order", target, false)
+			main.call(
+				"issue_attack_order",
+				target,
+				bool(scenario.get("force_target", false)),
+			)
 		var quantity_changed := false
 		var target_hit_points_changed := true
-		if scenario.has("after_target_hit_points"):
+		var attention_hold_observed := true
+		if bool(scenario.get("require_attention_hold", false)):
+			attention_hold_observed = await _wait_for_attention_hold(
+				target,
+				12.0,
+			)
+			quantity_changed = (
+				_inventory_quantity(
+					attacker,
+					"weapon_entries",
+					item_id,
+				)
+				== after_expected
+			)
+		elif bool(scenario.get("require_target_damage", false)):
+			target_hit_points_changed = await _wait_for_target_damage(
+				target,
+				before_target_hit_points,
+				12.0,
+			)
+			quantity_changed = (
+				_inventory_quantity(
+					attacker,
+					"weapon_entries",
+					item_id,
+				)
+				== after_expected
+			)
+		elif scenario.has("after_target_hit_points"):
 			target_hit_points_changed = await _wait_for_target_hit_points(
 				target,
 				int(scenario["after_target_hit_points"]),
@@ -614,6 +750,11 @@ func _run_weapon_attack_probe(
 				target_scene,
 				int(scenario.get("after_target_hit_points", 0)),
 			],
+		)
+		_expect(
+			attention_hold_observed,
+			"target scene %d receives original type-11 attention hold"
+			% target_scene,
 		)
 		# Freeze the command after the first committed attack. In-flight
 		# projectiles keep running, but a slow CI host cannot submit a second
@@ -823,6 +964,35 @@ func _wait_for_target_damage(
 		if (
 			not bool(target.get("is_alive"))
 			or int(target.get("current_hit_points")) < before_hit_points
+		):
+			return true
+		await physics_frame
+	return false
+
+
+func _wait_for_attention_hold(
+	target: Node2D,
+	deadline_seconds: float,
+) -> bool:
+	var ticks_per_second := maxi(
+		int(
+			ProjectSettings.get_setting(
+				"physics/common/physics_ticks_per_second",
+				60,
+			)
+		),
+		1,
+	)
+	var frame_count := maxi(
+		ceili(maxf(deadline_seconds, 0.0) * float(ticks_per_second)),
+		1,
+	)
+	for _frame_index: int in range(frame_count):
+		if (
+			target != null
+			and is_instance_valid(target)
+			and target.has_method("is_special_controlled")
+			and bool(target.call("is_special_controlled"))
 		):
 			return true
 		await physics_frame
@@ -1254,6 +1424,21 @@ func _enemy_for_scene(main: Node, scene_index: int) -> Node2D:
 	for enemy: Node2D in main.get("enemies") as Array:
 		if int(enemy.get("scene_index")) == scene_index:
 			return enemy
+	return null
+
+
+func _combatant_for_scene(main: Node, scene_index: int) -> Node2D:
+	# A stable-MOD actor can change its live faction/type without changing its
+	# serialized scene identity.  Probe the runtime collections by identity so
+	# an original disguise/control transition cannot make the parity fixture
+	# misclassify an otherwise valid target.
+	for field: String in ["units", "escorts", "ambient_units", "enemies"]:
+		for actor_value: Variant in main.get(field) as Array:
+			if (
+				actor_value is Node2D
+				and int((actor_value as Node2D).get("scene_index")) == scene_index
+			):
+				return actor_value as Node2D
 	return null
 
 

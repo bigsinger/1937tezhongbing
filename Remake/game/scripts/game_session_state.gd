@@ -298,6 +298,11 @@ static func _capture_world(game: Node) -> Dictionary:
 			if _has_property(game, "legacy_crt_random_state")
 			else 1
 		),
+		"legacy_crt_random_draw_index": (
+			int(game.get("legacy_crt_random_draw_index"))
+			if _has_property(game, "legacy_crt_random_draw_index")
+			else 0
+		),
 		"projectiles": [],
 		"mission_direction": {},
 		"mission_ai_coordinator": {},
@@ -995,6 +1000,11 @@ static func _restore_world(game: Node, world: Dictionary, warnings: Array[String
 		game.set(
 			"legacy_crt_random_state",
 			int(world.get("legacy_crt_random_state", 1)),
+		)
+	if _has_property(game, "legacy_crt_random_draw_index"):
+		game.set(
+			"legacy_crt_random_draw_index",
+			maxi(int(world.get("legacy_crt_random_draw_index", 0)), 0),
 		)
 	var buried: Dictionary = {}
 	for value: Variant in world.get("buried_enemy_scene_indices", []) as Array:

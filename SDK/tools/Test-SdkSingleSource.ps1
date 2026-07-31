@@ -25,6 +25,7 @@ foreach ($address in $catalog.addresses) {
 
 $allowed = @(
     [IO.Path]::GetFullPath((Join-Path $sdkRoot 'include\M1937SDK\Addresses.hpp')),
+    [IO.Path]::GetFullPath((Join-Path $sdkRoot 'include\M1937SDK\CrtRandom.hpp')),
     [IO.Path]::GetFullPath((Join-Path $sdkRoot 'include\M1937SDK\MissionRoutes.hpp')),
     [IO.Path]::GetFullPath((Join-Path $sdkRoot 'generated\M1937Addresses.cs')),
     [IO.Path]::GetFullPath((Join-Path $sdkRoot 'generated\M1937MissionRoutes.cs'))

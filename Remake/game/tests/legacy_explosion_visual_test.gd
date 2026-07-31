@@ -13,6 +13,9 @@ const SPECIAL_WORLD_OBJECT: Script = preload(
 const EXPLOSION_EFFECT: Script = preload(
 	"res://scripts/legacy_explosion_effect.gd"
 )
+const CRT_CATALOG: Script = preload(
+	"res://scripts/generated/legacy_crt_random_catalog.gd"
+)
 
 
 class MockEnemy:
@@ -33,7 +36,9 @@ var checks := 0
 func _init() -> void:
 	_test_recovered_particle_catalog()
 	_test_original_crt_sequence()
+	_test_global_call_site_catalog()
 	_test_effect_11_burst_plan()
+	_test_global_stream_batch_commit()
 	_test_effect_15_missing_type_102()
 	_test_world_object_five_cycle_lifetime()
 	_test_actor_61_effect_lifecycle()
@@ -92,6 +97,25 @@ func _test_original_crt_sequence() -> void:
 	)
 
 
+func _test_global_call_site_catalog() -> void:
+	_expect(
+		CRT_CATALOG.CALL_SITE_COUNT == 119
+		and (CRT_CATALOG.CALL_SITES as Dictionary).size() == 119,
+		"the generated catalog exposes all 119 direct original rand call sites",
+	)
+	_expect(
+		CRT_CATALOG.rvas_for_operation(
+			"populate_explosion_particles",
+			"particle_attempt_count_max_rand_mod_3_one",
+		) == [0x00064744]
+		and CRT_CATALOG.rvas_for_operation(
+			"populate_explosion_particles",
+			"x_magnitude_positive_or_negative_branch",
+		) == [0x00064841, 0x00064861],
+		"explosion planning resolves call sites from the SDK machine source",
+	)
+
+
 func _test_effect_11_burst_plan() -> void:
 	var plan: Dictionary = RULES.build_burst_plan(
 		11,
@@ -100,11 +124,35 @@ func _test_effect_11_burst_plan() -> void:
 		RULES.CRT_INITIAL_STATE,
 	)
 	var particles := plan.get("particles", []) as Array
+	var random_draws := plan.get("random_draws", []) as Array
 	_expect(
 		int(plan.get("attempted_particle_count", 0)) == 2
 		and particles.size() == 2
-		and int(plan.get("next_random_state", 0)) == 373929026,
+		and int(plan.get("next_random_state", 0)) == 373929026
+		and int(plan.get("random_draw_count", 0)) == 11
+		and random_draws.size() == 11,
 		"effect 11 consumes the exact eleven rand draws from seed 1",
+	)
+	var call_site_sequence: Array[int] = []
+	for raw_draw: Variant in random_draws:
+		call_site_sequence.append(
+			int((raw_draw as Dictionary).get("call_site_rva", 0))
+		)
+	_expect(
+		call_site_sequence == [
+			0x00064744,
+			0x0006476E,
+			0x000647FB,
+			0x0006480F,
+			0x00064861,
+			0x000648B0,
+			0x0006476E,
+			0x000647FB,
+			0x0006480F,
+			0x00064861,
+			0x000648B0,
+		],
+		"effect 11 records the original branch-specific call-site order",
 	)
 	var first := particles[0] as Dictionary
 	var second := particles[1] as Dictionary
@@ -122,6 +170,35 @@ func _test_effect_11_burst_plan() -> void:
 		and int(second.get("repeat_count", 0)) == 5,
 		"effect 11 second particle preserves variant, scatter, asset, and repeats",
 	)
+
+
+func _test_global_stream_batch_commit() -> void:
+	var game = MAIN.new()
+	game.legacy_crt_random_trace_enabled = true
+	var plan: Dictionary = RULES.build_burst_plan(
+		11,
+		Vector2(100.0, 100.0),
+		Vector2(1000.0, 1000.0),
+		game.legacy_crt_random_state,
+	)
+	_expect(
+		game.commit_legacy_crt_random_draws(
+			plan.get("random_draws", []) as Array
+		)
+		and game.legacy_crt_random_state
+			== int(plan.get("next_random_state", 0))
+		and game.legacy_crt_random_draw_index == 11
+		and game.legacy_crt_random_trace.size() == 11,
+		"the session-global stream atomically commits and indexes a recovered batch",
+	)
+	var next_draw: Dictionary = game.next_legacy_crt_random(0x0005D15F)
+	_expect(
+		int(next_draw.get("draw_index", 0)) == 12
+		and int(next_draw.get("call_site_rva", 0)) == 0x0005D15F
+		and game.legacy_crt_random_draw_index == 12,
+		"single draws continue the same process-global stream after a batch",
+	)
+	game.free()
 
 
 func _test_effect_15_missing_type_102() -> void:

@@ -1,6 +1,10 @@
 class_name LegacyExplosionVisualRules
 extends RefCounted
 
+const CRT_CALL_SITE_CATALOG: Script = preload(
+	"res://scripts/generated/legacy_crt_random_catalog.gd"
+)
+
 ## Recovered actor-62 visual-effect construction.
 ##
 ## sub_4554A0 requests effect family 11 for the primary/special ellipse and
@@ -127,9 +131,57 @@ static func build_burst_plan(
 	var family := family_profile(effect_family)
 	if family.is_empty():
 		return {}
+	var count_sites: Array[int] = (
+		CRT_CALL_SITE_CATALOG.rvas_for_operation(
+			"populate_explosion_particles",
+			"particle_attempt_count_max_rand_mod_3_one",
+		)
+	)
+	var variant_sites: Array[int] = (
+		CRT_CALL_SITE_CATALOG.rvas_for_operation(
+			"populate_explosion_particles",
+			"particle_runtime_type_variant_rand_mod_3",
+		)
+	)
+	var x_sign_sites: Array[int] = (
+		CRT_CALL_SITE_CATALOG.rvas_for_operation(
+			"populate_explosion_particles",
+			"x_sign_rand_mod_2",
+		)
+	)
+	var y_sign_sites: Array[int] = (
+		CRT_CALL_SITE_CATALOG.rvas_for_operation(
+			"populate_explosion_particles",
+			"y_sign_rand_mod_2",
+		)
+	)
+	var x_magnitude_sites: Array[int] = (
+		CRT_CALL_SITE_CATALOG.rvas_for_operation(
+			"populate_explosion_particles",
+			"x_magnitude_positive_or_negative_branch",
+		)
+	)
+	var y_magnitude_sites: Array[int] = (
+		CRT_CALL_SITE_CATALOG.rvas_for_operation(
+			"populate_explosion_particles",
+			"y_magnitude_positive_or_negative_branch",
+		)
+	)
+	if (
+		count_sites.size() != 1
+		or variant_sites.size() != 1
+		or x_sign_sites.size() != 1
+		or y_sign_sites.size() != 1
+		or x_magnitude_sites.size() != 2
+		or y_magnitude_sites.size() != 2
+	):
+		push_error("爆炸粒子 CRT rand 调用点目录不完整")
+		return {}
 	var state := initial_state & UINT32_MASK
+	var random_draws: Array[Dictionary] = []
 	var draw := next_crt_rand(state)
 	state = int(draw["state"])
+	_append_random_draw(random_draws, count_sites[0], draw)
 	var attempted_count := maxi(
 		int(draw["value"]) % PARTICLE_COUNT_MODULUS,
 		PARTICLE_MINIMUM_COUNT,
@@ -139,20 +191,33 @@ static func build_burst_plan(
 	for unused_index: int in range(attempted_count):
 		draw = next_crt_rand(state)
 		state = int(draw["state"])
+		_append_random_draw(random_draws, variant_sites[0], draw)
 		var runtime_actor_type := int(
 			runtime_types[int(draw["value"]) % runtime_types.size()]
 		)
 		draw = next_crt_rand(state)
 		state = int(draw["state"])
+		_append_random_draw(random_draws, x_sign_sites[0], draw)
 		var subtract_x := int(draw["value"]) % 2 != 0
 		draw = next_crt_rand(state)
 		state = int(draw["state"])
+		_append_random_draw(random_draws, y_sign_sites[0], draw)
 		var subtract_y := int(draw["value"]) % 2 != 0
 		draw = next_crt_rand(state)
 		state = int(draw["state"])
+		_append_random_draw(
+			random_draws,
+			x_magnitude_sites[0] if subtract_x else x_magnitude_sites[1],
+			draw,
+		)
 		var x_offset := int(draw["value"]) % SPREAD_HORIZONTAL_RADIUS
 		draw = next_crt_rand(state)
 		state = int(draw["state"])
+		_append_random_draw(
+			random_draws,
+			y_magnitude_sites[0] if subtract_y else y_magnitude_sites[1],
+			draw,
+		)
 		var y_offset := int(draw["value"]) % SPREAD_VERTICAL_RADIUS
 		var particle_position := Vector2(
 			center.x - x_offset if subtract_x else center.x + x_offset,
@@ -181,7 +246,21 @@ static func build_burst_plan(
 		"attempted_particle_count": attempted_count,
 		"particles": particles,
 		"next_random_state": state,
+		"random_draws": random_draws,
+		"random_draw_count": random_draws.size(),
 	}
+
+
+static func _append_random_draw(
+	draws: Array[Dictionary],
+	call_site_rva: int,
+	draw: Dictionary,
+) -> void:
+	draws.append({
+		"call_site_rva": call_site_rva,
+		"state": int(draw.get("state", 0)),
+		"value": int(draw.get("value", 0)),
+	})
 
 
 static func particle_lifetime_ticks(runtime_actor_type: int) -> int:

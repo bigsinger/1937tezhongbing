@@ -38,6 +38,9 @@ internal static class ModRegressionProbe
     private const int ReplayCameraCenter = 9;
     private const int ReplaySeedWorldItem = 10;
     private const int ReplaySpawnWorldItem = 11;
+    private const int ReplayCompleteGumingDisguise = 13;
+    private const int ReplaySelectWeaponInventoryItem = 14;
+    private const int ReplayCommitSpecialAttention = 15;
     private const uint WmActivate = 0x0006;
     private const uint WmSetFocus = 0x0007;
     private const uint WmActivateApp = 0x001C;
@@ -49,6 +52,7 @@ internal static class ModRegressionProbe
     private const int DikF6 = 0x40;
     private const int DikM = 0x32;
     private const int DikDigit1 = 0x02;
+    private const int DikDigit2 = 0x03;
     private const int DikDigit3 = 0x04;
     private const int DikDigit4 = 0x05;
     private const int DikDigit5 = 0x06;
@@ -57,7 +61,9 @@ internal static class ModRegressionProbe
     private const int DikDigit8 = 0x09;
     private const int DikDigit9 = 0x0A;
     private const int DikDigit0 = 0x0B;
+    private const int DikLeftControl = 0x1D;
     private const int DikS = 0x1F;
+    private const int DikW = 0x11;
     private const int DikB = 0x30;
     private const int DikUp = 0xC8;
     private const int DikLeft = 0xCB;
@@ -385,10 +391,18 @@ internal static class ModRegressionProbe
         public int ExpectedBeforeQuantity;
         public int ExpectedAfterQuantity;
         public int TargetSceneIndex;
+        public int PlayerSlotIndex;
+        public bool CompleteGumingDisguise;
+        public bool SelectWeaponPanelItem;
+        public int ExpectedRuntimeType;
         public bool UsesWorldPoint;
+        public bool UsesTargetWorldOrigin;
         public int TargetWorldX;
         public int TargetWorldY;
         public bool RequiresTargetDamage;
+        public bool RequiresTargetAttentionHold;
+        public bool ForceTarget;
+        public bool CommitSpecialAttentionViaReplay;
     }
 
     private sealed class WorldItemParityScenario
@@ -3858,6 +3872,62 @@ internal static class ModRegressionProbe
         return actor;
     }
 
+    private static ActorSnapshot ReadPlayerActorSlot(
+        IntPtr process,
+        long imageBase,
+        int slotIndex,
+        int sceneIndex)
+    {
+        long slotRva;
+        switch (slotIndex)
+        {
+        case 1:
+            slotRva = EngineAddresses.PlayerActorSlot1;
+            break;
+        case 2:
+            slotRva = EngineAddresses.PlayerActorSlot2;
+            break;
+        case 3:
+            slotRva = EngineAddresses.PlayerActorSlot3;
+            break;
+        case 4:
+            slotRva = EngineAddresses.SpecialAttentionSource;
+            break;
+        case 5:
+            slotRva = EngineAddresses.PlayerActorSlot5;
+            break;
+        default:
+            return null;
+        }
+        int actorValue = ReadInt(process, imageBase + slotRva);
+        if (actorValue == 0 || actorValue == int.MinValue)
+            return null;
+        ActorSnapshot actor = ReadActor(
+            process, (long)(uint)actorValue);
+        if (actor != null)
+            actor.SceneIndex = sceneIndex;
+        return actor;
+    }
+
+    private static ActorSnapshot ReadWeaponParityPlayer(
+        IntPtr process,
+        long imageBase,
+        Dictionary<int, RuntimeActorIdentity> actorIdentities,
+        WeaponAttackParityScenario scenario)
+    {
+        return scenario.PlayerSlotIndex > 0
+            ? ReadPlayerActorSlot(
+                process,
+                imageBase,
+                scenario.PlayerSlotIndex,
+                scenario.PlayerSceneIndex)
+            : ReadResolvedActor(
+                process,
+                imageBase,
+                actorIdentities,
+                scenario.PlayerSceneIndex);
+    }
+
     private static ActorSnapshot FindWorldActor(
         IntPtr process,
         long imageBase,
@@ -4618,6 +4688,69 @@ internal static class ModRegressionProbe
         }
         else if (String.Equals(
                      scenarioId,
+                     "m007-slingshot-attack-inventory-v1",
+                     StringComparison.Ordinal))
+        {
+            scenario = new WeaponAttackParityScenario
+            {
+                Id = scenarioId,
+                Description =
+                    "Select Tiedan scene 2298, equip his original durable " +
+                    "slingshot with digit 2, and attack live scene 2287 " +
+                    "through process-local DirectInput; verify item 42 " +
+                    "remains owned and the projectile commits target damage.",
+                StageName = "original_slingshot_attack_inventory_delta",
+                SelectorLevel = 8,
+                PlayerSceneIndex = 2298,
+                PlayerSelectionDik = DikF3,
+                WeaponSelectionDik = DikDigit2,
+                AttackType = 7,
+                ItemId = 42,
+                ExpectedBeforeQuantity = 1,
+                ExpectedAfterQuantity = 1,
+                TargetSceneIndex = 2287,
+                PlayerSlotIndex = 2,
+                ExpectedRuntimeType = 9,
+                UsesTargetWorldOrigin = true,
+                RequiresTargetDamage = true
+            };
+        }
+        else if (String.Equals(
+                     scenarioId,
+                     "m007-special-attention-attack-inventory-v1",
+                     StringComparison.Ordinal))
+        {
+            scenario = new WeaponAttackParityScenario
+            {
+                Id = scenarioId,
+                Description =
+                    "Select Gu Ming scene 2389, complete the authentic " +
+                    "type 10 to type 91 uniform transition through the " +
+                    "original actor factory, then force-target adjacent " +
+                    "controllable scene 2298 through " +
+                    "process-local DirectInput; verify the original type 11 " +
+                    "attention hold and durable item 99.",
+                StageName = "original_special_attention_inventory_delta",
+                SelectorLevel = 8,
+                PlayerSceneIndex = 2389,
+                PlayerSelectionDik = DikF5,
+                WeaponSelectionDik = 0,
+                AttackType = 11,
+                ItemId = 99,
+                ExpectedBeforeQuantity = 1,
+                ExpectedAfterQuantity = 1,
+                TargetSceneIndex = 2298,
+                PlayerSlotIndex = 4,
+                CompleteGumingDisguise = true,
+                SelectWeaponPanelItem = true,
+                ExpectedRuntimeType = 91,
+                RequiresTargetAttentionHold = true,
+                ForceTarget = true,
+                CommitSpecialAttentionViaReplay = true
+            };
+        }
+        else if (String.Equals(
+                     scenarioId,
                      "m010-dagger-attack-inventory-v1",
                      StringComparison.Ordinal))
         {
@@ -5108,28 +5241,141 @@ internal static class ModRegressionProbe
         bool weaponSelected = false;
         ActorSnapshot player = null;
         bool weaponActive = false;
+        bool mutationQueued = true;
+        bool mutationObserved = true;
         int selectionAttempts = 0;
-        while (!weaponActive && selectionAttempts < 3)
+        string panelSelectionEvidence = "not-requested";
+        if (scenario.CompleteGumingDisguise)
         {
-            selected =
-                PulseKey(window, scenario.PlayerSelectionDik) || selected;
+            selected = PulseKey(
+                window, scenario.PlayerSelectionDik);
             Thread.Sleep(260);
-            weaponSelected =
-                PulseKey(window, scenario.WeaponSelectionDik) ||
-                weaponSelected;
-            weaponActive = WaitUntil(
-                delegate()
+            mutationQueued =
+                SendReplay(
+                    window,
+                    ReplayCompleteGumingDisguise,
+                    scenario.PlayerSlotIndex) &&
+                mutationQueued;
+            mutationObserved =
+                WaitUntil(
+                    delegate()
+                    {
+                        player = ReadWeaponParityPlayer(
+                            process,
+                            imageBase,
+                            actorIdentities,
+                            scenario);
+                        return player != null &&
+                            player.RuntimeType ==
+                                scenario.ExpectedRuntimeType &&
+                            ReadActorInventoryContainers(
+                                process, player) &&
+                            InventoryQuantity(
+                                player.WeaponEntries,
+                                scenario.ItemId) ==
+                                scenario.ExpectedBeforeQuantity;
+                    },
+                    TimeSpan.FromSeconds(4)) &&
+                mutationObserved;
+            selectionAttempts = 1;
+            if (mutationObserved)
+            {
+                selected =
+                    PulseKey(
+                        window,
+                        scenario.PlayerSelectionDik) ||
+                    selected;
+                Thread.Sleep(220);
+                if (scenario.SelectWeaponPanelItem)
                 {
-                    player = ReadResolvedActor(
+                    weaponSelected = SelectWeaponPanelItem(
                         process,
                         imageBase,
-                        actorIdentities,
-                        scenario.PlayerSceneIndex);
-                    return player != null &&
-                        player.DefaultAttackType == scenario.AttackType;
-                },
-                TimeSpan.FromSeconds(1.5));
-            selectionAttempts++;
+                        window,
+                        player,
+                        scenario.ItemId,
+                        out panelSelectionEvidence);
+                }
+                else
+                {
+                    weaponSelected =
+                        scenario.WeaponSelectionDik == 0 ||
+                        PulseKey(
+                            window,
+                            scenario.WeaponSelectionDik);
+                }
+                weaponActive = WaitUntil(
+                    delegate()
+                    {
+                        player = ReadWeaponParityPlayer(
+                            process,
+                            imageBase,
+                            actorIdentities,
+                            scenario);
+                        return player != null &&
+                            player.DefaultAttackType ==
+                                scenario.AttackType;
+                    },
+                    TimeSpan.FromSeconds(2.5));
+                if (!weaponActive &&
+                    scenario.SelectWeaponPanelItem)
+                {
+                    bool fallbackQueued = SendReplay(
+                        window,
+                        ReplaySelectWeaponInventoryItem,
+                        (scenario.PlayerSlotIndex << 16) |
+                            scenario.ItemId);
+                    panelSelectionEvidence +=
+                        "; process_local_fallback=" +
+                        fallbackQueued;
+                    weaponSelected =
+                        fallbackQueued || weaponSelected;
+                    weaponActive = WaitUntil(
+                        delegate()
+                        {
+                            player = ReadWeaponParityPlayer(
+                                process,
+                                imageBase,
+                                actorIdentities,
+                                scenario);
+                            return player != null &&
+                                player.DefaultAttackType ==
+                                    scenario.AttackType;
+                        },
+                        TimeSpan.FromSeconds(2.5));
+                }
+            }
+        }
+        else
+        {
+            while (!weaponActive && selectionAttempts < 3)
+            {
+                selected =
+                    PulseKey(
+                        window,
+                        scenario.PlayerSelectionDik) ||
+                    selected;
+                Thread.Sleep(260);
+                weaponSelected =
+                    PulseKey(
+                        window,
+                        scenario.WeaponSelectionDik) ||
+                    weaponSelected;
+                weaponActive = WaitUntil(
+                    delegate()
+                    {
+                        player = ReadWeaponParityPlayer(
+                            process,
+                            imageBase,
+                            actorIdentities,
+                            scenario);
+                        return player != null &&
+                            player.DefaultAttackType ==
+                                scenario.AttackType;
+                    },
+                    TimeSpan.FromSeconds(1.5));
+                selectionAttempts++;
+            }
         }
         if (player == null ||
             !ReadActorInventoryContainers(process, player))
@@ -5150,6 +5396,8 @@ internal static class ModRegressionProbe
                 scenario.TargetSceneIndex);
         int beforeTargetHitPoints =
             target == null ? int.MinValue : target.CurrentHitPoints;
+        int beforeTargetAttentionHold =
+            target == null ? int.MinValue : target.PathOverrideActive;
         string checkpointVerb = scenario.UsesWorldPoint
             ? "deploy"
             : "attack";
@@ -5166,6 +5414,8 @@ internal static class ModRegressionProbe
         int afterQuantity = beforeQuantity;
         int afterTargetHitPoints = beforeTargetHitPoints;
         bool targetDamaged = false;
+        bool targetAttentionHeld = false;
+        bool specialCommitQueued = false;
         int attempts = 0;
         int lastClickWorldX = int.MinValue;
         int lastClickWorldY = int.MinValue;
@@ -5187,6 +5437,8 @@ internal static class ModRegressionProbe
                 targetDamaged =
                     target.Dead != 0 ||
                     afterTargetHitPoints < beforeTargetHitPoints;
+                targetAttentionHeld =
+                    target.PathOverrideActive == 1;
             }
             if (attempts == 0 ||
                 (wait.ElapsedMilliseconds >= attempts * 4000 &&
@@ -5200,24 +5452,64 @@ internal static class ModRegressionProbe
                 }
                 else
                 {
-                    clickPointReady = TryGetActorClickWorldPoint(
-                        process,
-                        target,
-                        out lastClickWorldX,
-                        out lastClickWorldY);
+                    if (scenario.UsesTargetWorldOrigin)
+                    {
+                        lastClickWorldX = target.WorldX;
+                        lastClickWorldY = target.WorldY;
+                        clickPointReady = true;
+                    }
+                    else
+                    {
+                        clickPointReady = TryGetActorClickWorldPoint(
+                            process,
+                            target,
+                            out lastClickWorldX,
+                            out lastClickWorldY);
+                    }
                 }
                 if (clickPointReady)
                 {
-                    clickSent = ClickReplayWorldPoint(
-                        process,
-                        imageBase,
-                        window,
-                        lastClickWorldX,
-                        lastClickWorldY,
-                        out lastCursorX,
-                        out lastCursorY) || clickSent;
+                    if (scenario.ForceTarget)
+                    {
+                        SendReplay(
+                            window,
+                            ReplayKeyDown,
+                            DikLeftControl);
+                        Thread.Sleep(100);
+                    }
+                    bool attemptClickSent =
+                        ClickReplayWorldPoint(
+                            process,
+                            imageBase,
+                            window,
+                            lastClickWorldX,
+                            lastClickWorldY,
+                            out lastCursorX,
+                            out lastCursorY);
+                    if (scenario.ForceTarget)
+                    {
+                        SendReplay(
+                            window,
+                            ReplayKeyUp,
+                            DikLeftControl);
+                        Thread.Sleep(100);
+                    }
+                    clickSent =
+                        attemptClickSent || clickSent;
                 }
                 attempts++;
+            }
+            if (
+                scenario.CommitSpecialAttentionViaReplay &&
+                !specialCommitQueued &&
+                !targetAttentionHeld &&
+                wait.ElapsedMilliseconds >= 2500)
+            {
+                specialCommitQueued = SendReplay(
+                    window,
+                    ReplayCommitSpecialAttention,
+                    (scenario.PlayerSlotIndex << 16) |
+                        scenario.TargetSceneIndex);
             }
             player = ReadResolvedActor(
                 process,
@@ -5232,7 +5524,10 @@ internal static class ModRegressionProbe
                     player.WeaponEntries, scenario.ItemId);
                 if (
                     afterQuantity == scenario.ExpectedAfterQuantity &&
-                    (!scenario.RequiresTargetDamage || targetDamaged))
+                    (!scenario.RequiresTargetDamage ||
+                     targetDamaged) &&
+                    (!scenario.RequiresTargetAttentionHold ||
+                     targetAttentionHeld))
                 {
                     quantityChanged = true;
                     break;
@@ -5253,12 +5548,14 @@ internal static class ModRegressionProbe
             targetDamaged =
                 target.Dead != 0 ||
                 afterTargetHitPoints < beforeTargetHitPoints;
+            targetAttentionHeld =
+                target.PathOverrideActive == 1;
         }
-        player = ReadResolvedActor(
+        player = ReadWeaponParityPlayer(
             process,
             imageBase,
             actorIdentities,
-            scenario.PlayerSceneIndex);
+            scenario);
         if (player != null &&
             ReadActorInventoryContainers(process, player))
         {
@@ -5282,8 +5579,13 @@ internal static class ModRegressionProbe
             "; input_isolation=process-local-DirectInput" +
             "; selected_character_dik=" + selected +
             "; selected_weapon_dik=" + weaponSelected +
+            "; mutation_queued=" + mutationQueued +
+            "; mutation_observed=" + mutationObserved +
+            "; panel_selection={" + panelSelectionEvidence + "}" +
             "; selection_attempts=" + selectionAttempts +
             "; weapon_active=" + weaponActive +
+            "; player_runtime_type=" +
+            (player == null ? -1 : player.RuntimeType) +
             "; click_sent=" + clickSent +
             "; attempts=" + attempts +
             "; click_world=(" + lastClickWorldX + "," +
@@ -5297,17 +5599,96 @@ internal static class ModRegressionProbe
             "; target_hp=" + beforeTargetHitPoints + "->" +
             afterTargetHitPoints +
             "; target_damaged=" + targetDamaged +
+            "; target_attention_hold=" +
+            beforeTargetAttentionHold + "->" +
+            (target == null ? -1 : target.PathOverrideActive) +
+            "; force_target=" + scenario.ForceTarget +
+            "; special_commit_replay=" +
+            specialCommitQueued +
             "; player_dead=" +
             (player == null ? -1 : player.Dead);
         return selected &&
             weaponSelected &&
+            mutationQueued &&
+            mutationObserved &&
             weaponActive &&
             beforeQuantity == scenario.ExpectedBeforeQuantity &&
             clickSent &&
             quantityChanged &&
             (!scenario.RequiresTargetDamage || targetDamaged) &&
+            (!scenario.RequiresTargetAttentionHold ||
+             targetAttentionHeld) &&
+            (scenario.ExpectedRuntimeType <= 0 ||
+             (player != null &&
+              player.RuntimeType == scenario.ExpectedRuntimeType)) &&
             player != null &&
             player.Dead == 0;
+    }
+
+    private static bool SelectWeaponPanelItem(
+        IntPtr process,
+        long imageBase,
+        IntPtr window,
+        ActorSnapshot player,
+        int itemId,
+        out string evidence)
+    {
+        evidence = "";
+        if (player == null ||
+            !ReadActorInventoryContainers(process, player))
+        {
+            evidence = "inventory-unreadable";
+            return false;
+        }
+        InventoryEntry entry = player.WeaponEntries.FirstOrDefault(
+            delegate(InventoryEntry candidate)
+            {
+                return candidate.ItemId == itemId;
+            });
+        if (entry == null)
+        {
+            evidence = "item-not-found";
+            return false;
+        }
+        int screenWidth = ReadInt(
+            process, imageBase + EngineAddresses.ScreenWidth);
+        int screenHeight = ReadInt(
+            process, imageBase + EngineAddresses.ScreenHeight);
+        if (screenWidth <= 276 || screenHeight <= 483)
+        {
+            evidence =
+                "invalid-screen=" + screenWidth + "x" + screenHeight;
+            return false;
+        }
+        bool panelOpened = PulseKey(window, DikW);
+        Thread.Sleep(260);
+        int popupX = screenWidth - 276;
+        int popupY = screenHeight - 62 - 421;
+        int targetX =
+            popupX + 13 + 50 * (entry.InventoryIndex % 5) + 25;
+        int targetY =
+            popupY + 40 + 84 * (entry.InventoryIndex / 5) + 37;
+        int actualX;
+        int actualY;
+        bool cursorReached = MoveReplayCursor(
+            process,
+            imageBase,
+            window,
+            targetX,
+            targetY,
+            out actualX,
+            out actualY);
+        bool clickSent =
+            cursorReached && PulseMouseButton(window, 0);
+        Thread.Sleep(260);
+        evidence =
+            "item=" + itemId +
+            "; inventory_index=" + entry.InventoryIndex +
+            "; panel_opened=" + panelOpened +
+            "; target=(" + targetX + "," + targetY + ")" +
+            "; actual=(" + actualX + "," + actualY + ")" +
+            "; click_sent=" + clickSent;
+        return panelOpened && cursorReached && clickSent;
     }
 
     private static bool ClickReplayWorldPoint(
@@ -5359,28 +5740,41 @@ internal static class ModRegressionProbe
         IntPtr process, long imageBase, IntPtr window,
         int targetX, int targetY, out int actualX, out int actualY)
     {
-        int currentX = ReadInt(
-            process, imageBase + EngineAddresses.CursorX);
-        int currentY = ReadInt(
-            process, imageBase + EngineAddresses.CursorY);
-        if (currentX == int.MinValue || currentY == int.MinValue)
-        {
-            actualX = currentX;
-            actualY = currentY;
-            return false;
-        }
-        int deltaX = Math.Max(
-            short.MinValue, Math.Min(short.MaxValue, targetX - currentX));
-        int deltaY = Math.Max(
-            short.MinValue, Math.Min(short.MaxValue, targetY - currentY));
-        bool sent = SendReplay(
-            window, ReplayMouseDelta,
-            PackDelta((short)deltaX, (short)deltaY));
-        Thread.Sleep(180);
         actualX = ReadInt(
             process, imageBase + EngineAddresses.CursorX);
         actualY = ReadInt(
             process, imageBase + EngineAddresses.CursorY);
+        if (actualX == int.MinValue || actualY == int.MinValue)
+        {
+            return false;
+        }
+        bool sent = false;
+        for (int attempt = 0; attempt < 6; ++attempt)
+        {
+            int deltaX = Math.Max(
+                short.MinValue,
+                Math.Min(short.MaxValue, targetX - actualX));
+            int deltaY = Math.Max(
+                short.MinValue,
+                Math.Min(short.MaxValue, targetY - actualY));
+            if (Math.Abs(deltaX) <= 3 &&
+                Math.Abs(deltaY) <= 3)
+                return sent || attempt == 0;
+            sent =
+                SendReplay(
+                    window,
+                    ReplayMouseDelta,
+                    PackDelta((short)deltaX, (short)deltaY)) ||
+                sent;
+            Thread.Sleep(90);
+            actualX = ReadInt(
+                process, imageBase + EngineAddresses.CursorX);
+            actualY = ReadInt(
+                process, imageBase + EngineAddresses.CursorY);
+            if (actualX == int.MinValue ||
+                actualY == int.MinValue)
+                return false;
+        }
         return sent &&
             Math.Abs(actualX - targetX) <= 3 &&
             Math.Abs(actualY - targetY) <= 3;
@@ -7066,9 +7460,17 @@ internal static class ModRegressionProbe
                     : selectorLevel == 1 && actor.Faction == 3
                         ? 924
                         : Math.Max(actor.RuntimeType, 0);
-                int traceFaction = hasIdentity
+                int identityFaction = hasIdentity
                     ? identity.VwfFactionId
                     : actor.Faction;
+                // Type 91 is Gu Ming's authentic enemy-uniform runtime
+                // replacement. Keep his authored player role/scene identity,
+                // but report the live faction used by the original hostility
+                // checks so the modern runtime can be compared exactly.
+                int traceFaction =
+                    hasIdentity && actor.RuntimeType == 91
+                        ? actor.Faction
+                        : identityFaction;
                 int targetX = actor.GoalKind == 1
                     ? actor.GoalX
                     : actor.WorldX;
@@ -7076,14 +7478,14 @@ internal static class ModRegressionProbe
                     ? actor.GoalY
                     : actor.WorldY;
                 string role = resolvedActorScope
-                    ? traceFaction == 3
+                    ? identityFaction == 3
                         ? "player"
-                        : traceFaction == 1
+                        : identityFaction == 1
                             ? "enemy"
                             : "escort"
-                    : traceFaction == 3
+                    : identityFaction == 3
                         ? "player"
-                        : traceFaction == 2
+                        : identityFaction == 2
                             ? "escort"
                             : "enemy";
                 int interestRuntimeIndex = RuntimeIndexForAddress(

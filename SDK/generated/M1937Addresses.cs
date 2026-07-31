@@ -63,6 +63,7 @@ namespace Mission1937.SDK.Generated
         public const long ApplyWorldItemEffect = 0x00058270L;
         public const long CompleteWorldItemDrop = 0x000583F0L;
         public const long PopulateWorldItemAcceptance = 0x0005B080L;
+        public const long AddInventoryItem = 0x0005AE10L;
         public const long ScanLiveTargets = 0x0005C390L;
         public const long ScanCorpses = 0x0005C4C0L;
         public const long SpawnCorpseReinforcements = 0x0005E2A0L;
@@ -113,6 +114,7 @@ namespace Mission1937.SDK.Generated
         public const long EnemyAiUpdate = 0x0005C710L;
         public const long OriginalLocalSearchPoint = 0x0005D060L;
         public const long AlertPropagation = 0x0005DDA0L;
+        public const long InvestigateNearbySpecialActor = 0x0005DFC0L;
         public const long OriginalLocalSearchContinue = 0x0005E4B0L;
         public const long LoadGameFile = 0x0004BB00L;
         public const long SaveGameFile = 0x0004BEA0L;
@@ -137,7 +139,11 @@ namespace Mission1937.SDK.Generated
         public const long CursorY = 0x000E6FACL;
         public const long MouseLeftReleased = 0x000E6FB0L;
         public const long CurrentActionId = 0x000E7048L;
+        public const long PlayerActorSlot1 = 0x000E70A8L;
+        public const long PlayerActorSlot2 = 0x000E70ACL;
+        public const long PlayerActorSlot3 = 0x000E70B0L;
         public const long SpecialAttentionSource = 0x000E70B4L;
+        public const long PlayerActorSlot5 = 0x000E70B8L;
         public const long GlobalCorpseAlarm = 0x000E709CL;
         public const long CurrentMission = 0x000E7060L;
         public const long SelectedSaveSlot = 0x000E705CL;

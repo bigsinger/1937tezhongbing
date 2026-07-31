@@ -22,6 +22,7 @@ var particles: Array[Dictionary] = []
 var visual_catalog: Dictionary = {}
 var world_size := Vector2.ZERO
 var random_state := VISUAL_RULES.CRT_INITIAL_STATE
+var crt_random_draws: Array[Dictionary] = []
 var configured := false
 
 
@@ -44,6 +45,7 @@ func configure(
 	visual_catalog = new_visual_catalog.duplicate()
 	world_size = new_world_size
 	random_state = initial_random_state
+	crt_random_draws.clear()
 	primary_frames.clear()
 	var visual_value: Variant = visual_catalog.get(original_gfl_index, {})
 	var visual := (
@@ -77,6 +79,12 @@ func configure(
 	z_index = WORLD_DEPTH.normal_z(global_position.y, 5)
 	queue_redraw()
 	return random_state
+
+
+func take_crt_random_draws() -> Array[Dictionary]:
+	var result := crt_random_draws.duplicate(true)
+	crt_random_draws.clear()
+	return result
 
 
 func advance_world_ticks(ticks: int = 1) -> void:
@@ -245,6 +253,9 @@ func _add_burst(effect_family: int, center_world_position: Vector2) -> void:
 	if plan.is_empty():
 		return
 	random_state = int(plan.get("next_random_state", random_state))
+	for raw_draw: Variant in plan.get("random_draws", []) as Array:
+		if raw_draw is Dictionary:
+			crt_random_draws.append((raw_draw as Dictionary).duplicate(true))
 	for raw_particle: Variant in plan.get("particles", []) as Array:
 		if not raw_particle is Dictionary:
 			continue

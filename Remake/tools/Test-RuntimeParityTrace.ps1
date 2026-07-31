@@ -54,6 +54,8 @@ $machineGunAttackBaselinePath = Join-Path $remakeRoot `
     'validation\baselines\mod\m010-machine-gun-attack-inventory-v1.json'
 $dartAttackBaselinePath = Join-Path $remakeRoot `
     'validation\baselines\mod\m004-dart-attack-inventory-v1.json'
+$specialAttentionAttackBaselinePath = Join-Path $remakeRoot `
+    'validation\baselines\mod\m007-special-attention-attack-inventory-v1.json'
 $daggerAttackBaselinePath = Join-Path $remakeRoot `
     'validation\baselines\mod\m010-dagger-attack-inventory-v1.json'
 $broadswordAttackBaselinePath = Join-Path $remakeRoot `
@@ -292,6 +294,21 @@ $inventoryBaselineDefinitions = @(
         after_quantity = 19
     },
     [pscustomobject]@{
+        path = $specialAttentionAttackBaselinePath
+        scenario = 'm007-special-attention-attack-inventory-v1'
+        checkpoint_ids = @('before_attack', 'after_attack')
+        scene_index = 2389
+        database_entry_id = 914
+        item_id = 99
+        before_quantity = 1
+        after_quantity = 1
+        expected_runtime_type = 91
+        expected_faction_id = 1
+        attention_target_scene_index = 2298
+        attention_before = 0
+        attention_after = 1
+    },
+    [pscustomobject]@{
         path = $daggerAttackBaselinePath
         scenario = 'm010-dagger-attack-inventory-v1'
         checkpoint_ids = @('before_attack', 'after_attack')
@@ -398,6 +415,20 @@ foreach ($inventoryDefinition in $inventoryBaselineDefinitions) {
                 $inventoryDefinition.scenario)
         }
         $quantities.Add([int]$entry.quantity)
+        if (
+            $inventoryDefinition.PSObject.Properties.Name -contains
+                'expected_runtime_type' -and
+            (
+                [int]$actor.native.runtime_type -ne
+                    [int]$inventoryDefinition.expected_runtime_type -or
+                [int]$actor.faction_id -ne
+                    [int]$inventoryDefinition.expected_faction_id
+            )
+        ) {
+            throw (
+                'The checked-in transformed actor identity is invalid: ' +
+                $inventoryDefinition.scenario)
+        }
     }
     if ($quantities[0] -ne
             [int]$inventoryDefinition.before_quantity -or
@@ -451,6 +482,38 @@ foreach ($inventoryDefinition in $inventoryBaselineDefinitions) {
         ) {
             throw (
                 'The checked-in durable-weapon target outcome is invalid: ' +
+                $inventoryDefinition.scenario)
+        }
+    }
+    if (
+        $inventoryDefinition.PSObject.Properties.Name -contains
+            'attention_target_scene_index'
+    ) {
+        $attentionStates = @(
+            foreach ($checkpoint in @($inventoryBaseline.checkpoints)) {
+                $target = @(
+                    $checkpoint.actors |
+                        Where-Object {
+                            [int]$_.scene_index -eq
+                                [int]$inventoryDefinition.attention_target_scene_index
+                        }
+                )[0]
+                if ($null -eq $target) {
+                    throw (
+                        'The checked-in type-11 attention target is missing: ' +
+                        $inventoryDefinition.scenario)
+                }
+                [int]$target.native.path_override_active
+            }
+        )
+        if (
+            $attentionStates[0] -ne
+                [int]$inventoryDefinition.attention_before -or
+            $attentionStates[1] -ne
+                [int]$inventoryDefinition.attention_after
+        ) {
+            throw (
+                'The checked-in type-11 attention outcome is invalid: ' +
                 $inventoryDefinition.scenario)
         }
     }

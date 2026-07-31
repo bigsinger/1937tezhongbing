@@ -48,6 +48,10 @@ volatile LONG g_replay_world_item_id = 0;
 volatile LONG g_replay_world_item_x = 0;
 volatile LONG g_replay_world_item_y = 0;
 volatile LONG g_replay_world_item_spawn_pending = 0;
+volatile LONG g_replay_inventory_seed_pending = 0;
+volatile LONG g_replay_disguise_transition_pending = 0;
+volatile LONG g_replay_weapon_selection_pending = 0;
+volatile LONG g_replay_special_attention_commit_pending = 0;
 WNDPROC g_original_replay_window_proc = nullptr;
 HWND g_replay_subclass_window = nullptr;
 volatile LONG g_extension_briefing_pending = 0;
@@ -75,6 +79,10 @@ enum WindowReplayCommand : WPARAM {
     replay_camera_center = 9,
     replay_seed_world_item = 10,
     replay_spawn_world_item = 11,
+    replay_seed_weapon_inventory = 12,
+    replay_complete_guming_disguise = 13,
+    replay_select_weapon_inventory_item = 14,
+    replay_commit_special_attention = 15,
 };
 
 struct DiagnosticEntry {
@@ -3294,6 +3302,13 @@ void HandleWindowReplayMessage(const MSG &message) {
         InterlockedExchange(&g_replay_menu_command, 0);
         InterlockedExchange(&g_replay_world_item_id, 0);
         InterlockedExchange(&g_replay_world_item_spawn_pending, 0);
+        InterlockedExchange(&g_replay_inventory_seed_pending, 0);
+        InterlockedExchange(
+            &g_replay_disguise_transition_pending, 0);
+        InterlockedExchange(
+            &g_replay_weapon_selection_pending, 0);
+        InterlockedExchange(
+            &g_replay_special_attention_commit_pending, 0);
         break;
     case replay_ai_alert: {
         m1937::sdk::RuntimeActorV1 **actors = nullptr;
@@ -3454,6 +3469,75 @@ void HandleWindowReplayMessage(const MSG &message) {
             "isolated_probe_only");
         break;
     }
+    case replay_seed_weapon_inventory: {
+        const int slot =
+            static_cast<unsigned short>(HIWORD(message.lParam));
+        const int item_id =
+            static_cast<unsigned short>(LOWORD(message.lParam));
+        const bool supported =
+            slot >= 1 && slot <= 5 && item_id == 42;
+        InterlockedExchange(
+            &g_replay_inventory_seed_pending,
+            supported
+                ? static_cast<LONG>((slot << 16) | item_id)
+                : 0);
+        RecordDiagnostic(
+            "replay_weapon_seed",
+            supported ? "queued" : "rejected",
+            "isolated_probe_only");
+        break;
+    }
+    case replay_complete_guming_disguise: {
+        const bool supported = argument == 4;
+        InterlockedExchange(
+            &g_replay_disguise_transition_pending,
+            supported ? 4 : 0);
+        RecordDiagnostic(
+            "replay_disguise",
+            supported ? "queued" : "rejected",
+            "isolated_probe_only");
+        break;
+    }
+    case replay_select_weapon_inventory_item: {
+        const int slot =
+            static_cast<unsigned short>(HIWORD(message.lParam));
+        const int item_id =
+            static_cast<unsigned short>(LOWORD(message.lParam));
+        const bool supported =
+            slot >= 1 && slot <= 5 &&
+            ((item_id >= 36 && item_id <= 45) ||
+             item_id == 99);
+        InterlockedExchange(
+            &g_replay_weapon_selection_pending,
+            supported
+                ? static_cast<LONG>((slot << 16) | item_id)
+                : 0);
+        RecordDiagnostic(
+            "replay_weapon_select",
+            supported ? "queued" : "rejected",
+            "isolated_probe_only");
+        break;
+    }
+    case replay_commit_special_attention: {
+        const int source_slot =
+            static_cast<unsigned short>(HIWORD(message.lParam));
+        const int target_scene =
+            static_cast<unsigned short>(LOWORD(message.lParam));
+        const bool supported =
+            source_slot >= 1 && source_slot <= 5 &&
+            target_scene > 0;
+        InterlockedExchange(
+            &g_replay_special_attention_commit_pending,
+            supported
+                ? static_cast<LONG>(
+                    (source_slot << 16) | target_scene)
+                : 0);
+        RecordDiagnostic(
+            "replay_attention",
+            supported ? "queued" : "rejected",
+            "isolated_probe_only");
+        break;
+    }
     default:
         return;
     }
@@ -3462,6 +3546,273 @@ void HandleWindowReplayMessage(const MSG &message) {
             &g_replay_input_qpc, PerformanceCounterNow());
     InterlockedIncrement(&g_replay_message_count);
     InterlockedIncrement(&g_telemetry.replay_messages);
+}
+
+std::uintptr_t PlayerActorSlotRva(int slot) {
+    switch (slot) {
+    case 1:
+        return m1937::sdk::rva::player_actor_slot_1;
+    case 2:
+        return m1937::sdk::rva::player_actor_slot_2;
+    case 3:
+        return m1937::sdk::rva::player_actor_slot_3;
+    case 4:
+        // This fourth fixed player pointer is also the source anchor used by
+        // original type 11, hence the older public SDK symbol name.
+        return m1937::sdk::rva::special_attention_source;
+    case 5:
+        return m1937::sdk::rva::player_actor_slot_5;
+    default:
+        return 0;
+    }
+}
+
+m1937::sdk::RuntimeActorV1 *PlayerActorForSlot(int slot) {
+    if (!g_executable_base) {
+        return nullptr;
+    }
+    const auto rva = PlayerActorSlotRva(slot);
+    if (!rva) {
+        return nullptr;
+    }
+    auto **actor_slot =
+        reinterpret_cast<m1937::sdk::RuntimeActorV1 **>(
+            g_executable_base + rva);
+    auto *actor =
+        IsReadableRange(actor_slot, sizeof(*actor_slot))
+            ? *actor_slot
+            : nullptr;
+    return actor && IsReadableRange(actor, sizeof(*actor))
+        ? actor
+        : nullptr;
+}
+
+bool InventoryContainsItem(
+    std::uint32_t container_address,
+    int item_id) {
+    auto *container =
+        reinterpret_cast<m1937::sdk::RuntimeInventoryContainerV1 *>(
+            static_cast<std::uintptr_t>(container_address));
+    if (!container ||
+        !IsReadableRange(container, sizeof(*container)) ||
+        container->item_count < 0 ||
+        container->item_count > 256) {
+        return false;
+    }
+    if (container->item_count == 0) {
+        return false;
+    }
+    auto *item_ids = reinterpret_cast<const std::int32_t *>(
+        static_cast<std::uintptr_t>(
+            container->item_ids_address));
+    if (!item_ids ||
+        !IsReadableRange(
+            item_ids,
+            sizeof(*item_ids) *
+                static_cast<std::size_t>(
+                    container->item_count))) {
+        return false;
+    }
+    for (int index = 0;
+         index < container->item_count;
+         ++index) {
+        if (item_ids[index] == item_id) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void ProcessPendingReplayInventoryMutations() {
+    const LONG packed = InterlockedExchange(
+        &g_replay_inventory_seed_pending, 0);
+    if (packed) {
+        const int slot =
+            static_cast<unsigned short>(
+                HIWORD(static_cast<DWORD>(packed)));
+        const int item_id =
+            static_cast<unsigned short>(
+                LOWORD(static_cast<DWORD>(packed)));
+        auto *actor = PlayerActorForSlot(slot);
+        bool seeded = false;
+        if (actor &&
+            actor->dead_or_disabled == 0 &&
+            actor->faction_id == 3 &&
+            item_id == 42) {
+            using AddInventoryItemFn =
+                int(__thiscall *)(
+                    m1937::sdk::RuntimeActorV1 *,
+                    int,
+                    int);
+            auto add_inventory_item =
+                reinterpret_cast<AddInventoryItemFn>(
+                    g_executable_base +
+                    m1937::sdk::rva::add_inventory_item);
+            seeded =
+                InventoryContainsItem(
+                    actor->inventory_address, item_id) ||
+                add_inventory_item(actor, item_id, 1) != 0;
+        }
+        RecordDiagnostic(
+            "replay_weapon_seed",
+            seeded ? "seeded" : "unavailable",
+            "safe_input_poll_boundary");
+    }
+
+    const int disguise_slot = static_cast<int>(
+        InterlockedExchange(
+            &g_replay_disguise_transition_pending, 0));
+    if (disguise_slot != 0) {
+        auto *actor = PlayerActorForSlot(disguise_slot);
+        bool transitioned = false;
+        if (actor &&
+            actor->runtime_type == 10 &&
+            actor->dead_or_disabled == 0 &&
+            actor->faction_id == 3) {
+            using AddInventoryItemFn =
+                int(__thiscall *)(
+                    m1937::sdk::RuntimeActorV1 *,
+                    int,
+                    int);
+            auto add_inventory_item =
+                reinterpret_cast<AddInventoryItemFn>(
+                    g_executable_base +
+                    m1937::sdk::rva::add_inventory_item);
+            const bool has_uniform =
+                InventoryContainsItem(
+                    actor->item_inventory_address, 54) ||
+                add_inventory_item(actor, 54, 1) != 0;
+            if (has_uniform) {
+                actor->disguise_transition_ready = 1;
+                using FinalizeDisguiseFn = int(__cdecl *)();
+                auto finalize_disguise =
+                    reinterpret_cast<FinalizeDisguiseFn>(
+                        g_executable_base +
+                        m1937::sdk::rva::player_disguise_toggle);
+                finalize_disguise();
+                auto *disguised =
+                    PlayerActorForSlot(disguise_slot);
+                transitioned =
+                    disguised &&
+                    disguised != actor &&
+                    disguised->runtime_type == 91 &&
+                    InventoryContainsItem(
+                        disguised->inventory_address, 99);
+            }
+        }
+        RecordDiagnostic(
+            "replay_disguise",
+            transitioned ? "transitioned" : "unavailable",
+            "safe_input_poll_boundary");
+    }
+
+    const LONG selected_packed = InterlockedExchange(
+        &g_replay_weapon_selection_pending, 0);
+    if (selected_packed) {
+        const int selected_slot =
+            static_cast<unsigned short>(
+                HIWORD(static_cast<DWORD>(selected_packed)));
+        const int selected_item_id =
+            static_cast<unsigned short>(
+                LOWORD(static_cast<DWORD>(selected_packed)));
+        auto *selected_actor = PlayerActorForSlot(selected_slot);
+        int attack_type = 0;
+        if (selected_item_id >= 36 && selected_item_id <= 45) {
+            attack_type = selected_item_id - 35;
+        } else if (selected_item_id == 99) {
+            attack_type = 11;
+        }
+        const bool selected =
+            selected_actor &&
+            selected_actor->dead_or_disabled == 0 &&
+            attack_type > 0 &&
+            InventoryContainsItem(
+                selected_actor->inventory_address,
+                selected_item_id);
+        if (selected) {
+            // Isolated-probe fallback for no-focus runs in which the original
+            // W-panel hover widget misses its click. This writes the recovered
+            // +0x20C selection field only. Original target acquisition,
+            // pathing, animation, hit-frame dispatch, quantity handling and
+            // world effects remain untouched.
+            selected_actor->default_attack_type = attack_type;
+        }
+        RecordDiagnostic(
+            "replay_weapon_select",
+            selected ? "selected" : "unavailable",
+            "safe_input_poll_boundary");
+    }
+
+    const LONG attention_packed = InterlockedExchange(
+        &g_replay_special_attention_commit_pending, 0);
+    if (!attention_packed) {
+        return;
+    }
+    const int source_slot =
+        static_cast<unsigned short>(
+            HIWORD(static_cast<DWORD>(attention_packed)));
+    const int target_scene =
+        static_cast<unsigned short>(
+            LOWORD(static_cast<DWORD>(attention_packed)));
+    auto *source = PlayerActorForSlot(source_slot);
+    m1937::sdk::RuntimeActorV1 *target = nullptr;
+    m1937::sdk::RuntimeActorV1 **actors = nullptr;
+    int actor_count = 0;
+    if (RuntimeActors(&actors, &actor_count)) {
+        for (int index = 0; index < actor_count; ++index) {
+            auto *candidate = actors[index];
+            if (candidate &&
+                IsReadableRange(candidate, sizeof(*candidate)) &&
+                candidate->world_scene_index == target_scene) {
+                target = candidate;
+                break;
+            }
+        }
+    }
+    bool committed = false;
+    if (source &&
+        source->runtime_type == 91 &&
+        source->faction_id == 1 &&
+        source->dead_or_disabled == 0 &&
+        InventoryContainsItem(source->inventory_address, 99) &&
+        target &&
+        target != source &&
+        target->dead_or_disabled == 0) {
+        using ActorResetFn =
+            void(__thiscall *)(m1937::sdk::RuntimeActorV1 *);
+        auto reset_actor_movement =
+            reinterpret_cast<ActorResetFn>(
+                g_executable_base +
+                m1937::sdk::rva::reset_actor_movement);
+        auto clear_actor_command_targets =
+            reinterpret_cast<ActorResetFn>(
+                g_executable_base +
+                m1937::sdk::rva::clear_actor_command_targets);
+        reset_actor_movement(source);
+        clear_actor_command_targets(source);
+        const auto original_current_attack =
+            source->current_attack_type;
+        const auto original_target =
+            source->target_actor_address;
+        source->current_attack_type = 11;
+        source->target_actor_address =
+            static_cast<std::uint32_t>(
+                reinterpret_cast<std::uintptr_t>(target));
+        using SpecialAttackDispatchFn =
+            int(__thiscall *)(m1937::sdk::RuntimeActorV1 *);
+        auto special_attack_dispatch =
+            reinterpret_cast<SpecialAttackDispatchFn>(
+                g_executable_base +
+                m1937::sdk::rva::special_attack_dispatch);
+        special_attack_dispatch(source);
+        committed = target->special_attention_hold == 1;
+        source->current_attack_type = original_current_attack;
+        source->target_actor_address = original_target;
+    }
+    RecordDiagnostic(
+        "replay_attention",
+        committed ? "committed" : "unavailable",
+        "original_hit_frame_dispatch");
 }
 
 void ProcessPendingReplayWorldItem() {
@@ -3613,6 +3964,7 @@ void PumpWindowMessages() {
     }
     TickEnhancedEnemyAI();
     g_pumping_messages = false;
+    ProcessPendingReplayInventoryMutations();
     ProcessPendingReplayWorldItem();
     InterlockedExchangeAdd(
         &g_telemetry.pump_messages, dispatched);

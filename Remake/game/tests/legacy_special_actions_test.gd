@@ -715,6 +715,7 @@ func _test_special_action_save_restore_lifecycle(failures: Array[String]) -> voi
 	)
 	source_game.legacy_ai_control_effects[0].call("advance_world_ticks", 23)
 	source_game.legacy_crt_random_state = 373929026
+	source_game.legacy_crt_random_draw_index = 11
 	var world: Dictionary = GAME_SESSION_STATE.call("_capture_world", source_game)
 	_expect(
 		(world.get("legacy_special_world_objects", []) as Array).size() == 1
@@ -729,8 +730,9 @@ func _test_special_action_save_restore_lifecycle(failures: Array[String]) -> voi
 		failures,
 	)
 	_expect(
-		int(world.get("legacy_crt_random_state", 0)) == 373929026,
-		"session capture preserves the shared original CRT random state",
+		int(world.get("legacy_crt_random_state", 0)) == 373929026
+		and int(world.get("legacy_crt_random_draw_index", 0)) == 11,
+		"session capture preserves the shared original CRT random state and index",
 		failures,
 	)
 
@@ -754,8 +756,9 @@ func _test_special_action_save_restore_lifecycle(failures: Array[String]) -> voi
 	GAME_SESSION_STATE.call("_restore_world", target_game, world, warnings)
 	_expect(warnings.is_empty(), "special-action world state restores without warnings", failures)
 	_expect(
-		target_game.legacy_crt_random_state == 373929026,
-		"session restore resumes the shared original CRT random sequence",
+		target_game.legacy_crt_random_state == 373929026
+		and target_game.legacy_crt_random_draw_index == 11,
+		"session restore resumes the shared original CRT random sequence and index",
 		failures,
 	)
 	_expect(

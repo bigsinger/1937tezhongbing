@@ -357,6 +357,10 @@ if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
             level_id = 'm004'
         },
         [pscustomobject]@{
+            id = 'm007-special-attention-attack-inventory-v1'
+            level_id = 'm007'
+        },
+        [pscustomobject]@{
             id = 'm010-dagger-attack-inventory-v1'
             level_id = 'm010'
         },

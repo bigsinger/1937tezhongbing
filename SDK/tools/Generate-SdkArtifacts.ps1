@@ -7,6 +7,7 @@ $sdkRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $sdkRoot '..'))
 $addressPath = Join-Path $sdkRoot 'address-catalog.json'
 $routePath = Join-Path $sdkRoot 'mission-routes.json'
+$crtRandPath = Join-Path $sdkRoot 'crt-rand-call-sites.json'
 
 function Convert-ToSnakeCase {
     param([Parameter(Mandatory)][string]$Name)
@@ -83,6 +84,156 @@ function New-CSharpAddresses {
     }
     $lines.Add('    }')
     $lines.Add('}')
+    $lines.Add('')
+    return [string]::Join("`n", $lines)
+}
+
+function New-CrtRandomHeader {
+    param($Catalog)
+    $lines = [Collections.Generic.List[string]]::new()
+    $lines.Add('#pragma once')
+    $lines.Add('')
+    $lines.Add('// Generated from SDK/crt-rand-call-sites.json. Do not edit.')
+    $lines.Add('#include <cstddef>')
+    $lines.Add('#include <cstdint>')
+    $lines.Add('')
+    $lines.Add('namespace m1937::sdk::crt_random {')
+    $lines.Add('')
+    $lines.Add('inline constexpr std::uint32_t initial_state = 1;')
+    $lines.Add('')
+    $lines.Add('constexpr std::uint32_t step(std::uint32_t state) noexcept {')
+    $lines.Add('    return state * 214013u + 2531011u;')
+    $lines.Add('}')
+    $lines.Add('')
+    $lines.Add('constexpr std::uint16_t value(std::uint32_t state_after_step) noexcept {')
+    $lines.Add('    return static_cast<std::uint16_t>(')
+    $lines.Add('        (state_after_step >> 16u) & 0x7fffu);')
+    $lines.Add('}')
+    $lines.Add('')
+    $lines.Add('struct CallSite final {')
+    $lines.Add('    std::uintptr_t rva;')
+    $lines.Add('    std::uintptr_t caller_rva;')
+    $lines.Add('    const char* engine_symbol;')
+    $lines.Add('    const char* semantic_name;')
+    $lines.Add('    const char* domain;')
+    $lines.Add('    const char* purpose;')
+    $lines.Add('    const char* confidence;')
+    $lines.Add('    bool formal_missions;')
+    $lines.Add('};')
+    $lines.Add('')
+    $lines.Add('inline constexpr CallSite call_sites[] = {')
+    foreach ($caller in $Catalog.callers) {
+        foreach ($operation in $caller.operations) {
+            foreach ($site in $operation.sites) {
+                $lines.Add(('    {{{0}, {1}, "{2}", "{3}", "{4}", "{5}", "{6}", {7}}},' -f
+                    (Format-Rva ([string]$site)),
+                    (Format-Rva ([string]$caller.caller_rva)),
+                    (Escape-CppString ([string]$caller.engine_symbol)),
+                    (Escape-CppString ([string]$caller.semantic_name)),
+                    (Escape-CppString ([string]$caller.domain)),
+                    (Escape-CppString ([string]$operation.purpose)),
+                    (Escape-CppString ([string]$caller.confidence)),
+                    $(if ([bool]$caller.formal_missions) {
+                        'true'
+                    } else {
+                        'false'
+                    })))
+            }
+        }
+    }
+    $lines.Add('};')
+    $lines.Add('')
+    $lines.Add('inline constexpr std::size_t call_site_count =')
+    $lines.Add('    sizeof(call_sites) / sizeof(call_sites[0]);')
+    $lines.Add('')
+    $lines.Add('constexpr const CallSite* find_call_site(')
+    $lines.Add('    std::uintptr_t rva) noexcept {')
+    $lines.Add('    for (const auto& site : call_sites) {')
+    $lines.Add('        if (site.rva == rva)')
+    $lines.Add('            return &site;')
+    $lines.Add('    }')
+    $lines.Add('    return nullptr;')
+    $lines.Add('}')
+    $lines.Add('')
+    $lines.Add('}  // namespace m1937::sdk::crt_random')
+    $lines.Add('')
+    return [string]::Join("`n", $lines)
+}
+
+function New-GdscriptCrtRandomCatalog {
+    param($Catalog)
+    $lines = [Collections.Generic.List[string]]::new()
+    $lines.Add('# Generated from SDK/crt-rand-call-sites.json. Do not edit.')
+    $lines.Add('class_name LegacyCrtRandomCatalog')
+    $lines.Add('extends RefCounted')
+    $lines.Add('')
+    $lines.Add('const INITIAL_STATE := 1')
+    $lines.Add(('const CALL_SITE_COUNT := {0}' -f
+        [int]$Catalog.direct_call_site_count))
+    $lines.Add('const UINT32_MASK := 0xffffffff')
+    $lines.Add('const OUTPUT_MASK := 0x7fff')
+    $lines.Add('')
+    $lines.Add('const CALL_SITES := {')
+    foreach ($caller in $Catalog.callers) {
+        foreach ($operation in $caller.operations) {
+            foreach ($site in $operation.sites) {
+                $lines.Add(('    {0}: {{' -f
+                    (Format-Rva ([string]$site))))
+                $lines.Add(('        "caller_rva": {0},' -f
+                    (Format-Rva ([string]$caller.caller_rva))))
+                $lines.Add(('        "engine_symbol": "{0}",' -f
+                    (Escape-CppString ([string]$caller.engine_symbol))))
+                $lines.Add(('        "semantic_name": "{0}",' -f
+                    (Escape-CppString ([string]$caller.semantic_name))))
+                $lines.Add(('        "domain": "{0}",' -f
+                    (Escape-CppString ([string]$caller.domain))))
+                $lines.Add(('        "purpose": "{0}",' -f
+                    (Escape-CppString ([string]$operation.purpose))))
+                $lines.Add(('        "formal_missions": {0},' -f
+                    $(if ([bool]$caller.formal_missions) {
+                        'true'
+                    } else {
+                        'false'
+                    })))
+                $lines.Add('    },')
+            }
+        }
+    }
+    $lines.Add('}')
+    $lines.Add('')
+    $lines.Add('')
+    $lines.Add('static func next_state(state: int) -> int:')
+    $lines.Add('    return int((state * 214013 + 2531011) & UINT32_MASK)')
+    $lines.Add('')
+    $lines.Add('')
+    $lines.Add('static func random_value(state_after_step: int) -> int:')
+    $lines.Add('    return int((state_after_step >> 16) & OUTPUT_MASK)')
+    $lines.Add('')
+    $lines.Add('')
+    $lines.Add('static func metadata_for_rva(rva: int) -> Dictionary:')
+    $lines.Add('    var value: Variant = CALL_SITES.get(rva)')
+    $lines.Add('    return (')
+    $lines.Add('        (value as Dictionary).duplicate(true)')
+    $lines.Add('        if value is Dictionary')
+    $lines.Add('        else {}')
+    $lines.Add('    )')
+    $lines.Add('')
+    $lines.Add('')
+    $lines.Add('static func rvas_for_operation(')
+    $lines.Add('    semantic_name: String,')
+    $lines.Add('    purpose: String,')
+    $lines.Add(') -> Array[int]:')
+    $lines.Add('    var result: Array[int] = []')
+    $lines.Add('    for raw_rva: Variant in CALL_SITES:')
+    $lines.Add('        var rva := int(raw_rva)')
+    $lines.Add('        var metadata := CALL_SITES[rva] as Dictionary')
+    $lines.Add('        if (')
+    $lines.Add('            str(metadata.get("semantic_name", "")) == semantic_name')
+    $lines.Add('            and str(metadata.get("purpose", "")) == purpose')
+    $lines.Add('        ):')
+    $lines.Add('            result.append(rva)')
+    $lines.Add('    result.sort()')
+    $lines.Add('    return result')
     $lines.Add('')
     return [string]::Join("`n", $lines)
 }
@@ -303,6 +454,9 @@ $addressCatalog = Get-Content -LiteralPath $addressPath -Raw -Encoding UTF8 |
     ConvertFrom-Json
 $routeCatalog = Get-Content -LiteralPath $routePath -Raw -Encoding UTF8 |
     ConvertFrom-Json
+$crtRandCatalog =
+    Get-Content -LiteralPath $crtRandPath -Raw -Encoding UTF8 |
+    ConvertFrom-Json
 
 $duplicateNames = $addressCatalog.addresses |
     Group-Object name | Where-Object Count -gt 1
@@ -311,6 +465,23 @@ $duplicateRvas = $addressCatalog.addresses |
     Where-Object Count -gt 1
 if ($duplicateNames -or $duplicateRvas) {
     throw 'Address catalog contains duplicate names or RVAs.'
+}
+$crtRandSites = @(
+    $crtRandCatalog.callers | ForEach-Object {
+        $_.operations | ForEach-Object { $_.sites }
+    })
+$duplicateCrtRandSites = $crtRandSites |
+    Group-Object { Format-Rva ([string]$_) } |
+    Where-Object Count -gt 1
+if ($duplicateCrtRandSites -or
+    $crtRandSites.Count -ne [int]$crtRandCatalog.direct_call_site_count) {
+    throw (
+        'CRT rand catalog site count does not match its unique direct ' +
+        'call-site entries.')
+}
+if ([string]$crtRandCatalog.supported_executable_sha256 -cne
+    [string]$addressCatalog.supported_executable.sha256) {
+    throw 'CRT rand catalog targets a different executable identity.'
 }
 $levels = @($routeCatalog.routes | ForEach-Object { [int]$_.selector_level })
 if (($levels | Sort-Object -Unique).Count -ne $levels.Count -or
@@ -342,6 +513,11 @@ $outputs = [ordered]@{
         New-AddressHeader $addressCatalog
     (Join-Path $sdkRoot 'generated\M1937Addresses.cs') =
         New-CSharpAddresses $addressCatalog
+    (Join-Path $sdkRoot 'include\M1937SDK\CrtRandom.hpp') =
+        New-CrtRandomHeader $crtRandCatalog
+    (Join-Path $repositoryRoot (
+        'Remake\game\scripts\generated\legacy_crt_random_catalog.gd')) =
+        New-GdscriptCrtRandomCatalog $crtRandCatalog
     (Join-Path $sdkRoot 'include\M1937SDK\MissionRoutes.hpp') =
         New-MissionHeader $routeCatalog $addressCatalog
     (Join-Path $sdkRoot 'generated\M1937MissionRoutes.cs') =

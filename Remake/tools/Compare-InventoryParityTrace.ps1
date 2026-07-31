@@ -291,6 +291,39 @@ $scenarioDefinitions = @{
         expected_after_quantity = 19
         target_scene = 2685
     }
+    'm007-slingshot-attack-inventory-v1' = [ordered]@{
+        level_id = 'm007'
+        selector_level = 8
+        engine_mission = 8
+        actor_scene = 2298
+        actor_database_entry = 929
+        checkpoints = @('before_attack', 'after_attack')
+        active_attack_type = 7
+        delta_container = 'weapon_entries'
+        delta_item_id = 42
+        delta_quantity = 0
+        expected_before_quantity = 1
+        expected_after_quantity = 1
+        target_scene = 2287
+        compare_target_hit_points = $true
+    }
+    'm007-special-attention-attack-inventory-v1' = [ordered]@{
+        level_id = 'm007'
+        selector_level = 8
+        engine_mission = 8
+        actor_scene = 2389
+        actor_database_entry = 914
+        checkpoints = @('before_attack', 'after_attack')
+        active_attack_type = 11
+        delta_container = 'weapon_entries'
+        delta_item_id = 99
+        delta_quantity = 0
+        expected_before_quantity = 1
+        expected_after_quantity = 1
+        target_scene = 2298
+        expected_runtime_type = 91
+        compare_target_attention_hold = $true
+    }
     'm010-dagger-attack-inventory-v1' = [ordered]@{
         level_id = 'm010'
         selector_level = 11
@@ -563,6 +596,18 @@ foreach ($checkpointId in $expectedCheckpointIds) {
         $definition.actor_database_entry `
         $referenceActor.database_entry_id `
         'scenario identity'
+    if ($definition.Contains('expected_runtime_type')) {
+        Compare-ExactValue $mismatches `
+            "reference.checkpoints.$checkpointId.actors.scene:$($definition.actor_scene).native.runtime_type" `
+            $definition.expected_runtime_type `
+            $referenceActor.native.runtime_type `
+            'authentic runtime actor transition'
+        Compare-ExactValue $mismatches `
+            "candidate.checkpoints.$checkpointId.actors.scene:$($definition.actor_scene).native.runtime_type" `
+            $definition.expected_runtime_type `
+            $candidateActor.native.runtime_type `
+            'authentic runtime actor transition'
+    }
     $isDelayedPoisonOutcome = (
         $definition.Contains('scenario_kind') -and
         [string]$definition.scenario_kind -ceq 'world_item' -and
@@ -610,15 +655,26 @@ foreach ($checkpointId in $expectedCheckpointIds) {
                     ($null -ne $candidateTarget)) `
                 'required attack target'
         }
-        elseif (
-            $definition.Contains('compare_target_hit_points') -and
-            [bool]$definition.compare_target_hit_points) {
-            foreach ($field in @('current', 'maximum')) {
+        else {
+            if (
+                $definition.Contains('compare_target_hit_points') -and
+                [bool]$definition.compare_target_hit_points) {
+                foreach ($field in @('current', 'maximum')) {
+                    Compare-ExactValue $mismatches `
+                        "checkpoints.$checkpointId.actors.scene:$($definition.target_scene).hit_points.$field" `
+                        $referenceTarget.hit_points.$field `
+                        $candidateTarget.hit_points.$field `
+                        'exact attack-result hit points'
+                }
+            }
+            if (
+                $definition.Contains('compare_target_attention_hold') -and
+                [bool]$definition.compare_target_attention_hold) {
                 Compare-ExactValue $mismatches `
-                    "checkpoints.$checkpointId.actors.scene:$($definition.target_scene).hit_points.$field" `
-                    $referenceTarget.hit_points.$field `
-                    $candidateTarget.hit_points.$field `
-                    'exact attack-result hit points'
+                    "checkpoints.$checkpointId.actors.scene:$($definition.target_scene).native.path_override_active" `
+                    $referenceTarget.native.path_override_active `
+                    $candidateTarget.native.path_override_active `
+                    'exact original type-11 attention hold'
             }
         }
     }

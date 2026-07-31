@@ -71,8 +71,14 @@ struct RuntimeActorV1 final {
     std::byte unknown_1b0[16];
     std::int32_t current_hit_points;        // +0x1C0
     std::byte unknown_1c4[8];
-    // Burial completion sets this on the source target.
-    std::int32_t burial_resolved;          // +0x1CC
+    union {
+        // Burial completion sets this on the source target.
+        std::int32_t burial_resolved;       // +0x1CC
+        // Gu Ming's normal/disguised update sets the same actor-state slot
+        // when the strict transition counter completes. sub_450200 consumes
+        // it to replace runtime type 10 with 91 (or 91 with 10).
+        std::int32_t disguise_transition_ready; // +0x1CC
+    };
     std::byte unknown_1d0[4];
     std::int32_t search_or_return_active;   // +0x1D4
     std::int32_t movement_active;           // +0x1D8
@@ -81,7 +87,11 @@ struct RuntimeActorV1 final {
     std::int32_t burial_command_active;     // +0x1EC
     std::byte unknown_1f0[12];
     std::int32_t movement_path_state;       // +0x1FC
-    std::byte unknown_200[8];
+    std::byte unknown_200[4];
+    // Snapshot of default_attack_type used by the current action. The
+    // hit-frame dispatcher switches on this value, not the mutable UI
+    // selection at +0x20C.
+    std::int32_t current_attack_type;        // +0x204
     std::int32_t movement_mode;             // +0x208
     std::int32_t default_attack_type;        // +0x20C
     std::byte unknown_210[4];
@@ -202,11 +212,13 @@ static_assert(offsetof(RuntimeActorV1, command_variant) == 0x1A4);
 static_assert(offsetof(RuntimeActorV1, command_pending) == 0x1A8);
 static_assert(offsetof(RuntimeActorV1, selected_for_command) == 0x1AC);
 static_assert(offsetof(RuntimeActorV1, current_hit_points) == 0x1C0);
+static_assert(offsetof(RuntimeActorV1, disguise_transition_ready) == 0x1CC);
 static_assert(offsetof(RuntimeActorV1, burial_resolved) == 0x1CC);
 static_assert(offsetof(RuntimeActorV1, search_or_return_active) == 0x1D4);
 static_assert(offsetof(RuntimeActorV1, movement_active) == 0x1D8);
 static_assert(offsetof(RuntimeActorV1, burial_command_active) == 0x1EC);
 static_assert(offsetof(RuntimeActorV1, movement_path_state) == 0x1FC);
+static_assert(offsetof(RuntimeActorV1, current_attack_type) == 0x204);
 static_assert(offsetof(RuntimeActorV1, movement_mode) == 0x208);
 static_assert(offsetof(RuntimeActorV1, default_attack_type) == 0x20C);
 static_assert(offsetof(RuntimeActorV1, target_actor_address) == 0x214);
