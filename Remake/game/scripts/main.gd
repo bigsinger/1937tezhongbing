@@ -295,6 +295,8 @@ var last_formation_move_path_usec := 0
 var last_formation_move_event_usec := 0
 var legacy_crt_random_state := 1
 var field_pickups: Array[Node2D] = []
+var original_pickup_order_target: Node2D
+var original_pickup_order_collector: SQUAD_UNIT
 var explosive_props: Array[Node2D] = []
 var deployed_mines: Array[Node2D] = []
 var legacy_special_world_objects: Array[Node2D] = []
@@ -528,6 +530,7 @@ func load_imported_level(level_id: String = LEVEL_VIEW.DEFAULT_LEVEL_ID) -> bool
 			_free_level_runtime_node(burial_cache)
 	legacy_burial_caches.clear()
 	legacy_doors.clear()
+	_clear_original_pickup_order()
 	field_pickups.clear()
 	explosive_props.clear()
 	field_inventory.clear()
@@ -1394,6 +1397,7 @@ func _process(delta: float) -> void:
 
 
 func _physics_process(_delta: float) -> void:
+	_advance_original_pickup_order()
 	_advance_burial_command_world_tick()
 
 
@@ -1675,7 +1679,10 @@ func _update_context_cursor(delta: float = 0.0) -> void:
 		sight_target_pending,
 		not selected_units.is_empty(),
 		original_force_target_held,
-		legacy_door_at_world_point(mouse_world) != null,
+		(
+			legacy_door_at_world_point(mouse_world) != null
+			or field_pickup_at_world_point(mouse_world) != null
+		),
 		enemy_at_world_point(mouse_world) != null,
 		_cursor_ground_is_walkable(mouse_world),
 		pointer_inside_world,
@@ -1904,6 +1911,10 @@ func _handle_original_left_click(world_position: Vector2, additive: bool) -> voi
 	if _try_open_legacy_door_at(world_position):
 		return
 	if _try_issue_legacy_world_object_deployment(world_position):
+		return
+	var field_pickup := field_pickup_at_world_point(world_position)
+	if field_pickup != null:
+		issue_original_pickup_order(field_pickup)
 		return
 	var combat_target: Node2D = enemy_at_world_point(world_position)
 	if combat_target == null:
@@ -2674,6 +2685,9 @@ func issue_formation_move(destination: Vector2) -> void:
 			Time.get_ticks_usec() - formation_started_usec
 		)
 		return
+	# A new ordinary ground command replaces the original status-3 pickup
+	# command just as sub_458A80 replaces the active target tuple.
+	_clear_original_pickup_order()
 	var audio_started_usec := Time.get_ticks_usec()
 	_play_media_audio("acknowledge", _media_actor_key(selected_units[0].display_name))
 	last_formation_move_audio_usec = (
@@ -2776,6 +2790,24 @@ func explosive_prop_at_world_point(world_point: Vector2) -> Node2D:
 	return nearest
 
 
+func field_pickup_at_world_point(world_point: Vector2) -> Node2D:
+	var nearest: Node2D
+	var nearest_distance := INF
+	for pickup: Node2D in field_pickups:
+		if (
+			not is_instance_valid(pickup)
+			or bool(pickup.get("consumed"))
+			or not pickup.has_method("contains_parent_point")
+			or not bool(pickup.call("contains_parent_point", world_point))
+		):
+			continue
+		var distance := pickup.position.distance_squared_to(world_point)
+		if distance < nearest_distance:
+			nearest_distance = distance
+			nearest = pickup
+	return nearest
+
+
 func force_target_at_world_point(world_point: Vector2) -> Node2D:
 	var nearest: Node2D
 	var nearest_distance := 30.0 * 30.0
@@ -2814,6 +2846,7 @@ func issue_attack_order(target: Node2D, force_target: bool = false) -> void:
 	):
 		update_status("请先选择存活队员和敌方目标")
 		return
+	_clear_original_pickup_order()
 	var issued := 0
 	for unit: SQUAD_UNIT in selected_units:
 		_cancel_legacy_deployment_for_unit(unit)
@@ -6187,6 +6220,112 @@ func _publish_item_acquired_if_mission_bound(
 		if payload.has(field) and _scene_is_mission_bound(int(payload[field])):
 			return _publish_mission_event("item_acquired", payload)
 	return []
+
+
+func issue_original_pickup_order(pickup: Node2D) -> bool:
+	if (
+		pickup == null
+		or not is_instance_valid(pickup)
+		or bool(pickup.get("consumed"))
+		or selected_units.is_empty()
+	):
+		update_status("请先选择存活队员和可拾取物品")
+		return false
+	var collector: SQUAD_UNIT
+	var nearest_distance := INF
+	for unit: SQUAD_UNIT in selected_units:
+		if not unit.is_alive:
+			continue
+		var distance := unit.position.distance_squared_to(pickup.position)
+		if distance < nearest_distance:
+			nearest_distance = distance
+			collector = unit
+	if (
+		collector == null
+		or not _collector_can_use_field_pickup(collector, pickup)
+	):
+		update_status("当前队员不能拾取该物品")
+		return false
+	_clear_original_pickup_order()
+	_cancel_legacy_deployment_for_unit(collector)
+	collector.clear_combat_target()
+	original_pickup_order_target = pickup
+	original_pickup_order_collector = collector
+	if bool(pickup.call("can_collect", collector)):
+		return _complete_original_pickup_order()
+	var path := PackedVector2Array()
+	if navigation_grid == null:
+		path.append(pickup.position)
+	elif dynamic_occupancy != null and collector.scene_index >= 0:
+		path = dynamic_occupancy.find_path_for_scene(
+			collector.scene_index,
+			collector.position,
+			pickup.position,
+		)
+	else:
+		path = navigation_grid.find_path(
+			collector.position,
+			pickup.position,
+			true,
+		)
+	if path.is_empty() and not collector.position.is_equal_approx(pickup.position):
+		_clear_original_pickup_order()
+		update_status("没有通往该物品的可行路线")
+		return false
+	collector.issue_path(path)
+	update_status("%s 正在接近 %s" % [
+		collector.display_name,
+		str(pickup.get("original_display_name")),
+	])
+	return true
+
+
+func _advance_original_pickup_order() -> void:
+	if original_pickup_order_target == null:
+		return
+	if (
+		not is_instance_valid(original_pickup_order_target)
+		or original_pickup_order_target.is_queued_for_deletion()
+		or bool(original_pickup_order_target.get("consumed"))
+		or original_pickup_order_collector == null
+		or not is_instance_valid(original_pickup_order_collector)
+		or not original_pickup_order_collector.is_alive
+	):
+		_clear_original_pickup_order()
+		return
+	if bool(
+		original_pickup_order_target.call(
+			"can_collect",
+			original_pickup_order_collector,
+		)
+	):
+		_complete_original_pickup_order()
+
+
+func _complete_original_pickup_order() -> bool:
+	var pickup := original_pickup_order_target
+	var collector := original_pickup_order_collector
+	if (
+		pickup == null
+		or collector == null
+		or not is_instance_valid(pickup)
+		or not is_instance_valid(collector)
+		or not _collector_can_use_field_pickup(collector, pickup)
+	):
+		_clear_original_pickup_order()
+		return false
+	var payload := pickup.call("collect", collector) as Dictionary
+	if payload.is_empty():
+		return false
+	field_pickups.erase(pickup)
+	_clear_original_pickup_order()
+	_apply_field_pickup(payload, collector)
+	return true
+
+
+func _clear_original_pickup_order() -> void:
+	original_pickup_order_target = null
+	original_pickup_order_collector = null
 
 
 func _collector_can_use_field_pickup(collector: SQUAD_UNIT, pickup: Node2D) -> bool:

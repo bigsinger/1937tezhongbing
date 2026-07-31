@@ -38,8 +38,10 @@ internal static class ModRegressionProbe
     private const uint WmSetFocus = 0x0007;
     private const uint WmActivateApp = 0x001C;
     private const int DikF1 = 0x3B;
+    private const int DikF2 = 0x3C;
     private const int DikF4 = 0x3E;
     private const int DikM = 0x32;
+    private const int DikDigit5 = 0x06;
     private const int DikUp = 0xC8;
     private const int DikLeft = 0xCB;
     private const int DikRight = 0xCD;
@@ -48,6 +50,10 @@ internal static class ModRegressionProbe
     private const int SmYVirtualScreen = 77;
     private const int SmCxVirtualScreen = 78;
     private const int SmCyVirtualScreen = 79;
+    private const int ActorSpritePrimaryXOffset = 0x044;
+    private const int ActorSpritePrimaryZOffset = 0x04C;
+    private const int ActorSpriteWidthOffset = 0x05C;
+    private const int ActorSpriteHeightOffset = 0x060;
     private const int ActorRuntimeTypeOffset = 0x064;
     private const int ActorFactionOffset = 0x074;
     private const int ActorWorldXOffset = 0x0D8;
@@ -79,6 +85,18 @@ internal static class ModRegressionProbe
     private const int ActorTargetLostOffset = 0x254;
     private const int ActorReactionStateOffset = 0x25C;
     private const int ActorPathOverrideActiveOffset = 0x290;
+    private const long HoverWorldXRelativeAddress = 0x000E7014L;
+    private const long HoverWorldYRelativeAddress = 0x000E7018L;
+    private const long HoverCommandArmedRelativeAddress = 0x000E7034L;
+    private const long HoverTargetStatusRelativeAddress = 0x000E7038L;
+    private const long HoverTargetAddressRelativeAddress = 0x000E7040L;
+    private const int M000PlayerSceneIndex = 1436;
+    private const int M000AttackTargetSceneIndex = 1598;
+    private const int M001PlayerSceneIndex = 2280;
+    private const int M001MineRuntimeType = 43;
+    private const int M001MineItemId = 43;
+    private const int M001MineWorldX = 283;
+    private const int M001MineWorldY = 475;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct Rect
@@ -227,6 +245,19 @@ internal static class ModRegressionProbe
         public int TargetLost;
         public int ReactionState;
         public int PathOverrideActive;
+        public bool InventoryCaptured;
+        public readonly List<InventoryEntry> WeaponEntries =
+            new List<InventoryEntry>();
+        public readonly List<InventoryEntry> ItemEntries =
+            new List<InventoryEntry>();
+    }
+
+    private sealed class InventoryEntry
+    {
+        public int InventoryIndex;
+        public int ItemId;
+        public int Quantity;
+        public int QuantityMode;
     }
 
     private sealed class ParityCheckpoint
@@ -282,7 +313,8 @@ internal static class ModRegressionProbe
                 "[--briefing-only] [--movement-only] " +
                 "[--inventory-only] " +
                 "[--identity-catalog=PATH --parity-patrol-only | " +
-                "--parity-contact-only --parity-scenario=ID " +
+                "--parity-contact-only | --parity-pickup-only | " +
+                "--parity-attack-only --parity-scenario=ID " +
                 "--patrol-observation-ms=MS " +
                 "--contact-observation-ms=MS] [--actor-layout-dump]");
             return 2;
@@ -370,20 +402,36 @@ internal static class ModRegressionProbe
                 "--parity-contact-only",
                 StringComparison.OrdinalIgnoreCase);
         });
+        bool parityPickupOnly = args.Any(delegate(string argument)
+        {
+            return argument.Equals(
+                "--parity-pickup-only",
+                StringComparison.OrdinalIgnoreCase);
+        });
+        bool parityAttackOnly = args.Any(delegate(string argument)
+        {
+            return argument.Equals(
+                "--parity-attack-only",
+                StringComparison.OrdinalIgnoreCase);
+        });
         bool actorLayoutDump = args.Any(delegate(string argument)
         {
             return argument.Equals(
                 "--actor-layout-dump",
                 StringComparison.OrdinalIgnoreCase);
         });
-        if (parityPatrolOnly && parityContactOnly)
+        int parityModeCount =
+            (parityPatrolOnly ? 1 : 0) +
+            (parityContactOnly ? 1 : 0) +
+            (parityPickupOnly ? 1 : 0) +
+            (parityAttackOnly ? 1 : 0);
+        if (parityModeCount > 1)
         {
             throw new InvalidOperationException(
-                "Patrol-only and contact-only parity scenarios are " +
-                "mutually exclusive.");
+                "Parity-only scenarios are mutually exclusive.");
         }
         if (inventoryOnly &&
-            (briefingOnly || parityPatrolOnly || parityContactOnly))
+            (briefingOnly || parityModeCount > 0))
         {
             throw new InvalidOperationException(
                 "Inventory-only cannot be combined with briefing-only " +
@@ -423,12 +471,22 @@ internal static class ModRegressionProbe
             String.IsNullOrWhiteSpace(identityCatalogPath)
                 ? new Dictionary<int, RuntimeActorIdentity>()
                 : ReadIdentityCatalog(identityCatalogPath);
-        if ((parityPatrolOnly || parityContactOnly) &&
+        if (parityModeCount > 0 &&
             actorIdentities.Count == 0)
         {
             throw new InvalidOperationException(
                 "Actor parity scenarios require a non-empty " +
                 "--identity-catalog.");
+        }
+        if (parityPickupOnly && selectorLevel != 2)
+        {
+            throw new InvalidOperationException(
+                "The audited mine pickup scenario requires selector level 2.");
+        }
+        if (parityAttackOnly && selectorLevel != 1)
+        {
+            throw new InvalidOperationException(
+                "The audited pistol attack scenario requires selector level 1.");
         }
         var route = MissionRoutes.Find(selectorLevel);
         if (route == null)
@@ -914,6 +972,98 @@ internal static class ModRegressionProbe
                         itemInventoryReadable &&
                         inventoryProcessResponsive &&
                         inventoryCursorClipSafe ? 0 : 1;
+                    WriteArtifacts(
+                        outputDirectory,
+                        selectorLevel,
+                        route.EngineMission,
+                        stages,
+                        perf,
+                        transitionsLogged: false,
+                        replayConsumed: true,
+                        passed: exitCode == 0);
+                    return exitCode;
+                }
+                if (parityPickupOnly || parityAttackOnly)
+                {
+                    string inventoryParityEvidence;
+                    bool inventoryParityObserved = parityPickupOnly
+                        ? ExerciseMinePickupParity(
+                            process,
+                            imageBase,
+                            window,
+                            parityCheckpoints,
+                            clock,
+                            actorIdentities,
+                            out inventoryParityEvidence)
+                        : ExercisePistolAttackParity(
+                            process,
+                            imageBase,
+                            window,
+                            parityCheckpoints,
+                            clock,
+                            actorIdentities,
+                            out inventoryParityEvidence);
+                    AddStage(
+                        stages,
+                        game,
+                        process,
+                        imageBase,
+                        clock,
+                        parityPickupOnly
+                            ? "original_mine_pickup_inventory_delta"
+                            : "original_pistol_attack_inventory_delta",
+                        inventoryParityObserved,
+                        inventoryParityEvidence);
+                    samplerStop = true;
+                    sampler.Join(1500);
+                    bool inventoryParityCursorClipSafe;
+                    lock (perf)
+                        inventoryParityCursorClipSafe = perf.All(
+                            delegate(PerfSample sample)
+                            {
+                                return !sample.CursorClipRestricted;
+                            });
+                    bool inventoryParityProcessResponsive = stages.All(
+                        delegate(Stage stage)
+                        {
+                            return stage.ProcessResponding;
+                        });
+                    int trackedSceneIndex = parityPickupOnly
+                        ? M001PlayerSceneIndex
+                        : M000PlayerSceneIndex;
+                    bool inventorySnapshotsReady =
+                        parityCheckpoints.Count == 2 &&
+                        parityCheckpoints.All(
+                            delegate(ParityCheckpoint checkpoint)
+                            {
+                                ActorSnapshot tracked =
+                                    ResolvedActorForScene(
+                                        checkpoint.Actors,
+                                        actorIdentities,
+                                        trackedSceneIndex);
+                                return tracked != null &&
+                                    tracked.InventoryCaptured;
+                            });
+                    exitCode =
+                        missionStarted &&
+                        spawnSafe &&
+                        inventoryParityObserved &&
+                        inventorySnapshotsReady &&
+                        inventoryParityProcessResponsive &&
+                        inventoryParityCursorClipSafe ? 0 : 1;
+                    WriteParityTrace(
+                        outputDirectory,
+                        selectorLevel,
+                        route.EngineMission,
+                        movementCellX,
+                        movementCellY,
+                        returnCellX,
+                        returnCellY,
+                        parityCheckpoints,
+                        parityScenarioOverride,
+                        actorIdentities,
+                        false,
+                        true);
                     WriteArtifacts(
                         outputDirectory,
                         selectorLevel,
@@ -2230,6 +2380,650 @@ internal static class ModRegressionProbe
         };
     }
 
+    private static bool ReadActorInventoryContainers(
+        IntPtr process,
+        ActorSnapshot actor)
+    {
+        if (actor == null || actor.Address == 0)
+            return false;
+        actor.WeaponEntries.Clear();
+        actor.ItemEntries.Clear();
+        bool weaponReadable = ReadInventoryContainer(
+            process,
+            actor.Address + ActorInventoryAddressOffset,
+            actor.WeaponEntries);
+        bool itemReadable = ReadInventoryContainer(
+            process,
+            actor.Address + ActorItemInventoryAddressOffset,
+            actor.ItemEntries);
+        actor.InventoryCaptured = weaponReadable && itemReadable;
+        return actor.InventoryCaptured;
+    }
+
+    private static bool ReadInventoryContainer(
+        IntPtr process,
+        long containerPointerAddress,
+        List<InventoryEntry> output)
+    {
+        if (output == null)
+            return false;
+        int containerValue = ReadInt(process, containerPointerAddress);
+        if (containerValue == int.MinValue)
+            return false;
+        if (containerValue == 0)
+            return true;
+        long container = (long)(uint)containerValue;
+        int count = ReadInt(process, container + 0x0C);
+        if (count < 0 || count > 256)
+            return false;
+        if (count == 0)
+            return true;
+        int itemIdsValue = ReadInt(process, container + 0x00);
+        int quantitiesValue = ReadInt(process, container + 0x04);
+        int quantityModesValue = ReadInt(process, container + 0x08);
+        if (itemIdsValue == 0 ||
+            quantitiesValue == 0 ||
+            quantityModesValue == 0 ||
+            itemIdsValue == int.MinValue ||
+            quantitiesValue == int.MinValue ||
+            quantityModesValue == int.MinValue)
+            return false;
+        long itemIds = (long)(uint)itemIdsValue;
+        long quantities = (long)(uint)quantitiesValue;
+        long quantityModes = (long)(uint)quantityModesValue;
+        for (int index = 0; index < count; ++index)
+        {
+            int itemId = ReadInt(process, itemIds + index * 4L);
+            int quantity = ReadInt(process, quantities + index * 4L);
+            int quantityMode = ReadInt(
+                process, quantityModes + index * 4L);
+            if (itemId <= 0 ||
+                quantity < 0 ||
+                quantityMode < 0 ||
+                quantityMode > 2 ||
+                itemId == int.MinValue ||
+                quantity == int.MinValue ||
+                quantityMode == int.MinValue)
+                return false;
+            output.Add(new InventoryEntry
+            {
+                InventoryIndex = index,
+                ItemId = itemId,
+                Quantity = quantity,
+                QuantityMode = quantityMode
+            });
+        }
+        return true;
+    }
+
+    private static ActorSnapshot ResolvedActorForScene(
+        IEnumerable<ActorSnapshot> actors,
+        Dictionary<int, RuntimeActorIdentity> actorIdentities,
+        int sceneIndex)
+    {
+        if (actors == null || actorIdentities == null)
+            return null;
+        return actors.FirstOrDefault(
+            delegate(ActorSnapshot actor)
+            {
+                RuntimeActorIdentity identity;
+                return actorIdentities.TryGetValue(
+                           actor.SceneIndex, out identity) &&
+                       identity.SceneIndex == sceneIndex;
+            });
+    }
+
+    private static ActorSnapshot ReadResolvedActor(
+        IntPtr process,
+        long imageBase,
+        Dictionary<int, RuntimeActorIdentity> actorIdentities,
+        int sceneIndex)
+    {
+        if (actorIdentities == null)
+            return null;
+        RuntimeActorIdentity identity =
+            actorIdentities.Values.FirstOrDefault(
+                delegate(RuntimeActorIdentity candidate)
+                {
+                    return candidate.SceneIndex == sceneIndex;
+                });
+        if (identity == null)
+            return null;
+        int worldValue = ReadInt(
+            process, imageBase + EngineAddresses.WorldRoot);
+        if (worldValue == 0 || worldValue == int.MinValue)
+            return null;
+        long world = (long)(uint)worldValue;
+        int actorArrayValue = ReadInt(process, world + 0x18);
+        int count = ReadInt(process, world + 0x3C);
+        if (actorArrayValue == 0 ||
+            actorArrayValue == int.MinValue ||
+            identity.RuntimeIndex < 0 ||
+            identity.RuntimeIndex >= count)
+            return null;
+        int actorValue = ReadInt(
+            process,
+            (long)(uint)actorArrayValue +
+            identity.RuntimeIndex * 4L);
+        if (actorValue == 0 || actorValue == int.MinValue)
+            return null;
+        ActorSnapshot actor = ReadActor(
+            process, (long)(uint)actorValue);
+        if (actor != null)
+            actor.SceneIndex = identity.RuntimeIndex;
+        return actor;
+    }
+
+    private static ActorSnapshot FindWorldActor(
+        IntPtr process,
+        long imageBase,
+        int runtimeType,
+        int expectedWorldX,
+        int expectedWorldY,
+        int maximumDistance)
+    {
+        return FindWorldEntry(
+            process,
+            imageBase,
+            0x18,
+            0x3C,
+            runtimeType,
+            expectedWorldX,
+            expectedWorldY,
+            maximumDistance);
+    }
+
+    private static ActorSnapshot FindWorldStaticObject(
+        IntPtr process,
+        long imageBase,
+        int runtimeType,
+        int expectedWorldX,
+        int expectedWorldY,
+        int maximumDistance)
+    {
+        return FindWorldEntry(
+            process,
+            imageBase,
+            0x1C,
+            0x40,
+            runtimeType,
+            expectedWorldX,
+            expectedWorldY,
+            maximumDistance);
+    }
+
+    private static ActorSnapshot FindWorldEntry(
+        IntPtr process,
+        long imageBase,
+        int arrayPointerOffset,
+        int countOffset,
+        int runtimeType,
+        int expectedWorldX,
+        int expectedWorldY,
+        int maximumDistance)
+    {
+        int worldValue = ReadInt(
+            process, imageBase + EngineAddresses.WorldRoot);
+        if (worldValue == 0 || worldValue == int.MinValue)
+            return null;
+        long world = (long)(uint)worldValue;
+        int actorArrayValue = ReadInt(
+            process, world + arrayPointerOffset);
+        int count = ReadInt(process, world + countOffset);
+        if (actorArrayValue == 0 ||
+            actorArrayValue == int.MinValue ||
+            count <= 0 ||
+            count > 4096)
+            return null;
+        long actorArray = (long)(uint)actorArrayValue;
+        ActorSnapshot closest = null;
+        long closestDistanceSquared = long.MaxValue;
+        long maximumDistanceSquared =
+            (long)maximumDistance * maximumDistance;
+        for (int index = 0; index < count; ++index)
+        {
+            int actorValue = ReadInt(
+                process, actorArray + index * 4L);
+            if (actorValue == 0 || actorValue == int.MinValue)
+                continue;
+            ActorSnapshot candidate = ReadActor(
+                process, (long)(uint)actorValue);
+            if (candidate == null ||
+                candidate.RuntimeType != runtimeType)
+                continue;
+            long deltaX = candidate.WorldX - expectedWorldX;
+            long deltaY = candidate.WorldY - expectedWorldY;
+            long distanceSquared =
+                deltaX * deltaX + deltaY * deltaY;
+            if (distanceSquared > maximumDistanceSquared ||
+                distanceSquared >= closestDistanceSquared)
+                continue;
+            candidate.SceneIndex = index;
+            closest = candidate;
+            closestDistanceSquared = distanceSquared;
+        }
+        return closest;
+    }
+
+    private static bool TryGetActorClickWorldPoint(
+        IntPtr process,
+        ActorSnapshot actor,
+        out int clickWorldX,
+        out int clickWorldY)
+    {
+        clickWorldX = int.MinValue;
+        clickWorldY = int.MinValue;
+        if (actor == null || actor.Address == 0)
+            return false;
+        int primaryX = ReadInt(
+            process, actor.Address + ActorSpritePrimaryXOffset);
+        int primaryZ = ReadInt(
+            process, actor.Address + ActorSpritePrimaryZOffset);
+        int width = ReadInt(
+            process, actor.Address + ActorSpriteWidthOffset);
+        int height = ReadInt(
+            process, actor.Address + ActorSpriteHeightOffset);
+        if (primaryX == int.MinValue ||
+            primaryZ == int.MinValue ||
+            width <= 0 ||
+            height <= 0 ||
+            width > 2048 ||
+            height > 2048)
+            return false;
+        long left = (long)actor.WorldX - primaryX;
+        long top = (long)actor.WorldY - primaryZ;
+        long centerX = left + width / 2L;
+        long centerY = top + height / 2L;
+        if (centerX < int.MinValue ||
+            centerX > int.MaxValue ||
+            centerY < int.MinValue ||
+            centerY > int.MaxValue)
+            return false;
+        clickWorldX = (int)centerX;
+        clickWorldY = (int)centerY;
+        return true;
+    }
+
+    private static int InventoryQuantity(
+        IEnumerable<InventoryEntry> entries,
+        int itemId)
+    {
+        if (entries == null)
+            return 0;
+        InventoryEntry entry = entries.FirstOrDefault(
+            delegate(InventoryEntry candidate)
+            {
+                return candidate.ItemId == itemId;
+            });
+        return entry == null ? 0 : entry.Quantity;
+    }
+
+    private static bool ExerciseMinePickupParity(
+        IntPtr process,
+        long imageBase,
+        IntPtr window,
+        List<ParityCheckpoint> checkpoints,
+        Stopwatch runClock,
+        Dictionary<int, RuntimeActorIdentity> actorIdentities,
+        out string evidence)
+    {
+        bool selected = PulseKey(window, DikF2);
+        Thread.Sleep(320);
+        ActorSnapshot player = ReadResolvedActor(
+            process,
+            imageBase,
+            actorIdentities,
+            M001PlayerSceneIndex);
+        if (player == null ||
+            !ReadActorInventoryContainers(process, player))
+        {
+            evidence =
+                "m001 scene 2280 inventory was not readable after F2";
+            return false;
+        }
+        int beforeQuantity = InventoryQuantity(
+            player.WeaponEntries, M001MineItemId);
+        CaptureParityCheckpoint(
+            checkpoints,
+            process,
+            imageBase,
+            runClock,
+            "before_pickup",
+            true);
+
+        bool clickSent = false;
+        bool quantityChanged = false;
+        int afterQuantity = beforeQuantity;
+        int attempts = 0;
+        int lastClickWorldX = int.MinValue;
+        int lastClickWorldY = int.MinValue;
+        int lastCursorX = int.MinValue;
+        int lastCursorY = int.MinValue;
+        int lastMineRuntimeIndex = -1;
+        int lastMineStaticIndex = -1;
+        int lastMineOwnStatus = int.MinValue;
+        long lastMineAddress = 0;
+        Stopwatch wait = Stopwatch.StartNew();
+        while (wait.ElapsedMilliseconds < 16000)
+        {
+            if (attempts == 0 ||
+                (wait.ElapsedMilliseconds >= attempts * 5000 &&
+                 attempts < 3))
+            {
+                ActorSnapshot dynamicMine = FindWorldActor(
+                    process,
+                    imageBase,
+                    M001MineRuntimeType,
+                    M001MineWorldX,
+                    M001MineWorldY,
+                    96);
+                ActorSnapshot staticMine = FindWorldStaticObject(
+                    process,
+                    imageBase,
+                    M001MineRuntimeType,
+                    M001MineWorldX,
+                    M001MineWorldY,
+                    96);
+                ActorSnapshot mine = staticMine ?? dynamicMine;
+                if (mine != null)
+                {
+                    lastMineRuntimeIndex =
+                        dynamicMine == null
+                            ? -1
+                            : dynamicMine.SceneIndex;
+                    lastMineStaticIndex =
+                        staticMine == null
+                            ? -1
+                            : staticMine.SceneIndex;
+                    lastMineAddress = mine.Address;
+                    lastMineOwnStatus = ReadInt(
+                        process, mine.Address + 0x70);
+                    if (TryGetActorClickWorldPoint(
+                            process,
+                            mine,
+                            out lastClickWorldX,
+                            out lastClickWorldY))
+                    {
+                        clickSent = ClickReplayWorldPoint(
+                            process,
+                            imageBase,
+                            window,
+                            lastClickWorldX,
+                            lastClickWorldY,
+                            out lastCursorX,
+                            out lastCursorY) || clickSent;
+                    }
+                }
+                attempts++;
+            }
+            player = ReadResolvedActor(
+                process,
+                imageBase,
+                actorIdentities,
+                M001PlayerSceneIndex);
+            if (player == null || player.Dead != 0)
+                break;
+            if (ReadActorInventoryContainers(process, player))
+            {
+                afterQuantity = InventoryQuantity(
+                    player.WeaponEntries, M001MineItemId);
+                if (afterQuantity == beforeQuantity + 1)
+                {
+                    quantityChanged = true;
+                    break;
+                }
+            }
+            Thread.Sleep(80);
+        }
+        CaptureParityCheckpoint(
+            checkpoints,
+            process,
+            imageBase,
+            runClock,
+            "after_pickup",
+            true);
+        evidence =
+            "input_isolation=process-local-DirectInput" +
+            "; selected_f2=" + selected +
+            "; click_sent=" + clickSent +
+            "; attempts=" + attempts +
+            "; mine_runtime_index=" + lastMineRuntimeIndex +
+            "; mine_static_index=" + lastMineStaticIndex +
+            "; mine_address=0x" +
+            lastMineAddress.ToString("X8", CultureInfo.InvariantCulture) +
+            "; mine_status=" + lastMineOwnStatus +
+            "; click_world=(" + lastClickWorldX + "," +
+            lastClickWorldY + ")" +
+            "; cursor=(" + lastCursorX + "," + lastCursorY + ")" +
+            "; hover_world=(" +
+            ReadInt(
+                process,
+                imageBase + HoverWorldXRelativeAddress) + "," +
+            ReadInt(
+                process,
+                imageBase + HoverWorldYRelativeAddress) + ")" +
+            "; hover_status=" + ReadInt(
+                process,
+                imageBase + HoverTargetStatusRelativeAddress) +
+            "; hover_target=0x" +
+            ((long)(uint)ReadInt(
+                process,
+                imageBase + HoverTargetAddressRelativeAddress)).ToString(
+                    "X8", CultureInfo.InvariantCulture) +
+            "; command_armed=" + ReadInt(
+                process,
+                imageBase + HoverCommandArmedRelativeAddress) +
+            "; action_id=" + ReadInt(
+                process,
+                imageBase + EngineAddresses.CurrentActionId) +
+            "; player=(" +
+            (player == null
+                ? "missing"
+                : player.WorldX + "," + player.WorldY) + ")" +
+            "; item_43=" + beforeQuantity + "->" + afterQuantity +
+            "; dead=" + (player == null ? -1 : player.Dead);
+        return selected &&
+            clickSent &&
+            quantityChanged &&
+            player != null &&
+            player.Dead == 0;
+    }
+
+    private static bool ExercisePistolAttackParity(
+        IntPtr process,
+        long imageBase,
+        IntPtr window,
+        List<ParityCheckpoint> checkpoints,
+        Stopwatch runClock,
+        Dictionary<int, RuntimeActorIdentity> actorIdentities,
+        out string evidence)
+    {
+        bool selected = PulseKey(window, DikF4);
+        Thread.Sleep(260);
+        bool weaponSelected = PulseKey(window, DikDigit5);
+        ActorSnapshot player = null;
+        bool pistolActive = WaitUntil(
+            delegate()
+            {
+                player = ReadResolvedActor(
+                    process,
+                    imageBase,
+                    actorIdentities,
+                    M000PlayerSceneIndex);
+                return player != null &&
+                    player.DefaultAttackType == 1;
+            },
+            TimeSpan.FromSeconds(1.5));
+        if (player == null ||
+            !ReadActorInventoryContainers(process, player))
+        {
+            evidence =
+                "m000 scene 1436 inventory was not readable after F4/5";
+            return false;
+        }
+        int beforeQuantity = InventoryQuantity(
+            player.WeaponEntries, 36);
+        ActorSnapshot target = ReadResolvedActor(
+            process,
+            imageBase,
+            actorIdentities,
+            M000AttackTargetSceneIndex);
+        int beforeTargetHitPoints =
+            target == null ? int.MinValue : target.CurrentHitPoints;
+        CaptureParityCheckpoint(
+            checkpoints,
+            process,
+            imageBase,
+            runClock,
+            "before_attack",
+            true);
+
+        bool clickSent = false;
+        bool quantityChanged = false;
+        int afterQuantity = beforeQuantity;
+        int afterTargetHitPoints = beforeTargetHitPoints;
+        int attempts = 0;
+        int lastClickWorldX = int.MinValue;
+        int lastClickWorldY = int.MinValue;
+        int lastCursorX = int.MinValue;
+        int lastCursorY = int.MinValue;
+        Stopwatch wait = Stopwatch.StartNew();
+        while (wait.ElapsedMilliseconds < 15000)
+        {
+            target = ReadResolvedActor(
+                process,
+                imageBase,
+                actorIdentities,
+                M000AttackTargetSceneIndex);
+            if (target == null || target.Dead != 0)
+                break;
+            if (attempts == 0 ||
+                (wait.ElapsedMilliseconds >= attempts * 4000 &&
+                 attempts < 3))
+            {
+                if (TryGetActorClickWorldPoint(
+                        process,
+                        target,
+                        out lastClickWorldX,
+                        out lastClickWorldY))
+                {
+                    clickSent = ClickReplayWorldPoint(
+                        process,
+                        imageBase,
+                        window,
+                        lastClickWorldX,
+                        lastClickWorldY,
+                        out lastCursorX,
+                        out lastCursorY) || clickSent;
+                }
+                attempts++;
+            }
+            player = ReadResolvedActor(
+                process,
+                imageBase,
+                actorIdentities,
+                M000PlayerSceneIndex);
+            if (player == null || player.Dead != 0)
+                break;
+            if (ReadActorInventoryContainers(process, player))
+            {
+                afterQuantity = InventoryQuantity(
+                    player.WeaponEntries, 36);
+                if (afterQuantity == beforeQuantity - 1)
+                {
+                    quantityChanged = true;
+                    afterTargetHitPoints = target.CurrentHitPoints;
+                    break;
+                }
+            }
+            Thread.Sleep(80);
+        }
+        target = ReadResolvedActor(
+            process,
+            imageBase,
+            actorIdentities,
+            M000AttackTargetSceneIndex);
+        if (target != null)
+            afterTargetHitPoints = target.CurrentHitPoints;
+        CaptureParityCheckpoint(
+            checkpoints,
+            process,
+            imageBase,
+            runClock,
+            "after_attack",
+            true);
+        evidence =
+            "input_isolation=process-local-DirectInput" +
+            "; selected_f4=" + selected +
+            "; selected_digit_5=" + weaponSelected +
+            "; pistol_active=" + pistolActive +
+            "; click_sent=" + clickSent +
+            "; attempts=" + attempts +
+            "; click_world=(" + lastClickWorldX + "," +
+            lastClickWorldY + ")" +
+            "; cursor=(" + lastCursorX + "," + lastCursorY + ")" +
+            "; action_id=" + ReadInt(
+                process,
+                imageBase + EngineAddresses.CurrentActionId) +
+            "; item_36=" + beforeQuantity + "->" + afterQuantity +
+            "; target_hp=" + beforeTargetHitPoints + "->" +
+            afterTargetHitPoints +
+            "; player_dead=" +
+            (player == null ? -1 : player.Dead);
+        return selected &&
+            weaponSelected &&
+            pistolActive &&
+            clickSent &&
+            quantityChanged &&
+            player != null &&
+            player.Dead == 0;
+    }
+
+    private static bool ClickReplayWorldPoint(
+        IntPtr process,
+        long imageBase,
+        IntPtr window,
+        int worldX,
+        int worldY,
+        out int actualCursorX,
+        out int actualCursorY)
+    {
+        actualCursorX = int.MinValue;
+        actualCursorY = int.MinValue;
+        int screenWidth = ReadInt(
+            process, imageBase + EngineAddresses.ScreenWidth);
+        int screenHeight = ReadInt(
+            process, imageBase + EngineAddresses.ScreenHeight);
+        if (screenWidth <= 0 || screenHeight <= 80)
+            return false;
+        int cameraX;
+        int cameraY;
+        bool visible = PanReplayCameraToWorldPoint(
+            process,
+            imageBase,
+            window,
+            worldX,
+            worldY,
+            screenWidth,
+            screenHeight,
+            5000,
+            out cameraX,
+            out cameraY);
+        if (!visible)
+            return false;
+        int screenX = worldX - cameraX;
+        int screenY = worldY - cameraY;
+        bool cursorReached = MoveReplayCursor(
+            process,
+            imageBase,
+            window,
+            screenX,
+            screenY,
+            out actualCursorX,
+            out actualCursorY);
+        return cursorReached && PulseMouseButton(window, 0);
+    }
+
     private static bool MoveReplayCursor(
         IntPtr process, long imageBase, IntPtr window,
         int targetX, int targetY, out int actualX, out int actualY)
@@ -3246,7 +4040,8 @@ internal static class ModRegressionProbe
         IntPtr process,
         long imageBase,
         Stopwatch clock,
-        string checkpointId)
+        string checkpointId,
+        bool includeInventory = false)
     {
         if (checkpoints == null || process == IntPtr.Zero)
             return;
@@ -3281,7 +4076,11 @@ internal static class ModRegressionProbe
             ReadWorldActorCount(process, imageBase);
         foreach (ActorSnapshot actor in ReadTraceActors(
             process, imageBase))
+        {
+            if (includeInventory)
+                ReadActorInventoryContainers(process, actor);
             checkpoint.Actors.Add(actor);
+        }
         checkpoints.Add(checkpoint);
     }
 
@@ -3440,6 +4239,96 @@ internal static class ModRegressionProbe
         sourceEntityCount = sizes[index, 2];
     }
 
+    private static string TraceInventoryFields(ActorSnapshot actor)
+    {
+        if (actor == null || !actor.InventoryCaptured)
+            return "";
+        int activeItemId = ItemIdForAttackType(
+            actor.DefaultAttackType);
+        int activeQuantity = InventoryQuantity(
+            actor.WeaponEntries,
+            activeItemId);
+        var json = new StringBuilder();
+        json.AppendFormat(
+            CultureInfo.InvariantCulture,
+            "\"weapon\":{{\"attack_type\":{0}," +
+            "\"action_key\":\"{1}\"," +
+            "\"magazine_ammo\":{2},\"reserve_ammo\":0," +
+            "\"infinite_ammo\":false}},",
+            actor.DefaultAttackType,
+            Escape(ActionKeyForAttackType(actor.DefaultAttackType)),
+            activeQuantity);
+        json.AppendFormat(
+            CultureInfo.InvariantCulture,
+            "\"inventory\":{{\"schema_version\":1," +
+            "\"active_attack_type\":{0},\"weapon_entries\":[",
+            actor.DefaultAttackType);
+        AppendTraceInventoryEntries(json, actor.WeaponEntries);
+        json.Append("],\"item_entries\":[");
+        AppendTraceInventoryEntries(json, actor.ItemEntries);
+        json.Append("]},");
+        return json.ToString();
+    }
+
+    private static void AppendTraceInventoryEntries(
+        StringBuilder json,
+        IList<InventoryEntry> entries)
+    {
+        if (json == null || entries == null)
+            return;
+        for (int index = 0; index < entries.Count; ++index)
+        {
+            InventoryEntry entry = entries[index];
+            json.AppendFormat(
+                CultureInfo.InvariantCulture,
+                "{{\"inventory_index\":{0},\"item_id\":{1}," +
+                "\"quantity\":{2},\"quantity_mode\":{3}}}{4}",
+                entry.InventoryIndex,
+                entry.ItemId,
+                entry.Quantity,
+                entry.QuantityMode,
+                index + 1 == entries.Count ? "" : ",");
+        }
+    }
+
+    private static int ItemIdForAttackType(int attackType)
+    {
+        switch (attackType)
+        {
+        case 1: return 36;
+        case 2: return 37;
+        case 3: return 38;
+        case 4: return 39;
+        case 5: return 40;
+        case 6: return 41;
+        case 7: return 42;
+        case 8: return 43;
+        case 9: return 44;
+        case 10: return 45;
+        case 11: return 99;
+        default: return 0;
+        }
+    }
+
+    private static string ActionKeyForAttackType(int attackType)
+    {
+        switch (attackType)
+        {
+        case 1: return "pistol_attack";
+        case 2: return "rifle_attack";
+        case 3: return "machine_gun_attack";
+        case 4: return "dagger_attack";
+        case 5: return "broadsword_attack";
+        case 6: return "dart_attack";
+        case 7: return "slingshot_attack";
+        case 8: return "active_action";
+        case 9: return "grenade_attack";
+        case 10: return "active_action_alt";
+        case 11: return "special_attack";
+        default: return "";
+        }
+    }
+
     private static void WriteParityTrace(
         string outputDirectory,
         int selectorLevel,
@@ -3483,6 +4372,48 @@ internal static class ModRegressionProbe
             scenarioId = selectorLevel == 1
                 ? "m000-custom-movement-v1"
                 : "level-smoke-v1";
+        string scenarioDescription;
+        if (String.Equals(
+                scenarioId,
+                "m001-mine-pickup-inventory-v1",
+                StringComparison.Ordinal))
+        {
+            scenarioDescription =
+                "Select controllable scene 2280 and collect the real " +
+                "scene-2096 mine " +
+                "through process-local DirectInput; capture both original " +
+                "inventory containers before and after.";
+        }
+        else if (String.Equals(
+                     scenarioId,
+                     "m000-pistol-attack-inventory-v1",
+                     StringComparison.Ordinal))
+        {
+            scenarioDescription =
+                "Select scene 1436, equip the original pistol and attack " +
+                "live scene 1598 through process-local DirectInput; capture " +
+                "the direct ammunition count before and after.";
+        }
+        else if (resolvedActorScope)
+        {
+            scenarioDescription =
+                "Natural player movement into enemy contact with audited " +
+                "runtime-to-VWF identities; no global cursor or focus API.";
+        }
+        else if (resolvedEnemyScope)
+        {
+            scenarioDescription =
+                "Read-only enemy patrol observation with audited " +
+                "runtime-to-VWF identities; no global cursor or focus API.";
+        }
+        else
+        {
+            scenarioDescription =
+                "Window-local selection and movement observation; no global " +
+                "cursor or focus API; cells " +
+                movementCellX + "," + movementCellY + " -> " +
+                returnCellX + "," + returnCellY + ".";
+        }
         var json = new StringBuilder();
         json.Append("{\n");
         json.Append("  \"schema_version\": 1,\n");
@@ -3506,19 +4437,7 @@ internal static class ModRegressionProbe
             "\"coordinate_space\":\"legacy-world-pixels\"," +
             "\"description\":\"{1}\"}},\n",
             scenarioId,
-            Escape(
-                resolvedActorScope
-                    ? "Natural player movement into enemy contact with " +
-                      "audited runtime-to-VWF identities; no global " +
-                      "cursor or focus API."
-                    : resolvedEnemyScope
-                        ? "Read-only enemy patrol observation with audited " +
-                          "runtime-to-VWF identities; no global cursor or " +
-                          "focus API."
-                        : "Window-local selection and movement observation; " +
-                          "no global cursor or focus API; cells " +
-                          movementCellX + "," + movementCellY + " -> " +
-                          returnCellX + "," + returnCellY + "."));
+            Escape(scenarioDescription));
         json.Append(
             "  \"metadata\": {" +
             "\"producer\":\"ModRegressionProbe\"," +
@@ -3632,7 +4551,7 @@ internal static class ModRegressionProbe
                     ? actor.GoalY
                     : actor.WorldY;
                 string role = resolvedActorScope
-                    ? traceSceneIndex == 1436
+                    ? traceFaction == 3
                         ? "player"
                         : traceFaction == 1
                             ? "enemy"
@@ -3663,6 +4582,7 @@ internal static class ModRegressionProbe
                     "\"alive\":{10}," +
                     "\"hit_points\":{{\"current\":{35}," +
                     "\"maximum\":{36}}}," +
+                    "{38}" +
                     "\"native\":{{\"goal_kind\":{11}," +
                     "\"command_variant\":{12}," +
                     "\"command_pending\":{13}," +
@@ -3731,7 +4651,8 @@ internal static class ModRegressionProbe
                     hasIdentity
                         ? identity.AuthoredHitPoints
                         : actor.CurrentHitPoints,
-                    actor.DefaultAttackType);
+                    actor.DefaultAttackType,
+                    TraceInventoryFields(actor));
             }
             json.Append("      ],\n");
             json.AppendFormat(

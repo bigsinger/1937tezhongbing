@@ -191,8 +191,13 @@ func _capture_actor(
 			"target_scene_index": current_target_scene,
 		},
 	}
-	if actor.has_method("inventory_snapshot"):
-		var inventory: Variant = actor.call("inventory_snapshot")
+	var inventory_method := (
+		"parity_inventory_snapshot"
+		if actor.has_method("parity_inventory_snapshot")
+		else "inventory_snapshot"
+	)
+	if actor.has_method(inventory_method):
+		var inventory: Variant = actor.call(inventory_method)
 		if inventory is Dictionary:
 			record["inventory"] = _json_safe(inventory)
 	if role == "enemy":

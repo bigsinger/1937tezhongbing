@@ -6,6 +6,7 @@ const WORLD_DEPTH: Script = preload("res://scripts/world_depth.gd")
 signal collected(pickup: Node2D, collector: Node, payload: Dictionary)
 
 const PICKUP_BEHAVIOR := "field_pickup"
+const ORIGINAL_NAVIGATION_CELL_SIZE := Vector2(32.0, 16.0)
 
 var database_entry_id := 0
 var scene_index := -1
@@ -49,13 +50,30 @@ func configure(
 
 
 func can_collect(collector: Node2D) -> bool:
-	return (
-		not consumed
-		and collector != null
-		and is_instance_valid(collector)
-		and global_position.distance_squared_to(collector.global_position)
-		<= interaction_radius * interaction_radius
+	if consumed or collector == null or not is_instance_valid(collector):
+		return false
+	# sub_456AB0 is reached once the collector and target are at most one
+	# original 32x16 navigation cell apart on each axis. Preserve that
+	# anisotropic rule instead of approximating it with a circular radius.
+	var collector_cell := Vector2i(
+		floori(collector.global_position.x / ORIGINAL_NAVIGATION_CELL_SIZE.x),
+		floori(collector.global_position.y / ORIGINAL_NAVIGATION_CELL_SIZE.y),
 	)
+	var pickup_cell := Vector2i(
+		floori(global_position.x / ORIGINAL_NAVIGATION_CELL_SIZE.x),
+		floori(global_position.y / ORIGINAL_NAVIGATION_CELL_SIZE.y),
+	)
+	var cell_delta := (collector_cell - pickup_cell).abs()
+	return cell_delta.x <= 1 and cell_delta.y <= 1
+
+
+func contains_parent_point(parent_point: Vector2) -> bool:
+	if consumed or not visible:
+		return false
+	var local_point := parent_point - position
+	if _original_sprite != null and _original_sprite.texture != null:
+		return _original_sprite.get_rect().has_point(local_point)
+	return local_point.length_squared() <= 16.0 * 16.0
 
 
 func collect(collector: Node2D) -> Dictionary:

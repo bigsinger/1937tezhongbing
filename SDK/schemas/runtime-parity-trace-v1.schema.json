@@ -173,6 +173,67 @@
         }
       }
     },
+    "inventory_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "inventory_index",
+        "item_id",
+        "quantity",
+        "quantity_mode"
+      ],
+      "properties": {
+        "inventory_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "item_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "quantity": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "quantity_mode": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2
+        }
+      }
+    },
+    "inventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "active_attack_type",
+        "weapon_entries",
+        "item_entries"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "active_attack_type": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 11
+        },
+        "weapon_entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/inventory_entry"
+          }
+        },
+        "item_entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/inventory_entry"
+          }
+        }
+      }
+    },
     "actor": {
       "type": "object",
       "additionalProperties": false,
@@ -254,7 +315,7 @@
           "$ref": "#/$defs/weapon"
         },
         "inventory": {
-          "type": "object"
+          "$ref": "#/$defs/inventory"
         },
         "ai_state": {
           "type": "integer"

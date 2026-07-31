@@ -21,6 +21,7 @@
     {"name": "GetSpriteLookupColumns", "rva": "0x0001C760", "kind": "function", "confidence": "decompiled"},
     {"name": "GetSpriteLookupRows", "rva": "0x0001C770", "kind": "function", "confidence": "decompiled"},
     {"name": "GetSpriteDrawOrderRow", "rva": "0x0001C780", "kind": "function", "confidence": "decompiled"},
+    {"name": "SpriteWorldHitTest", "rva": "0x00051020", "kind": "function", "confidence": "decompiled"},
     {"name": "ActorLookupOriginX", "rva": "0x00051060", "kind": "function", "confidence": "decompiled"},
     {"name": "ActorLookupOriginY", "rva": "0x00051090", "kind": "function", "confidence": "decompiled"},
     {"name": "RegisterActorLookupIfVacant", "rva": "0x00051B70", "kind": "function", "confidence": "decompiled"},

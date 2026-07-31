@@ -49,8 +49,29 @@ class FakeActor:
 
 	func inventory_snapshot() -> Dictionary:
 		return {
-			"items": {43: 1},
-			"weapons": {"rifle_attack": {"magazine": magazine_ammo}},
+			"legacy_fallback_must_not_win": true,
+		}
+
+	func parity_inventory_snapshot() -> Dictionary:
+		return {
+			"schema_version": 1,
+			"active_attack_type": 2,
+			"weapon_entries": [
+				{
+					"inventory_index": 0,
+					"item_id": 37,
+					"quantity": magazine_ammo,
+					"quantity_mode": 2,
+				},
+			],
+			"item_entries": [
+				{
+					"inventory_index": 0,
+					"item_id": 51,
+					"quantity": 1,
+					"quantity_mode": 0,
+				},
+			],
 		}
 
 
@@ -151,11 +172,19 @@ func _run_tests() -> void:
 	)
 	var weapon := primary_record.get("weapon", {}) as Dictionary
 	var inventory := primary_record.get("inventory", {}) as Dictionary
+	var weapon_entries := inventory.get("weapon_entries", []) as Array
+	var item_entries := inventory.get("item_entries", []) as Array
 	_expect(
 		int(weapon.get("attack_type", 0)) == 2
 		and int(weapon.get("magazine_ammo", 0)) == 5
-		and inventory.has("items"),
-		"weapon, ammunition, and inventory are captured in one checkpoint",
+		and int(inventory.get("active_attack_type", 0)) == 2
+		and weapon_entries.size() == 1
+		and int((weapon_entries[0] as Dictionary).get("item_id", 0)) == 37
+		and int((weapon_entries[0] as Dictionary).get("quantity", 0)) == 5
+		and item_entries.size() == 1
+		and int((item_entries[0] as Dictionary).get("item_id", 0)) == 51
+		and not inventory.has("legacy_fallback_must_not_win"),
+		"weapon and both original ordered inventory containers are captured together",
 		failures,
 	)
 	var enemy_record := actors[2] as Dictionary

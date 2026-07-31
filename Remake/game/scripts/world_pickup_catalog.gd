@@ -23,6 +23,9 @@ const DEFAULT_STATUS := "unresolved_remake_default"
 const RECOVERED_ITEM_STATUS := "recovered_dbl_header_2"
 const RECOVERED_CONTAINER_STATUS := "recovered_sub_45AE10"
 const RECOVERED_QUANTITY_STATUS := "recovered_sub_453F70"
+const RECOVERED_INTERACTION_STATUS := (
+	"recovered_sub_456AB0_adjacent_navigation_cells"
+)
 
 static var _catalog_cache: Dictionary = {}
 
@@ -135,7 +138,10 @@ static func _is_valid_entity_profile(profile: Dictionary, expected_id: int) -> b
 static func _is_valid_pickup_profile(profile: Dictionary, source: Dictionary) -> bool:
 	if float(profile.get("interaction_radius", 0.0)) <= 0.0:
 		return false
-	if String(source.get("interaction_radius", "")) != DEFAULT_STATUS:
+	if (
+		String(source.get("interaction_radius", ""))
+		!= RECOVERED_INTERACTION_STATUS
+	):
 		return false
 	var database_entry_id := int(profile.get("database_entry_id", 0))
 	var expected_value: Variant = EXPECTED_PICKUP_GRANTS.get(database_entry_id)

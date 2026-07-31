@@ -64,3 +64,23 @@ classifies the actor-local weapon/backpack container and quantity mode; the
 pickups plus the non-pickable gasoline barrel's runtime item 53.
 `Test-OriginalWorldPickups.ps1` cross-checks this baseline against product data
 and also verifies the materialized MOD DBL hash when it is available.
+
+`m001-mine-pickup-inventory-v1.json` is a two-checkpoint live-command trace.
+The stable MOD selects scene 2280, clicks the scene-2096 mine through the
+process-local DirectInput queue, walks into the recovered adjacent 32x16-cell
+range and changes ordered weapon item 43 from quantity 2 to 3. It proves the
+click-to-route-to-transfer lifecycle rather than calling the inventory API.
+
+`m000-pistol-attack-inventory-v1.json` similarly selects scene 1436, equips
+the pistol and clicks live enemy scene 1598. Ordered weapon item 36 changes
+from 7 to 6 while the target remains at 8 HP. Both traces retain the complete
+audited actor roster, but `Compare-InventoryParityTrace.ps1` deliberately
+treats moving-patrol positions as diagnostic: independent launches can begin
+at different patrol phases. Canonical ordered inventory contents, modes,
+active attack type and the required quantity transition are strict.
+
+Run `Remake/tools/Capture-InventoryParity.ps1` to recapture the two MOD traces,
+replay both scenarios in Remake and produce JSON/Markdown comparisons. The
+runner copies the MOD to an isolated `E:\1937` runtime, sends input only to the
+target process/window and never captures, clips, warps or moves the system
+cursor.

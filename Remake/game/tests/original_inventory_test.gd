@@ -2,6 +2,7 @@ extends SceneTree
 
 const COMBAT_INVENTORY: Script = preload("res://scripts/combat_inventory.gd")
 const COMBAT_PROFILES: Script = preload("res://scripts/combat_profiles.gd")
+const SQUAD_UNIT: Script = preload("res://scripts/squad_unit.gd")
 const ORIGINAL_INVENTORY: Script = preload(
 	"res://scripts/original_initial_weapon_inventory.gd"
 )
@@ -17,6 +18,7 @@ func _run_tests() -> void:
 	var failures: Array[String] = []
 	_test_catalog(failures)
 	_test_original_quantity_modes(failures)
+	_test_runtime_parity_snapshot(failures)
 	_test_snapshot_and_schema_1_migration(failures)
 	if failures.is_empty():
 		print("Original inventory parity tests passed (%d checks)." % check_count)
@@ -179,6 +181,92 @@ func _test_snapshot_and_schema_1_migration(failures: Array[String]) -> void:
 		"schema-1 magazine plus reserve migrates to one original direct count",
 		failures,
 	)
+
+
+func _test_runtime_parity_snapshot(failures: Array[String]) -> void:
+	var unit = SQUAD_UNIT.new()
+	var empty_groups: Array[Dictionary] = []
+	unit.configure_combat(
+		3,
+		8,
+		{},
+		empty_groups,
+		empty_groups,
+		false,
+		false,
+	)
+	_expect(
+		unit.register_original_inventory_weapon(
+			COMBAT_PROFILES.weapon_profile_for_attack_type(4),
+			empty_groups,
+			1,
+			1,
+			true,
+		)
+		and unit.register_original_inventory_weapon(
+			COMBAT_PROFILES.weapon_profile_for_attack_type(1),
+			empty_groups,
+			7,
+			2,
+			false,
+		),
+		"test actor receives the original m000 ordered weapon container",
+		failures,
+	)
+	_expect(
+		unit.configure_original_backpack({
+			"items": [
+				{"item_id": 51, "quantity": 2, "quantity_mode": 0},
+				{"item_id": 52, "quantity": 1, "quantity_mode": 1},
+			],
+		}),
+		"test actor receives an ordered original backpack container",
+		failures,
+	)
+	var snapshot: Dictionary = unit.parity_inventory_snapshot()
+	var weapons := snapshot.get("weapon_entries", []) as Array
+	var items := snapshot.get("item_entries", []) as Array
+	_expect(
+		int(snapshot.get("schema_version", 0)) == 1
+		and int(snapshot.get("active_attack_type", 0)) == 4
+		and weapons.size() == 2
+		and (weapons[0] as Dictionary)
+			== {
+				"inventory_index": 0,
+				"item_id": 39,
+				"quantity": 1,
+				"quantity_mode": 1,
+			}
+		and (weapons[1] as Dictionary)
+			== {
+				"inventory_index": 1,
+				"item_id": 36,
+				"quantity": 7,
+				"quantity_mode": 2,
+			}
+		and items.size() == 2
+		and int((items[0] as Dictionary).get("inventory_index", -1)) == 0
+		and int((items[0] as Dictionary).get("item_id", 0)) == 51
+		and int((items[1] as Dictionary).get("inventory_index", -1)) == 1
+		and int((items[1] as Dictionary).get("item_id", 0)) == 52,
+		"parity snapshot exactly mirrors both recovered ordered containers",
+		failures,
+	)
+	_expect(
+		unit.equip_attack_type(1)
+		and unit.combat_inventory.consume_active_attack(),
+		"test actor performs one original direct-count pistol attack",
+		failures,
+	)
+	snapshot = unit.parity_inventory_snapshot()
+	weapons = snapshot.get("weapon_entries", []) as Array
+	_expect(
+		int(snapshot.get("active_attack_type", 0)) == 1
+		and int((weapons[1] as Dictionary).get("quantity", -1)) == 6,
+		"parity snapshot observes the post-attack direct ammunition decrement",
+		failures,
+	)
+	unit.free()
 
 
 func _expect(condition: bool, label: String, failures: Array[String]) -> void:

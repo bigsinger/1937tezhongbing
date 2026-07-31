@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "entity_count": 11,
-  "source_status": "World-pickup item IDs are recovered from DBL sprite header[2]. Original sub_45AE10 recovers the destination container and quantity mode, while sub_453F70 proves a one-item grant. Only interaction ranges and the gasoline-barrel/mine timing and blast geometry remain explicit remake defaults.",
+  "source_status": "World-pickup item IDs are recovered from DBL sprite header[2]. Original sub_45AE10 recovers the destination container and quantity mode, sub_453F70 proves a one-item grant, and sub_456AB0 proves completion when collector and target differ by at most one 32x16 navigation cell on both axes. The gasoline-barrel/mine timing and blast geometry remain explicit remake defaults.",
   "entities": {
     "982": {
       "database_entry_id": 982,
@@ -22,7 +22,7 @@
         "item_id": "recovered_dbl_header_2",
         "container": "recovered_sub_45AE10",
         "quantity_mode": "recovered_sub_45AE10",
-        "interaction_radius": "unresolved_remake_default",
+        "interaction_radius": "recovered_sub_456AB0_adjacent_navigation_cells",
         "grant_quantity": "recovered_sub_453F70"
       }
     },
@@ -45,7 +45,7 @@
         "item_id": "recovered_dbl_header_2",
         "container": "recovered_sub_45AE10",
         "quantity_mode": "recovered_sub_45AE10",
-        "interaction_radius": "unresolved_remake_default",
+        "interaction_radius": "recovered_sub_456AB0_adjacent_navigation_cells",
         "grant_quantity": "recovered_sub_453F70"
       }
     },
@@ -68,7 +68,7 @@
         "item_id": "recovered_dbl_header_2",
         "container": "recovered_sub_45AE10",
         "quantity_mode": "recovered_sub_45AE10",
-        "interaction_radius": "unresolved_remake_default",
+        "interaction_radius": "recovered_sub_456AB0_adjacent_navigation_cells",
         "grant_quantity": "recovered_sub_453F70"
       }
     },
@@ -91,7 +91,7 @@
         "item_id": "recovered_dbl_header_2",
         "container": "recovered_sub_45AE10",
         "quantity_mode": "recovered_sub_45AE10",
-        "interaction_radius": "unresolved_remake_default",
+        "interaction_radius": "recovered_sub_456AB0_adjacent_navigation_cells",
         "grant_quantity": "recovered_sub_453F70"
       }
     },
@@ -114,7 +114,7 @@
         "item_id": "recovered_dbl_header_2",
         "container": "recovered_sub_45AE10",
         "quantity_mode": "recovered_sub_45AE10",
-        "interaction_radius": "unresolved_remake_default",
+        "interaction_radius": "recovered_sub_456AB0_adjacent_navigation_cells",
         "grant_quantity": "recovered_sub_453F70"
       }
     },
@@ -137,7 +137,7 @@
         "item_id": "recovered_dbl_header_2",
         "container": "recovered_sub_45AE10",
         "quantity_mode": "recovered_sub_45AE10",
-        "interaction_radius": "unresolved_remake_default",
+        "interaction_radius": "recovered_sub_456AB0_adjacent_navigation_cells",
         "grant_quantity": "recovered_sub_453F70"
       }
     },
@@ -160,7 +160,7 @@
         "item_id": "recovered_dbl_header_2",
         "container": "recovered_sub_45AE10",
         "quantity_mode": "recovered_sub_45AE10",
-        "interaction_radius": "unresolved_remake_default",
+        "interaction_radius": "recovered_sub_456AB0_adjacent_navigation_cells",
         "grant_quantity": "recovered_sub_453F70"
       }
     },
@@ -183,7 +183,7 @@
         "item_id": "recovered_dbl_header_2",
         "container": "recovered_sub_45AE10",
         "quantity_mode": "recovered_sub_45AE10",
-        "interaction_radius": "unresolved_remake_default",
+        "interaction_radius": "recovered_sub_456AB0_adjacent_navigation_cells",
         "grant_quantity": "recovered_sub_453F70"
       }
     },
@@ -206,7 +206,7 @@
         "item_id": "recovered_dbl_header_2",
         "container": "recovered_sub_45AE10",
         "quantity_mode": "recovered_sub_45AE10",
-        "interaction_radius": "unresolved_remake_default",
+        "interaction_radius": "recovered_sub_456AB0_adjacent_navigation_cells",
         "grant_quantity": "recovered_sub_453F70"
       }
     },
@@ -229,7 +229,7 @@
         "item_id": "recovered_dbl_header_2",
         "container": "recovered_sub_45AE10",
         "quantity_mode": "recovered_sub_45AE10",
-        "interaction_radius": "unresolved_remake_default",
+        "interaction_radius": "recovered_sub_456AB0_adjacent_navigation_cells",
         "grant_quantity": "recovered_sub_453F70"
       }
     },

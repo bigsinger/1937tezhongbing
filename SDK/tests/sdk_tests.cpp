@@ -498,8 +498,9 @@ int main(int argc, char** argv) {
                 m1937::sdk::rva::get_sprite_movement_lookup != 0 &&
                 m1937::sdk::rva::get_sprite_line_of_sight_lookup != 0 &&
                 m1937::sdk::rva::get_sprite_draw_order_row != 0 &&
-                m1937::sdk::rva::actor_lookup_origin_x != 0 &&
+            m1937::sdk::rva::actor_lookup_origin_x != 0 &&
                 m1937::sdk::rva::actor_lookup_origin_y != 0 &&
+                m1937::sdk::rva::sprite_world_hit_test != 0 &&
                 m1937::sdk::rva::register_actor_lookup != 0 &&
                 m1937::sdk::rva::unregister_actor_lookup != 0 &&
                 m1937::sdk::rva::get_sprite_movement_lookup !=
@@ -536,9 +537,11 @@ int main(int argc, char** argv) {
         require(
             is_burial_adjacent_cell(0, 0, 63, 31) &&
                 !is_burial_adjacent_cell(0, 0, 64, 32) &&
+                is_pickup_adjacent_cell(0, 0, 63, 31) &&
+                !is_pickup_adjacent_cell(0, 0, 64, 32) &&
                 !burial_counter_has_completed(100) &&
                 burial_counter_has_completed(101),
-            "B range/counter semantics mismatch", checks);
+            "B/pickup range and B counter semantics mismatch", checks);
         require(
             m1937::sdk::rva::create_world_actor != 0 &&
                 m1937::sdk::rva::complete_actor_interaction != 0 &&

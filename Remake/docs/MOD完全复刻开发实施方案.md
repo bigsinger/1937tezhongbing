@@ -308,6 +308,16 @@ secondary 第 0/2 分量分别钳制 X/Y，常见走/匍匐为 120/60 px/s，跑
 `RuntimeActorV1 +0x1C0 = current_hit_points`、
 `+0x20C = default_attack_type`，并进入 SDK 静态布局断言。
 
+物品与玩家攻击的首组差分也已闭环。`m001-mine-pickup-inventory-v1`
+使用原版 F2 选择 scene 2280，再通过目标窗口的进程私有 DirectInput 左击
+scene 2096；MOD 与 Remake 都先寻路到 32×16 邻格，并使武器项目 43
+严格 `2→3`。`m000-pistol-attack-inventory-v1` 使用 F4、数字键 5 和真实
+敌军 scene 1598，使 scene 1436 的手枪项目 36 严格 `7→6`，目标生命保持
+8。比较器逐检查点核对当前攻击类型和两个有序容器的 index、item、quantity
+与 mode；巡逻敌人在独立启动中的位置相位只作诊断，不能反向污染容器结论。
+`Capture-InventoryParity.ps1` 会从隔离 MOD 重新采集、在 Remake 重放并输出
+双份 JSON/Markdown 报告，全程不捕获、裁剪或移动系统鼠标。
+
 产品默认难度现为 `original`。它保持生命、伤害、反应、巡逻和感知为 1.0，
 关闭重制版瞄准误差、协作增援和同时攻击者调校；`easy/normal/hard` 仍可在
 暂停菜单选择，但明确属于重制增强。选择会持久化并在重开/切关时生效，
@@ -331,7 +341,8 @@ secondary 第 0/2 分量分别钳制 X/Y，常见走/匍匐为 120/60 px/s，跑
 结果位于 `LocalAssets/qa/runtime-probe/parity/`，包括两份玩家移动轨迹、
 一份 54 敌军巡逻轨迹、一份自然接敌轨迹，以及机器可读 JSON 和可读
 Markdown/JSON 比较报告。完整十二关巡逻复测使用
-`tools/Capture-TwelveLevelPatrolParity.ps1`。
+`tools/Capture-TwelveLevelPatrolParity.ps1`；拾取/攻击容器复测使用
+`tools/Capture-InventoryParity.ps1`。
 
 ## 9. 每次提交的固定交付
 

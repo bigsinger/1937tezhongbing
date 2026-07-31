@@ -144,6 +144,7 @@ func _run_tests() -> void:
 	_test_mission_charge_policy_catalog(failures)
 	_test_charge_policy_activation_and_uniform_ghost(failures)
 	_test_legacy_field_inventory_migration(failures)
+	await _test_original_click_pickup_order_without_assets(failures)
 	await _test_real_charge_policy_evidence(failures)
 	if failures.is_empty():
 		print("World interactable tests passed (%d checks)." % check_count)
@@ -251,6 +252,18 @@ func _test_field_pickup_without_original_assets(failures: Array[String]) -> void
 	_expect(pickup.scene_index == 41 and pickup.position == Vector2(100.0, 200.0), "field metadata sets identity and position", failures)
 	var far_collector := _actor(3, Vector2(200.0, 200.0), arena)
 	_expect(pickup.collect(far_collector).is_empty(), "collector outside interaction range is rejected", failures)
+	var adjacent_cell_collector := _actor(
+		3,
+		Vector2(159.0, 223.0),
+		arena,
+	)
+	_expect(
+		pickup.can_collect(adjacent_cell_collector)
+		and pickup.position.distance_to(adjacent_cell_collector.position)
+			> pickup.interaction_radius,
+		"pickup uses the recovered adjacent 32x16 cell rule instead of a circular radius",
+		failures,
+	)
 	var sink := SignalSink.new()
 	pickup.collected.connect(sink.on_collected)
 	var payload: Dictionary = pickup.collect(collector)
@@ -266,6 +279,87 @@ func _test_field_pickup_without_original_assets(failures: Array[String]) -> void
 	_expect(sink.collection_count == 1 and sink.last_collection == payload, "pickup emits one complete collection event", failures)
 	_expect(pickup.collect(collector).is_empty(), "field pickup cannot be collected twice", failures)
 	arena.queue_free()
+
+
+func _test_original_click_pickup_order_without_assets(
+	failures: Array[String],
+) -> void:
+	var arena := Node2D.new()
+	root.add_child(arena)
+	var main = MAIN_INPUT_HARNESS.new()
+	arena.add_child(main)
+	var empty_groups: Array[Dictionary] = []
+	var collector = SQUAD_UNIT_SCRIPT.new()
+	collector.configure(
+		"老赵",
+		Color.WHITE,
+		Vector2(32.0, 32.0),
+		null,
+		empty_groups,
+		empty_groups,
+		77,
+		null,
+	)
+	collector.configure_combat(
+		3,
+		8,
+		{},
+		empty_groups,
+		empty_groups,
+		false,
+	)
+	_expect(
+		collector.register_original_inventory_weapon(
+			COMBAT_PROFILES.weapon_profile_for_attack_type(8),
+			empty_groups,
+			2,
+			0,
+			false,
+		),
+		"click-order collector starts with two original land mines",
+		failures,
+	)
+	main.add_child(collector)
+	main.units.append(collector)
+	main.select_only(collector)
+	var pickup = FIELD_PICKUP_SCRIPT.new()
+	var mine_profile: Dictionary = (
+		WORLD_PICKUP_CATALOG.profile_for_database_entry_id(984)
+	)
+	_expect(
+		pickup.configure(
+			mine_profile,
+			{"scene_index": 2096, "x": 192, "y": 32},
+			null,
+		),
+		"click-order mine configures",
+		failures,
+	)
+	main.add_child(pickup)
+	main.field_pickups.append(pickup)
+	_expect(
+		main.field_pickup_at_world_point(pickup.position) == pickup,
+		"world left-click hit testing resolves the original pickup sprite",
+		failures,
+	)
+	_expect(
+		main.issue_original_pickup_order(pickup),
+		"world pickup click submits an automatic approach order",
+		failures,
+	)
+	for _frame_index: int in range(180):
+		if not is_instance_valid(pickup) or bool(pickup.get("consumed")):
+			break
+		await physics_frame
+	_expect(
+		collector.ammo_item_count(43) == 3
+		and main.original_pickup_order_target == null
+		and main.field_pickups.is_empty(),
+		"automatic approach reaches, transfers one mine, and clears the one-shot order",
+		failures,
+	)
+	arena.queue_free()
+	await process_frame
 
 
 func _test_explosive_prop_without_original_assets(failures: Array[String]) -> void:

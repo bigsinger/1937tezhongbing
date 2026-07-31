@@ -261,6 +261,29 @@ if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
     if ($LASTEXITCODE -ne 0) {
         throw "Godot natural-contact parity probe failed with exit code $LASTEXITCODE."
     }
+    $inventoryParityScenarios = @(
+        [pscustomobject]@{
+            id = 'm001-mine-pickup-inventory-v1'
+            level_id = 'm001'
+        },
+        [pscustomobject]@{
+            id = 'm000-pistol-attack-inventory-v1'
+            level_id = 'm000'
+        }
+    )
+    foreach ($inventoryScenario in $inventoryParityScenarios) {
+        & $GodotExecutable --headless --path $game `
+            --max-fps 60 --disable-vsync `
+            --script 'res://tests/parity_runtime_probe.gd' -- `
+            "--output-dir=$parityProbeOutput" `
+            "--level-id=$($inventoryScenario.level_id)" `
+            "--scenario-id=$($inventoryScenario.id)"
+        if ($LASTEXITCODE -ne 0) {
+            throw (
+                'Godot inventory parity probe failed for ' +
+                "$($inventoryScenario.id) with exit code $LASTEXITCODE.")
+        }
+    }
     foreach ($parityScenarioId in @(
         'm000-basic-movement-v1',
         'm000-obstacle-route-v1'
@@ -314,6 +337,24 @@ if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
         -OutputJson (
             Join-Path $parityProbeOutput (
                 'm000-natural-contact-v1-comparison.json')) | Out-Null
+
+    foreach ($inventoryScenario in $inventoryParityScenarios) {
+        $inventoryBaseline = Join-Path $remakeRoot (
+            'validation\baselines\mod\' +
+            $inventoryScenario.id +
+            '.json')
+        $inventoryCandidate = Join-Path $parityProbeOutput (
+            'remake-' + $inventoryScenario.id + '.json')
+        & (Join-Path $PSScriptRoot 'Compare-InventoryParityTrace.ps1') `
+            -ReferenceTrace $inventoryBaseline `
+            -CandidateTrace $inventoryCandidate `
+            -OutputJson (
+                Join-Path $parityProbeOutput (
+                    $inventoryScenario.id + '-comparison.json')) `
+            -OutputMarkdown (
+                Join-Path $parityProbeOutput (
+                    $inventoryScenario.id + '-comparison.md')) | Out-Null
+    }
 
     $realMediaCatalog = Join-Path $remakeRoot 'LocalAssets\converted\legacy-media-catalog.json'
     if (Test-Path -LiteralPath $realMediaCatalog -PathType Leaf) {

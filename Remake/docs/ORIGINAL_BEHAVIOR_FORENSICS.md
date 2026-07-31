@@ -332,7 +332,7 @@ Remake 直接加载该资源的逐帧 PNG、原锚点和帧保持 tick。实现�
 
 | 输入 | 复刻功能 | 来源 |
 |---|---|---|
-| `E` | 营救、拾取与任务交互 | `remake_editorial` |
+| `E` | 营救与任务交互；兼容早期试玩包的近距离拾取入口 | `remake_editorial` |
 | `Q` | 主动换弹 | `remake_editorial` |
 | `F` | 引爆已经安放的任务炸药 | `remake_editorial` |
 | `Tab` / `Shift+Tab` | 正向/反向轮换已持有武器 | `remake_editorial` |
@@ -392,6 +392,16 @@ mode 0/1/2 的通用消费语义、弹药箱补给表、医药箱/西瓜/中药�
 治疗；炸药只存在于拾取角色的武器容器，type 10 命中帧消费后不会再扣一份
 共享库存。可重建基线见
 `validation/baselines/mod/world-pickups-v1.json`。
+
+点击与接近规则也已恢复。`sub_451020` 以
+`world_x - primary.x`、`world_y - primary.z` 为左上角，并使用当前 SPR
+宽高执行命中测试；`sub_44FED0` 把状态 3 对象交给命令分发。
+`sub_456AB0` 不使用欧氏圆形半径，而是在角色与目标的 32×16 导航格两轴
+各相差不超过一格时调用 `sub_45AE10` 转移双容器并移除源对象。隔离运行的
+`m001-mine-pickup-inventory-v1` 已证明 scene 2280 左击 scene 2096 后，
+角色先从 `(50,710)` 寻路到邻格，再把武器容器项目 43 从 `2` 增至 `3`；
+Remake 的有序容器和 mode 与 MOD 两个检查点零差异。该探针只向测试窗口的
+进程私有 DirectInput 队列投递消息，不读取、裁剪或移动系统鼠标。
 
 ## M 键右下角地图
 

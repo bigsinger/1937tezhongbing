@@ -34,7 +34,10 @@ constexpr bool is_burial_target(
     return faction_id == enemy_faction_id && dead_or_disabled == 1;
 }
 
-constexpr bool is_burial_adjacent_cell(
+// sub_456AB0 uses this same two-axis range before completing pickups and
+// other actor interactions. It is an anisotropic navigation-cell rule, not
+// a circular world-pixel radius.
+constexpr bool is_interaction_adjacent_cell(
     std::int32_t worker_x,
     std::int32_t worker_y,
     std::int32_t target_x,
@@ -47,6 +50,24 @@ constexpr bool is_burial_adjacent_cell(
     const auto delta_y = worker_cell_y - target_cell_y;
     return delta_x >= -1 && delta_x <= 1 &&
         delta_y >= -1 && delta_y <= 1;
+}
+
+constexpr bool is_burial_adjacent_cell(
+    std::int32_t worker_x,
+    std::int32_t worker_y,
+    std::int32_t target_x,
+    std::int32_t target_y) noexcept {
+    return is_interaction_adjacent_cell(
+        worker_x, worker_y, target_x, target_y);
+}
+
+constexpr bool is_pickup_adjacent_cell(
+    std::int32_t collector_x,
+    std::int32_t collector_y,
+    std::int32_t pickup_x,
+    std::int32_t pickup_y) noexcept {
+    return is_interaction_adjacent_cell(
+        collector_x, collector_y, pickup_x, pickup_y);
 }
 
 // sub_456CD0 increments first and resolves only for counter > limit.
@@ -83,6 +104,8 @@ static_assert(is_burial_target(1, 1));
 static_assert(!is_burial_target(3, 1));
 static_assert(is_burial_adjacent_cell(0, 0, 63, 31));
 static_assert(!is_burial_adjacent_cell(0, 0, 64, 32));
+static_assert(is_pickup_adjacent_cell(0, 0, 63, 31));
+static_assert(!is_pickup_adjacent_cell(0, 0, 64, 32));
 static_assert(!burial_counter_has_completed(100));
 static_assert(burial_counter_has_completed(101));
 

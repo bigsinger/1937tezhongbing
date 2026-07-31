@@ -24,6 +24,7 @@ namespace Mission1937.SDK.Generated
         public const long GetSpriteLookupColumns = 0x0001C760L;
         public const long GetSpriteLookupRows = 0x0001C770L;
         public const long GetSpriteDrawOrderRow = 0x0001C780L;
+        public const long SpriteWorldHitTest = 0x00051020L;
         public const long ActorLookupOriginX = 0x00051060L;
         public const long ActorLookupOriginY = 0x00051090L;
         public const long RegisterActorLookupIfVacant = 0x00051B70L;

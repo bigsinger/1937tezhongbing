@@ -775,6 +775,47 @@ func inventory_snapshot() -> Dictionary:
 	return combat_inventory.full_snapshot()
 
 
+## Canonical cross-runtime view of the two original actor containers.
+##
+## The stable executable stores weapons at actor +0x22C and backpack items at
+## actor +0x228.  Both containers are parallel, ordered arrays of item ID,
+## quantity and quantity mode.  Runtime parity traces deliberately use that
+## recovered representation instead of the remake's save-game dictionaries or
+## the compatibility magazine/reserve fields.
+func parity_inventory_snapshot() -> Dictionary:
+	var weapon_entries: Array[Dictionary] = []
+	if combat_inventory != null:
+		for action_key: String in inventory_weapon_order:
+			var state: Dictionary = combat_inventory.weapon_state(action_key)
+			# Mode-0 entries disappear from the original container at zero.
+			# weapon_state() likewise hides an unowned mode-0 action, while a
+			# zero-round mode-2 firearm remains present.
+			if state.is_empty() or not bool(state.get("original_parity", false)):
+				continue
+			var item_id := int(state.get("ammo_item_id", 0))
+			weapon_entries.append({
+				"inventory_index": weapon_entries.size(),
+				"item_id": item_id,
+				"quantity": maxi(combat_inventory.ammo_item_count(item_id), 0),
+				"quantity_mode": int(state.get("quantity_mode", -1)),
+			})
+	var item_entries: Array[Dictionary] = []
+	if backpack_inventory != null:
+		for raw_entry: Dictionary in backpack_inventory.ordered_entries():
+			item_entries.append({
+				"inventory_index": item_entries.size(),
+				"item_id": int(raw_entry.get("item_id", 0)),
+				"quantity": maxi(int(raw_entry.get("quantity", 0)), 0),
+				"quantity_mode": int(raw_entry.get("quantity_mode", -1)),
+			})
+	return {
+		"schema_version": 1,
+		"active_attack_type": int(weapon_profile.get("attack_type", 0)),
+		"weapon_entries": weapon_entries,
+		"item_entries": item_entries,
+	}
+
+
 func configure_original_backpack(loadout: Dictionary) -> bool:
 	if loadout.is_empty():
 		return false

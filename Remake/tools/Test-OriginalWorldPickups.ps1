@@ -78,7 +78,7 @@ foreach ($row in @($baseline.pickup_grants)) {
         [string]$profile.source_status.grant_quantity -ne
             'recovered_sub_453F70' -or
         [string]$profile.source_status.interaction_radius -ne
-            'unresolved_remake_default') {
+            'recovered_sub_456AB0_adjacent_navigation_cells') {
         throw "Product source labels for DBL $databaseEntryId are inaccurate."
     }
 }
@@ -107,4 +107,5 @@ if ((Test-Path -LiteralPath $DatabasePath -PathType Leaf) -and
 
 Write-Host (
     'Original world-pickup parity passed: 10 exact grants, ' +
-    'one gasoline-barrel runtime item ID, actor-local containers.')
+    'one gasoline-barrel runtime item ID, actor-local containers, ' +
+    'and recovered adjacent-cell completion range.')

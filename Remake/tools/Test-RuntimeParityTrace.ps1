@@ -10,6 +10,8 @@ $compareScript = Join-Path $PSScriptRoot `
     'Compare-RuntimeParityTrace.ps1'
 $contactCompareScript = Join-Path $PSScriptRoot `
     'Compare-NaturalContactParity.ps1'
+$inventoryCompareScript = Join-Path $PSScriptRoot `
+    'Compare-InventoryParityTrace.ps1'
 $baselinePath = Join-Path $remakeRoot `
     'validation\baselines\mod\m000-basic-movement-v1.json'
 $obstacleBaselinePath = Join-Path $remakeRoot `
@@ -22,6 +24,10 @@ $patrolBaselinePaths = @(
 $patrolBaselinePath = $patrolBaselinePaths[0]
 $contactBaselinePath = Join-Path $remakeRoot `
     'validation\baselines\mod\m000-natural-contact-v1.json'
+$minePickupBaselinePath = Join-Path $remakeRoot `
+    'validation\baselines\mod\m001-mine-pickup-inventory-v1.json'
+$pistolAttackBaselinePath = Join-Path $remakeRoot `
+    'validation\baselines\mod\m000-pistol-attack-inventory-v1.json'
 
 $schema = Get-Content -LiteralPath $schemaPath -Raw -Encoding UTF8 |
     ConvertFrom-Json
@@ -135,6 +141,87 @@ if ($contactBaseline.runtime -ne 'mod' -or
             $null -eq $_.native.default_attack_type
         }).Count -ne 0) {
     throw 'The checked-in m000 natural-contact baseline is invalid.'
+}
+
+$inventoryBaselineDefinitions = @(
+    [pscustomobject]@{
+        path = $minePickupBaselinePath
+        scenario = 'm001-mine-pickup-inventory-v1'
+        checkpoint_ids = @('before_pickup', 'after_pickup')
+        scene_index = 2280
+        database_entry_id = 918
+        item_id = 43
+        before_quantity = 2
+        after_quantity = 3
+    },
+    [pscustomobject]@{
+        path = $pistolAttackBaselinePath
+        scenario = 'm000-pistol-attack-inventory-v1'
+        checkpoint_ids = @('before_attack', 'after_attack')
+        scene_index = 1436
+        database_entry_id = 924
+        item_id = 36
+        before_quantity = 7
+        after_quantity = 6
+    }
+)
+foreach ($inventoryDefinition in $inventoryBaselineDefinitions) {
+    $inventoryBaseline = Get-Content `
+        -LiteralPath $inventoryDefinition.path `
+        -Raw -Encoding UTF8 | ConvertFrom-Json
+    $checkpointIds = @($inventoryBaseline.checkpoints.id)
+    if ($inventoryBaseline.runtime -ne 'mod' -or
+        $inventoryBaseline.content_profile -ne
+            'repository-mod-12-level-20260729' -or
+        $inventoryBaseline.scenario.id -ne
+            $inventoryDefinition.scenario -or
+        @($inventoryBaseline.checkpoints).Count -ne 2 -or
+        (Compare-Object `
+            @($inventoryDefinition.checkpoint_ids) `
+            $checkpointIds).Count -ne 0) {
+        throw (
+            'The checked-in inventory baseline identity is invalid: ' +
+            $inventoryDefinition.scenario)
+    }
+    $quantities = [Collections.Generic.List[int]]::new()
+    foreach ($checkpoint in @($inventoryBaseline.checkpoints)) {
+        $actor = @(
+            $checkpoint.actors |
+                Where-Object {
+                    [int]$_.scene_index -eq
+                        [int]$inventoryDefinition.scene_index
+                }
+        )[0]
+        if ($null -eq $actor -or
+            [int]$actor.database_entry_id -ne
+                [int]$inventoryDefinition.database_entry_id -or
+            [int]$actor.inventory.schema_version -ne 1) {
+            throw (
+                'The checked-in inventory actor is invalid: ' +
+                $inventoryDefinition.scenario)
+        }
+        $entry = @(
+            $actor.inventory.weapon_entries |
+                Where-Object {
+                    [int]$_.item_id -eq
+                        [int]$inventoryDefinition.item_id
+                }
+        )[0]
+        if ($null -eq $entry) {
+            throw (
+                'The checked-in inventory delta item is missing: ' +
+                $inventoryDefinition.scenario)
+        }
+        $quantities.Add([int]$entry.quantity)
+    }
+    if ($quantities[0] -ne
+            [int]$inventoryDefinition.before_quantity -or
+        $quantities[1] -ne
+            [int]$inventoryDefinition.after_quantity) {
+        throw (
+            'The checked-in inventory quantity transition is invalid: ' +
+            $inventoryDefinition.scenario)
+    }
 }
 
 $temporaryBase = if (Test-Path -LiteralPath 'E:\1937') {
@@ -260,7 +347,12 @@ try {
         throw 'Tolerance-compatible runtime traces did not compare equal.'
     }
     $checkedBaselines = @($baselinePath, $obstacleBaselinePath) +
-        @($patrolBaselinePaths) + @($contactBaselinePath)
+        @($patrolBaselinePaths) +
+        @(
+            $contactBaselinePath,
+            $minePickupBaselinePath,
+            $pistolAttackBaselinePath
+        )
     foreach ($checkedBaseline in $checkedBaselines) {
         $baselineSelf = & $compareScript `
             -ReferenceTrace $checkedBaseline `
@@ -278,6 +370,45 @@ try {
         (@($contactSelf.player_hit_point_sequence.reference) -join ',') -ne
             '8,8,8,8,8,6,4') {
         throw 'The checked-in natural-contact baseline is not self-consistent.'
+    }
+    foreach ($inventoryDefinition in $inventoryBaselineDefinitions) {
+        $inventorySelf = & $inventoryCompareScript `
+            -ReferenceTrace $inventoryDefinition.path `
+            -CandidateTrace $inventoryDefinition.path
+        if (-not [bool]$inventorySelf.passed -or
+            [int]$inventorySelf.mismatch_count -ne 0) {
+            throw (
+                'The checked-in inventory baseline is not self-consistent: ' +
+                $inventoryDefinition.scenario)
+        }
+    }
+
+    $inventoryMismatchPath = Join-Path $root `
+        'mine-pickup-inventory-mismatch.json'
+    $inventoryMismatch = Get-Content `
+        -LiteralPath $minePickupBaselinePath `
+        -Raw -Encoding UTF8 | ConvertFrom-Json
+    $inventoryMismatchActor = @(
+        $inventoryMismatch.checkpoints[1].actors |
+            Where-Object { [int]$_.scene_index -eq 2280 }
+    )[0]
+    $inventoryMismatchEntry = @(
+        $inventoryMismatchActor.inventory.weapon_entries |
+            Where-Object { [int]$_.item_id -eq 43 }
+    )[0]
+    $inventoryMismatchEntry.quantity = 2
+    $inventoryMismatch | ConvertTo-Json -Depth 40 |
+        Set-Content -LiteralPath $inventoryMismatchPath -Encoding UTF8
+    $inventoryNegative = & $inventoryCompareScript `
+        -ReferenceTrace $minePickupBaselinePath `
+        -CandidateTrace $inventoryMismatchPath `
+        -AllowMismatch
+    if ([bool]$inventoryNegative.passed -or
+        @($inventoryNegative.mismatches.path) -notcontains
+            'checkpoints.after_pickup.actors.scene:2280.inventory.weapon_entries[1].quantity' -or
+        @($inventoryNegative.mismatches.path) -notcontains
+            'candidate.delta.after_quantity') {
+        throw 'Inventory quantity divergence was not detected.'
     }
 
     $movementMismatchPath = Join-Path $root 'movement-mismatch.json'

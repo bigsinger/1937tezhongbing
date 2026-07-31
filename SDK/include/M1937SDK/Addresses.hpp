@@ -27,6 +27,7 @@ inline constexpr std::uintptr_t get_sprite_line_of_sight_lookup = 0x0001C6A0;
 inline constexpr std::uintptr_t get_sprite_lookup_columns = 0x0001C760;
 inline constexpr std::uintptr_t get_sprite_lookup_rows = 0x0001C770;
 inline constexpr std::uintptr_t get_sprite_draw_order_row = 0x0001C780;
+inline constexpr std::uintptr_t sprite_world_hit_test = 0x00051020;
 inline constexpr std::uintptr_t actor_lookup_origin_x = 0x00051060;
 inline constexpr std::uintptr_t actor_lookup_origin_y = 0x00051090;
 inline constexpr std::uintptr_t register_actor_lookup_if_vacant = 0x00051B70;

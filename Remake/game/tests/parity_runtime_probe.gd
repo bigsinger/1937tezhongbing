@@ -12,6 +12,14 @@ const RETURN_ARGUMENT_PREFIX := "--return-target="
 const OBSERVATION_ARGUMENT_PREFIX := "--observation-seconds="
 const PATROL_SETTLE_ARGUMENT_PREFIX := "--patrol-settle-seconds="
 const PRIMARY_DATABASE_ENTRY_ID := 924
+const MINE_PICKUP_SCENARIO_ID := "m001-mine-pickup-inventory-v1"
+const PISTOL_ATTACK_SCENARIO_ID := "m000-pistol-attack-inventory-v1"
+const M001_PLAYER_SCENE_INDEX := 2280
+const M001_MINE_SCENE_INDEX := 2096
+const M000_PLAYER_SCENE_INDEX := 1436
+const M000_ATTACK_TARGET_SCENE_INDEX := 1598
+const LAND_MINE_ITEM_ID := 43
+const PISTOL_ITEM_ID := 36
 ## Layer-3-verified, obstacle-free cell centres: (1,3) and (5,3).
 ## The short observation window issues the return order before the first
 ## command can settle, so goal replacement and facing are both observable.
@@ -104,16 +112,7 @@ func _run_probe() -> void:
 	var started := Time.get_ticks_usec()
 
 	var trace = TRACE_SCRIPT.new()
-	var scenario_description := (
-		"Observe the audited %s enemy patrol roster in two one-second intervals."
-		% level_id
-		if scenario_id == _enemy_patrol_scenario_id(level_id)
-		else (
-			"Move 强子 into natural enemy contact and observe audited AI target-state transitions."
-			if scenario_id == "m000-natural-contact-v1"
-			else "Select 强子, issue two original-coordinate move orders, and observe facing/path replacement."
-		)
-	)
+	var scenario_description := _scenario_description(scenario_id, level_id)
 	trace.configure(
 		"remake",
 		level_id,
@@ -122,6 +121,12 @@ func _run_probe() -> void:
 		scenario_id,
 		scenario_description,
 	)
+	if scenario_id == MINE_PICKUP_SCENARIO_ID:
+		await _run_mine_pickup_probe(main, trace, started)
+		return
+	if scenario_id == PISTOL_ATTACK_SCENARIO_ID:
+		await _run_pistol_attack_probe(main, trace, started)
+		return
 	if scenario_id == _enemy_patrol_scenario_id(level_id):
 		await _run_enemy_patrol_probe(
 			main,
@@ -219,6 +224,160 @@ func _run_probe() -> void:
 		)
 	)
 	main.queue_free()
+	if failures.is_empty():
+		quit(0)
+		return
+	for failure: String in failures:
+		push_error(failure)
+	quit(1)
+
+
+func _run_mine_pickup_probe(
+	main: Node,
+	trace: RefCounted,
+	started: int,
+) -> void:
+	var collector := _player_for_scene(main, M001_PLAYER_SCENE_INDEX)
+	var pickup := _field_pickup_for_scene(main, M001_MINE_SCENE_INDEX)
+	_expect(collector != null, "m001 scene 2280 player exists")
+	_expect(pickup != null, "m001 scene 2096 mine pickup exists")
+	if collector != null and pickup != null:
+		main.call("select_only", collector)
+		var before_quantity := _inventory_quantity(
+			collector,
+			"weapon_entries",
+			LAND_MINE_ITEM_ID,
+		)
+		trace.call(
+			"capture_main",
+			"before_pickup",
+			main,
+			_elapsed_ms(started),
+		)
+		var order_issued := bool(
+			main.call("issue_original_pickup_order", pickup)
+		)
+		_expect(order_issued, "m001 mine click submits the original pickup order")
+		var quantity_changed := await _wait_for_inventory_quantity(
+			collector,
+			"weapon_entries",
+			LAND_MINE_ITEM_ID,
+			before_quantity + 1,
+			10.0,
+		)
+		_expect(
+			quantity_changed,
+			"m001 original mine pickup adds exactly one item 43",
+		)
+		trace.call(
+			"capture_main",
+			"after_pickup",
+			main,
+			_elapsed_ms(started),
+		)
+		_expect(
+			_inventory_quantity(
+				collector,
+				"weapon_entries",
+				LAND_MINE_ITEM_ID,
+			) == before_quantity + 1,
+			"m001 mine quantity delta remains exact at capture",
+		)
+	await _finish_inventory_probe(
+		main,
+		trace,
+		MINE_PICKUP_SCENARIO_ID,
+	)
+
+
+func _run_pistol_attack_probe(
+	main: Node,
+	trace: RefCounted,
+	started: int,
+) -> void:
+	var attacker := _player_for_scene(main, M000_PLAYER_SCENE_INDEX)
+	var target := _enemy_for_scene(main, M000_ATTACK_TARGET_SCENE_INDEX)
+	_expect(attacker != null, "m000 scene 1436 player exists")
+	_expect(target != null, "m000 scene 1598 attack target exists")
+	if attacker != null and target != null:
+		main.call("select_only", attacker)
+		_expect(
+			bool(attacker.call("equip_attack_type", 1)),
+			"m000 scene 1436 equips the original pistol",
+		)
+		var before_quantity := _inventory_quantity(
+			attacker,
+			"weapon_entries",
+			PISTOL_ITEM_ID,
+		)
+		trace.call(
+			"capture_main",
+			"before_attack",
+			main,
+			_elapsed_ms(started),
+		)
+		main.call("issue_attack_order", target, false)
+		var quantity_changed := await _wait_for_inventory_quantity(
+			attacker,
+			"weapon_entries",
+			PISTOL_ITEM_ID,
+			before_quantity - 1,
+			12.0,
+		)
+		_expect(
+			quantity_changed,
+			"m000 pistol attack consumes exactly one direct-count round",
+		)
+		attacker.call("clear_combat_target")
+		attacker.call("cancel_path")
+		trace.call(
+			"capture_main",
+			"after_attack",
+			main,
+			_elapsed_ms(started),
+		)
+		_expect(
+			_inventory_quantity(
+				attacker,
+				"weapon_entries",
+				PISTOL_ITEM_ID,
+			) == before_quantity - 1,
+			"m000 pistol quantity delta remains exact at capture",
+		)
+	await _finish_inventory_probe(
+		main,
+		trace,
+		PISTOL_ATTACK_SCENARIO_ID,
+	)
+
+
+func _finish_inventory_probe(
+	main: Node,
+	trace: RefCounted,
+	scenario_id: String,
+) -> void:
+	var trace_path := ""
+	if not output_directory.is_empty():
+		trace_path = output_directory.path_join(
+			"remake-%s.json" % _safe_file_component(scenario_id)
+		)
+		_expect(
+			trace.call("write_to_file", trace_path) == OK,
+			"Remake inventory parity trace writes",
+		)
+	var trace_document: Dictionary = trace.get("document") as Dictionary
+	print(
+		"PARITY_RUNTIME_PROBE_RESULT %s"
+		% JSON.stringify(
+			{
+				"trace": trace_path,
+				"checkpoints": (trace_document.get("checkpoints", []) as Array).size(),
+				"failures": failures,
+			}
+		)
+	)
+	main.queue_free()
+	await process_frame
 	if failures.is_empty():
 		quit(0)
 		return
@@ -460,6 +619,103 @@ func _primary_unit(main: Node) -> Node2D:
 		if int(entity.get("database_entry_id", 0)) == PRIMARY_DATABASE_ENTRY_ID:
 			return unit
 	return null
+
+
+func _player_for_scene(main: Node, scene_index: int) -> Node2D:
+	for unit: Node2D in main.get("units") as Array:
+		if int(unit.get("scene_index")) == scene_index:
+			return unit
+	return null
+
+
+func _enemy_for_scene(main: Node, scene_index: int) -> Node2D:
+	for enemy: Node2D in main.get("enemies") as Array:
+		if int(enemy.get("scene_index")) == scene_index:
+			return enemy
+	return null
+
+
+func _field_pickup_for_scene(main: Node, scene_index: int) -> Node2D:
+	for pickup: Node2D in main.get("field_pickups") as Array:
+		if int(pickup.get("scene_index")) == scene_index:
+			return pickup
+	return null
+
+
+func _inventory_quantity(
+	actor: Node2D,
+	container_key: String,
+	item_id: int,
+) -> int:
+	if actor == null or not actor.has_method("parity_inventory_snapshot"):
+		return 0
+	var inventory := actor.call("parity_inventory_snapshot") as Dictionary
+	for entry_value: Variant in inventory.get(container_key, []) as Array:
+		var entry := entry_value as Dictionary
+		if int(entry.get("item_id", 0)) == item_id:
+			return int(entry.get("quantity", 0))
+	return 0
+
+
+func _wait_for_inventory_quantity(
+	actor: Node2D,
+	container_key: String,
+	item_id: int,
+	expected_quantity: int,
+	deadline_seconds: float,
+) -> bool:
+	var ticks_per_second := maxi(
+		int(
+			ProjectSettings.get_setting(
+				"physics/common/physics_ticks_per_second",
+				60,
+			)
+		),
+		1,
+	)
+	var frame_count := maxi(
+		ceili(maxf(deadline_seconds, 0.0) * float(ticks_per_second)),
+		1,
+	)
+	for _frame_index: int in range(frame_count):
+		if (
+			_inventory_quantity(actor, container_key, item_id)
+			== expected_quantity
+		):
+			return true
+		await physics_frame
+	return (
+		_inventory_quantity(actor, container_key, item_id)
+		== expected_quantity
+	)
+
+
+func _scenario_description(scenario_id: String, level_id: String) -> String:
+	if scenario_id == MINE_PICKUP_SCENARIO_ID:
+		return (
+			"Select controllable scene 2280 and collect the real "
+			+ "scene-2096 mine through the original automatic approach path; "
+			+ "capture both inventory containers before and after."
+		)
+	if scenario_id == PISTOL_ATTACK_SCENARIO_ID:
+		return (
+			"Select scene 1436, equip the original pistol and attack live "
+			+ "scene 1598; capture the direct ammunition count before and after."
+		)
+	if scenario_id == _enemy_patrol_scenario_id(level_id):
+		return (
+			"Observe the audited %s enemy patrol roster in two one-second intervals."
+			% level_id
+		)
+	if scenario_id == "m000-natural-contact-v1":
+		return (
+			"Move 强子 into natural enemy contact and observe audited "
+			+ "AI target-state transitions."
+		)
+	return (
+		"Select 强子, issue two original-coordinate move orders, "
+		+ "and observe facing/path replacement."
+	)
 
 
 func _parse_output_directory(arguments: PackedStringArray) -> String:
