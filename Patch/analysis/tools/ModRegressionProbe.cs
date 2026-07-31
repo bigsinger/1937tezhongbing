@@ -55,6 +55,8 @@ internal static class ModRegressionProbe
     private const int DikDigit8 = 0x09;
     private const int DikDigit9 = 0x0A;
     private const int DikDigit0 = 0x0B;
+    private const int DikS = 0x1F;
+    private const int DikB = 0x30;
     private const int DikUp = 0xC8;
     private const int DikLeft = 0xCB;
     private const int DikRight = 0xCD;
@@ -312,11 +314,14 @@ internal static class ModRegressionProbe
     {
         public string Id;
         public long ElapsedMilliseconds;
+        public int CurrentActionId;
         public int CameraX;
         public int CameraY;
         public int ViewportWidth;
         public int ViewportHeight;
         public int SourceEntityCount;
+        public int RuntimeType78Count;
+        public int RuntimeType90Count;
         public readonly List<ActorSnapshot> Actors =
             new List<ActorSnapshot>();
         public readonly List<Point> ObservedPositions =
@@ -378,7 +383,8 @@ internal static class ModRegressionProbe
                 "Usage: ModRegressionProbe.exe GAME_DIR OUTPUT_DIR LEVEL " +
                 "[SECONDS] [MOVEMENT_CELL_X MOVEMENT_CELL_Y " +
                 "[RETURN_CELL_X RETURN_CELL_Y]] " +
-                "[--briefing-only] [--movement-only] " +
+                "[--briefing-only | --briefing-dismissal-only] " +
+                "[--movement-only] " +
                 "[--movement-player-scene=SCENE_INDEX] " +
                 "[--movement-observation-ms=MS] " +
                 "[--inventory-only] " +
@@ -386,7 +392,8 @@ internal static class ModRegressionProbe
                 "--visual-camera-x=X --visual-camera-y=Y] " +
                 "[--identity-catalog=PATH --parity-patrol-only | " +
                 "--parity-contact-only | --parity-pickup-only | " +
-                "--parity-attack-only --parity-scenario=ID " +
+                "--parity-attack-only | --parity-sb-only " +
+                "--parity-scenario=ID " +
                 "--patrol-observation-ms=MS " +
                 "--contact-observation-ms=MS] [--actor-layout-dump]");
             return 2;
@@ -402,6 +409,12 @@ internal static class ModRegressionProbe
         {
             return argument.Equals(
                 "--briefing-only",
+                StringComparison.OrdinalIgnoreCase);
+        });
+        bool briefingDismissalOnly = args.Any(delegate(string argument)
+        {
+            return argument.Equals(
+                "--briefing-dismissal-only",
                 StringComparison.OrdinalIgnoreCase);
         });
         bool movementOnly = args.Any(delegate(string argument)
@@ -555,6 +568,12 @@ internal static class ModRegressionProbe
                 "--parity-attack-only",
                 StringComparison.OrdinalIgnoreCase);
         });
+        bool paritySbOnly = args.Any(delegate(string argument)
+        {
+            return argument.Equals(
+                "--parity-sb-only",
+                StringComparison.OrdinalIgnoreCase);
+        });
         bool actorLayoutDump = args.Any(delegate(string argument)
         {
             return argument.Equals(
@@ -565,21 +584,30 @@ internal static class ModRegressionProbe
             (parityPatrolOnly ? 1 : 0) +
             (parityContactOnly ? 1 : 0) +
             (parityPickupOnly ? 1 : 0) +
-            (parityAttackOnly ? 1 : 0);
+            (parityAttackOnly ? 1 : 0) +
+            (paritySbOnly ? 1 : 0);
         if (parityModeCount > 1)
         {
             throw new InvalidOperationException(
                 "Parity-only scenarios are mutually exclusive.");
         }
+        if (briefingOnly && briefingDismissalOnly)
+        {
+            throw new InvalidOperationException(
+                "Briefing-only and briefing-dismissal-only are mutually " +
+                "exclusive.");
+        }
         if (inventoryOnly &&
-            (briefingOnly || parityModeCount > 0))
+            (briefingOnly || briefingDismissalOnly ||
+             parityModeCount > 0))
         {
             throw new InvalidOperationException(
                 "Inventory-only cannot be combined with briefing-only " +
                 "or parity movement scenarios.");
         }
         if (visualCaptureOnly &&
-            (briefingOnly || movementOnly || inventoryOnly ||
+            (briefingOnly || briefingDismissalOnly ||
+             movementOnly || inventoryOnly ||
              parityModeCount > 0))
         {
             throw new InvalidOperationException(
@@ -659,6 +687,10 @@ internal static class ModRegressionProbe
             ResolveWeaponAttackParityScenario(
                 parityScenarioOverride,
                 selectorLevel);
+        if (paritySbOnly)
+            ValidateSbParityScenario(
+                parityScenarioOverride,
+                selectorLevel);
         var route = MissionRoutes.Find(selectorLevel);
         if (route == null)
             throw new InvalidOperationException("Unknown selector level.");
@@ -683,7 +715,7 @@ internal static class ModRegressionProbe
         startInfo.EnvironmentVariables["M1937_TELEMETRY"] = "1";
         startInfo.EnvironmentVariables["M1937_START_LEVEL"] =
             selectorLevel.ToString(CultureInfo.InvariantCulture);
-        if (briefingOnly)
+        if (briefingOnly || briefingDismissalOnly)
             startInfo.EnvironmentVariables[
                 "M1937_AUTOTEST_BRIEFING_HOLD"] = "1";
 
@@ -779,7 +811,7 @@ internal static class ModRegressionProbe
                         stages, game, process, imageBase, clock,
                         "briefing_route_and_original_flow",
                         briefingEntered &&
-                        (briefingOnly
+                        ((briefingOnly || briefingDismissalOnly)
                             ? briefingActors == 0 &&
                               (briefingSurfaceNonBlank ||
                                (briefing != null &&
@@ -919,6 +951,35 @@ internal static class ModRegressionProbe
                     "; surface_non_blank=" +
                     missionMenuSurfaceNonBlank +
                     "; " + missionMenuSurfaceEvidence);
+                if (briefingDismissalOnly)
+                {
+                    samplerStop = true;
+                    sampler.Join(1500);
+                    bool briefingDismissalCursorClipSafe;
+                    lock (perf)
+                        briefingDismissalCursorClipSafe = perf.All(
+                            delegate(PerfSample sample)
+                            {
+                                return !sample.CursorClipRestricted;
+                            });
+                    exitCode =
+                        stages.All(delegate(Stage stage)
+                        {
+                            return stage.Sent &&
+                                stage.ProcessResponding;
+                        }) &&
+                        briefingDismissalCursorClipSafe ? 0 : 1;
+                    WriteArtifacts(
+                        outputDirectory,
+                        selectorLevel,
+                        route.EngineMission,
+                        stages,
+                        perf,
+                        transitionsLogged: false,
+                        replayConsumed: true,
+                        passed: exitCode == 0);
+                    return exitCode;
+                }
 
                 bool missionStarted = WaitUntil(
                     delegate()
@@ -1370,6 +1431,77 @@ internal static class ModRegressionProbe
                         actorIdentities,
                         false,
                         false);
+                    WriteArtifacts(
+                        outputDirectory,
+                        selectorLevel,
+                        route.EngineMission,
+                        stages,
+                        perf,
+                        transitionsLogged: false,
+                        replayConsumed: true,
+                        passed: exitCode == 0);
+                    return exitCode;
+                }
+                if (paritySbOnly)
+                {
+                    // S/B are short-lived contextual pointer modes. Exercise
+                    // them immediately after gameplay becomes interactive:
+                    // waiting through the generic five-second survival audit
+                    // lets M010's nearby live patrol independently kill the
+                    // selected worker and makes command acceptance race with
+                    // unrelated combat.
+                    string contextualEvidence;
+                    bool contextualObserved =
+                        ExerciseSbCommandParity(
+                            process,
+                            imageBase,
+                            window,
+                            parityCheckpoints,
+                            clock,
+                            actorIdentities,
+                            parityScenarioOverride,
+                            out contextualEvidence);
+                    AddStage(
+                        stages,
+                        game,
+                        process,
+                        imageBase,
+                        clock,
+                        "original_contextual_sb_command",
+                        contextualObserved,
+                        contextualEvidence);
+                    samplerStop = true;
+                    sampler.Join(1500);
+                    bool contextualCursorClipSafe;
+                    lock (perf)
+                        contextualCursorClipSafe = perf.All(
+                            delegate(PerfSample sample)
+                            {
+                                return !sample.CursorClipRestricted;
+                            });
+                    bool contextualProcessResponsive = stages.All(
+                        delegate(Stage stage)
+                        {
+                            return stage.ProcessResponding;
+                        });
+                    exitCode =
+                        missionStarted &&
+                        contextualObserved &&
+                        contextualProcessResponsive &&
+                        contextualCursorClipSafe ? 0 : 1;
+                    WriteParityTrace(
+                        outputDirectory,
+                        selectorLevel,
+                        route.EngineMission,
+                        movementCellX,
+                        movementCellY,
+                        returnCellX,
+                        returnCellY,
+                        parityCheckpoints,
+                        parityScenarioOverride,
+                        actorIdentities,
+                        false,
+                        true);
                     WriteArtifacts(
                         outputDirectory,
                         selectorLevel,
@@ -4196,6 +4328,335 @@ internal static class ModRegressionProbe
         return scenario;
     }
 
+    private static void ValidateSbParityScenario(
+        string scenarioId,
+        int selectorLevel)
+    {
+        bool supported =
+            String.Equals(
+                scenarioId,
+                "m010-sight-direct-target-v1",
+                StringComparison.Ordinal) ||
+            String.Equals(
+                scenarioId,
+                "m010-burial-command-v1",
+                StringComparison.Ordinal);
+        if (!supported)
+        {
+            throw new InvalidOperationException(
+                "Unsupported S/B parity scenario: " +
+                (scenarioId ?? "<missing>"));
+        }
+        const int expectedSelectorLevel = 11;
+        if (selectorLevel != expectedSelectorLevel)
+        {
+            throw new InvalidOperationException(
+                "S/B parity scenario " + scenarioId +
+                " requires selector level " + expectedSelectorLevel +
+                ", not " + selectorLevel + ".");
+        }
+    }
+
+    private static bool ExerciseSbCommandParity(
+        IntPtr process,
+        long imageBase,
+        IntPtr window,
+        List<ParityCheckpoint> checkpoints,
+        Stopwatch runClock,
+        Dictionary<int, RuntimeActorIdentity> actorIdentities,
+        string scenarioId,
+        out string evidence)
+    {
+        if (String.Equals(
+                scenarioId,
+                "m010-sight-direct-target-v1",
+                StringComparison.Ordinal))
+        {
+            return ExerciseSightDirectTargetParity(
+                process,
+                imageBase,
+                window,
+                checkpoints,
+                runClock,
+                actorIdentities,
+                out evidence);
+        }
+        return ExerciseBurialCommandParity(
+            process,
+            imageBase,
+            window,
+            checkpoints,
+            runClock,
+            actorIdentities,
+            out evidence);
+    }
+
+    private static bool ExerciseSightDirectTargetParity(
+        IntPtr process,
+        long imageBase,
+        IntPtr window,
+        List<ParityCheckpoint> checkpoints,
+        Stopwatch runClock,
+        Dictionary<int, RuntimeActorIdentity> actorIdentities,
+        out string evidence)
+    {
+        const int targetSceneIndex = 1126;
+        ActorSnapshot target = ReadResolvedActor(
+            process,
+            imageBase,
+            actorIdentities,
+            targetSceneIndex);
+        if (target == null ||
+            target.Dead != 0 ||
+            target.Faction != 1)
+        {
+            evidence =
+                "scene 1126 is not a readable living faction-1 target";
+            return false;
+        }
+        CaptureParityCheckpoint(
+            checkpoints,
+            process,
+            imageBase,
+            runClock,
+            "before_sight");
+        bool keySent = PulseKey(window, DikS);
+        Thread.Sleep(220);
+        // S/B are one-shot pointer modes owned by sub_44CD00/sub_44CD30;
+        // CurrentActionId is the separate weapon/action selection global and
+        // correctly remains zero here. The accepted click is the observable
+        // proof that the release armed the contextual command.
+        bool armed = keySent;
+        CaptureParityCheckpoint(
+            checkpoints,
+            process,
+            imageBase,
+            runClock,
+            "sight_mode_armed");
+
+        int clickWorldX;
+        int clickWorldY;
+        int cursorX = int.MinValue;
+        int cursorY = int.MinValue;
+        bool clickPointReady = TryGetActorClickWorldPoint(
+            process,
+            target,
+            out clickWorldX,
+            out clickWorldY);
+        bool clickSent =
+            clickPointReady &&
+            ClickReplayWorldPoint(
+                process,
+                imageBase,
+                window,
+                clickWorldX,
+                clickWorldY,
+                out cursorX,
+                out cursorY);
+        bool selected = WaitUntil(
+            delegate()
+            {
+                target = ReadResolvedActor(
+                    process,
+                    imageBase,
+                    actorIdentities,
+                    targetSceneIndex);
+                return target != null &&
+                    target.Dead == 0 &&
+                    target.Faction == 1 &&
+                    target.SelectedForCommand != 0 &&
+                    ReadInt(
+                        process,
+                        imageBase +
+                        EngineAddresses.CurrentActionId) != 8;
+            },
+            TimeSpan.FromSeconds(3));
+        CaptureParityCheckpoint(
+            checkpoints,
+            process,
+            imageBase,
+            runClock,
+            "sight_target_selected");
+        int finalActionId = ReadInt(
+            process,
+            imageBase + EngineAddresses.CurrentActionId);
+        evidence =
+            "scenario=m010-sight-direct-target-v1" +
+            "; target_scene=1126" +
+            "; input_isolation=process-local-DirectInput" +
+            "; key_sent=" + keySent +
+            "; armed=" + armed +
+            "; click_point_ready=" + clickPointReady +
+            "; click_sent=" + clickSent +
+            "; click_world=(" + clickWorldX + "," +
+            clickWorldY + ")" +
+            "; cursor=(" + cursorX + "," + cursorY + ")" +
+            "; selected_for_command=" +
+            (target == null ? -1 : target.SelectedForCommand) +
+            "; final_action_id=" + finalActionId +
+            "; runtime_type_90_count=" +
+            CountWorldActorsOfRuntimeType(process, imageBase, 90);
+        return keySent &&
+            armed &&
+            clickSent &&
+            selected &&
+            finalActionId != 8 &&
+            CountWorldActorsOfRuntimeType(process, imageBase, 90) == 0;
+    }
+
+    private static bool ExerciseBurialCommandParity(
+        IntPtr process,
+        long imageBase,
+        IntPtr window,
+        List<ParityCheckpoint> checkpoints,
+        Stopwatch runClock,
+        Dictionary<int, RuntimeActorIdentity> actorIdentities,
+        out string evidence)
+    {
+        const int attackerSceneIndex = 1591;
+        const int workerSceneIndex = 1590;
+        const int targetSceneIndex = 1126;
+        var attackSetup = new WeaponAttackParityScenario
+        {
+            Id = "m010-burial-dagger-setup-v1",
+            Description =
+                "Use Daniu scene 1591 and the original dagger to create " +
+                "the nearby faction-1 corpse at scene 1126.",
+            StageName = "original_burial_dagger_setup",
+            SelectorLevel = 11,
+            PlayerSceneIndex = attackerSceneIndex,
+            PlayerSelectionDik = DikF6,
+            WeaponSelectionDik = DikDigit1,
+            AttackType = 4,
+            ItemId = 39,
+            ExpectedBeforeQuantity = 1,
+            ExpectedAfterQuantity = 1,
+            TargetSceneIndex = targetSceneIndex,
+            RequiresTargetDamage = true
+        };
+        string attackEvidence;
+        bool targetKilled = ExerciseWeaponAttackParity(
+            process,
+            imageBase,
+            window,
+            checkpoints,
+            runClock,
+            actorIdentities,
+            attackSetup,
+            out attackEvidence);
+        ActorSnapshot worker = ReadResolvedActor(
+            process,
+            imageBase,
+            actorIdentities,
+            workerSceneIndex);
+        ActorSnapshot target = ReadResolvedActor(
+            process,
+            imageBase,
+            actorIdentities,
+            targetSceneIndex);
+        if (!targetKilled ||
+            worker == null ||
+            worker.Dead != 0 ||
+            target == null ||
+            target.Dead == 0 ||
+            target.Faction != 1)
+        {
+            evidence =
+                "burial setup failed; attack={" + attackEvidence + "}";
+            return false;
+        }
+        int cacheCountBefore =
+            CountWorldActorsOfRuntimeType(process, imageBase, 78);
+        bool workerSelected = PulseKey(window, DikF2);
+        Thread.Sleep(180);
+        bool keySent = PulseKey(window, DikB);
+        Thread.Sleep(220);
+        bool armed = keySent;
+        CaptureParityCheckpoint(
+            checkpoints,
+            process,
+            imageBase,
+            runClock,
+            "burial_mode_armed");
+
+        int clickWorldX;
+        int clickWorldY;
+        int cursorX = int.MinValue;
+        int cursorY = int.MinValue;
+        bool clickPointReady = TryGetActorClickWorldPoint(
+            process,
+            target,
+            out clickWorldX,
+            out clickWorldY);
+        bool clickSent =
+            clickPointReady &&
+            ClickReplayWorldPoint(
+                process,
+                imageBase,
+                window,
+                clickWorldX,
+                clickWorldY,
+                out cursorX,
+                out cursorY);
+        bool commandAccepted = WaitUntil(
+            delegate()
+            {
+                worker = ReadResolvedActor(
+                    process,
+                    imageBase,
+                    actorIdentities,
+                    workerSceneIndex);
+                return worker != null &&
+                    worker.GoalKind == 4 &&
+                    ReadInt(
+                        process,
+                        imageBase +
+                        EngineAddresses.CurrentActionId) != 4;
+            },
+            TimeSpan.FromSeconds(0.8));
+        CaptureParityCheckpoint(
+            checkpoints,
+            process,
+            imageBase,
+            runClock,
+            "burial_commanded");
+        worker = ReadResolvedActor(
+            process,
+            imageBase,
+            actorIdentities,
+            workerSceneIndex);
+        evidence =
+            "scenario=m010-burial-command-v1" +
+            "; input_isolation=process-local-DirectInput" +
+            "; attack={" + attackEvidence + "}" +
+            "; worker_scene=" + workerSceneIndex +
+            "; worker_selected=" + workerSelected +
+            "; key_sent=" + keySent +
+            "; armed=" + armed +
+            "; click_point_ready=" + clickPointReady +
+            "; click_sent=" + clickSent +
+            "; click_world=(" + clickWorldX + "," +
+            clickWorldY + ")" +
+            "; cursor=(" + cursorX + "," + cursorY + ")" +
+            "; command_accepted=" + commandAccepted +
+            "; worker_goal_kind=" +
+            (worker == null ? -1 : worker.GoalKind) +
+            "; immediate_type_78_count=" + cacheCountBefore + "->" +
+            CountWorldActorsOfRuntimeType(process, imageBase, 78) +
+            "; final_action_id=" + ReadInt(
+                process,
+                imageBase + EngineAddresses.CurrentActionId);
+        return targetKilled &&
+            workerSelected &&
+            keySent &&
+            armed &&
+            clickSent &&
+            commandAccepted &&
+            CountWorldActorsOfRuntimeType(
+                process, imageBase, 78) == cacheCountBefore &&
+            worker != null;
+    }
+
     private static bool ExerciseWeaponAttackParity(
         IntPtr process,
         long imageBase,
@@ -5571,6 +6032,9 @@ internal static class ModRegressionProbe
         checkpoint.Id = checkpointId ?? "";
         checkpoint.ElapsedMilliseconds =
             clock == null ? 0 : clock.ElapsedMilliseconds;
+        checkpoint.CurrentActionId = ReadInt(
+            process,
+            imageBase + EngineAddresses.CurrentActionId);
         checkpoint.CameraX = ReadInt(
             process, imageBase + EngineAddresses.CameraX);
         checkpoint.CameraY = ReadInt(
@@ -5596,6 +6060,10 @@ internal static class ModRegressionProbe
         }
         checkpoint.SourceEntityCount =
             ReadWorldActorCount(process, imageBase);
+        checkpoint.RuntimeType78Count =
+            CountWorldActorsOfRuntimeType(process, imageBase, 78);
+        checkpoint.RuntimeType90Count =
+            CountWorldActorsOfRuntimeType(process, imageBase, 90);
         foreach (ActorSnapshot actor in ReadTraceActors(
             process, imageBase))
         {
@@ -5647,6 +6115,40 @@ internal static class ModRegressionProbe
             result.Add(snapshot);
         }
         return result;
+    }
+
+    private static int CountWorldActorsOfRuntimeType(
+        IntPtr process,
+        long imageBase,
+        int runtimeType)
+    {
+        int worldValue = ReadInt(
+            process, imageBase + EngineAddresses.WorldRoot);
+        if (worldValue == 0 || worldValue == int.MinValue)
+            return 0;
+        long world = (long)(uint)worldValue;
+        int actorArrayValue = ReadInt(process, world + 0x18);
+        int count = ReadInt(process, world + 0x3C);
+        if (actorArrayValue == 0 ||
+            actorArrayValue == int.MinValue ||
+            count <= 0 ||
+            count > 4096)
+            return 0;
+        int matches = 0;
+        long actorArray = (long)(uint)actorArrayValue;
+        for (int index = 0; index < count; ++index)
+        {
+            int actorValue = ReadInt(
+                process, actorArray + index * 4L);
+            if (actorValue == 0 || actorValue == int.MinValue)
+                continue;
+            if (ReadInt(
+                    process,
+                    (long)(uint)actorValue +
+                    ActorRuntimeTypeOffset) == runtimeType)
+                ++matches;
+        }
+        return matches;
     }
 
     private static void AttachObservedPositions(
@@ -5919,6 +6421,26 @@ internal static class ModRegressionProbe
                     scenarioId,
                     selectorLevel).Description;
         }
+        else if (String.Equals(
+                     scenarioId,
+                     "m010-sight-direct-target-v1",
+                     StringComparison.Ordinal))
+        {
+            scenarioDescription =
+                "Release S and click living faction-1 scene 1126 through " +
+                "process-local DirectInput; verify one-shot direct enemy " +
+                "selection without creating actor 90.";
+        }
+        else if (String.Equals(
+                     scenarioId,
+                     "m010-burial-command-v1",
+                     StringComparison.Ordinal))
+        {
+            scenarioDescription =
+                "Kill scene 1126 with Daniu's original dagger, release B " +
+                "and click the corpse through process-local DirectInput; verify " +
+                "one-shot consumption and command kind 4 without instant completion.";
+        }
         else if (resolvedActorScope)
         {
             scenarioDescription =
@@ -6187,7 +6709,13 @@ internal static class ModRegressionProbe
                 levelId);
             json.Append(
                 "      \"tags\":{" +
-                "\"source\":\"stable-mod-read-only-process-snapshot\"");
+                "\"source\":\"stable-mod-read-only-process-snapshot\"," +
+                "\"current_action_id\":" +
+                checkpoint.CurrentActionId + "," +
+                "\"runtime_type_78_count\":" +
+                checkpoint.RuntimeType78Count + "," +
+                "\"runtime_type_90_count\":" +
+                checkpoint.RuntimeType90Count);
             if (checkpoint.ObservedPositions.Count > 0)
             {
                 json.Append(",\"observed_positions\":[");

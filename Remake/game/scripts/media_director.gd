@@ -448,6 +448,20 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
+func _on_overlay_gui_input(event: InputEvent) -> void:
+	# The original task briefing is dismissed by a process-local left click.
+	# The full-screen overlay consumes both halves of the click and commits on
+	# release, so the same cycle cannot leak into the world below.
+	if (
+		event is InputEventMouseButton
+		and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT
+		and not active_briefing.is_empty()
+		and not event.is_echo()
+		and not event.is_pressed()
+	):
+		dismiss_briefing()
+
+
 func _advance_dialogue_internal() -> void:
 	dialogue_line_index += 1
 	if dialogue_line_index >= dialogue_lines.size():
@@ -625,6 +639,7 @@ func _ensure_nodes() -> void:
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	overlay.color = Color(0.015, 0.018, 0.015, 0.97)
 	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	overlay.gui_input.connect(_on_overlay_gui_input)
 	overlay.visible = false
 	add_child(overlay)
 

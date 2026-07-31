@@ -16,6 +16,11 @@ const PATROL_SETTLE_ARGUMENT_PREFIX := "--patrol-settle-seconds="
 const PRIMARY_DATABASE_ENTRY_ID := 924
 const MINE_PICKUP_SCENARIO_ID := "m001-mine-pickup-inventory-v1"
 const PISTOL_ATTACK_SCENARIO_ID := "m000-pistol-attack-inventory-v1"
+const SIGHT_DIRECT_TARGET_SCENARIO_ID := "m010-sight-direct-target-v1"
+const BURIAL_COMMAND_SCENARIO_ID := "m010-burial-command-v1"
+const M010_CONTEXT_TARGET_SCENE_INDEX := 1126
+const M010_LAO_ZHAO_SCENE_INDEX := 1590
+const M010_DANIU_SCENE_INDEX := 1591
 const M001_PLAYER_SCENE_INDEX := 2280
 const M001_MINE_SCENE_INDEX := 2096
 const LAND_MINE_ITEM_ID := 43
@@ -251,6 +256,12 @@ func _run_probe() -> void:
 		return
 	if WEAPON_ATTACK_SCENARIOS.has(scenario_id):
 		await _run_weapon_attack_probe(main, trace, started, scenario_id)
+		return
+	if scenario_id == SIGHT_DIRECT_TARGET_SCENARIO_ID:
+		await _run_sight_direct_target_probe(main, trace, started)
+		return
+	if scenario_id == BURIAL_COMMAND_SCENARIO_ID:
+		await _run_burial_command_probe(main, trace, started)
 		return
 	if scenario_id == _enemy_patrol_scenario_id(level_id):
 		await _run_enemy_patrol_probe(
@@ -553,6 +564,132 @@ func _run_weapon_attack_probe(
 		trace,
 		scenario_id,
 	)
+
+
+func _run_sight_direct_target_probe(
+	main: Node,
+	trace: RefCounted,
+	started: int,
+) -> void:
+	var target := _enemy_for_scene(main, M010_CONTEXT_TARGET_SCENE_INDEX)
+	_expect(target != null, "m010 scene 1126 sight target exists")
+	if target != null:
+		_expect(
+			bool(target.get("is_alive")) and int(target.get("faction_id")) == 1,
+			"S direct target starts as a living faction-1 enemy",
+		)
+		trace.call("capture_main", "before_sight", main, _elapsed_ms(started))
+		await _tap_key(KEY_S)
+		_expect(
+			bool(main.get("sight_target_pending")),
+			"S release arms the original one-shot sight command",
+		)
+		trace.call("capture_main", "sight_mode_armed", main, _elapsed_ms(started))
+		await _click_world(main, target.position)
+		_expect(
+			main.get("sight_observation_target") == target
+				and not bool(main.get("sight_target_pending"))
+				and not bool(main.get("sight_observation_mode")),
+			"living faction-1 click selects the enemy and consumes S once",
+		)
+		_expect(
+			main.get("sight_beacon") == null,
+			"direct S target does not create the actor-90 observation marker",
+		)
+		trace.call(
+			"capture_main",
+			"sight_target_selected",
+			main,
+			_elapsed_ms(started),
+		)
+	await _finish_contextual_probe(main, trace, SIGHT_DIRECT_TARGET_SCENARIO_ID)
+
+
+func _run_burial_command_probe(
+	main: Node,
+	trace: RefCounted,
+	started: int,
+) -> void:
+	var attacker := _player_for_scene(main, M010_DANIU_SCENE_INDEX)
+	var worker := _player_for_scene(main, M010_LAO_ZHAO_SCENE_INDEX)
+	var target := _enemy_for_scene(main, M010_CONTEXT_TARGET_SCENE_INDEX)
+	_expect(attacker != null, "m010 Daniu scene 1591 exists")
+	_expect(worker != null, "m010 Lao Zhao scene 1590 exists")
+	_expect(target != null, "m010 burial target scene 1126 exists")
+	if attacker != null and worker != null and target != null:
+		main.call("select_only", attacker)
+		_expect(
+			bool(attacker.call("equip_attack_type", 4)),
+			"Daniu equips the original durable dagger",
+		)
+		trace.call("capture_main", "before_attack", main, _elapsed_ms(started))
+		# The dagger outcome already has its own stable-MOD differential. Keep
+		# that verified setup deterministic here so this scenario measures the
+		# contextual B release/corpse click rather than duplicating attack input.
+		main.call("issue_attack_order", target, false)
+		var target_killed := await _wait_for_target_hit_points(target, 0, 12.0)
+		_expect(target_killed, "the original dagger kills scene 1126")
+		attacker.call("clear_combat_target")
+		attacker.call("cancel_path")
+		trace.call("capture_main", "after_attack", main, _elapsed_ms(started))
+
+		main.call("select_only", worker)
+		await _tap_key(KEY_B)
+		_expect(
+			bool(main.get("burial_mode")),
+			"B release arms the original one-shot burial command",
+		)
+		trace.call("capture_main", "burial_mode_armed", main, _elapsed_ms(started))
+		await _click_world(main, target.position)
+		_expect(
+			main.get("burial_worker") == worker
+				and main.get("burial_target") == target
+				and not bool(main.get("burial_mode")),
+			"dead faction-1 click assigns command kind 4 and consumes B once",
+		)
+		trace.call("capture_main", "burial_commanded", main, _elapsed_ms(started))
+		_expect(
+			(main.get("legacy_burial_caches") as Array).is_empty(),
+			"B command does not create type 78 before the strict >100 timer",
+		)
+	await _finish_contextual_probe(main, trace, BURIAL_COMMAND_SCENARIO_ID)
+
+
+func _finish_contextual_probe(
+	main: Node,
+	trace: RefCounted,
+	scenario_id: String,
+) -> void:
+	var trace_path := ""
+	if not output_directory.is_empty():
+		trace_path = output_directory.path_join(
+			"remake-%s.json" % _safe_file_component(scenario_id)
+		)
+		_expect(
+			trace.call("write_to_file", trace_path) == OK,
+			"Remake contextual parity trace writes",
+		)
+	var trace_document: Dictionary = trace.get("document") as Dictionary
+	print(
+		"PARITY_RUNTIME_PROBE_RESULT %s"
+		% JSON.stringify(
+			{
+				"trace": trace_path,
+				"checkpoints": (trace_document.get("checkpoints", []) as Array).size(),
+				"failures": failures,
+			}
+		)
+	)
+	get_root().remove_child(main)
+	main.free()
+	await process_frame
+	await process_frame
+	if failures.is_empty():
+		quit(0)
+		return
+	for failure: String in failures:
+		push_error(failure)
+	quit(1)
 
 
 func _wait_for_target_hit_points(
@@ -922,6 +1059,17 @@ func _scenario_description(scenario_id: String, level_id: String) -> String:
 	if WEAPON_ATTACK_SCENARIOS.has(scenario_id):
 		var scenario: Dictionary = WEAPON_ATTACK_SCENARIOS[scenario_id]
 		return str(scenario.get("description", "Weapon inventory parity probe."))
+	if scenario_id == SIGHT_DIRECT_TARGET_SCENARIO_ID:
+		return (
+			"Release S and click living faction-1 scene 1126; verify one-shot "
+			+ "direct enemy selection without creating actor 90."
+		)
+	if scenario_id == BURIAL_COMMAND_SCENARIO_ID:
+		return (
+			"Kill scene 1126 with Daniu's original dagger, release B "
+			+ "and click the corpse; verify one-shot command kind 4 without "
+			+ "premature actor-78 completion."
+		)
 	if scenario_id == _enemy_patrol_scenario_id(level_id):
 		return (
 			"Observe the audited %s enemy patrol roster in two one-second intervals."
@@ -1082,6 +1230,31 @@ func _wait_physics_seconds(duration_seconds: float) -> void:
 	)
 	for _frame_index: int in range(frame_count):
 		await physics_frame
+
+
+func _tap_key(keycode: Key) -> void:
+	var event := InputEventKey.new()
+	event.keycode = keycode
+	event.pressed = true
+	root.push_input(event)
+	await process_frame
+	event = event.duplicate()
+	event.pressed = false
+	root.push_input(event)
+	await process_frame
+
+
+func _click_world(main: Node, world_position: Vector2) -> void:
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.pressed = true
+	click.position = main.get_global_transform_with_canvas() * world_position
+	root.push_input(click, true)
+	await process_frame
+	click = click.duplicate()
+	click.pressed = false
+	root.push_input(click, true)
+	await process_frame
 
 
 func _movement_tags(unit: Node2D, main: Node) -> Dictionary:

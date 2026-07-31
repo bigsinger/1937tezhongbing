@@ -228,8 +228,8 @@ W/A/M/F1/Esc、S/B、普通攻击、隔离物理快速存读、主要失败与�
 `sub_44D980/sub_44E2D0/sub_44E000/sub_44EF50` 的 RowLookup 逐列稳定排序
 现已覆盖静态/动态/交互对象；12 个经典视口和 48 个现代分块均通过 RGB565
 对照。`sub_455E30` 也定案了 walk/run/crawl triplet 的第 0/2 分量消费和
-middle 的十二关边界。当前 14 个 parity domain 中 3 个 verified，仍有
-23 项明确差异，主要是编辑性对白、完整全局随机调用顺序、S/B 剩余反馈、
+middle 的十二关边界。当前 14 个 parity domain 中 4 个 verified，仍有
+22 项明确差异，主要是编辑性对白、完整全局随机调用顺序、上下文光标像素、
 HUD 像素、SAV/SI、声音触发和稳定 MOD/Remake 两边的真人完整输入通关轨迹。
 它们已全部写入
 `mod_parity_contract.json`；函数级世界动作门禁虽然远强于直接发送任务
@@ -344,6 +344,23 @@ index、item、quantity 与 mode；巡逻位置和在途投射物导致的目标
 截帧只作诊断，不能反向污染严格的容器结论。
 `Capture-InventoryParity.ps1` 会从隔离 MOD 重新采集、在 Remake 重放并输出
 双份 JSON/Markdown 报告，全程不捕获、裁剪或移动系统鼠标。
+
+`m010-sight-direct-target-v1` 与 `m010-burial-command-v1` 又闭环了
+`S`/`B` 的现场歧义。前者在稳定 MOD 与 Remake 中都通过真实按键和目标点击
+选择存活 faction 1 的 scene 1126，并确认没有错误创建 type 90；后者由
+大牛使用原匕首制造尸体，再切换到安全位置的老赵执行 `B`，严格得到
+`GoalKind=4`，且命令刚接受时不会绕过 `>100` 计数提前生成 type 78。
+分离攻击者和掩埋执行者是为了排除第十一关开局敌军随机开火导致的证据竞争，
+没有改变玩家可见规则。两条轨迹均可由 `Capture-InventoryParity.ps1`
+从已提交基线复抓，比较器只把巡逻位置、经过时间和武器选择瞬态作为诊断。
+
+`m010-briefing-left-click-dismissal-v1` 则确认稳定 MOD 的任务简报位于同一
+主窗口、简报期间世界尚未开始，并由进程私有左键点击推进。Remake 现在让
+全屏媒体层吞掉左键按下，在松开时只关闭一次简报并恢复世界，避免同一点击
+穿透到地图。`Capture-BriefingInputParity.ps1` 会同时重抓稳定 MOD、
+向 Remake 目标视口投递事件并严格比较；两端都明确记录
+`global_pointer_control=false`。至此 `input_and_hotkeys` parity domain
+已由 `partial` 提升为 `verified`。
 
 产品默认难度现为 `original`。它保持生命、伤害、反应、巡逻和感知为 1.0，
 关闭重制版瞄准误差、协作增援和同时攻击者调校；`easy/normal/hard` 仍可在

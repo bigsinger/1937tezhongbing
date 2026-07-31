@@ -52,6 +52,7 @@ func capture_main(
 		push_error("RuntimeParityTrace must be configured before capture.")
 		return {}
 	var actors := _capture_main_actors(main)
+	var runtime_tags := _runtime_tags(main, tags)
 	var checkpoint := {
 		"id": checkpoint_id,
 		"sequence": (document["checkpoints"] as Array).size(),
@@ -73,11 +74,12 @@ func capture_main(
 				+ _live_array_count(main, "deployed_mines")
 				+ _live_array_count(main, "legacy_special_world_objects")
 				+ _live_array_count(main, "legacy_ai_control_effects")
+				+ _live_array_count(main, "legacy_burial_caches")
 			),
 		},
 		"actors": actors,
 		"mission": _capture_mission(main),
-		"tags": _json_safe(tags),
+		"tags": _json_safe(runtime_tags),
 	}
 	(document["checkpoints"] as Array).append(checkpoint)
 	return checkpoint
@@ -101,6 +103,11 @@ func write_to_file(path: String) -> Error:
 func _capture_main_actors(main: Node) -> Array[Dictionary]:
 	var records: Array[Dictionary] = []
 	var selected_units: Array = _read_property(main, "selected_units", []) as Array
+	var sight_target: Variant = _read_property(
+		main,
+		"sight_observation_target",
+		null,
+	)
 	for role_and_field: Array in [
 		["player", "units"],
 		["escort", "escorts"],
@@ -116,7 +123,7 @@ func _capture_main_actors(main: Node) -> Array[Dictionary]:
 						raw_actor as Node2D,
 						role,
 						main,
-						selected_units.has(raw_actor),
+						selected_units.has(raw_actor) or raw_actor == sight_target,
 					)
 				)
 	records.sort_custom(
@@ -158,6 +165,16 @@ func _capture_actor(
 	var movement_active := movement_path_index < movement_path_size
 	var goal_kind := 2 if has_live_target else (1 if movement_active else 0)
 	var captured_weapon := _capture_weapon(actor)
+	var burial_worker: Variant = _read_property(main, "burial_worker", null)
+	var burial_target: Variant = _read_property(main, "burial_target", null)
+	var is_burial_worker: bool = actor == burial_worker
+	var burial_pending: bool = (
+		is_burial_worker
+		and burial_target is Node2D
+		and is_instance_valid(burial_target)
+	)
+	if burial_pending:
+		goal_kind = 4
 	var record := {
 		"actor_id": "scene:%d" % scene_index,
 		"role": role,
@@ -178,6 +195,8 @@ func _capture_actor(
 		"weapon": captured_weapon,
 		"native": {
 			"goal_kind": goal_kind,
+			"command_variant": 1 if burial_pending else 0,
+			"command_pending": 0,
 			"animation_group_index": int(_read_property(actor, "animation_group_index", -1)),
 			"animation_frame_index": int(_read_property(actor, "animation_frame_index", 0)),
 			"combat_action": int(_read_property(actor, "combat_action", 0)),
@@ -254,6 +273,24 @@ func _capture_actor(
 			))
 		)
 	return record
+
+
+func _runtime_tags(main: Node, supplied: Dictionary) -> Dictionary:
+	var result := supplied.duplicate(true)
+	# The MOD's CurrentActionId is a weapon/action selection global. S/B use
+	# separate one-shot pointer-mode state and therefore leave this value zero.
+	result["current_action_id"] = 0
+	result["runtime_type_78_count"] = _live_array_count(
+		main,
+		"legacy_burial_caches",
+	)
+	var marker: Variant = _read_property(main, "sight_beacon", null)
+	result["runtime_type_90_count"] = (
+		1
+		if marker is Object and is_instance_valid(marker)
+		else 0
+	)
+	return result
 
 
 func _capture_weapon(actor: Node2D) -> Dictionary:

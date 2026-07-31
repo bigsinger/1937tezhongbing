@@ -96,3 +96,21 @@ replay every scenario in Remake and produce JSON/Markdown comparisons. Pass
 `-ScenarioId ID` to isolate one scenario while developing. The runner copies
 the MOD to an isolated `E:\1937` runtime, sends input only to the target
 process/window and never captures, clips, warps or moves the system cursor.
+
+`m010-sight-direct-target-v1.json` and `m010-burial-command-v1.json` extend the
+same live-command harness to the contextual `S` and `B` commands. The sight
+trace proves that `S` followed by a hostile click selects the living hostile
+without creating a persistent type-90 watch marker. The burial trace first
+kills scene 1126 with Daniu, then selects the surviving Lao Zhao and proves
+that `B` followed by the corpse click assigns the original goal kind 4 without
+creating type 78 immediately. `Compare-ContextualCommandParity.ps1` treats
+identity, life state, selection/goal transitions and runtime-object lifecycle
+as strict; patrol phase and elapsed time remain diagnostic.
+
+`m010-briefing-left-click-dismissal-v1.json` is captured separately by
+`Capture-BriefingInputParity.ps1`. With the original game held on its in-window
+mission briefing, a process-private left-button pulse advances into the loaded
+world. The Remake comparison uses the real imported M010 briefing image,
+consumes the press in the modal layer and closes exactly once on release so the
+same click cannot leak into gameplay. Both capture workflows assert
+`global_pointer_control=false`.

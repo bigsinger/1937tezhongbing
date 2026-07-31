@@ -229,6 +229,42 @@ func _run() -> void:
 		"Escape release closes the media modal and restores gameplay",
 		failures,
 	)
+	var pointer_closed := [0]
+	director.briefing_closed.connect(
+		func(_level_id: String) -> void: pointer_closed[0] += 1
+	)
+	director.call(
+		"show_briefing",
+		"m000",
+		"Pointer fixture",
+		"left-button release to close",
+	)
+	var pointer_press := InputEventMouseButton.new()
+	pointer_press.button_index = MOUSE_BUTTON_LEFT
+	pointer_press.position = Vector2(320.0, 240.0)
+	pointer_press.global_position = pointer_press.position
+	pointer_press.pressed = true
+	root.push_input(pointer_press, true)
+	await process_frame
+	expect(
+		not director.active_briefing.is_empty() and paused,
+		"briefing consumes the target-viewport left-button press",
+		failures,
+	)
+	var pointer_release := InputEventMouseButton.new()
+	pointer_release.button_index = MOUSE_BUTTON_LEFT
+	pointer_release.position = pointer_press.position
+	pointer_release.global_position = pointer_press.position
+	pointer_release.pressed = false
+	root.push_input(pointer_release, true)
+	await process_frame
+	expect(
+		director.active_briefing.is_empty()
+		and not paused
+		and pointer_closed[0] == 1,
+		"target-viewport left-button release closes the briefing once",
+		failures,
+	)
 	var remapped_controls: Dictionary = GAME_INPUT_BINDINGS.default_bindings()
 	remapped_controls["pause"] = {
 		"keycode": KEY_Z,

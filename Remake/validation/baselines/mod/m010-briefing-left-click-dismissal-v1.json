@@ -1,0 +1,34 @@
+﻿{
+    "schema_version":  1,
+    "runtime":  "mod",
+    "content_profile":  "repository-mod-12-level-20260729",
+    "level":  {
+                  "id":  "m010",
+                  "selector_level":  11,
+                  "engine_mission":  11
+              },
+    "scenario":  {
+                     "id":  "m010-briefing-left-click-dismissal-v1",
+                     "input":  "left_mouse_press_release"
+                 },
+    "metadata":  {
+                     "input_isolation":  "process-local-DirectInput",
+                     "global_pointer_control":  false,
+                     "same_main_window":  true,
+                     "external_dialog":  false
+                 },
+    "checkpoints":  [
+                        {
+                            "id":  "briefing_visible",
+                            "modal_visible":  true,
+                            "world_state_active":  false,
+                            "surface_non_blank":  true
+                        },
+                        {
+                            "id":  "briefing_dismissed",
+                            "input_delivered":  true,
+                            "world_state_active":  true
+                        }
+                    ],
+    "passed":  true
+}

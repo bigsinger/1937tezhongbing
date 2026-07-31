@@ -182,6 +182,18 @@ $scenarios = @(
         level_id = 'm010'
         selector_level = 11
         parity_flag = '--parity-attack-only'
+    },
+    [pscustomobject]@{
+        id = 'm010-sight-direct-target-v1'
+        level_id = 'm010'
+        selector_level = 11
+        parity_flag = '--parity-sb-only'
+    },
+    [pscustomobject]@{
+        id = 'm010-burial-command-v1'
+        level_id = 'm010'
+        selector_level = 11
+        parity_flag = '--parity-sb-only'
     }
 )
 if ($ScenarioId.Count -gt 0) {
@@ -268,7 +280,14 @@ try {
 
         $baselineComparison = Join-Path $comparisonOutput (
             "$($scenario.id)-mod-recapture.json")
-        & (Join-Path $PSScriptRoot 'Compare-InventoryParityTrace.ps1') `
+        $comparisonToolName = 'Compare-InventoryParityTrace.ps1'
+        if ($scenario.id -in @(
+                'm010-sight-direct-target-v1',
+                'm010-burial-command-v1')) {
+            $comparisonToolName = 'Compare-ContextualCommandParity.ps1'
+        }
+        $comparisonTool = Join-Path $PSScriptRoot $comparisonToolName
+        & $comparisonTool `
             -ReferenceTrace $baselineTrace `
             -CandidateTrace $modTrace `
             -AllowMismatch:$AllowMismatch `
@@ -304,8 +323,7 @@ try {
             "$($scenario.id)-comparison.json")
         $comparisonMarkdown = Join-Path $comparisonOutput (
             "$($scenario.id)-comparison.md")
-        $comparison = & (
-            Join-Path $PSScriptRoot 'Compare-InventoryParityTrace.ps1') `
+        $comparison = & $comparisonTool `
             -ReferenceTrace $baselineTrace `
             -CandidateTrace $remakeTrace `
             -AllowMismatch:$AllowMismatch `
