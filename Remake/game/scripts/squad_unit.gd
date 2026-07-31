@@ -83,6 +83,7 @@ var scene_index := -1
 var runtime_actor_type := 0
 var dynamic_occupancy: RefCounted
 var dynamic_registered := false
+var active_sprite_footprint_key := ""
 ## Stable-MOD patrol timelines can opt into original-style soft actor
 ## separation. Static movement layers remain authoritative; only other live
 ## actors and their transient goal reservations are ignored.
@@ -203,6 +204,7 @@ func configure(
 	was_moving = false
 	blocked_elapsed = 0.0
 	dynamic_registered = false
+	active_sprite_footprint_key = ""
 	combat_target = null
 	combat_target_forced = false
 	auto_combat_enabled = false
@@ -1007,6 +1009,7 @@ func apply_original_actor_variant(
 	disguise_recovery_tick_counter = 0
 	disguise_recovery_tick_elapsed = 0.0
 	cancel_original_disguise_transition()
+	active_sprite_footprint_key = ""
 	configure_movement_modes(
 		new_run_groups,
 		new_walk_groups,
@@ -1568,6 +1571,7 @@ func _apply_action_frame(groups: Array[Dictionary]) -> void:
 	action_frame_index = clampi(action_frame_index, 0, frames.size() - 1)
 	sprite_texture = frames[action_frame_index]
 	sprite_anchor = group.get("anchor", Vector2.ZERO) as Vector2
+	_apply_dynamic_sprite_footprint(group)
 	queue_redraw()
 
 
@@ -1861,6 +1865,7 @@ func _apply_current_idle_visual(advance_delta: float) -> bool:
 	else:
 		sprite_texture = frames[0]
 	sprite_anchor = group.get("anchor", Vector2.ZERO) as Vector2
+	_apply_dynamic_sprite_footprint(group)
 	return true
 
 
@@ -1925,6 +1930,7 @@ func update_animation_frame() -> void:
 	animation_frame_index = clampi(animation_frame_index, 0, frames.size() - 1)
 	sprite_texture = frames[animation_frame_index]
 	sprite_anchor = group["anchor"] as Vector2
+	_apply_dynamic_sprite_footprint(group)
 
 
 func apply_idle_frame() -> bool:
@@ -1942,6 +1948,67 @@ func apply_idle_frame() -> bool:
 		return false
 	sprite_texture = frames[0]
 	sprite_anchor = group["anchor"] as Vector2
+	_apply_dynamic_sprite_footprint(group)
+	return true
+
+
+func _apply_dynamic_sprite_footprint(group: Dictionary) -> bool:
+	if (
+		not dynamic_registered
+		or dynamic_occupancy == null
+		or scene_index < 0
+		or not dynamic_occupancy.has_method("update_scene_footprint")
+		or not group.has("lookup_dimensions")
+		or not group.has("movement_lookup")
+		or not group.has("sight_lookup")
+	):
+		return false
+	var profile_key := str(group.get("lookup_profile_key", ""))
+	if profile_key.is_empty():
+		profile_key = "%d:%d" % [
+			int(group.get("group_index", -1)),
+			hash(
+				[
+					group.get("primary_triplet", []),
+					group.get("lookup_dimensions"),
+					group.get("movement_lookup", []),
+					group.get("sight_lookup", []),
+				]
+			),
+		]
+	if profile_key == active_sprite_footprint_key:
+		return true
+	var source_navigation: Variant = dynamic_occupancy.get("navigation")
+	if source_navigation == null:
+		return false
+	var cell_size_value: Variant = source_navigation.get("cell_size")
+	if not cell_size_value is Vector2i:
+		return false
+	var cell_size := cell_size_value as Vector2i
+	var movement_offsets: Array[Vector2i] = (
+		SPR_ANIMATION_RULES.lookup_footprint_offsets(
+			group,
+			"movement_lookup",
+			cell_size,
+		)
+	)
+	var sight_offsets: Array[Vector2i] = (
+		SPR_ANIMATION_RULES.lookup_footprint_offsets(
+			group,
+			"sight_lookup",
+			cell_size,
+		)
+	)
+	if not bool(
+		dynamic_occupancy.call(
+			"update_scene_footprint",
+			scene_index,
+			movement_offsets,
+			sight_offsets,
+		)
+	):
+		return false
+	active_sprite_footprint_key = profile_key
 	return true
 
 

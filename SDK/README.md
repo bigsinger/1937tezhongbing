@@ -29,6 +29,9 @@ PE 指纹和原始指令字节。
   64/64/64/16/5/8 步长、actor/GFL、直接伤害、L3→L2 碰撞顺序、
   actor 60 命中火花、0x44 运行时投射物布局、Bresenham/抛物线公式和
   SPR primary/tertiary 发射锚点；
+- `Sprite.hpp` 固定 32 位 frame-group `+0x04..+0x50` 布局、Layer 3
+  movement lookup、Layer 2 line-of-sight lookup、逐列 draw-order row
+  lookup，以及 `actor_cell-primary/(32×16)` 的遮罩定位公式；
 - `OrdinaryCombat.hpp` 固定 attack type 1—7 的直接 actor 伤害、
   步枪/匕首 attacker runtime type 例外、32×16 目标格门、机枪活动目标
   ±1°/纯坐标 ±2° 三路散布，以及八类 target runtime type 的低于 32

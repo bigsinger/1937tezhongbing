@@ -196,6 +196,40 @@ frame group 的三个序列化 triplet 顺序已经由文件布局、运行时�
 静默改变语义。合成解析测试用三组互不相同的值固定文件顺序，真实资源门禁
 还要求所有运行时可达的 walk/crawl 方向都能取得合法 secondary 运动分量。
 
+### 三套 lookup 的原版语义
+
+frame group 的 `parameters[5]` / `parameters[6]` 是 lookup 的列数和行数。
+`sub_427560` 把三套表分别装入运行时 frame group 的 `+0x08`、`+0x0c`
+和 `+0x04`。访问器与 actor 网格写入路径已经逐条交叉确认：
+
+| 文件/旧清单字段 | 运行时字段 | 原版用途 |
+|---|---:|---|
+| `first_lookup` | `+0x08` | Layer 3 移动占位遮罩 |
+| `second_lookup` | `+0x0c` | Layer 2 视线占位遮罩 |
+| `row_lookup` | `+0x04` | 每个贴图列的绘制遮挡基线 |
+
+前两套遮罩按行优先排列，非零值表示占用。原版
+`sub_451060/sub_451090` 使用当前 actor 格坐标和 primary triplet 计算遮罩
+左上角：
+
+```text
+mask_left = actor_cell_x - trunc(primary.x / cell_width)
+mask_top  = actor_cell_y - trunc(primary.z / cell_height)
+```
+
+随后 `sub_451B70/sub_451FA0/sub_452360` 分别增补、登记和移除遮罩。
+Remake 现在会在站立、行走、奔跑、匍匐、攻击、主动动作及朝向改变时，把
+当前组的两套遮罩原子替换到动态 Layer 3/Layer 2 overlay；替换会去重、重绑
+目标格预留，并清除旧动作/旧朝向留下的 ghost cell。没有合法 lookup 元数据
+时才沿用 VWF scene 足印。`row_lookup` 已完整保留并确认是
+`sub_44D980/sub_44E2D0` 的逐列排序基线；它需要把宽 SPR 分列参与 normal
+render queue，仍归入后续多层/逐列遮挡像素校准，而不能误用于碰撞。
+
+三个 triplet 的 middle 分量也全部保留。980 个真实 SPR 的 primary/tertiary
+middle 均为 0；secondary middle 在 1,542/2,775 个组中非零，但已确认的
+2D actor 移动路径只读取 secondary 的第 0/2 分量。它不是 Layer 2/Layer 3
+遮罩锚点，也不能臆测成额外平面速度；在发现明确消费者前保持兼容元数据。
+
 ### 动作与方向序列号
 
 frame group 的 `parameters[0]` 已确认是 Intuition Engine 的动作/方向序列号。原程序的两个查找表与 980 个资源的全量审计一致：
@@ -453,9 +487,10 @@ char gbk_name[256]
 
 1. DBL 精灵元素数组与实体足印、交互区域之间的关系；
 2. SLIST 扩展数组、L4 在其他工具/版本中的用法，以及 L5 的编辑器写入流程；
-3. primary/tertiary 的投射锚点和 secondary 第 0/2 分量的 60 Hz
-   角色移动已经由原程序路径与 MOD 轨迹确认并接入；仍需研究动作过渡、
-   triplet 中间分量和 lookup 数组的其他语义；
+3. primary/tertiary 的投射锚点、secondary 第 0/2 分量的 60 Hz
+   角色移动，以及 first/second lookup 的动态 Layer 3/Layer 2 足印已经由
+   原程序路径与 MOD 轨迹确认并接入；仍需研究全部动作过渡、secondary
+   middle 的非 2D 消费者，以及 row lookup 的逐列像素遮挡校准；
 4. 射击、救援、任务击毙/掉落、带拾取者的物品、爆破/占点和出口已经接入通用任务运行时；m006/m008/m009/m011 稳定/修复双规则、必要队员/护送者、m010 四区存在性和七关炸药策略已经定案，仍需校准触发节奏和演出；
 5. 基础攻击/友军死亡警报已经接入；仍需研究声音遮挡、尸体发现、难度、剧情对白、镜头演出和存档格式。
 

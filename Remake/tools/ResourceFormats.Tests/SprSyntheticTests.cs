@@ -20,6 +20,18 @@ internal static class SprSyntheticTests
         Equal(1, sprite.Groups[0].SecondLookup.Count, "SPR1 second lookup size", ref checks);
         Equal(1, sprite.Groups[0].RowLookup.Count, "SPR1 row lookup size", ref checks);
         True(
+            ReferenceEquals(
+                sprite.Groups[0].MovementLookup,
+                sprite.Groups[0].FirstLookup) &&
+            ReferenceEquals(
+                sprite.Groups[0].LineOfSightLookup,
+                sprite.Groups[0].SecondLookup) &&
+            ReferenceEquals(
+                sprite.Groups[0].DrawOrderRowLookup,
+                sprite.Groups[0].RowLookup),
+            "SPR1 lookup aliases expose Layer 3, Layer 2, and draw-order semantics",
+            ref checks);
+        True(
             sprite.Groups[0].PrimaryTriplet.SequenceEqual([2, 0, 2]),
             "SPR1 primary triplet semantic order",
             ref checks);

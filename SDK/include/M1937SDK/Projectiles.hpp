@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "Sprite.hpp"
 #include "Types.hpp"
 
 namespace m1937::sdk {
@@ -50,6 +51,9 @@ static_assert(offsetof(RuntimeProjectileV1, arc_coefficient) == 0x2C);
 static_assert(offsetof(RuntimeProjectileV1, owner_actor_address) == 0x40);
 
 namespace projectile {
+
+// Source-compatible alias for SDK releases that exposed this type here.
+using SpriteTriplet = m1937::sdk::SpriteTriplet;
 
 inline constexpr std::int32_t cell_width = 32;
 inline constexpr std::int32_t cell_height = 16;
@@ -107,12 +111,6 @@ inline constexpr std::array<AttackRule, 6> attack_rules{{
 inline constexpr std::int32_t explosion_damage = 128;
 inline constexpr SizeI32 explosion_ellipse{128, 64};
 inline constexpr std::int32_t explosion_alert_radius = 800;
-
-struct SpriteTriplet final {
-    std::int32_t x;
-    std::int32_t middle;
-    std::int32_t z;
-};
 
 constexpr std::int32_t owner_launch_x_offset(
     SpriteTriplet primary,

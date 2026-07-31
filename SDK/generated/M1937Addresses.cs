@@ -18,6 +18,17 @@ namespace Mission1937.SDK.Generated
         public const long DirectInputPoll = 0x00048E40L;
         public const long OriginalWorldInputController = 0x0003E050L;
         public const long CursorSetSerial = 0x0001C060L;
+        public const long LoadSpriteFrameGroup = 0x00027560L;
+        public const long GetSpriteMovementLookup = 0x0001C690L;
+        public const long GetSpriteLineOfSightLookup = 0x0001C6A0L;
+        public const long GetSpriteLookupColumns = 0x0001C760L;
+        public const long GetSpriteLookupRows = 0x0001C770L;
+        public const long GetSpriteDrawOrderRow = 0x0001C780L;
+        public const long ActorLookupOriginX = 0x00051060L;
+        public const long ActorLookupOriginY = 0x00051090L;
+        public const long RegisterActorLookupIfVacant = 0x00051B70L;
+        public const long RegisterActorLookup = 0x00051FA0L;
+        public const long UnregisterActorLookup = 0x00052360L;
         public const long RightDragSelection = 0x0004C800L;
         public const long SmoothScroll = 0x0004C9B0L;
         public const long WorldInputDispatch = 0x0004CB80L;

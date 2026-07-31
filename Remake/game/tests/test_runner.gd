@@ -331,6 +331,58 @@ func _init() -> void:
 		"schema 3 SPR manifests expose corrected runtime triplet semantics directly",
 		failures,
 	)
+	var lookup_source := {
+		"parameters": [0, 0, 0, 0, 0, 3, 3, 0, 0],
+		"primary_triplet": [33, 0, 17],
+		"first_lookup": [0, 0, 0, 0, 1, 0, 0, 1, 0],
+		"second_lookup": [0, 0, 0, 1, 0, 0, 0, 0, 0],
+		"row_lookup": [11, 22, 33],
+	}
+	var lookup_tables: Dictionary = (
+		IMPORTED_SPRITE_ANIMATION.normalized_lookup_tables(lookup_source)
+	)
+	var runtime_lookup_group := {
+		"lookup_dimensions": lookup_tables.get("dimensions"),
+		"primary_triplet": lookup_source["primary_triplet"],
+		"movement_lookup": lookup_tables.get("movement", []),
+		"sight_lookup": lookup_tables.get("sight", []),
+	}
+	expect(
+		(
+			lookup_tables.get("dimensions") == Vector2i(3, 3)
+			and lookup_tables.get("draw_order_rows", []) == [11, 22, 33]
+			and (
+				IMPORTED_SPRITE_ANIMATION.lookup_footprint_offsets(
+					runtime_lookup_group,
+					"movement_lookup",
+					Vector2i(32, 16),
+				)
+				== [Vector2i.ZERO, Vector2i(0, 1)]
+			)
+			and (
+				IMPORTED_SPRITE_ANIMATION.lookup_footprint_offsets(
+					runtime_lookup_group,
+					"sight_lookup",
+					Vector2i(32, 16),
+				)
+				== [Vector2i(-1, 0)]
+			)
+		),
+		"SPR lookups preserve draw baselines and recover exact Layer 3/Layer 2 offsets",
+		failures,
+	)
+	expect(
+		IMPORTED_SPRITE_ANIMATION.normalized_lookup_tables(
+			{
+				"parameters": [0, 0, 0, 0, 0, 2, 2],
+				"first_lookup": [1],
+				"second_lookup": [1, 1, 1, 1],
+				"row_lookup": [0, 0],
+			}
+		).is_empty(),
+		"SPR lookup dimensions reject truncated masks",
+		failures,
+	)
 
 	var movement_layer := PackedInt64Array()
 	movement_layer.resize(7 * 5)
@@ -1538,6 +1590,86 @@ func _init() -> void:
 			)
 		),
 		"removing a dynamic actor clears its current sight occupancy without a ghost",
+		failures,
+	)
+	var mask_navigation: NavigationGridData = NAVIGATION_GRID_DATA.create_for_tests(
+		5,
+		3,
+		Vector2i(32, 16),
+		PackedInt64Array(
+			[
+				0, 0, 0, 0, 0,
+				0, 0, 0, 0, 0,
+				0, 0, 0, 0, 0,
+			]
+		),
+	)
+	var mask_grid: RefCounted = DYNAMIC_OCCUPANCY_GRID.new()
+	mask_grid.configure(mask_navigation)
+	mask_grid.register_scene(
+		80,
+		mask_navigation.cell_to_world(Vector2i(2, 1)),
+	)
+	mask_grid.finalize_registration()
+	expect(
+		(
+			mask_grid.source_movement_blocked_bits.size() == 15
+			and mask_grid.source_movement_blocked_bits.count(1) == 0
+		),
+		"dynamic footprint clearance uses a complete compact mirror of current Layer 3 solids",
+		failures,
+	)
+	var mask_path: PackedVector2Array = mask_grid.find_path_for_scene(
+		80,
+		mask_navigation.cell_to_world(Vector2i(2, 1)),
+		mask_navigation.cell_to_world(Vector2i(4, 1)),
+	)
+	var wide_movement: Array[Vector2i] = [
+		Vector2i(-1, 0),
+		Vector2i.ZERO,
+		Vector2i.ZERO,
+	]
+	var tall_sight: Array[Vector2i] = [
+		Vector2i.ZERO,
+		Vector2i(0, -1),
+	]
+	expect(
+		(
+			not mask_path.is_empty()
+			and mask_grid.update_scene_footprint(
+				80,
+				wide_movement,
+				tall_sight,
+			)
+			and mask_grid.runtime_movement_owner(Vector2i(1, 1)) == 80
+			and mask_grid.runtime_movement_owner(Vector2i(2, 1)) == 80
+			and mask_grid.goal_owners.get(Vector2i(3, 1), -1) == 80
+			and mask_grid.goal_owners.get(Vector2i(4, 1), -1) == 80
+			and (
+				(mask_grid.actors[80] as Dictionary)["movement_offsets"]
+				as Array[Vector2i]
+			) == [Vector2i(-1, 0), Vector2i.ZERO]
+		),
+		"an authored SPR footprint replaces the fallback mask and rebinds its reserved goal",
+		failures,
+	)
+	var shifted_movement: Array[Vector2i] = [Vector2i(0, 1)]
+	var shifted_sight: Array[Vector2i] = [Vector2i(-1, 0)]
+	expect(
+		(
+			mask_grid.update_scene_footprint(
+				80,
+				shifted_movement,
+				shifted_sight,
+			)
+			and mask_grid.runtime_movement_owner(Vector2i(1, 1)) == -1
+			and mask_grid.runtime_movement_owner(Vector2i(2, 1)) == -1
+			and mask_grid.runtime_movement_owner(Vector2i(2, 2)) == 80
+			and not mask_grid.sight_owners.has(Vector2i(2, 0))
+			and mask_grid.sight_owners.has(Vector2i(1, 1))
+			and mask_grid.sprite_footprint_update_count == 2
+		),
+		"action/direction footprint replacement removes movement and sight ghosts atomically",
 		failures,
 	)
 	var evidence_movement := PackedInt64Array([0, 1, 0])

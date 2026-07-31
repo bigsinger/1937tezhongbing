@@ -17,7 +17,23 @@ public sealed record SprFrameGroup(
     IReadOnlyList<int> SecondLookup,
     IReadOnlyList<int> RowLookup,
     int TrailingValue,
-    IReadOnlyList<IBlockImage> Frames);
+    IReadOnlyList<IBlockImage> Frames)
+{
+    /// <summary>
+    /// Row-major Layer 3 movement-occupancy mask used by the original actor grid.
+    /// </summary>
+    public IReadOnlyList<int> MovementLookup => FirstLookup;
+
+    /// <summary>
+    /// Row-major Layer 2 line-of-sight-occupancy mask used by the original actor grid.
+    /// </summary>
+    public IReadOnlyList<int> LineOfSightLookup => SecondLookup;
+
+    /// <summary>
+    /// Per-column visual baseline used to interleave normal render-queue sprites.
+    /// </summary>
+    public IReadOnlyList<int> DrawOrderRowLookup => RowLookup;
+}
 
 /// <summary>
 /// Reads all three SPR1 container variants used by Mission 1937.

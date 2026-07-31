@@ -14,6 +14,7 @@
 #include "Patch.hpp"
 #include "Runtime.hpp"
 #include "RuntimeTypes.hpp"
+#include "Sprite.hpp"
 #include "Projectiles.hpp"
 #include "SpecialActions.hpp"
 #include "PluginABI.hpp"

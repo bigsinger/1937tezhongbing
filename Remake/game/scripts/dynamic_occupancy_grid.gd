@@ -26,9 +26,15 @@ var source_scene_footprints: Dictionary = {}
 var movement_owners: Dictionary = {}
 var sight_owners: Dictionary = {}
 var goal_owners: Dictionary = {}
+var goal_origin_by_scene: Dictionary = {}
 var footprint_blocked_origins: Dictionary = {}
 var footprint_blocked_origin_lookups: Dictionary = {}
 var footprint_offsets_by_key: Dictionary = {}
+## Hot footprint-cache construction must not repeatedly cross the
+## NavigationGridData/GDScript call boundary for every cell and every mask
+## component. This byte grid mirrors the current authored L3 solid state and
+## is updated incrementally when a door/source footprint changes.
+var source_movement_blocked_bits := PackedByteArray()
 var footprint_clearance_precompute_usec := 0
 var footprint_clearance_incremental_usec := 0
 var prewarmed_paths: Dictionary = {}
@@ -46,6 +52,7 @@ var last_path_query_elapsed_usec := 0
 var path_query_profiles: Dictionary = {}
 var dense_path_fallback_count := 0
 var relocation_rejection_count := 0
+var sprite_footprint_update_count := 0
 
 
 func configure(source_navigation: RefCounted) -> void:
@@ -57,9 +64,11 @@ func configure(source_navigation: RefCounted) -> void:
 	movement_owners.clear()
 	sight_owners.clear()
 	goal_owners.clear()
+	goal_origin_by_scene.clear()
 	footprint_blocked_origins.clear()
 	footprint_blocked_origin_lookups.clear()
 	footprint_offsets_by_key.clear()
+	source_movement_blocked_bits.clear()
 	footprint_clearance_precompute_usec = 0
 	footprint_clearance_incremental_usec = 0
 	prewarmed_paths.clear()
@@ -77,6 +86,7 @@ func configure(source_navigation: RefCounted) -> void:
 	path_query_profiles.clear()
 	dense_path_fallback_count = 0
 	relocation_rejection_count = 0
+	sprite_footprint_update_count = 0
 
 
 func register_scene(
@@ -142,6 +152,7 @@ func finalize_registration() -> void:
 		sight_cells.append(cell_value as Vector2i)
 	sight_cells.sort()
 	navigation.prepare_astar(scene_indices, movement_cells, sight_cells)
+	_rebuild_source_movement_blocked_bits()
 	prewarmed_paths.clear()
 	_precompute_footprint_clearance()
 
@@ -190,6 +201,7 @@ func set_source_scene_disabled(scene_index: int, disabled: bool) -> bool:
 			sight_release_cells,
 		)
 	)
+	_refresh_source_movement_blocked_bits(changed_cells)
 	_refresh_footprint_clearance_for_cells(changed_cells)
 	# Opening a door can only add shorter alternatives, so every existing
 	# authored path remains valid. Closing can invalidate cached geometry and
@@ -224,6 +236,66 @@ func unregister_scene(scene_index: int, keep_source_disabled: bool = true) -> vo
 	_clear_goal(scene_index)
 	if not keep_source_disabled:
 		disabled_source_scenes.erase(scene_index)
+
+
+func update_scene_footprint(
+	scene_index: int,
+	movement_offsets: Array[Vector2i],
+	sight_offsets: Array[Vector2i],
+) -> bool:
+	if navigation == null or not actors.has(scene_index):
+		return false
+	var normalized_movement := _normalized_footprint_offsets(movement_offsets)
+	var normalized_sight := _normalized_footprint_offsets(sight_offsets)
+	var actor := actors[scene_index] as Dictionary
+	var previous_movement := actor["movement_offsets"] as Array[Vector2i]
+	var previous_sight := actor["sight_offsets"] as Array[Vector2i]
+	if (
+		previous_movement == normalized_movement
+		and previous_sight == normalized_sight
+	):
+		return true
+
+	var origin := actor["origin"] as Vector2i
+	var reserved_goal: Variant = goal_origin_by_scene.get(scene_index)
+	_remove_footprint(
+		movement_owners,
+		scene_index,
+		origin,
+		previous_movement,
+	)
+	_remove_footprint(
+		sight_owners,
+		scene_index,
+		origin,
+		previous_sight,
+	)
+	_clear_goal(scene_index)
+	actor["movement_offsets"] = normalized_movement
+	actor["sight_offsets"] = normalized_sight
+	actors[scene_index] = actor
+	_add_footprint(
+		movement_owners,
+		scene_index,
+		origin,
+		normalized_movement,
+	)
+	_add_footprint(
+		sight_owners,
+		scene_index,
+		origin,
+		normalized_sight,
+	)
+	if reserved_goal is Vector2i:
+		_reserve_goal_origin(
+			scene_index,
+			normalized_movement,
+			reserved_goal as Vector2i,
+		)
+	if normalized_movement.size() > 1:
+		_blocked_origins_for_offsets(normalized_movement)
+	sprite_footprint_update_count += 1
+	return true
 
 
 func find_path_for_scene(
@@ -540,6 +612,15 @@ func _reserve_path_goal(
 	if path.is_empty():
 		return
 	var goal_origin: Vector2i = navigation.world_to_cell(path[-1])
+	_reserve_goal_origin(scene_index, movement_offsets, goal_origin)
+
+
+func _reserve_goal_origin(
+	scene_index: int,
+	movement_offsets: Array[Vector2i],
+	goal_origin: Vector2i,
+) -> void:
+	goal_origin_by_scene[scene_index] = goal_origin
 	for offset: Vector2i in movement_offsets:
 		goal_owners[goal_origin + offset] = scene_index
 
@@ -810,11 +891,33 @@ func _blocked_origins_for_offsets(
 		)
 	var blocked: Array[Vector2i] = []
 	var blocked_lookup: Dictionary = {}
+	var width: int = navigation.dimensions.x
+	var height: int = navigation.dimensions.y
+	var has_fast_source_grid := (
+		source_movement_blocked_bits.size() == width * height
+	)
 	for y: int in range(navigation.dimensions.y):
 		for x: int in range(navigation.dimensions.x):
 			var candidate := Vector2i(x, y)
 			for offset: Vector2i in offsets:
-				if _source_movement_blocked(candidate + offset):
+				var footprint_cell := candidate + offset
+				var source_blocked := (
+					footprint_cell.x < 0
+					or footprint_cell.y < 0
+					or footprint_cell.x >= width
+					or footprint_cell.y >= height
+				)
+				if not source_blocked:
+					if has_fast_source_grid:
+						source_blocked = (
+							source_movement_blocked_bits[
+								footprint_cell.y * width + footprint_cell.x
+							]
+							!= 0
+						)
+					else:
+						source_blocked = _source_movement_blocked(footprint_cell)
+				if source_blocked:
 					blocked.append(candidate)
 					blocked_lookup[candidate] = true
 					break
@@ -874,6 +977,20 @@ static func _movement_offsets_cache_key(
 	for offset: Vector2i in offsets:
 		parts.append("%d,%d" % [offset.x, offset.y])
 	return ";".join(parts)
+
+
+static func _normalized_footprint_offsets(
+	offsets: Array[Vector2i],
+) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	var seen: Dictionary = {}
+	for offset: Vector2i in offsets:
+		if seen.has(offset):
+			continue
+		seen[offset] = true
+		result.append(offset)
+	result.sort()
+	return result
 
 
 func _add_footprint(
@@ -1034,7 +1151,63 @@ func _mark_temporary_solid(cell: Vector2i, changed_solids: Array[Vector2i]) -> v
 
 
 func _source_movement_blocked(cell: Vector2i) -> bool:
+	if navigation == null or not navigation.is_valid_cell(cell):
+		return true
+	var width: int = navigation.dimensions.x
+	var index := cell.y * width + cell.x
+	if (
+		index >= 0
+		and index < source_movement_blocked_bits.size()
+		and source_movement_blocked_bits.size()
+			== width * navigation.dimensions.y
+	):
+		return source_movement_blocked_bits[index] != 0
 	return navigation.is_movement_blocked(cell, disabled_source_scenes)
+
+
+func _rebuild_source_movement_blocked_bits() -> void:
+	source_movement_blocked_bits.clear()
+	if navigation == null:
+		return
+	var width: int = navigation.dimensions.x
+	var height: int = navigation.dimensions.y
+	if width <= 0 or height <= 0:
+		return
+	source_movement_blocked_bits.resize(width * height)
+	for y: int in range(height):
+		for x: int in range(width):
+			var cell := Vector2i(x, y)
+			source_movement_blocked_bits[y * width + x] = (
+				1
+				if navigation.is_movement_blocked(
+					cell,
+					disabled_source_scenes,
+				)
+				else 0
+			)
+
+
+func _refresh_source_movement_blocked_bits(
+	changed_cells: Array[Vector2i],
+) -> void:
+	if navigation == null or changed_cells.is_empty():
+		return
+	var width: int = navigation.dimensions.x
+	var height: int = navigation.dimensions.y
+	if source_movement_blocked_bits.size() != width * height:
+		_rebuild_source_movement_blocked_bits()
+		return
+	for cell: Vector2i in changed_cells:
+		if not navigation.is_valid_cell(cell):
+			continue
+		source_movement_blocked_bits[cell.y * width + cell.x] = (
+			1
+			if navigation.is_movement_blocked(
+				cell,
+				disabled_source_scenes,
+			)
+			else 0
+		)
 
 
 func _has_other_owner(owner_map: Dictionary, cell: Vector2i, scene_index: int) -> bool:
@@ -1148,3 +1321,4 @@ func _clear_goal(scene_index: int) -> void:
 			cells_to_clear.append(cell)
 	for cell: Vector2i in cells_to_clear:
 		goal_owners.erase(cell)
+	goal_origin_by_scene.erase(scene_index)

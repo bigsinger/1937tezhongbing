@@ -39,6 +39,24 @@ sort_key = current_world_y - sprite_y_offset + current_frame_layer_baseline
 
 当前实现修正了把整块庄稼地按 Y 放进人物队列的问题，也不再绘制人物到移动目标之间的黄色连线。关键修复不只在渲染端：`ImportedLevelData` 现在保留并校验转换结果中的 `database_header_values`。m000 真实资源回归确认 22 个 DBL 336/337 庄稼底图为 queue 1 固定背景、70 个 DBL 335 稻谷为 queue 0 正常基线对象；完整真实资产套件持续检查这些数量与队列约束。多层 SPR 的逐层 baseline 尚需继续做像素级对照；现在的单层静态对象以导出的 `reference_y` 为近似基线。
 
+### SPR 动态移动/视线足印
+
+`IEngineSpriteFrameGroup::Load`（`sub_427560`）把第一、第二 lookup 分别保存到
+frame group `+0x08/+0x0c`。`sub_41C690/sub_41C6A0` 取出两表，
+`sub_451B70/sub_451FA0/sub_452360` 的双层分支证明第一表写入 Layer 3
+移动网格、第二表写入 Layer 2 视线网格。遮罩尺寸来自
+`sub_41C760/sub_41C770`，均为行优先非零占位。
+
+`sub_451060` 用 `actor +0x108` 的当前格 X 减去
+`current frame group primary.x / cell_width`；`sub_451090` 对
+`actor +0x110`、`primary.z / cell_height` 做同样计算。x86 有符号整数除法
+向零截断。Remake 由此在每次 current serial（动作或朝向）改变时替换当前
+移动/视线遮罩，不再把 VWF 初始 scene 足印永久当作所有动作的足印。
+
+第三套 `row_lookup` 不是碰撞数据：`sub_44D980/sub_44E2D0` 为每个 SPR
+列建立 `world_y - primary.z + row_lookup[column]` 排序记录，用于正常深度
+队列的逐列遮挡。当前运行时已经保留该表；完整逐列切片绘制仍需像素基线。
+
 ## 原版键盘表
 
 原版通过 DirectInput 7.0 轮询键鼠，HUD 热键主分发位于 `sub_43E050`（`0x43E050`）。下表只写原版确证行为：

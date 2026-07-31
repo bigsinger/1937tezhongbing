@@ -674,9 +674,9 @@ internal static class OriginalAssetConverter
                 parameters = group.Parameters,
                 frame_tick_threshold = frameTickThreshold,
                 frame_hold_ticks = frameHoldTicks,
-                first_lookup = group.FirstLookup,
-                second_lookup = group.SecondLookup,
-                row_lookup = group.RowLookup,
+                first_lookup = group.MovementLookup,
+                second_lookup = group.LineOfSightLookup,
+                row_lookup = group.DrawOrderRowLookup,
                 trailing_value = group.TrailingValue,
                 frame_count = group.Frames.Count,
                 atlas = new

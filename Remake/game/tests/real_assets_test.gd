@@ -311,6 +311,36 @@ func validate_sprite_manifests() -> void:
 					% [directory_name, source_group_index]
 				),
 			)
+			var lookup_tables: Dictionary = (
+				IMPORTED_SPRITE_ANIMATION.normalized_lookup_tables(group)
+			)
+			var lookup_dimensions := (
+				lookup_tables.get("dimensions", Vector2i(-1, -1))
+				as Vector2i
+			)
+			expect(
+				(
+					not lookup_tables.is_empty()
+					and lookup_dimensions
+					== Vector2i(
+						int((group.get("parameters", []) as Array)[5]),
+						int((group.get("parameters", []) as Array)[6]),
+					)
+					and (
+						lookup_tables.get("movement", []) as Array
+					).size() == lookup_dimensions.x * lookup_dimensions.y
+					and (
+						lookup_tables.get("sight", []) as Array
+					).size() == lookup_dimensions.x * lookup_dimensions.y
+					and (
+						lookup_tables.get("draw_order_rows", []) as Array
+					).size() == lookup_dimensions.x
+				),
+				(
+					"sprite %s group %d preserves complete movement, sight, and draw-order lookups"
+					% [directory_name, source_group_index]
+				),
+			)
 			var parameters: Array = group.get("parameters", []) as Array
 			var threshold := int(group.get("frame_tick_threshold", -1))
 			var hold_ticks := int(group.get("frame_hold_ticks", -1))
@@ -583,6 +613,11 @@ func validate_runtime_actor_sprite_actions() -> void:
 				var timing: Dictionary = IMPORTED_SPRITE_ANIMATION.group_timing(
 					source_group
 				)
+				var source_lookup_tables: Dictionary = (
+					IMPORTED_SPRITE_ANIMATION.normalized_lookup_tables(
+						source_group
+					)
+				)
 				expect(
 					(
 						int(runtime_group.get("serial_id", -1))
@@ -595,6 +630,17 @@ func validate_runtime_actor_sprite_actions() -> void:
 						== source_group.get("secondary_triplet", [])
 						and runtime_group.get("tertiary_triplet", [])
 						== source_group.get("tertiary_triplet", [])
+						and runtime_group.get("lookup_dimensions")
+						== source_lookup_tables.get("dimensions")
+						and runtime_group.get("movement_lookup", [])
+						== source_lookup_tables.get("movement", [])
+						and runtime_group.get("sight_lookup", [])
+						== source_lookup_tables.get("sight", [])
+						and runtime_group.get("draw_order_row_lookup", [])
+						== source_lookup_tables.get("draw_order_rows", [])
+						and not str(
+							runtime_group.get("lookup_profile_key", "")
+						).is_empty()
 						and (runtime_group.get("anchor", Vector2.ZERO) as Vector2)
 						== Vector2(float(primary[0]), float(primary[2]))
 						and int(runtime_group.get("frame_hold_ticks", -1))
@@ -603,7 +649,7 @@ func validate_runtime_actor_sprite_actions() -> void:
 						== (source_group.get("frames", []) as Array).size()
 					),
 					(
-						"runtime actor %s action %s direction %d preserves serial, triplets, anchor, timing, and frames"
+						"runtime actor %s action %s direction %d preserves serial, triplets, lookups, anchor, timing, and frames"
 						% [
 							preview_path.get_file(),
 							action_key,

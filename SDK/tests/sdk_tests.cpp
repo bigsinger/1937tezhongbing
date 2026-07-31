@@ -461,6 +461,25 @@ int main(int argc, char** argv) {
             "projectile path/tick/parabola/SPR-anchor formulas mismatch",
             checks);
         require(
+            m1937::sdk::sprite_lookup_top_left(
+                10,
+                20,
+                m1937::sdk::SpriteTriplet{33, 7, 17}) ==
+                m1937::sdk::SpriteLookupOffset{9, 19} &&
+                m1937::sdk::sprite_lookup_offset(
+                    4,
+                    m1937::sdk::SpriteLookupDimensions{3, 3},
+                    m1937::sdk::SpriteTriplet{33, 7, 17}) ==
+                    m1937::sdk::SpriteLookupOffset{0, 0} &&
+                m1937::sdk::sprite_lookup_offset(
+                    7,
+                    m1937::sdk::SpriteLookupDimensions{3, 3},
+                    m1937::sdk::SpriteTriplet{33, 7, 17}) ==
+                    m1937::sdk::SpriteLookupOffset{0, 1} &&
+                sizeof(m1937::sdk::SpriteFrameGroupRuntime32) == 0x54,
+            "SPR lookup anchor, row-major mask, or runtime layout mismatch",
+            checks);
+        require(
             m1937::sdk::rva::create_projectile_effect != 0 &&
                 m1937::sdk::rva::original_endpoint_from_angle != 0 &&
                 m1937::sdk::rva::configure_projectile_path != 0 &&
@@ -474,6 +493,21 @@ int main(int argc, char** argv) {
                 m1937::sdk::rva::configure_projectile_path !=
                     m1937::sdk::rva::update_projectile_collision,
             "projectile RVA catalog mismatch", checks);
+        require(
+            m1937::sdk::rva::load_sprite_frame_group != 0 &&
+                m1937::sdk::rva::get_sprite_movement_lookup != 0 &&
+                m1937::sdk::rva::get_sprite_line_of_sight_lookup != 0 &&
+                m1937::sdk::rva::get_sprite_draw_order_row != 0 &&
+                m1937::sdk::rva::actor_lookup_origin_x != 0 &&
+                m1937::sdk::rva::actor_lookup_origin_y != 0 &&
+                m1937::sdk::rva::register_actor_lookup != 0 &&
+                m1937::sdk::rva::unregister_actor_lookup != 0 &&
+                m1937::sdk::rva::get_sprite_movement_lookup !=
+                    m1937::sdk::rva::get_sprite_line_of_sight_lookup &&
+                m1937::sdk::rva::register_actor_lookup !=
+                    m1937::sdk::rva::unregister_actor_lookup,
+            "SPR lookup RVA catalog mismatch",
+            checks);
         }
         require(
             m1937::sdk::rva::enable_sight_observation_mode != 0 &&

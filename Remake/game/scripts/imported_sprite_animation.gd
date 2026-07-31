@@ -114,6 +114,9 @@ static func load_action_groups(
 		var primary: Variant = runtime_triplets["primary"]
 		var secondary: Variant = runtime_triplets["secondary"]
 		var tertiary: Variant = runtime_triplets["tertiary"]
+		var lookup_tables := normalized_lookup_tables(group)
+		if lookup_tables.is_empty():
+			return []
 		var raw_frames: Variant = group.get("frames")
 		if (
 			not raw_frames is Array
@@ -147,6 +150,25 @@ static func load_action_groups(
 			"primary_triplet": (primary as Array).duplicate(),
 			"secondary_triplet": (secondary as Array).duplicate(),
 			"tertiary_triplet": (tertiary as Array).duplicate(),
+			# M1937.exe sub_451B70/sub_451FA0/sub_452360 apply the
+			# first table to Layer 3 (movement) and the second table to
+			# Layer 2 (line of sight). The masks are row-major and use
+			# parameters[5]/[6] as columns/rows. RowLookup is a separate
+			# per-column draw-order baseline used by sub_44D980/sub_44E2D0.
+			"lookup_dimensions": lookup_tables["dimensions"],
+			"movement_lookup": (
+				lookup_tables["movement"] as Array[int]
+			).duplicate(),
+			"sight_lookup": (
+				lookup_tables["sight"] as Array[int]
+			).duplicate(),
+			"draw_order_row_lookup": (
+				lookup_tables["draw_order_rows"] as Array[int]
+			).duplicate(),
+			"lookup_profile_key": "%s#%d" % [
+				manifest_path,
+				int(group.get("group_index", -1)),
+			],
 			"frame_tick_threshold": int(timing["frame_tick_threshold"]),
 			"frame_hold_ticks": int(timing["frame_hold_ticks"]),
 			"frames": frames,
@@ -295,6 +317,128 @@ static func normalized_runtime_triplets(
 		"secondary": (secondary as Array).duplicate(),
 		"tertiary": (tertiary as Array).duplicate(),
 	}
+
+
+static func normalized_lookup_tables(group: Dictionary) -> Dictionary:
+	var parameters: Variant = group.get("parameters")
+	if not parameters is Array or (parameters as Array).size() < 7:
+		return {}
+	var columns_value: Variant = (parameters as Array)[5]
+	var rows_value: Variant = (parameters as Array)[6]
+	if (
+		not is_integral_number(columns_value)
+		or not is_integral_number(rows_value)
+	):
+		return {}
+	var columns := int(columns_value)
+	var rows := int(rows_value)
+	if columns < 0 or columns > 4096 or rows < 0 or rows > 4096:
+		return {}
+	var lookup_length := columns * rows
+	var raw_movement: Variant = group.get("first_lookup")
+	var raw_sight: Variant = group.get("second_lookup")
+	var raw_draw_order_rows: Variant = group.get("row_lookup")
+	if (
+		not raw_movement is Array
+		or (raw_movement as Array).size() != lookup_length
+		or not raw_sight is Array
+		or (raw_sight as Array).size() != lookup_length
+		or not raw_draw_order_rows is Array
+		or (raw_draw_order_rows as Array).size() != columns
+	):
+		return {}
+	var movement := normalized_integer_array(
+		raw_movement,
+		lookup_length,
+	)
+	var sight := normalized_integer_array(
+		raw_sight,
+		lookup_length,
+	)
+	var draw_order_rows := normalized_integer_array(
+		raw_draw_order_rows,
+		columns,
+	)
+	if (
+		movement.size() != lookup_length
+		or sight.size() != lookup_length
+		or draw_order_rows.size() != columns
+	):
+		return {}
+	return {
+		"dimensions": Vector2i(columns, rows),
+		"movement": movement,
+		"sight": sight,
+		"draw_order_rows": draw_order_rows,
+	}
+
+
+static func normalized_integer_array(
+	value: Variant,
+	expected_size: int,
+) -> Array[int]:
+	var result: Array[int] = []
+	if (
+		expected_size < 0
+		or not value is Array
+		or (value as Array).size() != expected_size
+	):
+		return result
+	for component: Variant in value as Array:
+		if not is_integral_number(component):
+			result.clear()
+			return result
+		result.append(int(component))
+	return result
+
+
+static func lookup_footprint_offsets(
+	group: Dictionary,
+	lookup_key: String,
+	cell_size: Vector2i,
+) -> Array[Vector2i]:
+	var offsets: Array[Vector2i] = []
+	if (
+		lookup_key not in ["movement_lookup", "sight_lookup"]
+		or cell_size.x <= 0
+		or cell_size.y <= 0
+	):
+		return offsets
+	var dimensions_value: Variant = group.get("lookup_dimensions")
+	var primary_value: Variant = group.get("primary_triplet")
+	var lookup_value: Variant = group.get(lookup_key)
+	if (
+		not dimensions_value is Vector2i
+		or not triplet_is_integral(primary_value)
+		or not lookup_value is Array
+	):
+		return offsets
+	var dimensions := dimensions_value as Vector2i
+	var lookup := lookup_value as Array
+	if (
+		dimensions.x < 0
+		or dimensions.y < 0
+		or lookup.size() != dimensions.x * dimensions.y
+	):
+		return offsets
+	var primary := primary_value as Array
+	# IEngineActor sub_451060/sub_451090 subtract the current primary
+	# triplet's X/Z anchor in grid cells before iterating the lookup mask.
+	# int(float(...)) deliberately matches signed C/C++ truncation toward
+	# zero rather than floor division.
+	var anchor_cells := Vector2i(
+		int(float(int(primary[0])) / float(cell_size.x)),
+		int(float(int(primary[2])) / float(cell_size.y)),
+	)
+	for index: int in range(lookup.size()):
+		if not is_integral_number(lookup[index]) or int(lookup[index]) == 0:
+			continue
+		offsets.append(
+			Vector2i(index % dimensions.x, index / dimensions.x)
+			- anchor_cells
+		)
+	offsets.sort()
+	return offsets
 
 
 static func group_frame_layout_is_valid(group: Dictionary, raw_frames: Array) -> bool:
