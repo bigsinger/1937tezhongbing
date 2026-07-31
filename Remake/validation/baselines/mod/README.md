@@ -16,6 +16,17 @@ hash-locked `repository-mod-12-level-20260729` content profile.
 - records the tree-edge detour `(16,34) -> (9,8)`, including the original
   one-open-side diagonal rule and early return to the prior movement corridor.
 
+`m000-player-obstacle-route-v1.json` through
+`m011-player-obstacle-route-v1.json` extend the same process-private probe to
+one identity-resolved player and an outbound/return obstacle route in every
+formal level. Each observed checkpoint contains regularly sampled world
+positions. `Compare-RuntimeParityTrace.ps1 -CompareObservedRouteShape` strictly
+checks three directed point-to-polyline distances: stable-MOD observations to
+the Remake planned path, Remake observations to stable-MOD observations, and
+Remake observations to the Remake planned path. The gate is 4 pixels; the
+audited twelve-level worst case is 3.420 pixels. Missing samples or planned
+points fail rather than falling back to endpoint-only comparison.
+
 The MOD's compact runtime object array is not the VWF scene array. Only an
 identity that has a recovered, reviewable mapping may be assigned a VWF
 `scene_index`; unproven enemy identities are deliberately excluded from this

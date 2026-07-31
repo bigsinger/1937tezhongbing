@@ -302,6 +302,7 @@ if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
             -SceneIndices ([int]$movementRoute.scene) `
             -IgnoreHitPoints `
             -IgnoreAliveState `
+            -CompareObservedRouteShape `
             -ElapsedToleranceMs 1800 `
             -OutputJson (
                 Join-Path $parityProbeOutput (

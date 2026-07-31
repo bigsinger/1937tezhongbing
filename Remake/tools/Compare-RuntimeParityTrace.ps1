@@ -14,10 +14,13 @@ param(
     [double]$CameraTolerance = 24,
     [ValidateRange(0, 600000)]
     [double]$ElapsedToleranceMs = 1500,
+    [ValidateRange(0, 4096)]
+    [double]$RouteShapeTolerance = 4,
     [int[]]$SceneIndices = @(),
     [switch]$IgnoreHitPoints,
     [switch]$IgnoreAliveState,
     [switch]$RequireExactActorSet,
+    [switch]$CompareObservedRouteShape,
     [switch]$AllowMismatch
 )
 
@@ -42,6 +45,59 @@ function Point-Distance {
     $x = [double]$First[0] - [double]$Second[0]
     $y = [double]$First[1] - [double]$Second[1]
     return [Math]::Sqrt($x * $x + $y * $y)
+}
+
+function Point-Segment-Distance {
+    param($Point, $SegmentStart, $SegmentEnd)
+    if (@($Point).Count -ne 2 -or
+        @($SegmentStart).Count -ne 2 -or
+        @($SegmentEnd).Count -ne 2) {
+        return [double]::PositiveInfinity
+    }
+    $pointX = [double]$Point[0]
+    $pointY = [double]$Point[1]
+    $startX = [double]$SegmentStart[0]
+    $startY = [double]$SegmentStart[1]
+    $deltaX = [double]$SegmentEnd[0] - $startX
+    $deltaY = [double]$SegmentEnd[1] - $startY
+    $lengthSquared = $deltaX * $deltaX + $deltaY * $deltaY
+    if ($lengthSquared -le 0.0000001) {
+        return Point-Distance $Point $SegmentStart
+    }
+    $projection = (
+        (($pointX - $startX) * $deltaX) +
+        (($pointY - $startY) * $deltaY)
+    ) / $lengthSquared
+    $projection = [Math]::Max(0.0, [Math]::Min(1.0, $projection))
+    $projected = @(
+        ($startX + $projection * $deltaX)
+        ($startY + $projection * $deltaY)
+    )
+    return Point-Distance $Point $projected
+}
+
+function Maximum-Point-To-Polyline-Distance {
+    param($Points, $Polyline)
+    $pointList = @($Points)
+    $lineList = @($Polyline)
+    if ($pointList.Count -lt 1 -or $lineList.Count -lt 2) {
+        return [double]::PositiveInfinity
+    }
+    $maximum = 0.0
+    foreach ($point in $pointList) {
+        $minimum = [double]::PositiveInfinity
+        for ($index = 0; $index -lt $lineList.Count - 1; $index++) {
+            $distance = Point-Segment-Distance `
+                $point $lineList[$index] $lineList[$index + 1]
+            if ($distance -lt $minimum) {
+                $minimum = $distance
+            }
+        }
+        if ($minimum -gt $maximum) {
+            $maximum = $minimum
+        }
+    }
+    return $maximum
 }
 
 function Add-Mismatch {
@@ -92,6 +148,7 @@ function Compare-ExactField {
 $reference = Read-Trace $ReferenceTrace
 $candidate = Read-Trace $CandidateTrace
 $mismatches = [Collections.Generic.List[object]]::new()
+$routeShapeMetrics = [Collections.Generic.List[object]]::new()
 $sceneFilter = @{}
 foreach ($sceneIndex in @($SceneIndices | Sort-Object -Unique)) {
     $sceneFilter[[int]$sceneIndex] = $true
@@ -176,6 +233,114 @@ foreach ($referenceCheckpoint in $referenceCheckpoints) {
         $referenceCheckpoint.mission $candidateCheckpoint.mission 'id'
     Compare-ExactField $mismatches $checkpointId 'mission' `
         $referenceCheckpoint.mission $candidateCheckpoint.mission 'status'
+
+    if ($CompareObservedRouteShape -and
+        $checkpointId.EndsWith(
+            '_observed',
+            [StringComparison]::OrdinalIgnoreCase)) {
+        $commandedId = $checkpointId.Substring(
+            0,
+            $checkpointId.Length - '_observed'.Length) +
+            '_commanded'
+        $candidateCommanded = if (
+            $candidateById.ContainsKey($commandedId)) {
+            $candidateById[$commandedId]
+        }
+        else {
+            $null
+        }
+        $referenceObserved = if (
+            (Property-Exists $referenceCheckpoint 'tags') -and
+            (Property-Exists $referenceCheckpoint.tags 'observed_positions')) {
+            @($referenceCheckpoint.tags.observed_positions)
+        }
+        else {
+            @()
+        }
+        $candidateObserved = if (
+            (Property-Exists $candidateCheckpoint 'tags') -and
+            (Property-Exists $candidateCheckpoint.tags 'observed_positions')) {
+            @($candidateCheckpoint.tags.observed_positions)
+        }
+        else {
+            @()
+        }
+        $candidatePath = if (
+            $null -ne $candidateCommanded -and
+            (Property-Exists $candidateCommanded 'tags') -and
+            (Property-Exists $candidateCommanded.tags 'path')) {
+            @($candidateCommanded.tags.path)
+        }
+        else {
+            @()
+        }
+        if ($referenceObserved.Count -lt 2 -or
+            $candidateObserved.Count -lt 2 -or
+            $candidatePath.Count -lt 2) {
+            Add-Mismatch $mismatches $checkpointId `
+                'tags.observed_route_shape' `
+                @{
+                    reference_observed_minimum = 2
+                    candidate_observed_minimum = 2
+                    candidate_path_minimum = 2
+                } `
+                @{
+                    reference_observed = $referenceObserved.Count
+                    candidate_observed = $candidateObserved.Count
+                    candidate_path = $candidatePath.Count
+                } `
+                'required route-shape evidence'
+        }
+        else {
+            $referenceToCandidatePath =
+                Maximum-Point-To-Polyline-Distance `
+                    $referenceObserved $candidatePath
+            $candidateObservedToReference =
+                Maximum-Point-To-Polyline-Distance `
+                    $candidateObserved $referenceObserved
+            $candidateObservedToPath =
+                Maximum-Point-To-Polyline-Distance `
+                    $candidateObserved $candidatePath
+            $routeMetric = [pscustomobject][ordered]@{
+                checkpoint = $checkpointId
+                reference_observed_points = $referenceObserved.Count
+                candidate_observed_points = $candidateObserved.Count
+                candidate_path_points = $candidatePath.Count
+                reference_to_candidate_path_px = [Math]::Round(
+                    $referenceToCandidatePath,
+                    6)
+                candidate_observed_to_reference_px = [Math]::Round(
+                    $candidateObservedToReference,
+                    6)
+                candidate_observed_to_candidate_path_px = [Math]::Round(
+                    $candidateObservedToPath,
+                    6)
+            }
+            $routeShapeMetrics.Add($routeMetric)
+            foreach ($measurement in @(
+                [pscustomobject]@{
+                    path = 'tags.observed_positions.reference_to_candidate_path'
+                    value = $referenceToCandidatePath
+                },
+                [pscustomobject]@{
+                    path = 'tags.observed_positions.candidate_to_reference'
+                    value = $candidateObservedToReference
+                },
+                [pscustomobject]@{
+                    path = 'tags.observed_positions.candidate_to_candidate_path'
+                    value = $candidateObservedToPath
+                }
+            )) {
+                if ([double]$measurement.value -gt $RouteShapeTolerance) {
+                    Add-Mismatch $mismatches $checkpointId `
+                        ([string]$measurement.path) `
+                        "<= $RouteShapeTolerance" `
+                        ([Math]::Round([double]$measurement.value, 6)) `
+                        "directed point-to-polyline tolerance $RouteShapeTolerance px"
+                }
+            }
+        }
+    }
 
     $referenceActors = @($referenceCheckpoint.actors)
     $candidateActors = @($candidateCheckpoint.actors)
@@ -382,7 +547,10 @@ $result = [pscustomobject][ordered]@{
         ignore_hit_points = [bool]$IgnoreHitPoints
         ignore_alive_state = [bool]$IgnoreAliveState
         exact_actor_set = [bool]$RequireExactActorSet
+        compare_observed_route_shape = [bool]$CompareObservedRouteShape
+        route_shape_px = $RouteShapeTolerance
     }
+    route_shape_metrics = @($routeShapeMetrics)
     mismatches = @($mismatches)
 }
 

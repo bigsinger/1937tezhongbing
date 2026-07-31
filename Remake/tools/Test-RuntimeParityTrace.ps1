@@ -591,6 +591,74 @@ try {
             throw "The checked-in MOD trace is not self-consistent: $checkedBaseline"
         }
     }
+
+    $routeCandidatePath = Join-Path $root 'route-shape-candidate.json'
+    $routeCandidate = Get-Content -LiteralPath $movementBaselinePaths[0] `
+        -Raw -Encoding UTF8 | ConvertFrom-Json
+    $routeCandidate.runtime = 'remake'
+    $routeCandidate.trace_id = 'remake-m000-m000-player-obstacle-route-v1'
+    $routeCandidate.checkpoints[2].tags | Add-Member `
+        -NotePropertyName path `
+        -NotePropertyValue @(
+            $routeCandidate.checkpoints[3].tags.observed_positions)
+    $routeCandidate.checkpoints[4].tags | Add-Member `
+        -NotePropertyName path `
+        -NotePropertyValue @(
+            $routeCandidate.checkpoints[5].tags.observed_positions)
+    $routeCandidate | ConvertTo-Json -Depth 40 |
+        Set-Content -LiteralPath $routeCandidatePath -Encoding UTF8
+    $routePositive = & $compareScript `
+        -ReferenceTrace $movementBaselinePaths[0] `
+        -CandidateTrace $routeCandidatePath `
+        -SceneIndices 1436 `
+        -CompareObservedRouteShape
+    if (-not [bool]$routePositive.passed -or
+        @($routePositive.route_shape_metrics).Count -ne 2) {
+        throw 'Equivalent observed route geometry did not compare equal.'
+    }
+
+    $routeObservedMismatchPath = Join-Path $root `
+        'route-shape-observed-mismatch.json'
+    $routeObservedMismatch = Get-Content -LiteralPath $routeCandidatePath `
+        -Raw -Encoding UTF8 | ConvertFrom-Json
+    $routeObservedMismatch.checkpoints[3].tags.observed_positions[6][1] =
+        [double]$routeObservedMismatch.checkpoints[3].
+            tags.observed_positions[6][1] + 16.0
+    $routeObservedMismatch | ConvertTo-Json -Depth 40 |
+        Set-Content -LiteralPath $routeObservedMismatchPath -Encoding UTF8
+    $routeObservedNegative = & $compareScript `
+        -ReferenceTrace $movementBaselinePaths[0] `
+        -CandidateTrace $routeObservedMismatchPath `
+        -SceneIndices 1436 `
+        -CompareObservedRouteShape `
+        -AllowMismatch
+    if ([bool]$routeObservedNegative.passed -or
+        @($routeObservedNegative.mismatches.path) -notcontains
+            'tags.observed_positions.candidate_to_reference') {
+        throw 'Observed route-shape divergence was not detected.'
+    }
+
+    $routePlannedMismatchPath = Join-Path $root `
+        'route-shape-planned-mismatch.json'
+    $routePlannedMismatch = Get-Content -LiteralPath $routeCandidatePath `
+        -Raw -Encoding UTF8 | ConvertFrom-Json
+    foreach ($point in @($routePlannedMismatch.checkpoints[2].tags.path)) {
+        $point[1] = [double]$point[1] + 16.0
+    }
+    $routePlannedMismatch | ConvertTo-Json -Depth 40 |
+        Set-Content -LiteralPath $routePlannedMismatchPath -Encoding UTF8
+    $routePlannedNegative = & $compareScript `
+        -ReferenceTrace $movementBaselinePaths[0] `
+        -CandidateTrace $routePlannedMismatchPath `
+        -SceneIndices 1436 `
+        -CompareObservedRouteShape `
+        -AllowMismatch
+    if ([bool]$routePlannedNegative.passed -or
+        @($routePlannedNegative.mismatches.path) -notcontains
+            'tags.observed_positions.reference_to_candidate_path') {
+        throw 'Planned route-shape divergence was not detected.'
+    }
+
     $contactSelf = & $contactCompareScript `
         -ReferenceTrace $contactBaselinePath `
         -CandidateTrace $contactBaselinePath

@@ -1942,6 +1942,189 @@ func _init() -> void:
 		failures,
 	)
 
+	var corridor_cells := PackedInt64Array()
+	for corridor_y: int in range(4):
+		for _corridor_x: int in range(7):
+			corridor_cells.append(1 if corridor_y in [0, 3] else 0)
+	var corridor_navigation: NavigationGridData = (
+		NAVIGATION_GRID_DATA.create_for_tests(
+			7,
+			4,
+			Vector2i(32, 16),
+			corridor_cells,
+		)
+	)
+	var corridor_grid: RefCounted = DYNAMIC_OCCUPANCY_GRID.new()
+	corridor_grid.configure(corridor_navigation)
+	var corridor_first: Node2D = SQUAD_UNIT_SCRIPT.new()
+	var corridor_second: Node2D = SQUAD_UNIT_SCRIPT.new()
+	var corridor_first_start := corridor_navigation.cell_to_world(
+		Vector2i(1, 1)
+	)
+	var corridor_second_start := corridor_navigation.cell_to_world(
+		Vector2i(5, 1)
+	)
+	var corridor_empty_groups: Array[Dictionary] = []
+	corridor_first.configure(
+		"corridor-first",
+		Color.WHITE,
+		corridor_first_start,
+		null,
+		corridor_empty_groups,
+		corridor_empty_groups,
+		30,
+		corridor_grid,
+	)
+	corridor_second.configure(
+		"corridor-second",
+		Color.WHITE,
+		corridor_second_start,
+		null,
+		corridor_empty_groups,
+		corridor_empty_groups,
+		31,
+		corridor_grid,
+	)
+	corridor_first.move_speed = 96.0
+	corridor_second.move_speed = 96.0
+	corridor_first.blocked_replan_seconds = 0.05
+	corridor_second.blocked_replan_seconds = 0.05
+	corridor_grid.finalize_registration()
+	var corridor_first_path: PackedVector2Array = (
+		corridor_grid.find_path_for_scene(
+			30,
+			corridor_first_start,
+			corridor_second_start,
+		)
+	)
+	var corridor_second_path: PackedVector2Array = (
+		corridor_grid.find_path_for_scene(
+			31,
+			corridor_second_start,
+			corridor_first_start,
+		)
+	)
+	expect(
+		(
+			not corridor_first_path.is_empty()
+			and corridor_first_path[-1].is_equal_approx(
+				corridor_second_start
+			)
+			and not corridor_second_path.is_empty()
+			and corridor_second_path[-1].is_equal_approx(
+				corridor_first_start
+			)
+			and corridor_grid.deferred_dynamic_destination_count >= 2
+		),
+		(
+			"temporary actor reservations retain both true goals across a "
+			+ "statically connected narrow passage"
+		),
+		failures,
+	)
+	corridor_first.issue_path(corridor_first_path)
+	corridor_second.issue_path(corridor_second_path)
+	var corridor_swap_completed := false
+	var corridor_overlap_detected := false
+	var corridor_first_cell: Vector2i = corridor_grid.actor_cell(30)
+	var corridor_second_cell: Vector2i = corridor_grid.actor_cell(31)
+	var corridor_ticks := 0
+	var corridor_minimum_separation := INF
+	for corridor_tick: int in range(900):
+		corridor_ticks = corridor_tick + 1
+		# The deterministic test calls physics directly; emulate the runtime's
+		# once-per-physics-frame reservation reset before advancing both actors.
+		corridor_grid.accepted_moves_physics_frame = -1
+		corridor_first._physics_process(1.0 / 60.0)
+		corridor_second._physics_process(1.0 / 60.0)
+		corridor_first_cell = corridor_grid.actor_cell(30)
+		corridor_second_cell = corridor_grid.actor_cell(31)
+		corridor_minimum_separation = minf(
+			corridor_minimum_separation,
+			corridor_first.position.distance_to(corridor_second.position),
+		)
+		if corridor_first_cell == corridor_second_cell:
+			corridor_overlap_detected = true
+			break
+		if (
+			corridor_first_cell == Vector2i(5, 1)
+			and corridor_second_cell == Vector2i(1, 1)
+			and corridor_first.position.is_equal_approx(
+				corridor_second_start
+			)
+			and corridor_second.position.is_equal_approx(
+				corridor_first_start
+			)
+		):
+			corridor_swap_completed = true
+			break
+	expect(
+		(
+			not corridor_overlap_detected
+			and corridor_swap_completed
+			and corridor_minimum_separation
+			>= DYNAMIC_OCCUPANCY_GRID.MIN_PRIORITY_PASS_SEPARATION
+		),
+		(
+			"two actors replan around one another and complete a narrow-"
+			+ "passage swap without overlap or deadlock (%s/%s after %d "
+			+ "ticks, %d rejected relocations; pos=%s/%s; path=%s@%d/%s@%d)"
+		) % [
+			corridor_first_cell,
+			corridor_second_cell,
+			corridor_ticks,
+			corridor_grid.relocation_rejection_count,
+			corridor_first.position,
+			corridor_second.position,
+			corridor_first.movement_path,
+			corridor_first.movement_path_index,
+			corridor_second.movement_path,
+			corridor_second.movement_path_index,
+		],
+		failures,
+	)
+	corridor_first.free()
+	corridor_second.free()
+
+	var disconnected_navigation: NavigationGridData = (
+		NAVIGATION_GRID_DATA.create_for_tests(
+			5,
+			1,
+			Vector2i(32, 16),
+			PackedInt64Array([0, 0, 1, 0, 0]),
+		)
+	)
+	var disconnected_grid: RefCounted = DYNAMIC_OCCUPANCY_GRID.new()
+	disconnected_grid.configure(disconnected_navigation)
+	var disconnected_start := disconnected_navigation.cell_to_world(
+		Vector2i(0, 0)
+	)
+	var disconnected_goal := disconnected_navigation.cell_to_world(
+		Vector2i(4, 0)
+	)
+	disconnected_grid.register_scene(40, disconnected_start)
+	disconnected_grid.finalize_registration()
+	var disconnected_path: PackedVector2Array = (
+		disconnected_grid.find_path_for_scene(
+			40,
+			disconnected_start,
+			disconnected_goal,
+		)
+	)
+	expect(
+		(
+			disconnected_grid.deferred_dynamic_destination_count == 0
+			and (
+				disconnected_path.is_empty()
+				or not disconnected_path[-1].is_equal_approx(
+					disconnected_goal
+				)
+			)
+		),
+		"static disconnection never appends an unreachable deferred goal",
+		failures,
+	)
+
 	var separation_navigation: NavigationGridData = (
 		NAVIGATION_GRID_DATA.create_for_tests(
 			3,

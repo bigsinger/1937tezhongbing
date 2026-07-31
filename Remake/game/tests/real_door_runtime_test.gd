@@ -4,6 +4,9 @@ const MAIN_SCENE: PackedScene = preload("res://scenes/main.tscn")
 const GAME_SESSION_STATE: Script = preload(
 	"res://scripts/game_session_state.gd"
 )
+const ORIGINAL_RUNTIME_ACTOR_CATALOG: Script = preload(
+	"res://scripts/original_runtime_actor_catalog.gd"
+)
 const LEVEL_IDS: Array[String] = [
 	"m000",
 	"m001",
@@ -20,6 +23,29 @@ const LEVEL_IDS: Array[String] = [
 ]
 const EXPECTED_SUPPORTED_DOOR_COUNT := 96
 const EXPECTED_NAVIGATION_DOOR_COUNT := 94
+## Counts come from the hash-locked VWF Layer 3 data. "Static" means that the
+## encoded scene is not one of the 772 exact RuntimeActor identities; closed
+## doors, pickups and historical orphan footprints therefore stay in this
+## initially blocking class.
+const EXPECTED_STATIC_NAVIGATION := {
+	"m000": [2264, 5427, 787, 107, 62],
+	"m001": [4751, 4757, 670, 97, 75],
+	"m002": [2387, 2714, 235, 95, 34],
+	"m003": [10861, 3146, 334, 70, 53],
+	"m004": [2290, 8389, 944, 230, 115],
+	"m005": [2474, 8375, 258, 100, 92],
+	"m006": [2772, 6716, 662, 96, 44],
+	"m007": [2226, 6567, 1212, 117, 99],
+	"m008": [3475, 2969, 362, 29, 28],
+	"m009": [6059, 3625, 705, 102, 48],
+	"m010": [16234, 3206, 285, 78, 78],
+	"m011": [2364, 3064, 256, 112, 40],
+}
+const EXPECTED_ANONYMOUS_STATIC_CELL_COUNT := 58157
+const EXPECTED_ENCODED_STATIC_CELL_COUNT := 58955
+const EXPECTED_ENCODED_STATIC_SCENE_COUNT := 6710
+const EXPECTED_ENCODED_ACTOR_CELL_COUNT := 1233
+const EXPECTED_ENCODED_ACTOR_SCENE_COUNT := 768
 
 var failures: Array[String] = []
 var checks := 0
@@ -38,9 +64,25 @@ func _run_tests() -> void:
 	var navigation_doors := 0
 	var closed_row_sliced_doors := 0
 	var open_row_sliced_doors := 0
+	var static_navigation_totals := {
+		"anonymous_static_cells": 0,
+		"encoded_static_cells": 0,
+		"encoded_static_scenes": 0,
+		"encoded_actor_cells": 0,
+		"encoded_actor_scenes": 0,
+	}
 	for level_index: int in range(LEVEL_IDS.size()):
 		var level_id := LEVEL_IDS[level_index]
 		main.switch_level(level_index, false, false)
+		var navigation_counts := _audit_static_navigation_footprints(
+			main,
+			level_id,
+		)
+		for key: String in static_navigation_totals:
+			static_navigation_totals[key] = (
+				int(static_navigation_totals[key])
+				+ int(navigation_counts.get(key, 0))
+			)
 		var doors: Array = main.legacy_doors
 		total_doors += doors.size()
 		for door_value: Variant in doors:
@@ -94,6 +136,25 @@ func _run_tests() -> void:
 		"all %d open-door visuals use their original per-column baselines"
 			% EXPECTED_SUPPORTED_DOOR_COUNT,
 	)
+	_expect(
+		int(static_navigation_totals["anonymous_static_cells"])
+			== EXPECTED_ANONYMOUS_STATIC_CELL_COUNT
+			and int(static_navigation_totals["encoded_static_cells"])
+			== EXPECTED_ENCODED_STATIC_CELL_COUNT
+			and int(static_navigation_totals["encoded_static_scenes"])
+			== EXPECTED_ENCODED_STATIC_SCENE_COUNT,
+		(
+			"all 117,112 original static Layer 3 cells across 6,710 "
+			+ "scene footprints remain authoritative"
+		),
+	)
+	_expect(
+		int(static_navigation_totals["encoded_actor_cells"])
+			== EXPECTED_ENCODED_ACTOR_CELL_COUNT
+			and int(static_navigation_totals["encoded_actor_scenes"])
+			== EXPECTED_ENCODED_ACTOR_SCENE_COUNT,
+		"all 1,233 serialized cells for 768 actor footprints are classified separately",
+	)
 
 	main.switch_level(0, false, false)
 	var checkpoint_door := _first_door_with_source_footprint(main)
@@ -139,12 +200,138 @@ func _run_tests() -> void:
 
 	main.queue_free()
 	if failures.is_empty():
-		print("Real door runtime tests passed (%d checks)." % checks)
+		print(
+			(
+				"Real door/static-navigation runtime tests passed "
+				+ "(%d checks, %d static cells)."
+			)
+			% [
+				checks,
+				EXPECTED_ANONYMOUS_STATIC_CELL_COUNT
+					+ EXPECTED_ENCODED_STATIC_CELL_COUNT,
+			]
+		)
 		quit(0)
 		return
 	for failure: String in failures:
 		push_error(failure)
 	quit(1)
+
+
+func _audit_static_navigation_footprints(
+	main: Node,
+	level_id: String,
+) -> Dictionary:
+	var counts := {
+		"anonymous_static_cells": 0,
+		"encoded_static_cells": 0,
+		"encoded_static_scenes": 0,
+		"encoded_actor_cells": 0,
+		"encoded_actor_scenes": 0,
+	}
+	var navigation: NavigationGridData = main.navigation_grid
+	var occupancy: RefCounted = main.dynamic_occupancy
+	_expect(
+		navigation != null and occupancy != null,
+		"%s initializes static and dynamic navigation" % level_id,
+	)
+	if navigation == null or occupancy == null:
+		return counts
+	var catalog: Dictionary = ORIGINAL_RUNTIME_ACTOR_CATALOG.load_catalog()
+	var catalog_levels := catalog.get("levels", {}) as Dictionary
+	var catalog_level := catalog_levels.get(level_id, {}) as Dictionary
+	var expected_actor_scenes := catalog_level.get("actors", {}) as Dictionary
+	var runtime_actors := occupancy.get("actors") as Dictionary
+	var unexpected_runtime_scenes: Array[int] = []
+	for scene_value: Variant in runtime_actors.keys():
+		var scene_index := int(scene_value)
+		if not expected_actor_scenes.has(str(scene_index)):
+			unexpected_runtime_scenes.append(scene_index)
+	unexpected_runtime_scenes.sort()
+	_expect(
+		unexpected_runtime_scenes.is_empty(),
+		"%s never reclassifies static scenery as a dynamic actor: %s"
+			% [level_id, str(unexpected_runtime_scenes)],
+	)
+
+	var movement_values := (
+		navigation.layers[NavigationGridData.MOVEMENT_LAYER_ID]
+		as PackedInt64Array
+	)
+	var static_scenes: Dictionary = {}
+	var actor_scenes: Dictionary = {}
+	var static_state_violations := 0
+	var live_actor_state_violations := 0
+	for cell_index: int in range(movement_values.size()):
+		var encoded := int(movement_values[cell_index])
+		if encoded == 0:
+			continue
+		var cell := navigation.index_to_cell(cell_index)
+		if encoded < 1000:
+			counts["anonymous_static_cells"] = (
+				int(counts["anonymous_static_cells"]) + 1
+			)
+			if (
+				navigation.is_source_cell_released(
+					NavigationGridData.MOVEMENT_LAYER_ID,
+					cell,
+				)
+				or not navigation.astar.is_point_solid(cell)
+			):
+				static_state_violations += 1
+			continue
+		var source_scene := encoded - 1000
+		if expected_actor_scenes.has(str(source_scene)):
+			counts["encoded_actor_cells"] = (
+				int(counts["encoded_actor_cells"]) + 1
+			)
+			actor_scenes[source_scene] = true
+			if (
+				runtime_actors.has(source_scene)
+				and (
+					not navigation.ignored_scene_indices.has(source_scene)
+					or navigation.astar.is_point_solid(cell)
+				)
+			):
+				live_actor_state_violations += 1
+			continue
+		counts["encoded_static_cells"] = (
+			int(counts["encoded_static_cells"]) + 1
+		)
+		static_scenes[source_scene] = true
+		if (
+			navigation.ignored_scene_indices.has(source_scene)
+			or navigation.is_source_cell_released(
+				NavigationGridData.MOVEMENT_LAYER_ID,
+				cell,
+			)
+			or not navigation.astar.is_point_solid(cell)
+		):
+			static_state_violations += 1
+	counts["encoded_static_scenes"] = static_scenes.size()
+	counts["encoded_actor_scenes"] = actor_scenes.size()
+
+	var expected := EXPECTED_STATIC_NAVIGATION.get(level_id, []) as Array
+	_expect(
+		expected.size() == 5
+			and int(counts["anonymous_static_cells"]) == int(expected[0])
+			and int(counts["encoded_static_cells"]) == int(expected[1])
+			and int(counts["encoded_static_scenes"]) == int(expected[2])
+			and int(counts["encoded_actor_cells"]) == int(expected[3])
+			and int(counts["encoded_actor_scenes"]) == int(expected[4]),
+		"%s Layer 3 static/actor footprint census matches stable MOD"
+			% level_id,
+	)
+	_expect(
+		static_state_violations == 0,
+		"%s keeps every anonymous and non-actor source cell solid" % level_id,
+	)
+	_expect(
+		live_actor_state_violations == 0,
+		"%s replaces live actor source cells only with dynamic occupancy"
+			% level_id,
+	)
+	return counts
 
 
 func _first_door_with_source_footprint(main: Node) -> Node2D:

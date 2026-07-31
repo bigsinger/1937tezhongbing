@@ -439,6 +439,29 @@ func find_path(
 	return path
 
 
+func is_statically_reachable(
+	world_start: Vector2,
+	world_destination: Vector2,
+) -> bool:
+	if astar == null:
+		prepare_astar()
+	var start_cell := world_to_cell(world_start)
+	var destination_cell := world_to_cell(world_destination)
+	if (
+		not is_valid_cell(start_cell)
+		or not is_valid_cell(destination_cell)
+		or astar.is_point_solid(destination_cell)
+	):
+		return false
+	if static_component_by_cell.size() != dimensions.x * dimensions.y:
+		_rebuild_static_components()
+	var start_component := static_component_by_cell[cell_to_index(start_cell)]
+	var destination_component := static_component_by_cell[
+		cell_to_index(destination_cell)
+	]
+	return start_component >= 0 and start_component == destination_component
+
+
 func _temporary_obstacle_partial_path(
 	start_cell: Vector2i,
 	destination_cell: Vector2i,

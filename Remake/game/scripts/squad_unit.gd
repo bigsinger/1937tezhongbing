@@ -1425,6 +1425,14 @@ func _physics_process(delta: float) -> void:
 		)
 	):
 		movement_blocked = true
+		# Scalar/fallback actors validate their complete frame displacement
+		# only after calculating it. A rejected move has not been committed to
+		# DynamicOccupancyGrid, so keep the Node2D and path cursor at their last
+		# accepted state. Advancing the visual position here used to let
+		# fallback actors drift through one another while the occupancy grid
+		# correctly retained their old cells.
+		next_position = position
+		next_path_index = movement_path_index
 	if movement_blocked:
 		# Earlier fixed substeps may already have been accepted by the runtime
 		# occupancy grid. Keep the node and path cursor synchronized with that

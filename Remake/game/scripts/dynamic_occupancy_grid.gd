@@ -12,6 +12,13 @@ const MIN_ACTOR_SEPARATION := 12.0
 ## live separation during movement instead. A few large footprints must not
 ## make an otherwise sparse mission lose its original dynamic routing.
 const MAX_DYNAMIC_PATH_OBSTACLE_CELLS := 64
+## Two simultaneously moving actors can meet on intersecting diagonal
+## sub-cell trajectories even though their occupied grid cells differ. Give
+## the lower scene index deterministic right-of-way after both actors have a
+## live goal. Static walls and occupied destination cells remain hard, while
+## this smaller guard distance lets the winner enter the adjacent free lane
+## and breaks the otherwise symmetric replan loop.
+const MIN_PRIORITY_PASS_SEPARATION := 4.0
 ## Patrol prewarming is repeated whenever a level is reconstructed (loading a
 ## save, replaying a checkpoint, or switching away and back). The authored
 ## static graph and recovered legacy pathfinder are immutable for that initial
@@ -73,6 +80,7 @@ var last_path_query_scene_index := -1
 var last_path_query_elapsed_usec := 0
 var path_query_profiles: Dictionary = {}
 var dense_path_fallback_count := 0
+var deferred_dynamic_destination_count := 0
 var relocation_rejection_count := 0
 var sprite_footprint_update_count := 0
 var registration_finalized := false
@@ -120,6 +128,7 @@ func configure(
 	last_path_query_elapsed_usec = 0
 	path_query_profiles.clear()
 	dense_path_fallback_count = 0
+	deferred_dynamic_destination_count = 0
 	relocation_rejection_count = 0
 	sprite_footprint_update_count = 0
 	registration_finalized = false
@@ -460,6 +469,27 @@ func find_path_for_scene(
 	)
 	for cell: Vector2i in changed_solids:
 		navigation.astar.set_point_solid(cell, false)
+	# A temporary actor/goal reservation can split a narrow but statically
+	# connected corridor. Preserve the player's/AI's real destination after
+	# the safe partial route so SquadUnit stops at the blocker, replans, and
+	# continues when it clears. Never do this for a static disconnection or a
+	# multi-cell actor that genuinely cannot fit through the passage.
+	if (
+		include_dynamic_path_obstacles
+		and movement_offsets.size() == 1
+		and movement_offsets[0] == Vector2i.ZERO
+		and not path.is_empty()
+		and path[-1].distance_squared_to(world_destination) > 1.0
+		and bool(
+			navigation.call(
+				"is_statically_reachable",
+				world_start,
+				world_destination,
+			)
+		)
+	):
+		path.append(world_destination)
+		deferred_dynamic_destination_count += 1
 	_reserve_path_goal(scene_index, movement_offsets, path)
 	_record_path_query(
 		scene_index,
@@ -1635,6 +1665,19 @@ func _keeps_actor_separation(
 					new_distance < MIN_ACTOR_SEPARATION
 					and new_distance <= old_distance
 				):
+					var other_origin := (
+						(actors[other_scene] as Dictionary)["origin"]
+						as Vector2i
+					)
+					if (
+						scene_index < other_scene
+						and goal_origin_by_scene.has(scene_index)
+						and goal_origin_by_scene.has(other_scene)
+						and target_origin != other_origin
+						and new_distance
+						>= MIN_PRIORITY_PASS_SEPARATION
+					):
+						continue
 					return false
 	return true
 

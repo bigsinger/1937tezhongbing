@@ -319,12 +319,15 @@ func _run_probe() -> void:
 			_elapsed_ms(started),
 			_movement_tags(primary, main),
 		)
-		await _wait_physics_seconds(observation_seconds)
+		var outbound_observed_positions := await _observe_movement_positions(
+			primary,
+			observation_seconds,
+		)
 		trace.capture_main(
 			"move_outbound_observed",
 			main,
 			_elapsed_ms(started),
-			_movement_tags(primary, main),
+			_movement_tags(primary, main, outbound_observed_positions),
 		)
 		_expect(
 			primary.position.distance_to(outbound_target)
@@ -346,12 +349,15 @@ func _run_probe() -> void:
 			_elapsed_ms(started),
 			_movement_tags(primary, main),
 		)
-		await _wait_physics_seconds(observation_seconds)
+		var return_observed_positions := await _observe_movement_positions(
+			primary,
+			observation_seconds,
+		)
 		trace.capture_main(
 			"move_return_observed",
 			main,
 			_elapsed_ms(started),
-			_movement_tags(primary, main),
+			_movement_tags(primary, main, return_observed_positions),
 		)
 		_expect(
 			primary.position.distance_to(return_target)
@@ -1232,6 +1238,43 @@ func _wait_physics_seconds(duration_seconds: float) -> void:
 		await physics_frame
 
 
+func _observe_movement_positions(
+	unit: Node2D,
+	duration_seconds: float,
+	sample_interval_frames: int = 5,
+) -> Array:
+	var ticks_per_second := maxi(
+		int(
+			ProjectSettings.get_setting(
+				"physics/common/physics_ticks_per_second",
+				60,
+			)
+		),
+		1,
+	)
+	var frame_count := maxi(
+		roundi(maxf(duration_seconds, 0.0) * float(ticks_per_second)),
+		1,
+	)
+	var interval := maxi(sample_interval_frames, 1)
+	var positions: Array = [[unit.position.x, unit.position.y]]
+	for frame_index: int in range(frame_count):
+		await physics_frame
+		if (
+			(frame_index + 1) % interval == 0
+			or frame_index == frame_count - 1
+		):
+			var sample := [unit.position.x, unit.position.y]
+			var previous: Array = positions.back() as Array
+			if (
+				absf(float(previous[0]) - float(sample[0])) > 0.001
+				or absf(float(previous[1]) - float(sample[1])) > 0.001
+				or frame_index == frame_count - 1
+			):
+				positions.append(sample)
+	return positions
+
+
 func _tap_key(keycode: Key) -> void:
 	var event := InputEventKey.new()
 	event.keycode = keycode
@@ -1257,7 +1300,11 @@ func _click_world(main: Node, world_position: Vector2) -> void:
 	await process_frame
 
 
-func _movement_tags(unit: Node2D, main: Node) -> Dictionary:
+func _movement_tags(
+	unit: Node2D,
+	main: Node,
+	observed_positions: Array = [],
+) -> Dictionary:
 	var points: Array = []
 	for point: Vector2 in unit.get("movement_path") as PackedVector2Array:
 		points.append([point.x, point.y])
@@ -1279,7 +1326,7 @@ func _movement_tags(unit: Node2D, main: Node) -> Dictionary:
 		)
 		for offset: Vector2i in actor_state.get("movement_offsets", []) as Array[Vector2i]:
 			movement_offsets.append([offset.x, offset.y])
-	return {
+	var tags := {
 		"move_speed": float(unit.get("move_speed")),
 		"movement_path_index": int(unit.get("movement_path_index")),
 		"movement_offsets": movement_offsets,
@@ -1287,6 +1334,9 @@ func _movement_tags(unit: Node2D, main: Node) -> Dictionary:
 		"raw_layer3_path": raw_points,
 		"nearby_runtime_owners": nearby_owners,
 	}
+	if not observed_positions.is_empty():
+		tags["observed_positions"] = observed_positions.duplicate(true)
+	return tags
 
 
 func _navigation_target_tags(main: Node, unit: Node2D, target: Vector2) -> Dictionary:

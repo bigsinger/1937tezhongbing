@@ -277,6 +277,7 @@ try {
              -SceneIndices ([int]$route.scene) `
              -IgnoreHitPoints `
              -IgnoreAliveState `
+             -CompareObservedRouteShape `
              -ElapsedToleranceMs 1800 `
             -AllowMismatch `
             -OutputJson $comparisonJson `
