@@ -16,6 +16,26 @@ $baselinePath = Join-Path $remakeRoot `
     'validation\baselines\mod\m000-basic-movement-v1.json'
 $obstacleBaselinePath = Join-Path $remakeRoot `
     'validation\baselines\mod\m000-obstacle-route-v1.json'
+$movementBaselineDefinitions = @(
+    [pscustomobject]@{ level = 0; scene = 1436; out_x = 9; out_y = 7; back_x = 1; back_y = 1 },
+    [pscustomobject]@{ level = 1; scene = 1993; out_x = 112; out_y = 248; back_x = 125; back_y = 254 },
+    [pscustomobject]@{ level = 2; scene = 886; out_x = 1; out_y = 107; back_x = 13; back_y = 118 },
+    [pscustomobject]@{ level = 3; scene = 1150; out_x = 23; out_y = 173; back_x = 10; back_y = 187 },
+    [pscustomobject]@{ level = 4; scene = 2629; out_x = 54; out_y = 8; back_x = 54; back_y = 12 },
+    [pscustomobject]@{ level = 5; scene = 663; out_x = 9; out_y = 194; back_x = 1; back_y = 192 },
+    [pscustomobject]@{ level = 6; scene = 1458; out_x = 12; out_y = 13; back_x = 23; back_y = 9 },
+    [pscustomobject]@{ level = 7; scene = 2325; out_x = 28; out_y = 41; back_x = 31; back_y = 53 },
+    [pscustomobject]@{ level = 8; scene = 753; out_x = 13; out_y = 5; back_x = 1; back_y = 23 },
+    [pscustomobject]@{ level = 9; scene = 1709; out_x = 7; out_y = 78; back_x = 0; back_y = 78 },
+    [pscustomobject]@{ level = 10; scene = 1590; out_x = 8; out_y = 10; back_x = 1; back_y = 9 },
+    [pscustomobject]@{ level = 11; scene = 1176; out_x = 80; out_y = 5; back_x = 96; back_y = 7 }
+)
+$movementBaselinePaths = @(
+    $movementBaselineDefinitions | ForEach-Object {
+        Join-Path $remakeRoot (
+            'validation\baselines\mod\m{0:D3}-player-obstacle-route-v1.json' -f
+            [int]$_.level)
+    })
 $patrolBaselinePaths = @(
     0..11 | ForEach-Object {
         Join-Path $remakeRoot (
@@ -72,6 +92,67 @@ if ($obstacleBaseline.runtime -ne 'mod' -or
     @($obstacleBaseline.checkpoints[3].tags.observed_positions).Count -lt 10 -or
     [int]$obstacleBaseline.checkpoints[0].actors[0].scene_index -ne 1436) {
     throw 'The checked-in m000 obstacle-route baseline is invalid.'
+}
+$movementCheckpointIds = @(
+    'gameplay_ready',
+    'player_selected',
+    'move_outbound_commanded',
+    'move_outbound_observed',
+    'move_return_commanded',
+    'move_return_observed'
+)
+for ($movementIndex = 0;
+    $movementIndex -lt $movementBaselineDefinitions.Count;
+    $movementIndex++) {
+    $movementDefinition = $movementBaselineDefinitions[$movementIndex]
+    $levelId = 'm{0:D3}' -f [int]$movementDefinition.level
+    $movementBaseline = Get-Content `
+        -LiteralPath $movementBaselinePaths[$movementIndex] `
+        -Raw -Encoding UTF8 | ConvertFrom-Json
+    $auditedScene = [int]$movementDefinition.scene
+    $auditedActors = @(
+        foreach ($checkpoint in @($movementBaseline.checkpoints)) {
+            @(
+                $checkpoint.actors |
+                    Where-Object {
+                        [int]$_.scene_index -eq $auditedScene
+                    }
+            )[0]
+        }
+    )
+    $expectedOutbound = @(
+        ([int]$movementDefinition.out_x * 32 + 16),
+        ([int]$movementDefinition.out_y * 16 + 8)
+    )
+    $expectedReturn = @(
+        ([int]$movementDefinition.back_x * 32 + 16),
+        ([int]$movementDefinition.back_y * 16 + 8)
+    )
+    if ($movementBaseline.runtime -ne 'mod' -or
+        $movementBaseline.content_profile -ne
+            'repository-mod-12-level-20260729' -or
+        $movementBaseline.level.id -ne $levelId -or
+        $movementBaseline.scenario.id -ne
+            "$levelId-player-obstacle-route-v1" -or
+        $movementBaseline.metadata.input_isolation -ne
+            'window-message-to-process-local-DirectInput' -or
+        @($movementBaseline.checkpoints).Count -ne 6 -or
+        (Compare-Object `
+            $movementCheckpointIds `
+            @($movementBaseline.checkpoints.id)).Count -ne 0 -or
+        @($auditedActors | Where-Object { $null -eq $_ }).Count -ne 0 -or
+        @($auditedActors | Where-Object role -ne 'player').Count -ne 0 -or
+        (@($auditedActors[2].target_position) -join ',') -ne
+            ($expectedOutbound -join ',') -or
+        (@($auditedActors[4].target_position) -join ',') -ne
+            ($expectedReturn -join ',') -or
+        [double]$auditedActors[3].position[0] -eq
+            [double]$auditedActors[0].position[0] -and
+        [double]$auditedActors[3].position[1] -eq
+            [double]$auditedActors[0].position[1]) {
+        throw (
+            "The checked-in $levelId player obstacle-route baseline is invalid.")
+    }
 }
 $patrolCheckpointIds = @(
     'patrol_interval_1_commanded',
@@ -498,6 +579,7 @@ try {
         throw 'Tolerance-compatible runtime traces did not compare equal.'
     }
     $checkedBaselines = @($baselinePath, $obstacleBaselinePath) +
+        @($movementBaselinePaths) +
         @($patrolBaselinePaths) +
         @($contactBaselinePath) +
         @($inventoryBaselineDefinitions.path)

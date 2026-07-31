@@ -11,9 +11,8 @@ const MANUAL_CORRECTION_LAYER_ID := 5
 const MAGIC_BYTES: Array[int] = [77, 51, 55, 78, 65, 86, 49, 0]
 const MAX_DESTINATION_SEARCH_RADIUS := 24
 const UNREACHED_SCORE := 0x3fffffff
-## M1937 direction order: north, northeast, east, southeast, south,
-## southwest, west, northwest. It is also the deterministic expansion order
-## used when several uniform-cost routes are equivalent.
+## M1937 actor-facing order: north, northeast, east, southeast, south,
+## southwest, west, northwest.
 const ORIGINAL_NEIGHBOR_DIRECTIONS: Array[Vector2i] = [
 	Vector2i(0, -1),
 	Vector2i(1, -1),
@@ -23,6 +22,18 @@ const ORIGINAL_NEIGHBOR_DIRECTIONS: Array[Vector2i] = [
 	Vector2i(-1, 1),
 	Vector2i(-1, 0),
 	Vector2i(-1, -1),
+]
+## sub_45F7A0 expands the legacy pathfinder in this separate order. The
+## search runs backwards from the requested destination to the actor.
+const ORIGINAL_PATHFINDER_NEIGHBOR_DIRECTIONS: Array[Vector2i] = [
+	Vector2i(-1, -1),
+	Vector2i(0, -1),
+	Vector2i(1, -1),
+	Vector2i(1, 0),
+	Vector2i(1, 1),
+	Vector2i(0, 1),
+	Vector2i(-1, 1),
+	Vector2i(-1, 0),
 ]
 
 var dimensions := Vector2i.ZERO
@@ -39,6 +50,13 @@ var static_component_destination_cache: Dictionary = {}
 var static_component_redirect_count := 0
 var incremental_source_update_count := 0
 var incremental_source_update_usec := 0
+var legacy_search_generation := 0
+var legacy_node_generation := PackedInt32Array()
+var legacy_node_state := PackedByteArray()
+var legacy_total_scores := PackedInt32Array()
+var legacy_heuristic_scores := PackedInt32Array()
+var legacy_movement_scores := PackedInt32Array()
+var legacy_parents := PackedInt32Array()
 
 
 static func load_file(path: String, metadata: Dictionary) -> NavigationGridData:
@@ -359,7 +377,15 @@ func find_path(
 		astar.set_point_solid(start_cell, false)
 		temporarily_opened_start = true
 	var path := _original_uniform_path(start_cell, destination_cell)
-	path = _canonicalize_equal_cost_steps(path, destination_cell)
+	# Temporary multi-cell footprint reservations are not part of the static
+	# component table. If they split a corridor, retain the remake's safe
+	# partial-route behavior so a large actor stops at the reachable edge.
+	# Reachable routes always use the exact legacy pathfinder above.
+	if path.is_empty():
+		path = _temporary_obstacle_partial_path(
+			start_cell,
+			destination_cell,
+		)
 	if temporarily_opened_start:
 		astar.set_point_solid(start_cell, true)
 	if path.is_empty():
@@ -379,6 +405,21 @@ func find_path(
 		if path.is_empty() or path[-1].distance_squared_to(world_destination) > 1.0:
 			path.append(world_destination)
 	return path
+
+
+func _temporary_obstacle_partial_path(
+	start_cell: Vector2i,
+	destination_cell: Vector2i,
+) -> PackedVector2Array:
+	var cells := astar.get_id_path(
+		start_cell,
+		destination_cell,
+		true,
+	)
+	var result := PackedVector2Array()
+	for cell: Vector2i in cells:
+		result.append(cell_to_world(cell))
+	return result
 
 
 func _rebuild_static_components() -> void:
@@ -485,129 +526,151 @@ func _original_uniform_path(
 	start_cell: Vector2i,
 	destination_cell: Vector2i,
 ) -> PackedVector2Array:
+	# Recovered from M1937.exe sub_45F680..sub_45FC10. This deliberately
+	# preserves the original 2001 pathfinder rather than approximating it
+	# with Godot AStarGrid2D:
+	# - search backwards from destination to start;
+	# - every one-cell move costs 1, including diagonals;
+	# - use squared world-space Euclidean distance as the heuristic;
+	# - expand NW,N,NE,E,SE,S,SW,W;
+	# - insert a new node before existing nodes with the same total score;
+	# - do not re-sort an already-open node after its score improves.
+	#
+	# The last two details are observable in obstacle ties and determine the
+	# actor's final facing, so "cleaning them up" changes gameplay traces.
 	var cell_count := dimensions.x * dimensions.y
-	var scores := PackedInt32Array()
-	scores.resize(cell_count)
-	scores.fill(UNREACHED_SCORE)
-	var previous := PackedInt32Array()
-	previous.resize(cell_count)
-	previous.fill(-1)
-	var closed := PackedByteArray()
-	closed.resize(cell_count)
+	_begin_legacy_search(cell_count)
+	var children_by_node: Dictionary = {}
 	var start_index := cell_to_index(start_cell)
 	var destination_index := cell_to_index(destination_cell)
+	var destination_heuristic := _legacy_squared_world_distance(
+		destination_cell,
+		start_cell,
+	)
+	legacy_node_generation[destination_index] = legacy_search_generation
+	legacy_total_scores[destination_index] = destination_heuristic
+	legacy_heuristic_scores[destination_index] = destination_heuristic
+	legacy_movement_scores[destination_index] = 0
+	legacy_parents[destination_index] = -1
+	legacy_node_state[destination_index] = 1
 	var insertion_serial := 0
-	var heap: Array[Vector4i] = []
-	scores[start_index] = 0
-	_heap_push(
-		heap,
-		Vector4i(
-			_chebyshev_distance(start_cell, destination_cell),
-			_alignment_deviation(
-				start_cell,
-				start_cell,
-				destination_cell,
-			),
-			insertion_serial,
-			start_index,
+	var open_nodes: Array[Vector3i] = []
+	_legacy_open_heap_push(
+		open_nodes,
+		Vector3i(
+			destination_heuristic,
+			-insertion_serial,
+			destination_index,
 		),
 	)
 	insertion_serial += 1
-	var best_index := start_index
-	var best_heuristic := _chebyshev_distance(
-		start_cell,
-		destination_cell,
-	)
-	var best_squared_distance := (
-		start_cell - destination_cell
-	).length_squared()
-	var resolved_index := -1
-	while not heap.is_empty():
-		var entry := _heap_pop(heap)
-		var current_index := entry.w
-		if closed[current_index] != 0:
-			continue
-		var current := index_to_cell(current_index)
-		var heuristic := _chebyshev_distance(
-			current,
-			destination_cell,
-		)
-		if (
-			entry.x != scores[current_index] + heuristic
-			or entry.y != _alignment_deviation(
-				current,
-				start_cell,
-				destination_cell,
-			)
-		):
-			continue
-		closed[current_index] = 1
-		var squared_distance := (
-			current - destination_cell
-		).length_squared()
-		if (
-			heuristic < best_heuristic
-			or (
-				heuristic == best_heuristic
-				and squared_distance < best_squared_distance
-			)
-		):
-			best_index = current_index
-			best_heuristic = heuristic
-			best_squared_distance = squared_distance
-		if current_index == destination_index:
-			resolved_index = current_index
+	var resolved := false
+	# dword_4D2928 bounds the original loop. A cell can only be allocated
+	# once, so the complete navigation-cell count is the equivalent safe cap.
+	for _iteration: int in range(cell_count):
+		if open_nodes.is_empty():
 			break
-		for direction: Vector2i in ORIGINAL_NEIGHBOR_DIRECTIONS:
+		var current_index: int = _legacy_open_heap_pop(
+			open_nodes
+		).z
+		legacy_node_state[current_index] = 2
+		if current_index == start_index:
+			resolved = true
+			break
+		var current := index_to_cell(current_index)
+		for direction: Vector2i in (
+			ORIGINAL_PATHFINDER_NEIGHBOR_DIRECTIONS
+		):
 			var neighbor := current + direction
-			if not _astar_step_is_clear(current, neighbor):
+			if not _legacy_path_cell_is_clear(neighbor):
 				continue
 			var neighbor_index := cell_to_index(neighbor)
-			if closed[neighbor_index] != 0:
+			var next_movement_score := (
+				legacy_movement_scores[current_index] + 1
+			)
+			if (
+				legacy_node_generation[neighbor_index]
+				== legacy_search_generation
+			):
+				_legacy_append_child(
+					children_by_node,
+					current_index,
+					neighbor_index,
+				)
+				if (
+					next_movement_score
+					>= legacy_movement_scores[neighbor_index]
+				):
+					continue
+				legacy_movement_scores[neighbor_index] = (
+					next_movement_score
+				)
+				legacy_parents[neighbor_index] = current_index
+				legacy_total_scores[neighbor_index] = (
+					next_movement_score
+					+ legacy_heuristic_scores[neighbor_index]
+				)
+				if legacy_node_state[neighbor_index] == 2:
+					_legacy_propagate_improved_cost(
+						neighbor_index,
+						children_by_node,
+					)
 				continue
-			var next_score := scores[current_index] + 1
-			if next_score >= scores[neighbor_index]:
-				continue
-			scores[neighbor_index] = next_score
-			previous[neighbor_index] = current_index
-			_heap_push(
-				heap,
-				Vector4i(
-					next_score + _chebyshev_distance(
-						neighbor,
-						destination_cell,
-					),
-					_alignment_deviation(
-						neighbor,
-						start_cell,
-						destination_cell,
-					),
-					insertion_serial,
+			var heuristic := _legacy_squared_world_distance(
+				neighbor,
+				start_cell,
+			)
+			legacy_node_generation[neighbor_index] = (
+				legacy_search_generation
+			)
+			legacy_heuristic_scores[neighbor_index] = heuristic
+			legacy_movement_scores[neighbor_index] = next_movement_score
+			legacy_total_scores[neighbor_index] = (
+				next_movement_score + heuristic
+			)
+			legacy_parents[neighbor_index] = current_index
+			legacy_node_state[neighbor_index] = 1
+			_legacy_open_heap_push(
+				open_nodes,
+				Vector3i(
+					legacy_total_scores[neighbor_index],
+					-insertion_serial,
 					neighbor_index,
 				),
 			)
 			insertion_serial += 1
-	if resolved_index < 0:
-		resolved_index = best_index
-	if resolved_index != start_index and previous[resolved_index] < 0:
+			_legacy_append_child(
+				children_by_node,
+				current_index,
+				neighbor_index,
+			)
+	if not resolved:
 		return PackedVector2Array()
-	var reversed_cells: Array[Vector2i] = []
-	var cursor := resolved_index
+	var route_cells: Array[Vector2i] = []
+	var cursor := start_index
 	while cursor >= 0:
-		reversed_cells.append(index_to_cell(cursor))
-		if cursor == start_index:
+		route_cells.append(index_to_cell(cursor))
+		if cursor == destination_index:
 			break
-		cursor = previous[cursor]
-	if reversed_cells.is_empty() or reversed_cells[-1] != start_cell:
+		cursor = legacy_parents[cursor]
+	if (
+		route_cells.is_empty()
+		or route_cells[-1] != destination_cell
+	):
 		return PackedVector2Array()
 	var result := PackedVector2Array()
-	for reversed_index: int in range(
-		reversed_cells.size() - 1,
-		-1,
-		-1,
-	):
-		result.append(cell_to_world(reversed_cells[reversed_index]))
+	for route_cell: Vector2i in route_cells:
+		result.append(cell_to_world(route_cell))
 	return result
+
+
+func _legacy_squared_world_distance(
+	first: Vector2i,
+	second: Vector2i,
+) -> int:
+	var delta_x := (first.x - second.x) * cell_size.x
+	var delta_y := (first.y - second.y) * cell_size.y
+	return delta_x * delta_x + delta_y * delta_y
 
 
 static func _chebyshev_distance(
@@ -620,73 +683,137 @@ static func _chebyshev_distance(
 	)
 
 
-static func _alignment_deviation(
-	cell: Vector2i,
-	start: Vector2i,
-	destination: Vector2i,
-) -> int:
-	var deviation := 0
-	if start.x == destination.x:
-		deviation += absi(cell.x - start.x)
-	if start.y == destination.y:
-		deviation += absi(cell.y - start.y)
-	return deviation
+func _begin_legacy_search(cell_count: int) -> void:
+	if legacy_node_generation.size() != cell_count:
+		legacy_node_generation.resize(cell_count)
+		legacy_node_generation.fill(0)
+		legacy_node_state.resize(cell_count)
+		legacy_total_scores.resize(cell_count)
+		legacy_heuristic_scores.resize(cell_count)
+		legacy_movement_scores.resize(cell_count)
+		legacy_parents.resize(cell_count)
+		legacy_search_generation = 1
+		return
+	legacy_search_generation += 1
+	if legacy_search_generation >= 0x7fffffff:
+		legacy_node_generation.fill(0)
+		legacy_search_generation = 1
 
 
-static func _heap_entry_precedes(
-	first: Vector4i,
-	second: Vector4i,
+static func _legacy_open_entry_precedes(
+	first: Vector3i,
+	second: Vector3i,
 ) -> bool:
 	return (
 		first.x < second.x
-		or (
-			first.x == second.x
-			and (
-				first.y < second.y
-				or (first.y == second.y and first.z < second.z)
-			)
-		)
+		or (first.x == second.x and first.y < second.y)
 	)
 
 
-static func _heap_push(
-	heap: Array[Vector4i],
-	entry: Vector4i,
+static func _legacy_open_heap_push(
+	open_nodes: Array[Vector3i],
+	entry: Vector3i,
 ) -> void:
-	heap.append(entry)
-	var index := heap.size() - 1
+	open_nodes.append(entry)
+	var index := open_nodes.size() - 1
 	while index > 0:
 		var parent := (index - 1) / 2 as int
-		if _heap_entry_precedes(heap[parent], entry):
+		if _legacy_open_entry_precedes(open_nodes[parent], entry):
 			break
-		heap[index] = heap[parent]
+		open_nodes[index] = open_nodes[parent]
 		index = parent
-	heap[index] = entry
+	open_nodes[index] = entry
 
 
-static func _heap_pop(heap: Array[Vector4i]) -> Vector4i:
-	var result := heap[0]
-	var tail: Vector4i = heap.pop_back()
-	if heap.is_empty():
+static func _legacy_open_heap_pop(
+	open_nodes: Array[Vector3i],
+) -> Vector3i:
+	var result := open_nodes[0]
+	var tail: Vector3i = open_nodes.pop_back()
+	if open_nodes.is_empty():
 		return result
 	var index := 0
 	while true:
 		var left := index * 2 + 1
-		if left >= heap.size():
+		if left >= open_nodes.size():
 			break
 		var child := left
 		var right := left + 1
 		if (
-			right < heap.size()
-			and _heap_entry_precedes(heap[right], heap[left])
+			right < open_nodes.size()
+			and _legacy_open_entry_precedes(
+				open_nodes[right],
+				open_nodes[left],
+			)
 		):
 			child = right
-		if _heap_entry_precedes(tail, heap[child]):
+		if _legacy_open_entry_precedes(tail, open_nodes[child]):
 			break
-		heap[index] = heap[child]
+		open_nodes[index] = open_nodes[child]
 		index = child
-	heap[index] = tail
+	open_nodes[index] = tail
 	return result
+
+
+static func _legacy_append_child(
+	children_by_node: Dictionary,
+	parent_index: int,
+	child_index: int,
+) -> void:
+	if children_by_node.has(parent_index):
+		var children := children_by_node[parent_index] as Array
+		children.append(child_index)
+		return
+	children_by_node[parent_index] = [child_index]
+
+
+func _legacy_propagate_improved_cost(
+	root_index: int,
+	children_by_node: Dictionary,
+) -> void:
+	var pending: Array[int] = []
+	_legacy_relax_children(
+		root_index,
+		children_by_node,
+		pending,
+	)
+	while not pending.is_empty():
+		var current_index: int = pending.pop_front()
+		_legacy_relax_children(
+			current_index,
+			children_by_node,
+			pending,
+		)
+
+
+func _legacy_relax_children(
+	parent_index: int,
+	children_by_node: Dictionary,
+	pending: Array[int],
+) -> void:
+	if not children_by_node.has(parent_index):
+		return
+	for child_value: Variant in children_by_node[parent_index] as Array:
+		var child_index := int(child_value)
+		var next_movement_score := (
+			legacy_movement_scores[parent_index] + 1
+		)
+		if (
+			next_movement_score
+			>= legacy_movement_scores[child_index]
+		):
+			continue
+		legacy_movement_scores[child_index] = next_movement_score
+		legacy_total_scores[child_index] = (
+			next_movement_score + legacy_heuristic_scores[child_index]
+		)
+		legacy_parents[child_index] = parent_index
+		# sub_45FBE0 pushes at the head and sub_45FC10 pops the head.
+		pending.push_front(child_index)
+
+
+func _legacy_path_cell_is_clear(cell: Vector2i) -> bool:
+	return is_valid_cell(cell) and not astar.is_point_solid(cell)
 
 
 func _canonicalize_equal_cost_steps(

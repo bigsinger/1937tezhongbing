@@ -41,7 +41,9 @@ internal static class ModRegressionProbe
     private const uint WmActivateApp = 0x001C;
     private const int DikF1 = 0x3B;
     private const int DikF2 = 0x3C;
+    private const int DikF3 = 0x3D;
     private const int DikF4 = 0x3E;
+    private const int DikF5 = 0x3F;
     private const int DikF6 = 0x40;
     private const int DikM = 0x32;
     private const int DikDigit1 = 0x02;
@@ -377,6 +379,8 @@ internal static class ModRegressionProbe
                 "[SECONDS] [MOVEMENT_CELL_X MOVEMENT_CELL_Y " +
                 "[RETURN_CELL_X RETURN_CELL_Y]] " +
                 "[--briefing-only] [--movement-only] " +
+                "[--movement-player-scene=SCENE_INDEX] " +
+                "[--movement-observation-ms=MS] " +
                 "[--inventory-only] " +
                 "[--visual-capture-only " +
                 "--visual-camera-x=X --visual-camera-y=Y] " +
@@ -448,6 +452,38 @@ internal static class ModRegressionProbe
         {
             throw new InvalidOperationException(
                 "Visual camera coordinates must be supplied as an X/Y pair.");
+        }
+        int movementPlayerSceneIndex = -1;
+        string movementPlayerSceneValue = ArgumentValue(
+            args, "--movement-player-scene=");
+        if (!String.IsNullOrWhiteSpace(movementPlayerSceneValue) &&
+            (!int.TryParse(
+                movementPlayerSceneValue,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out movementPlayerSceneIndex) ||
+             movementPlayerSceneIndex < 0))
+        {
+            throw new InvalidOperationException(
+                "Movement player scene index must be a non-negative integer.");
+        }
+        int movementObservationMilliseconds =
+            selectorLevel == 1 ? 750 : 1800;
+        string movementObservationValue = ArgumentValue(
+            args, "--movement-observation-ms=");
+        int parsedMovementObservationMilliseconds;
+        if (!String.IsNullOrWhiteSpace(movementObservationValue) &&
+            int.TryParse(
+                movementObservationValue,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out parsedMovementObservationMilliseconds))
+        {
+            movementObservationMilliseconds = Math.Max(
+                500,
+                Math.Min(
+                    10000,
+                    parsedMovementObservationMilliseconds));
         }
         int movementCellX;
         int movementCellY;
@@ -584,6 +620,29 @@ internal static class ModRegressionProbe
             String.IsNullOrWhiteSpace(identityCatalogPath)
                 ? new Dictionary<int, RuntimeActorIdentity>()
                 : ReadIdentityCatalog(identityCatalogPath);
+        int movementPlayerRuntimeIndex = -1;
+        int movementPlayerSelectionDik = DikF4;
+        if (movementPlayerSceneIndex >= 0)
+        {
+            RuntimeActorIdentity movementPlayerIdentity =
+                actorIdentities.Values.FirstOrDefault(
+                    delegate(RuntimeActorIdentity identity)
+                    {
+                        return identity.SceneIndex ==
+                            movementPlayerSceneIndex;
+                    });
+            if (movementPlayerIdentity == null ||
+                movementPlayerIdentity.VwfFactionId != 3)
+            {
+                throw new InvalidOperationException(
+                    "Movement player scene is not a resolved friendly actor.");
+            }
+            movementPlayerRuntimeIndex =
+                movementPlayerIdentity.RuntimeIndex;
+            movementPlayerSelectionDik =
+                PlayerSelectionDik(
+                    movementPlayerIdentity.DisplayName);
+        }
         if (parityModeCount > 0 &&
             actorIdentities.Count == 0)
         {
@@ -1054,6 +1113,112 @@ internal static class ModRegressionProbe
                             outputDirectory,
                             "actor-items-entry.csv"));
                 }
+                if (movementOnly)
+                {
+                    CaptureParityCheckpoint(
+                        parityCheckpoints,
+                        process,
+                        imageBase,
+                        clock,
+                        "gameplay_ready");
+                    string movementOnlyEvidence;
+                    bool movementOnlyInputDelivered =
+                        ExercisePlayerMovement(
+                            process,
+                            imageBase,
+                            window,
+                            movementCellX,
+                            movementCellY,
+                            returnCellX,
+                            returnCellY,
+                            movementObservationMilliseconds,
+                            parityCheckpoints,
+                            clock,
+                            true,
+                            movementPlayerRuntimeIndex,
+                            movementPlayerSelectionDik,
+                            out movementOnlyEvidence);
+                    AddStage(
+                        stages,
+                        game,
+                        process,
+                        imageBase,
+                        clock,
+                        "player_input_target_delivery",
+                        movementOnlyInputDelivered,
+                        movementOnlyEvidence);
+                    AddStage(
+                        stages,
+                        game,
+                        process,
+                        imageBase,
+                        clock,
+                        "ai_skipped_movement_only_scope",
+                        true,
+                        "movement parity begins immediately after the " +
+                        "initial camera settles; help, minimap, combat, " +
+                        "save/load, failure, and victory workflows are " +
+                        "covered by independent probes");
+
+                    samplerStop = true;
+                    sampler.Join(1500);
+                    bool movementOnlyCursorClipSafe;
+                    lock (perf)
+                        movementOnlyCursorClipSafe = perf.All(
+                            delegate(PerfSample sample)
+                            {
+                                return !sample.CursorClipRestricted;
+                            });
+                    string[] requiredMovementOnlyStages =
+                    {
+                        "mission_started",
+                        "gameplay_scene_resumed",
+                        "initial_camera_synchronized",
+                        "player_input_target_delivery",
+                        "ai_skipped_movement_only_scope"
+                    };
+                    bool movementOnlyStagesPassed =
+                        requiredMovementOnlyStages.All(
+                            delegate(string requiredName)
+                            {
+                                Stage requiredStage = stages.FirstOrDefault(
+                                    delegate(Stage stage)
+                                    {
+                                        return stage.Name == requiredName;
+                                    });
+                                return requiredStage != null &&
+                                    requiredStage.Sent &&
+                                    requiredStage.ProcessResponding;
+                            });
+                    exitCode =
+                        missionStarted &&
+                        movementOnlyInputDelivered &&
+                        movementOnlyStagesPassed &&
+                        movementOnlyCursorClipSafe ? 0 : 1;
+                    WriteParityTrace(
+                        outputDirectory,
+                        selectorLevel,
+                        route.EngineMission,
+                        movementCellX,
+                        movementCellY,
+                        returnCellX,
+                        returnCellY,
+                        parityCheckpoints,
+                        parityScenarioOverride,
+                        actorIdentities,
+                        false,
+                        false);
+                    WriteArtifacts(
+                        outputDirectory,
+                        selectorLevel,
+                        route.EngineMission,
+                        stages,
+                        perf,
+                        transitionsLogged: false,
+                        replayConsumed: true,
+                        passed: exitCode == 0);
+                    return exitCode;
+                }
                 Thread.Sleep(5000);
                 WriteActorStateSnapshot(
                     process,
@@ -1327,6 +1492,8 @@ internal static class ModRegressionProbe
                         parityCheckpoints,
                         clock,
                         true,
+                        -1,
+                        DikF4,
                         out contactMovementEvidence);
                     AddStage(
                         stages, game, process, imageBase, clock,
@@ -1551,8 +1718,10 @@ internal static class ModRegressionProbe
                     process, imageBase, window,
                     movementCellX, movementCellY,
                     returnCellX, returnCellY,
-                    selectorLevel == 1 ? 750 : 1800,
+                    movementObservationMilliseconds,
                     parityCheckpoints, clock, false,
+                    movementPlayerRuntimeIndex,
+                    movementPlayerSelectionDik,
                     out movementEvidence);
                 if (renderAuditEnabled)
                 {
@@ -1759,10 +1928,44 @@ internal static class ModRegressionProbe
                 bool replayConsumed =
                     HasPositiveCounter(telemetry, "\"messages\":") &&
                     HasPositiveCounter(telemetry, "\"reads\":");
-                bool allStages = stages.All(delegate(Stage stage)
+                string[] requiredMovementStages =
                 {
-                    return stage.Sent && stage.ProcessResponding;
-                });
+                    "mission_started",
+                    "gameplay_scene_resumed",
+                    "initial_camera_synchronized",
+                    "player_spawn_survival",
+                    "player_input_target_delivery",
+                    "ai_skipped_movement_only_scope",
+                    "save_original_path",
+                    "load_original_path",
+                    "failure_original_transition",
+                    "restart_after_failure",
+                    "victory_original_transition"
+                };
+                IEnumerable<Stage> gatedStages = movementOnly
+                    ? stages.Where(delegate(Stage stage)
+                      {
+                          return requiredMovementStages.Contains(
+                              stage.Name);
+                      })
+                    : stages;
+                bool allStages =
+                    gatedStages.All(delegate(Stage stage)
+                    {
+                        return stage.Sent &&
+                            stage.ProcessResponding;
+                    }) &&
+                    (!movementOnly ||
+                     requiredMovementStages.All(
+                         delegate(string requiredName)
+                         {
+                             return stages.Any(
+                                 delegate(Stage stage)
+                                 {
+                                     return stage.Name ==
+                                         requiredName;
+                                 });
+                         }));
                 bool cursorClipSafe;
                 lock (perf)
                     cursorClipSafe = perf.All(delegate(PerfSample sample)
@@ -1818,6 +2021,22 @@ internal static class ModRegressionProbe
             }
         }
         return "";
+    }
+
+    private static int PlayerSelectionDik(string displayName)
+    {
+        switch (displayName ?? "")
+        {
+        case "老赵": return DikF2;
+        case "铁蛋": return DikF3;
+        case "强子": return DikF4;
+        case "古明": return DikF5;
+        case "大牛": return DikF6;
+        default:
+            throw new InvalidDataException(
+                "Unknown original player hotkey identity: " +
+                (displayName ?? ""));
+        }
     }
 
     private static int JsonInteger(
@@ -2887,7 +3106,8 @@ internal static class ModRegressionProbe
     }
 
     private static ActorSnapshot FindPlayerActor(
-        IntPtr process, long imageBase)
+        IntPtr process, long imageBase,
+        int preferredRuntimeIndex = -1)
     {
         int worldValue = ReadInt(
             process, imageBase + EngineAddresses.WorldRoot);
@@ -2900,6 +3120,30 @@ internal static class ModRegressionProbe
             count <= 0 || count > 4096)
             return null;
         long actorArray = (long)(uint)actorArrayValue;
+        if (preferredRuntimeIndex >= 0)
+        {
+            if (preferredRuntimeIndex >= count)
+                return null;
+            int preferredActorValue = ReadInt(
+                process,
+                actorArray + preferredRuntimeIndex * 4L);
+            if (preferredActorValue == 0 ||
+                preferredActorValue == int.MinValue)
+                return null;
+            long preferredActor =
+                (long)(uint)preferredActorValue;
+            if (ReadInt(
+                    process,
+                    preferredActor + ActorFactionOffset) != 3)
+                return null;
+            ActorSnapshot preferredSnapshot =
+                ReadActor(process, preferredActor);
+            if (preferredSnapshot == null)
+                return null;
+            preferredSnapshot.SceneIndex =
+                preferredRuntimeIndex;
+            return preferredSnapshot;
+        }
         ActorSnapshot fallback = null;
         for (int index = 0; index < count; ++index)
         {
@@ -3987,6 +4231,8 @@ internal static class ModRegressionProbe
         List<ParityCheckpoint> parityCheckpoints,
         Stopwatch runClock,
         bool allowContactInterruption,
+        int playerRuntimeIndex,
+        int playerSelectionDik,
         out string evidence)
     {
         if (targetCellX < 0 || targetCellY < 0)
@@ -4000,7 +4246,8 @@ internal static class ModRegressionProbe
                 "no deterministic second movement target for this level";
             return false;
         }
-        ActorSnapshot before = FindPlayerActor(process, imageBase);
+        ActorSnapshot before = FindPlayerActor(
+            process, imageBase, playerRuntimeIndex);
         if (before == null)
         {
             evidence = "player actor was not readable";
@@ -4021,12 +4268,12 @@ internal static class ModRegressionProbe
             return false;
         }
 
-        // The original F1 help identifies F4 as 强子. Extension missions
-        // deliberately use 强子 (database entry 924), so select through the
-        // game's documented hotkey instead of guessing a sprite hitbox.
+        // Select through the original character hotkey instead of guessing a
+        // sprite hitbox. Cross-level route probes bind this hotkey to an
+        // audited runtime-index/scene identity.
         byte[] actorBeforeSelection = ReadBytes(
             process, before.Address, 0x294);
-        bool selectionSent = PulseKey(window, DikF4);
+        bool selectionSent = PulseKey(window, playerSelectionDik);
         Thread.Sleep(320);
         // Character hotkeys intentionally center the camera. Refresh the
         // origin before converting the destination into screen coordinates.
@@ -4034,7 +4281,8 @@ internal static class ModRegressionProbe
             process, imageBase + EngineAddresses.CameraX);
         cameraY = ReadInt(
             process, imageBase + EngineAddresses.CameraY);
-        ActorSnapshot selected = FindPlayerActor(process, imageBase);
+        ActorSnapshot selected = FindPlayerActor(
+            process, imageBase, playerRuntimeIndex);
         byte[] actorAfterSelection = ReadBytes(
             process, before.Address, 0x294);
         int selectionActorChangeCount = 0;
@@ -4051,7 +4299,8 @@ internal static class ModRegressionProbe
         }
         if (selected == null)
         {
-            evidence = "player actor disappeared after F4 selection";
+            evidence =
+                "player actor disappeared after original hotkey selection";
             return false;
         }
         CaptureParityCheckpoint(
@@ -4066,8 +4315,13 @@ internal static class ModRegressionProbe
         int targetScreenX = targetWorldX - cameraX;
         int targetScreenY = targetWorldY - cameraY;
         bool outboundCameraPanned = false;
+        // The stock 1024x768 layout reserves 60 pixels for the bottom toolbar
+        // (the world viewport is 1024x708). Keep a small safety margin, but do
+        // not reject valid map cells in the former 32-pixel-wide false band.
+        const int gameplayBottomMargin = 64;
         if (targetScreenX < 8 || targetScreenX >= screenWidth - 8 ||
-            targetScreenY < 8 || targetScreenY >= screenHeight - 96)
+            targetScreenY < 8 ||
+            targetScreenY >= screenHeight - gameplayBottomMargin)
         {
             outboundCameraPanned = PanReplayCameraToWorldPoint(
                 process,
@@ -4099,12 +4353,46 @@ internal static class ModRegressionProbe
             process, imageBase, window,
             targetScreenX, targetScreenY,
             out cursorX, out cursorY);
-        bool clickSent = cursorReached && PulseMouseButton(window, 0);
+        // Some large missions need one actor tick after an F-key camera jump
+        // before their process-local DirectInput cursor consumes deltas. Retry
+        // only against the isolated target window; never touch the OS cursor.
+        for (int attempt = 0; !cursorReached && attempt < 2; ++attempt)
+        {
+            Thread.Sleep(220);
+            cursorReached = MoveReplayCursor(
+                process, imageBase, window,
+                targetScreenX, targetScreenY,
+                out cursorX, out cursorY);
+        }
+        bool clickSent = false;
         ActorSnapshot firstGoal = null;
-        bool firstGoalAccepted = clickSent && WaitForPlayerGoal(
-            process, imageBase,
-            targetWorldX, targetWorldY, 900,
-            out firstGoal);
+        bool firstGoalAccepted = false;
+        for (int attempt = 0;
+             cursorReached && !firstGoalAccepted && attempt < 3;
+             ++attempt)
+        {
+            if (attempt > 0)
+            {
+                Thread.Sleep(220);
+                cursorReached = MoveReplayCursor(
+                    process, imageBase, window,
+                    targetScreenX, targetScreenY,
+                    out cursorX, out cursorY);
+            }
+            bool attemptClickSent =
+                cursorReached && PulseMouseButton(window, 0);
+            clickSent = clickSent || attemptClickSent;
+            firstGoalAccepted =
+                attemptClickSent &&
+                WaitForPlayerGoal(
+                    process,
+                    imageBase,
+                    targetWorldX,
+                    targetWorldY,
+                    900,
+                    playerRuntimeIndex,
+                    out firstGoal);
+        }
         CaptureParityCheckpoint(
             parityCheckpoints,
             process,
@@ -4115,7 +4403,8 @@ internal static class ModRegressionProbe
             process, imageBase,
             firstGoal ?? selected,
             targetWorldX, targetWorldY,
-            segmentObservationMilliseconds);
+            segmentObservationMilliseconds,
+            playerRuntimeIndex);
         CaptureParityCheckpoint(
             parityCheckpoints,
             process,
@@ -4151,7 +4440,7 @@ internal static class ModRegressionProbe
             returnScreenX >= 8 &&
             returnScreenX < screenWidth - 8 &&
             returnScreenY >= 8 &&
-            returnScreenY < screenHeight - 96;
+            returnScreenY < screenHeight - gameplayBottomMargin;
         if (!returnTargetVisible)
         {
             returnCameraPanned = PanReplayCameraToWorldPoint(
@@ -4172,7 +4461,7 @@ internal static class ModRegressionProbe
                 returnScreenX >= 8 &&
                 returnScreenX < screenWidth - 8 &&
                 returnScreenY >= 8 &&
-                returnScreenY < screenHeight - 96;
+                returnScreenY < screenHeight - gameplayBottomMargin;
         }
         int returnCursorX = int.MinValue;
         int returnCursorY = int.MinValue;
@@ -4182,13 +4471,49 @@ internal static class ModRegressionProbe
                 process, imageBase, window,
                 returnScreenX, returnScreenY,
                 out returnCursorX, out returnCursorY);
-        bool returnClickSent =
-            returnCursorReached && PulseMouseButton(window, 0);
+        for (int attempt = 0;
+             returnTargetVisible && !returnCursorReached && attempt < 2;
+             ++attempt)
+        {
+            Thread.Sleep(220);
+            returnCursorReached = MoveReplayCursor(
+                process, imageBase, window,
+                returnScreenX, returnScreenY,
+                out returnCursorX, out returnCursorY);
+        }
+        bool returnClickSent = false;
         ActorSnapshot returnGoal = null;
-        bool returnGoalAccepted = returnClickSent && WaitForPlayerGoal(
-            process, imageBase,
-            returnWorldX, returnWorldY, 900,
-            out returnGoal);
+        bool returnGoalAccepted = false;
+        for (int attempt = 0;
+             returnTargetVisible &&
+             returnCursorReached &&
+             !returnGoalAccepted &&
+             attempt < 3;
+             ++attempt)
+        {
+            if (attempt > 0)
+            {
+                Thread.Sleep(220);
+                returnCursorReached = MoveReplayCursor(
+                    process, imageBase, window,
+                    returnScreenX, returnScreenY,
+                    out returnCursorX, out returnCursorY);
+            }
+            bool attemptClickSent =
+                returnCursorReached && PulseMouseButton(window, 0);
+            returnClickSent =
+                returnClickSent || attemptClickSent;
+            returnGoalAccepted =
+                attemptClickSent &&
+                WaitForPlayerGoal(
+                    process,
+                    imageBase,
+                    returnWorldX,
+                    returnWorldY,
+                    900,
+                    playerRuntimeIndex,
+                    out returnGoal);
+        }
         CaptureParityCheckpoint(
             parityCheckpoints,
             process,
@@ -4199,7 +4524,8 @@ internal static class ModRegressionProbe
             process, imageBase,
             returnGoal ?? returnStart,
             returnWorldX, returnWorldY,
-            segmentObservationMilliseconds);
+            segmentObservationMilliseconds,
+            playerRuntimeIndex);
         CaptureParityCheckpoint(
             parityCheckpoints,
             process,
@@ -4234,6 +4560,8 @@ internal static class ModRegressionProbe
             "; outbound_camera_panned=" + outboundCameraPanned +
             "; cursor=(" + cursorX + "," + cursorY + ")" +
             "; selection_sent=" + selectionSent +
+            "; selection_dik=" + playerSelectionDik +
+            "; player_runtime_index=" + playerRuntimeIndex +
             "; selection_actor_bytes_changed=" +
             selectionActorChangeCount +
             "; primary_click_sent=" + clickSent +
@@ -4421,13 +4749,15 @@ internal static class ModRegressionProbe
     private static bool WaitForPlayerGoal(
         IntPtr process, long imageBase,
         int expectedX, int expectedY, int milliseconds,
+        int playerRuntimeIndex,
         out ActorSnapshot accepted)
     {
         accepted = null;
         Stopwatch clock = Stopwatch.StartNew();
         while (clock.ElapsedMilliseconds < milliseconds)
         {
-            ActorSnapshot sample = FindPlayerActor(process, imageBase);
+            ActorSnapshot sample = FindPlayerActor(
+                process, imageBase, playerRuntimeIndex);
             if (sample != null &&
                 sample.GoalKind == 1 &&
                 sample.GoalX == expectedX &&
@@ -4438,14 +4768,16 @@ internal static class ModRegressionProbe
             }
             Thread.Sleep(25);
         }
-        accepted = FindPlayerActor(process, imageBase);
+        accepted = FindPlayerActor(
+            process, imageBase, playerRuntimeIndex);
         return false;
     }
 
     private static MovementSegmentObservation ObserveMovementSegment(
         IntPtr process, long imageBase, ActorSnapshot start,
         int targetX, int targetY,
-        int milliseconds)
+        int milliseconds,
+        int playerRuntimeIndex)
     {
         var observation = new MovementSegmentObservation();
         observation.Last = start;
@@ -4469,7 +4801,8 @@ internal static class ModRegressionProbe
         while (clock.ElapsedMilliseconds < milliseconds)
         {
             Thread.Sleep(40);
-            ActorSnapshot sample = FindPlayerActor(process, imageBase);
+            ActorSnapshot sample = FindPlayerActor(
+                process, imageBase, playerRuntimeIndex);
             if (sample == null)
                 continue;
             observation.Samples++;

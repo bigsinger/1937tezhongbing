@@ -242,6 +242,73 @@ if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
     if ($LASTEXITCODE -ne 0) {
         throw "Godot obstacle-route parity probe failed with exit code $LASTEXITCODE."
     }
+    $movementParityRoutes = @(
+        [pscustomobject]@{ level = 0; scene = 1436; out_x = 9; out_y = 7; back_x = 1; back_y = 1 },
+        [pscustomobject]@{ level = 1; scene = 1993; out_x = 112; out_y = 248; back_x = 125; back_y = 254 },
+        [pscustomobject]@{ level = 2; scene = 886; out_x = 1; out_y = 107; back_x = 13; back_y = 118 },
+        [pscustomobject]@{ level = 3; scene = 1150; out_x = 23; out_y = 173; back_x = 10; back_y = 187 },
+        [pscustomobject]@{ level = 4; scene = 2629; out_x = 54; out_y = 8; back_x = 54; back_y = 12 },
+        [pscustomobject]@{ level = 5; scene = 663; out_x = 9; out_y = 194; back_x = 1; back_y = 192 },
+        [pscustomobject]@{ level = 6; scene = 1458; out_x = 12; out_y = 13; back_x = 23; back_y = 9 },
+        [pscustomobject]@{ level = 7; scene = 2325; out_x = 28; out_y = 41; back_x = 31; back_y = 53 },
+        [pscustomobject]@{ level = 8; scene = 753; out_x = 13; out_y = 5; back_x = 1; back_y = 23 },
+        [pscustomobject]@{ level = 9; scene = 1709; out_x = 7; out_y = 78; back_x = 0; back_y = 78 },
+        [pscustomobject]@{ level = 10; scene = 1590; out_x = 8; out_y = 10; back_x = 1; back_y = 9 },
+        [pscustomobject]@{ level = 11; scene = 1176; out_x = 80; out_y = 5; back_x = 96; back_y = 7 }
+    )
+    foreach ($movementRoute in $movementParityRoutes) {
+        $movementLevelId = 'm{0:D3}' -f [int]$movementRoute.level
+        $movementScenarioId = (
+            "$movementLevelId-player-obstacle-route-v1")
+        $movementOutboundWorld = '{0},{1}' -f (
+            [int]$movementRoute.out_x * 32 + 16), (
+            [int]$movementRoute.out_y * 16 + 8)
+        $movementReturnWorld = '{0},{1}' -f (
+            [int]$movementRoute.back_x * 32 + 16), (
+            [int]$movementRoute.back_y * 16 + 8)
+        $movementObservationSeconds = if (
+            [int]$movementRoute.level -eq 0) {
+            0.75
+        }
+        else {
+            1.8
+        }
+        & $GodotExecutable --headless --path $game `
+            --max-fps 60 --disable-vsync `
+            --script 'res://tests/parity_runtime_probe.gd' -- `
+            "--output-dir=$parityProbeOutput" `
+            "--level-id=$movementLevelId" `
+            "--scenario-id=$movementScenarioId" `
+            "--player-scene-index=$($movementRoute.scene)" `
+            "--outbound-target=$movementOutboundWorld" `
+            "--return-target=$movementReturnWorld" `
+            "--observation-seconds=$movementObservationSeconds" `
+            '--command-handoff-seconds=0.30'
+        if ($LASTEXITCODE -ne 0) {
+            throw (
+                'Godot twelve-level movement parity probe failed for ' +
+                "$movementLevelId with exit code $LASTEXITCODE.")
+        }
+        & (Join-Path $PSScriptRoot 'Compare-RuntimeParityTrace.ps1') `
+            -ReferenceTrace (
+                Join-Path $remakeRoot (
+                    'validation\baselines\mod\' +
+                    $movementScenarioId +
+                    '.json')) `
+            -CandidateTrace (
+                Join-Path $parityProbeOutput (
+                    'remake-' + $movementScenarioId + '.json')) `
+            -SceneIndices ([int]$movementRoute.scene) `
+            -IgnoreHitPoints `
+            -IgnoreAliveState `
+            -ElapsedToleranceMs 1800 `
+            -OutputJson (
+                Join-Path $parityProbeOutput (
+                    $movementScenarioId + '-comparison.json')) `
+            -OutputMarkdown (
+                Join-Path $parityProbeOutput (
+                    $movementScenarioId + '-comparison.md')) | Out-Null
+    }
     & $GodotExecutable --headless --path $game `
         --max-fps 60 --disable-vsync `
         --script 'res://tests/parity_runtime_probe.gd' -- `

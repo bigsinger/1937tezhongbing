@@ -1915,7 +1915,10 @@ func _init() -> void:
 		)
 	)
 	var unreachable_grid: RefCounted = DYNAMIC_OCCUPANCY_GRID.new()
-	unreachable_grid.configure(unreachable_navigation)
+	unreachable_grid.configure(
+		unreachable_navigation,
+		"test-static-prewarm-cache",
+	)
 	unreachable_grid.register_scene(
 		51,
 		unreachable_navigation.cell_to_world(Vector2i(0, 0)),
@@ -1968,6 +1971,54 @@ func _init() -> void:
 			and unreachable_grid.prewarmed_path_hit_count
 				== hits_before_unreachable_retry + 1,
 		"an unreachable authored patrol retry reuses the negative cache entry",
+		failures,
+	)
+	var reloaded_unreachable_navigation: NavigationGridData = (
+		NAVIGATION_GRID_DATA.create_for_tests(
+			70,
+			1,
+			Vector2i(32, 16),
+			unreachable_values,
+		)
+	)
+	var reloaded_unreachable_grid: RefCounted = DYNAMIC_OCCUPANCY_GRID.new()
+	reloaded_unreachable_grid.configure(
+		reloaded_unreachable_navigation,
+		"test-static-prewarm-cache",
+	)
+	reloaded_unreachable_grid.register_scene(
+		51,
+		reloaded_unreachable_navigation.cell_to_world(Vector2i(0, 0)),
+	)
+	for dummy_cell_x: int in range(5, 70):
+		reloaded_unreachable_grid.register_scene(
+			100 + dummy_cell_x,
+			reloaded_unreachable_navigation.cell_to_world(
+				Vector2i(dummy_cell_x, 0)
+			),
+		)
+	reloaded_unreachable_grid.finalize_registration()
+	reloaded_unreachable_grid.prewarm_patrol_cycle_for_scene(
+		51,
+		unreachable_waypoints[0],
+		unreachable_waypoints,
+		0,
+	)
+	expect(
+		reloaded_unreachable_grid.prewarmed_path_build_count == 0
+			and reloaded_unreachable_grid.static_prewarm_cache_hit_count == 2
+			and (
+				(
+					reloaded_unreachable_grid.prewarmed_paths.get(
+						51,
+						{},
+					) as Dictionary
+				)[unreachable_key] as PackedVector2Array
+			).is_empty(),
+		(
+			"dense initial patrol routes, including unreachable legs, are "
+			+ "reused across an identical level reconstruction"
+		),
 		failures,
 	)
 

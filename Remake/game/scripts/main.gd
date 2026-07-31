@@ -584,7 +584,11 @@ func load_imported_level(level_id: String = LEVEL_VIEW.DEFAULT_LEVEL_ID) -> bool
 
 	terrain_loaded = true
 	world_size = imported["size"] as Vector2
-	var margin := Vector2(24.0, 24.0)
+	# Original movement commands resolve to the centre of the 32x16
+	# navigation cells at the map edge. Stable MOD m009, for example, accepts
+	# (16, 1256) exactly. A symmetric 24-pixel presentation margin silently
+	# changed that command to (24, 1256).
+	var margin := Vector2(16.0, 8.0)
 	movement_bounds = Rect2(margin, (world_size - margin * 2.0).max(Vector2.ONE))
 	imported_entity_count = spawn_imported_entities()
 	navigation_grid = _load_navigation_grid()
@@ -1036,7 +1040,16 @@ func spawn_squad() -> void:
 	dynamic_occupancy = null
 	if navigation_grid != null:
 		dynamic_occupancy = DYNAMIC_OCCUPANCY_GRID.new()
-		dynamic_occupancy.configure(navigation_grid)
+		var level_id := str(
+			current_mission.get(
+				"id",
+				FORMAL_LEVEL_IDS[current_level_index],
+			)
+		)
+		dynamic_occupancy.configure(
+			navigation_grid,
+			"initial-static:%s" % level_id,
+		)
 		for door: Node2D in legacy_doors:
 			if is_instance_valid(door) and door.has_method(
 				"bind_dynamic_occupancy"

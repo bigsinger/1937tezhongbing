@@ -12,6 +12,14 @@ const MIN_ACTOR_SEPARATION := 12.0
 ## live separation during movement instead. A few large footprints must not
 ## make an otherwise sparse mission lose its original dynamic routing.
 const MAX_DYNAMIC_PATH_OBSTACLE_CELLS := 64
+## Patrol prewarming is repeated whenever a level is reconstructed (loading a
+## save, replaying a checkpoint, or switching away and back). The authored
+## static graph and recovered legacy pathfinder are immutable for that initial
+## level state, so dense-map patrol legs can be shared across reconstructions.
+## Runtime path queries, opened doors, reservations, and sparse-map actor
+## avoidance deliberately never use this process-global cache.
+const GLOBAL_STATIC_PREWARM_CACHE_VERSION := "legacy-reverse-v2"
+const MAX_GLOBAL_STATIC_PREWARM_PATHS := 16384
 ## A small set of formal-map actors and vehicles has its connected L2/L3
 ## footprint one cell away from the serialized reference cell. Larger
 ## distances indicate a stale/reused scene reference and must not create an
@@ -19,6 +27,7 @@ const MAX_DYNAMIC_PATH_OBSTACLE_CELLS := 64
 const MAX_SOURCE_ANCHOR_DISTANCE := 1
 
 var navigation: RefCounted
+static var global_static_prewarmed_paths: Dictionary = {}
 var actors: Dictionary = {}
 var actor_origin_owners: Dictionary = {}
 var disabled_source_scenes: Dictionary = {}
@@ -41,6 +50,8 @@ var prewarmed_paths: Dictionary = {}
 var prewarmed_path_build_count := 0
 var prewarmed_path_hit_count := 0
 var prewarmed_path_suffix_hit_count := 0
+var static_prewarm_cache_namespace := ""
+var static_prewarm_cache_hit_count := 0
 var last_prewarmed_path_nearest_distance := -1
 var accepted_moves: Array[Dictionary] = []
 var accepted_diagonal_crossings: Dictionary = {}
@@ -55,8 +66,14 @@ var relocation_rejection_count := 0
 var sprite_footprint_update_count := 0
 
 
-func configure(source_navigation: RefCounted) -> void:
+func configure(
+	source_navigation: RefCounted,
+	new_static_prewarm_cache_namespace: String = "",
+) -> void:
 	navigation = source_navigation
+	static_prewarm_cache_namespace = (
+		new_static_prewarm_cache_namespace.strip_edges()
+	)
 	actors.clear()
 	actor_origin_owners.clear()
 	disabled_source_scenes.clear()
@@ -75,6 +92,7 @@ func configure(source_navigation: RefCounted) -> void:
 	prewarmed_path_build_count = 0
 	prewarmed_path_hit_count = 0
 	prewarmed_path_suffix_hit_count = 0
+	static_prewarm_cache_hit_count = 0
 	last_prewarmed_path_nearest_distance = -1
 	accepted_moves.clear()
 	accepted_diagonal_crossings.clear()
@@ -492,6 +510,7 @@ func prewarm_patrol_cycle_for_scene(
 			current_position,
 			destination,
 			true,
+			true,
 		)
 		if path.is_empty():
 			# An empty static route is useful cache data too. It prevents an
@@ -509,6 +528,7 @@ func _cache_prewarmed_path(
 	world_start: Vector2,
 	world_destination: Vector2,
 	cache_empty_path: bool,
+	use_global_static_cache: bool = false,
 ) -> PackedVector2Array:
 	if (
 		navigation == null
@@ -520,6 +540,21 @@ func _cache_prewarmed_path(
 	var scene_cache := prewarmed_paths.get(scene_index, {}) as Dictionary
 	if scene_cache.has(cache_key):
 		return (scene_cache[cache_key] as PackedVector2Array).duplicate()
+	var global_cache_key := ""
+	if use_global_static_cache and not static_prewarm_cache_namespace.is_empty():
+		global_cache_key = _global_static_prewarm_cache_key(
+			scene_index,
+			cache_key,
+		)
+		if global_static_prewarmed_paths.has(global_cache_key):
+			var global_path := (
+				global_static_prewarmed_paths[global_cache_key]
+				as PackedVector2Array
+			).duplicate()
+			scene_cache[cache_key] = global_path.duplicate()
+			prewarmed_paths[scene_index] = scene_cache
+			static_prewarm_cache_hit_count += 1
+			return global_path
 	var path := find_path_for_scene(
 		scene_index,
 		world_start,
@@ -531,8 +566,39 @@ func _cache_prewarmed_path(
 	scene_cache = prewarmed_paths.get(scene_index, {}) as Dictionary
 	scene_cache[cache_key] = path.duplicate()
 	prewarmed_paths[scene_index] = scene_cache
+	if not global_cache_key.is_empty():
+		if (
+			global_static_prewarmed_paths.size()
+			>= MAX_GLOBAL_STATIC_PREWARM_PATHS
+		):
+			global_static_prewarmed_paths.clear()
+		global_static_prewarmed_paths[global_cache_key] = path.duplicate()
 	prewarmed_path_build_count += 1
 	return path
+
+
+func _global_static_prewarm_cache_key(
+	scene_index: int,
+	path_key: Vector4i,
+) -> String:
+	var actor := actors.get(scene_index, {}) as Dictionary
+	var movement_offsets := (
+		actor.get("movement_offsets", [Vector2i.ZERO])
+		as Array[Vector2i]
+	)
+	return "%s|%s|%dx%d|a%d|d%d|%d,%d,%d,%d|%s" % [
+		GLOBAL_STATIC_PREWARM_CACHE_VERSION,
+		static_prewarm_cache_namespace,
+		int(navigation.dimensions.x),
+		int(navigation.dimensions.y),
+		actors.size(),
+		disabled_source_scenes.size(),
+		path_key.x,
+		path_key.y,
+		path_key.z,
+		path_key.w,
+		_movement_offsets_cache_key(movement_offsets),
+	]
 
 
 func _prewarmed_path(

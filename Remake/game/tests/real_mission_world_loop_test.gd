@@ -31,6 +31,8 @@ var pending_completed_objectives: Array[String] = []
 var expected_objective_records: Dictionary = {}
 var objective_disk_records: Dictionary = {}
 var initial_disk_records: Dictionary = {}
+var profile_loads := false
+var profile_mark_usec := 0
 
 
 func _init() -> void:
@@ -38,6 +40,8 @@ func _init() -> void:
 
 
 func _run() -> void:
+	profile_loads = OS.get_cmdline_user_args().has("--profile-loads")
+	profile_mark_usec = Time.get_ticks_usec()
 	var main = MAIN_SCENE.instantiate()
 	root.add_child(main)
 	main.set_process(false)
@@ -49,6 +53,7 @@ func _run() -> void:
 	for level_index: int in range(LEVEL_IDS.size()):
 		var level_id := LEVEL_IDS[level_index]
 		main.switch_level(level_index, false, false)
+		_profile_checkpoint("%s initial load" % level_id, main)
 		_prepare_level_for_deterministic_world_actions(main)
 		_register_required_objective_records(main, level_id)
 		_save_initial_disk_checkpoint(main, level_id)
@@ -71,6 +76,7 @@ func _run() -> void:
 			{"session": checkpoint}
 		)
 		main.switch_level(level_index, false, false)
+		_profile_checkpoint("%s checkpoint reload" % level_id, main)
 		_prepare_level_for_deterministic_world_actions(main)
 		var restore_result: Dictionary = GAME_SESSION_STATE.apply_after_level_loaded(
 			main,
@@ -108,6 +114,7 @@ func _run() -> void:
 		)
 
 		main.switch_level(level_index, false, false)
+		_profile_checkpoint("%s failure reload" % level_id, main)
 		_prepare_level_for_deterministic_world_actions(main)
 		_trigger_primary_failure(main, level_id)
 		await process_frame
@@ -120,6 +127,7 @@ func _run() -> void:
 		disk_capture_enabled = false
 		main.runtime_settings["mission_rule_mode"] = "repaired"
 		main.switch_level(level_index, false, false)
+		_profile_checkpoint("%s repaired load" % level_id, main)
 		_prepare_level_for_deterministic_world_actions(main)
 		_expect(
 			str(main.current_mission.get("rule_mode", "")) == "repaired",
@@ -135,6 +143,7 @@ func _run() -> void:
 			checkpoint.get("mission_rule_mode", "stable_mod")
 		)
 		main.switch_level(level_index, false, false)
+		_profile_checkpoint("%s repaired checkpoint reload" % level_id, main)
 		_prepare_level_for_deterministic_world_actions(main)
 		var restore_result: Dictionary = GAME_SESSION_STATE.apply_after_level_loaded(
 			main,
@@ -153,6 +162,7 @@ func _run() -> void:
 		)
 	main.runtime_settings["mission_rule_mode"] = "stable_mod"
 	disk_capture_enabled = false
+	_profile_checkpoint("begin physical checkpoint validation", main)
 	_validate_all_objective_disk_checkpoints(main)
 
 	root.remove_child(main)
@@ -871,6 +881,10 @@ func _validate_all_objective_disk_checkpoints(main: Node) -> void:
 			session.get("mission_rule_mode", "stable_mod")
 		)
 		main.switch_level(level_index, false, false)
+		_profile_checkpoint(
+			"%s physical checkpoint %s reload" % [level_id, slot_id],
+			main,
+		)
 		_prepare_level_for_deterministic_world_actions(main)
 		var apply_result: Dictionary = GAME_SESSION_STATE.apply_after_level_loaded(
 			main,
@@ -917,6 +931,28 @@ func _cleanup_disk_test_root() -> void:
 	if absolute_root.is_empty() or not DirAccess.dir_exists_absolute(absolute_root):
 		return
 	_remove_disk_tree(absolute_root)
+
+
+func _profile_checkpoint(label: String, main: Node) -> void:
+	if not profile_loads:
+		return
+	var now_usec := Time.get_ticks_usec()
+	var dynamic_grid: Variant = main.get("dynamic_occupancy")
+	var path_builds := -1
+	var global_hits := -1
+	if dynamic_grid != null:
+		path_builds = int(dynamic_grid.get("prewarmed_path_build_count"))
+		global_hits = int(dynamic_grid.get("static_prewarm_cache_hit_count"))
+	print(
+		"PROFILE %s delta_ms=%.3f path_builds=%d global_hits=%d"
+		% [
+			label,
+			float(now_usec - profile_mark_usec) / 1000.0,
+			path_builds,
+			global_hits,
+		]
+	)
+	profile_mark_usec = now_usec
 
 
 func _remove_disk_tree(absolute_path: String) -> void:

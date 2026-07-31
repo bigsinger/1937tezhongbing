@@ -14,6 +14,9 @@ param(
     [double]$CameraTolerance = 24,
     [ValidateRange(0, 600000)]
     [double]$ElapsedToleranceMs = 1500,
+    [int[]]$SceneIndices = @(),
+    [switch]$IgnoreHitPoints,
+    [switch]$IgnoreAliveState,
     [switch]$RequireExactActorSet,
     [switch]$AllowMismatch
 )
@@ -89,6 +92,10 @@ function Compare-ExactField {
 $reference = Read-Trace $ReferenceTrace
 $candidate = Read-Trace $CandidateTrace
 $mismatches = [Collections.Generic.List[object]]::new()
+$sceneFilter = @{}
+foreach ($sceneIndex in @($SceneIndices | Sort-Object -Unique)) {
+    $sceneFilter[[int]$sceneIndex] = $true
+}
 
 foreach ($field in @('content_profile')) {
     Compare-ExactField $mismatches 'trace' 'trace' `
@@ -172,6 +179,18 @@ foreach ($referenceCheckpoint in $referenceCheckpoints) {
 
     $referenceActors = @($referenceCheckpoint.actors)
     $candidateActors = @($candidateCheckpoint.actors)
+    if ($sceneFilter.Count -gt 0) {
+        $referenceActors = @(
+            $referenceActors |
+                Where-Object {
+                    $sceneFilter.ContainsKey([int]$_.scene_index)
+                })
+        $candidateActors = @(
+            $candidateActors |
+                Where-Object {
+                    $sceneFilter.ContainsKey([int]$_.scene_index)
+                })
+    }
     $referenceByScene = @{}
     $candidateByScene = @{}
     foreach ($actor in $referenceActors) {
@@ -193,9 +212,11 @@ foreach ($referenceCheckpoint in $referenceCheckpoints) {
             'actor_id',
             'role',
             'database_entry_id',
-            'faction_id',
-            'alive'
+            'faction_id'
         )
+        if (-not $IgnoreAliveState) {
+            $exactActorFields += 'alive'
+        }
         if (-not $checkpointId.EndsWith(
                 '_commanded',
                 [StringComparison]::OrdinalIgnoreCase)) {
@@ -205,13 +226,15 @@ foreach ($referenceCheckpoint in $referenceCheckpoints) {
             Compare-ExactField $mismatches $checkpointId $actorPath `
                 $referenceActor $candidateActor $field
         }
-        foreach ($field in @('current', 'maximum')) {
-            if ((Property-Exists $referenceActor 'hit_points') -and
-                (Property-Exists $candidateActor 'hit_points')) {
-                Compare-ExactField $mismatches $checkpointId `
-                    "$actorPath.hit_points" `
-                    $referenceActor.hit_points `
-                    $candidateActor.hit_points $field
+        if (-not $IgnoreHitPoints) {
+            foreach ($field in @('current', 'maximum')) {
+                if ((Property-Exists $referenceActor 'hit_points') -and
+                    (Property-Exists $candidateActor 'hit_points')) {
+                    Compare-ExactField $mismatches $checkpointId `
+                        "$actorPath.hit_points" `
+                        $referenceActor.hit_points `
+                        $candidateActor.hit_points $field
+                }
             }
         }
         foreach ($field in @(
@@ -355,6 +378,9 @@ $result = [pscustomobject][ordered]@{
         target_px = $TargetTolerance
         camera_px = $CameraTolerance
         elapsed_ms = $ElapsedToleranceMs
+        scene_indices = @($sceneFilter.Keys | Sort-Object)
+        ignore_hit_points = [bool]$IgnoreHitPoints
+        ignore_alive_state = [bool]$IgnoreAliveState
         exact_actor_set = [bool]$RequireExactActorSet
     }
     mismatches = @($mismatches)

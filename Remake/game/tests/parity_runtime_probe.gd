@@ -7,9 +7,11 @@ const OUTPUT_ARGUMENT_PREFIX := "--output-dir="
 const MOVE_SPEED_ARGUMENT_PREFIX := "--move-speed="
 const LEVEL_ARGUMENT_PREFIX := "--level-id="
 const SCENARIO_ARGUMENT_PREFIX := "--scenario-id="
+const PLAYER_SCENE_ARGUMENT_PREFIX := "--player-scene-index="
 const OUTBOUND_ARGUMENT_PREFIX := "--outbound-target="
 const RETURN_ARGUMENT_PREFIX := "--return-target="
 const OBSERVATION_ARGUMENT_PREFIX := "--observation-seconds="
+const COMMAND_HANDOFF_ARGUMENT_PREFIX := "--command-handoff-seconds="
 const PATROL_SETTLE_ARGUMENT_PREFIX := "--patrol-settle-seconds="
 const PRIMARY_DATABASE_ENTRY_ID := 924
 const MINE_PICKUP_SCENARIO_ID := "m001-mine-pickup-inventory-v1"
@@ -196,6 +198,11 @@ func _run_probe() -> void:
 			else _enemy_patrol_scenario_id(level_id)
 		),
 	)
+	var player_scene_index := _parse_integer_argument(
+		arguments,
+		PLAYER_SCENE_ARGUMENT_PREFIX,
+		-1,
+	)
 	var outbound_target := _parse_vector_argument(
 		arguments,
 		OUTBOUND_ARGUMENT_PREFIX,
@@ -210,6 +217,11 @@ func _run_probe() -> void:
 		arguments,
 		OBSERVATION_ARGUMENT_PREFIX,
 		OBSERVATION_SECONDS,
+	)
+	var command_handoff_seconds := _parse_positive_float_argument(
+		arguments,
+		COMMAND_HANDOFF_ARGUMENT_PREFIX,
+		0.0,
 	)
 	var patrol_settle_seconds := _parse_positive_float_argument(
 		arguments,
@@ -262,9 +274,21 @@ func _run_probe() -> void:
 		return
 	trace.capture_main("gameplay_ready", main, _elapsed_ms(started))
 
-	var primary = _primary_unit(main)
-	_expect(primary != null, "m000 primary DBL 924 actor exists")
+	var primary = (
+		_player_for_scene(main, player_scene_index)
+		if player_scene_index >= 0
+		else _primary_unit(main)
+	)
+	_expect(
+		primary != null,
+		(
+			"requested controllable scene %d exists" % player_scene_index
+			if player_scene_index >= 0
+			else "m000 primary DBL 924 actor exists"
+		),
+	)
 	if primary != null:
+		var initial_position: Vector2 = primary.position
 		var calibrated_speed := _parse_move_speed(arguments)
 		if calibrated_speed > 0.0:
 			primary.set("move_speed", calibrated_speed)
@@ -276,6 +300,8 @@ func _run_probe() -> void:
 			primary.target_position.distance_to(outbound_target) <= 1.0,
 			"outbound target is accepted exactly",
 		)
+		if command_handoff_seconds > 0.0:
+			await _wait_physics_seconds(command_handoff_seconds)
 		trace.capture_main(
 			"move_outbound_commanded",
 			main,
@@ -291,7 +317,7 @@ func _run_probe() -> void:
 		)
 		_expect(
 			primary.position.distance_to(outbound_target)
-			< Vector2(241.0, 51.0).distance_to(outbound_target),
+			< initial_position.distance_to(outbound_target),
 			"outbound movement approaches the target",
 		)
 
@@ -301,6 +327,8 @@ func _run_probe() -> void:
 			primary.target_position.distance_to(return_target) <= 1.0,
 			"second click replaces the active goal",
 		)
+		if command_handoff_seconds > 0.0:
+			await _wait_physics_seconds(command_handoff_seconds)
 		trace.capture_main(
 			"move_return_commanded",
 			main,
@@ -905,7 +933,7 @@ func _scenario_description(scenario_id: String, level_id: String) -> String:
 			+ "AI target-state transitions."
 		)
 	return (
-		"Select 强子, issue two original-coordinate move orders, "
+		"Select the audited controllable scene, issue two original-coordinate move orders, "
 		+ "and observe facing/path replacement."
 	)
 
@@ -954,6 +982,17 @@ func _parse_string_argument(
 			if not parsed.is_empty():
 				return parsed
 	return default_value
+
+
+func _parse_integer_argument(
+	arguments: PackedStringArray,
+	prefix: String,
+	default_value: int,
+) -> int:
+	var value := _parse_string_argument(arguments, prefix, "")
+	if not value.is_valid_int():
+		return default_value
+	return value.to_int()
 
 
 func _parse_vector_argument(
