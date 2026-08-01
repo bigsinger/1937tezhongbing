@@ -181,3 +181,21 @@ to recapture both runtimes from an isolated MOD copy. CI uses
 `Verify-TwelveLevelHumanInputNaturalFailureParity.ps1` to replay all twelve
 Remake scenarios against the checked-in read-only MOD evidence without needing
 to launch the legacy executable.
+
+`m000-human-input-cheat-victory-v1.json` through
+`m011-human-input-cheat-victory-v1.json` cover the complementary native victory
+transition. The stable MOD receives the original built-in `FLIPMISSION` text
+as 22 process-local DirectInput down/up events; the Remake receives the same
+letters as 22 target-viewport events. Each runtime must move from active/result
+0 to victory/result 3, with all authored Remake objectives complete. The probe
+does not write actor state or mission results and does not call system cursor,
+keyboard or global-focus APIs.
+
+This is deliberately labelled `cheat-victory-transition-only`: it verifies
+the original cheat recognizer, mission evaluator and victory presentation
+entry, but it is not evidence of a non-cheat gameplay completion. The latter
+remains an explicit parity-contract gap. The checked-in comparison contains 60
+strict checks per level, 720 total, with zero mismatches. Use
+`Capture-TwelveLevelHumanInputCheatVictoryParity.ps1 -UpdateBaselines` to
+recapture it and `Verify-TwelveLevelHumanInputCheatVictoryParity.ps1` for the
+CI replay.

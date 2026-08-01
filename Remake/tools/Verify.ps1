@@ -304,6 +304,12 @@ if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
         -OutputDirectory (
             Join-Path $parityProbeOutput `
                 'human-input-natural-failure')
+    & (Join-Path $PSScriptRoot `
+        'Verify-TwelveLevelHumanInputCheatVictoryParity.ps1') `
+        -GodotExecutable $GodotExecutable `
+        -OutputDirectory (
+            Join-Path $parityProbeOutput `
+                'human-input-cheat-victory')
     $movementParityRoutes = @(
         [pscustomobject]@{ level = 0; scene = 1436; out_x = 9; out_y = 7; back_x = 1; back_y = 1 },
         [pscustomobject]@{ level = 1; scene = 1993; out_x = 112; out_y = 248; back_x = 125; back_y = 254 },

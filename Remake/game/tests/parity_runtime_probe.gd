@@ -21,6 +21,7 @@ const MINE_PICKUP_SCENARIO_ID := "m001-mine-pickup-inventory-v1"
 const PISTOL_ATTACK_SCENARIO_ID := "m000-pistol-attack-inventory-v1"
 const NATIVE_REQUIRED_FAILURE_SUFFIX := "-native-required-player-failure-v1"
 const HUMAN_INPUT_NATURAL_FAILURE_SUFFIX := "-human-input-natural-failure-v1"
+const HUMAN_INPUT_CHEAT_VICTORY_SUFFIX := "-human-input-cheat-victory-v1"
 const NATIVE_REQUIRED_FAILURE_SCENES := {
 	"m000": 1436,
 	"m001": 1994,
@@ -481,6 +482,15 @@ func _run_probe() -> void:
 			scenario_id,
 		)
 		return
+	if scenario_id == _human_input_cheat_victory_scenario_id(level_id):
+		await _run_human_input_cheat_victory_probe(
+			main,
+			trace,
+			started,
+			level_id,
+			scenario_id,
+		)
+		return
 	if scenario_id == _native_required_failure_scenario_id(level_id):
 		await _run_native_required_failure_probe(
 			main,
@@ -744,6 +754,135 @@ func _run_native_required_failure_probe(
 		trace,
 		scenario_id,
 	)
+
+
+func _run_human_input_cheat_victory_probe(
+	main: Node,
+	trace: RefCounted,
+	started: int,
+	level_id: String,
+	scenario_id: String,
+) -> void:
+	_expect(
+		main.current_mission_state != null
+			and not main.current_mission_state.is_failed()
+			and not main.current_mission_state.is_victory(),
+		"%s begins in the active mission state" % level_id,
+	)
+	trace.call(
+		"capture_main",
+		"gameplay_active",
+		main,
+		_elapsed_ms(started),
+		{
+			"input_isolation": "target-viewport-events",
+			"mission_result_writes": 0,
+			"original_result_state": 0,
+		},
+	)
+
+	var input_sequence := await _type_original_cheat_text(main, "FLIPMISSION")
+	# Victory handling schedules media/save presentation with call_deferred().
+	# Let those product callbacks observe the same input-driven state before the
+	# second checkpoint, without calling the completion method from this probe.
+	for _frame_index: int in range(4):
+		await process_frame
+	var all_objectives_completed := true
+	for objective_value: Variant in main.current_mission_state.completed.values():
+		if not bool(objective_value):
+			all_objectives_completed = false
+			break
+	_expect(
+		input_sequence.size() == "FLIPMISSION".length(),
+		"all eleven original cheat letters reach the target viewport",
+	)
+	_expect(
+		main.current_mission_state.is_victory()
+			and not main.current_mission_state.is_failed(),
+		"%s FLIPMISSION input reaches the product victory state" % level_id,
+	)
+	_expect(
+		all_objectives_completed,
+		"%s cheat transition marks every authored objective complete" % level_id,
+	)
+	_expect(
+		str(main.get("original_cheat_buffer")).is_empty()
+			and str(main.get("victory_handled_level_id")) == level_id,
+		"%s product victory handler consumes and records the cheat transition"
+		% level_id,
+	)
+	trace.call(
+		"capture_main",
+		"cheat_input_committed",
+		main,
+		_elapsed_ms(started),
+		{
+			"input_isolation": "target-viewport-events",
+			"mission_result_writes": 0,
+			"original_result_state": 3,
+			"cheat_code": "FLIPMISSION",
+			"cheat_key_count": input_sequence.size(),
+		},
+	)
+
+	var trace_document: Dictionary = trace.get("document") as Dictionary
+	var metadata := trace_document.get("metadata", {}) as Dictionary
+	metadata.merge(
+		{
+			"input_isolation": "target-viewport-events",
+			"mission_evaluator": "MissionState+Main._on_mission_victory",
+			"mission_observer": "RuntimeParityTrace-read-only",
+			"evidence_scope": "cheat-victory-transition-only",
+			"cheat_code": "FLIPMISSION",
+			"cheat_key_count": input_sequence.size(),
+			"mission_result_writes": 0,
+			"actor_state_writes": 0,
+			"system_cursor_calls": 0,
+			"system_keyboard_calls": 0,
+			"global_focus_calls": 0,
+		},
+		true,
+	)
+	trace_document["metadata"] = metadata
+	trace_document["input"] = {
+		"action_kind": "original_builtin_cheat_text",
+		"text": "FLIPMISSION",
+		"viewport_input_events": input_sequence.size() * 2,
+		"sequence": input_sequence,
+	}
+	trace_document["passed"] = failures.is_empty()
+	var trace_path := ""
+	if not output_directory.is_empty():
+		trace_path = output_directory.path_join(
+			"remake-%s.json" % _safe_file_component(scenario_id)
+		)
+		_expect(
+			trace.call("write_to_file", trace_path) == OK,
+			"Remake human-input cheat-victory parity trace writes",
+		)
+	print(
+		"PARITY_RUNTIME_PROBE_RESULT %s"
+		% JSON.stringify(
+			{
+				"trace": trace_path,
+				"checkpoints": (
+					trace_document.get("checkpoints", []) as Array
+				).size(),
+				"viewport_input_events": input_sequence.size() * 2,
+				"failures": failures,
+			}
+		)
+	)
+	get_root().remove_child(main)
+	main.free()
+	await process_frame
+	await process_frame
+	if failures.is_empty():
+		quit(0)
+		return
+	for failure: String in failures:
+		push_error(failure)
+	quit(1)
 
 
 func _run_human_input_natural_failure_probe(
@@ -2110,6 +2249,13 @@ func _scenario_description(scenario_id: String, level_id: String) -> String:
 			+ "click the audited danger route, then observe enemy combat "
 			+ "and required_character_lost."
 		)
+	if scenario_id == _human_input_cheat_victory_scenario_id(level_id):
+		return (
+			"Type the original built-in FLIPMISSION cheat through target-viewport "
+			+ "key events and observe the product mission state choose victory. "
+			+ "This proves the input-to-victory transition, not a non-cheat "
+			+ "gameplay completion."
+		)
 	if scenario_id == _native_required_failure_scenario_id(level_id):
 		return (
 			"Apply the original unconditional damage threshold to required "
@@ -2186,6 +2332,10 @@ func _native_required_failure_scenario_id(level_id: String) -> String:
 
 func _human_input_natural_failure_scenario_id(level_id: String) -> String:
 	return level_id + HUMAN_INPUT_NATURAL_FAILURE_SUFFIX
+
+
+func _human_input_cheat_victory_scenario_id(level_id: String) -> String:
+	return level_id + HUMAN_INPUT_CHEAT_VICTORY_SUFFIX
 
 
 func _parse_move_speed(arguments: PackedStringArray) -> float:
@@ -2358,6 +2508,33 @@ func _tap_key(keycode: Key) -> void:
 	event.pressed = false
 	root.push_input(event)
 	await process_frame
+
+
+func _type_original_cheat_text(main: Node, text: String) -> Array[Dictionary]:
+	var sequence: Array[Dictionary] = []
+	for index: int in range(text.length()):
+		var character := text.substr(index, 1).to_upper()
+		var unicode_value := character.unicode_at(0)
+		var press := InputEventKey.new()
+		press.keycode = unicode_value as Key
+		press.physical_keycode = unicode_value as Key
+		press.unicode = unicode_value
+		press.pressed = true
+		root.push_input(press)
+		await process_frame
+		var release := press.duplicate() as InputEventKey
+		release.pressed = false
+		root.push_input(release)
+		await process_frame
+		sequence.append({
+			"kind": "cheat_letter",
+			"letter": character,
+			"keycode": unicode_value,
+			"event_unicode": press.unicode,
+			"buffer_after": str(main.get("original_cheat_buffer")),
+			"events": 2,
+		})
+	return sequence
 
 
 func _pan_view_to_world(main: Node, world_position: Vector2) -> void:

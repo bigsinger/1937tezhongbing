@@ -97,6 +97,10 @@ Remake\LocalBuild\1937Remake\Play-1937-Remake.cmd
 第一关无遮挡移动与树边绕行已建立 MOD/Remake 共用运行轨迹和严格差分
 回归；schema、基线、比较器与当前证据见
 [`Remake/docs/MOD完全复刻开发实施方案.md`](Remake/docs/MOD完全复刻开发实施方案.md#8-已落地的首条-modremake-差分闭环)。
+十二关真实输入自然交战失败现有 708 项零差异对照；原版内置
+`FLIPMISSION` 的进程内按键到胜利状态转换另有 720 项零差异对照。后者
+只证明胜利转换链，不作为非作弊完整通关证据；这一边界仍由机器可读 parity
+contract 强制保留。
 Remake 还已通过十二关双轮 600 秒真实窗口性能门禁：33,125 帧整体
 P95 18.389 ms、P99 20.714 ms、零个 >50 ms 帧，且不会控制系统鼠标。
 参考硬件与逐关数据见

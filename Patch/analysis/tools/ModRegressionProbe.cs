@@ -64,6 +64,7 @@ internal static class ModRegressionProbe
     private const int DikDigit0 = 0x0B;
     private const int DikLeftControl = 0x1D;
     private const int DikS = 0x1F;
+    private const int DikC = 0x2E;
     private const int DikW = 0x11;
     private const int DikB = 0x30;
     private const int DikUp = 0xC8;
@@ -465,6 +466,8 @@ internal static class ModRegressionProbe
                 "[--crt-random-runtime-only " +
                 "--crt-random-runtime-ms=MS] " +
                 "[--movement-only] " +
+                "[--movement-crawl] " +
+                "[--movement-single-leg] " +
                 "[--movement-player-scene=SCENE_INDEX] " +
                 "[--movement-observation-ms=MS] " +
                 "[--inventory-only] " +
@@ -474,6 +477,7 @@ internal static class ModRegressionProbe
                 "--native-failure-scene=SCENE_INDEX " +
                 "--native-lure-scene=SCENE_INDEX " +
                 "--native-natural-failure-ms=MS] " +
+                "[--native-mission-cheat-victory-only] " +
                 "[--visual-capture-only " +
                 "--visual-camera-x=X --visual-camera-y=Y] " +
                 "[--identity-catalog=PATH --parity-patrol-only | " +
@@ -537,6 +541,18 @@ internal static class ModRegressionProbe
                 "--movement-only",
                 StringComparison.OrdinalIgnoreCase);
         });
+        bool movementCrawl = args.Any(delegate(string argument)
+        {
+            return argument.Equals(
+                "--movement-crawl",
+                StringComparison.OrdinalIgnoreCase);
+        });
+        bool movementSingleLeg = args.Any(delegate(string argument)
+        {
+            return argument.Equals(
+                "--movement-single-leg",
+                StringComparison.OrdinalIgnoreCase);
+        });
         bool inventoryOnly = args.Any(delegate(string argument)
         {
             return argument.Equals(
@@ -554,6 +570,13 @@ internal static class ModRegressionProbe
             {
                 return argument.Equals(
                     "--native-mission-natural-failure-only",
+                    StringComparison.OrdinalIgnoreCase);
+            });
+        bool nativeMissionCheatVictoryOnly = args.Any(
+            delegate(string argument)
+            {
+                return argument.Equals(
+                    "--native-mission-cheat-victory-only",
                     StringComparison.OrdinalIgnoreCase);
             });
         int nativeNaturalFailureMilliseconds = 30000;
@@ -682,7 +705,7 @@ internal static class ModRegressionProbe
             movementObservationMilliseconds = Math.Max(
                 500,
                 Math.Min(
-                    10000,
+                    120000,
                     parsedMovementObservationMilliseconds));
         }
         int movementCellX;
@@ -791,22 +814,24 @@ internal static class ModRegressionProbe
                 "Briefing-only and briefing-dismissal-only are mutually " +
                 "exclusive.");
         }
-        if (nativeMissionFailureOnly &&
-            nativeMissionNaturalFailureOnly)
+        int nativeMissionModeCount =
+            (nativeMissionFailureOnly ? 1 : 0) +
+            (nativeMissionNaturalFailureOnly ? 1 : 0) +
+            (nativeMissionCheatVictoryOnly ? 1 : 0);
+        if (nativeMissionModeCount > 1)
         {
             throw new InvalidOperationException(
-                "Injected and natural native mission failure modes are " +
+                "Native mission failure and cheat-victory modes are " +
                 "mutually exclusive.");
         }
-        if ((nativeMissionFailureOnly ||
-             nativeMissionNaturalFailureOnly) &&
+        if (nativeMissionModeCount > 0 &&
             (briefingOnly || briefingDismissalOnly ||
              movementOnly || inventoryOnly || visualCaptureOnly ||
              crtRandomStartupOnly || crtRandomRuntimeOnly ||
              parityModeCount > 0))
         {
             throw new InvalidOperationException(
-                "Native-mission-failure-only cannot be combined with " +
+                "Native mission capture cannot be combined with " +
                 "another specialized probe mode.");
         }
         if ((crtRandomStartupOnly || crtRandomRuntimeOnly) &&
@@ -814,6 +839,7 @@ internal static class ModRegressionProbe
              movementOnly || inventoryOnly ||
              nativeMissionFailureOnly ||
              nativeMissionNaturalFailureOnly ||
+             nativeMissionCheatVictoryOnly ||
              visualCaptureOnly || parityModeCount > 0))
         {
             throw new InvalidOperationException(
@@ -829,6 +855,7 @@ internal static class ModRegressionProbe
             (briefingOnly || briefingDismissalOnly ||
              nativeMissionFailureOnly ||
              nativeMissionNaturalFailureOnly ||
+             nativeMissionCheatVictoryOnly ||
              parityModeCount > 0))
         {
             throw new InvalidOperationException(
@@ -840,6 +867,7 @@ internal static class ModRegressionProbe
              movementOnly || inventoryOnly ||
              nativeMissionFailureOnly ||
              nativeMissionNaturalFailureOnly ||
+             nativeMissionCheatVictoryOnly ||
              parityModeCount > 0))
         {
             throw new InvalidOperationException(
@@ -992,7 +1020,8 @@ internal static class ModRegressionProbe
         startInfo.EnvironmentVariables["M1937_WINDOW_REPLAY"] = "1";
         startInfo.EnvironmentVariables["M1937_TELEMETRY"] = "1";
         if (nativeMissionFailureOnly ||
-            nativeMissionNaturalFailureOnly)
+            nativeMissionNaturalFailureOnly ||
+            nativeMissionCheatVictoryOnly)
             startInfo.EnvironmentVariables["M1937_MISSION_TRACE"] = "1";
         startInfo.EnvironmentVariables["M1937_START_LEVEL"] =
             selectorLevel.ToString(CultureInfo.InvariantCulture);
@@ -1469,6 +1498,128 @@ internal static class ModRegressionProbe
                            spawnScreenHeight + "); synchronized=" +
                            cameraStateSynchronized);
 
+                if (nativeMissionCheatVictoryOnly)
+                {
+                    string nativeTelemetryPath = Path.Combine(
+                        gameDirectory, "M1937Telemetry.jsonl");
+                    NativeMissionObservation beforeMission = null;
+                    bool nativeActiveObserved = WaitUntil(
+                        delegate()
+                        {
+                            NativeMissionObservation candidate;
+                            if (!TryReadLatestNativeMissionObservation(
+                                    nativeTelemetryPath, out candidate) ||
+                                candidate == null ||
+                                !candidate.ObserverEnabled ||
+                                !candidate.Observed ||
+                                candidate.EngineMission !=
+                                    route.EngineMission ||
+                                !String.Equals(
+                                    candidate.Status,
+                                    "active",
+                                    StringComparison.Ordinal) ||
+                                candidate.ResultState != 0)
+                                return false;
+                            beforeMission = candidate;
+                            return true;
+                        },
+                        TimeSpan.FromSeconds(4));
+                    int cheatKeyCount = 0;
+                    bool cheatInputSent =
+                        nativeActiveObserved &&
+                        SendCheatText(
+                            window,
+                            "FLIPMISSION",
+                            out cheatKeyCount);
+                    NativeMissionObservation afterMission = null;
+                    bool nativeVictoryObserved = WaitUntil(
+                        delegate()
+                        {
+                            NativeMissionObservation candidate;
+                            if (!TryReadLatestNativeMissionObservation(
+                                    nativeTelemetryPath, out candidate) ||
+                                candidate == null ||
+                                !candidate.ObserverEnabled ||
+                                !candidate.Observed ||
+                                candidate.EngineMission !=
+                                    route.EngineMission ||
+                                !String.Equals(
+                                    candidate.Status,
+                                    "victory",
+                                    StringComparison.Ordinal) ||
+                                candidate.ResultState != 3)
+                                return false;
+                            afterMission = candidate;
+                            return true;
+                        },
+                        TimeSpan.FromSeconds(12));
+                    AddStage(
+                        stages, game, process, imageBase, clock,
+                        "flipmission_process_local_input",
+                        cheatInputSent,
+                        "text=FLIPMISSION; scan_code_keys=" +
+                        cheatKeyCount +
+                        "; input_isolation=process-local-DirectInput; " +
+                        "system_keyboard_calls=0; mission_result_writes=0");
+                    AddStage(
+                        stages, game, process, imageBase, clock,
+                        "native_mission_victory_evaluated",
+                        nativeVictoryObserved,
+                        "observer_read_only=true; evaluator=sub_405410; " +
+                        "before_result=" +
+                        (beforeMission == null
+                            ? -1
+                            : beforeMission.ResultState) +
+                        "; after_result=" +
+                        (afterMission == null
+                            ? -1
+                            : afterMission.ResultState) +
+                        "; evaluator_calls=" +
+                        (afterMission == null
+                            ? -1
+                            : afterMission.EvaluatorCalls) +
+                        "; transition_sequence=" +
+                        (afterMission == null
+                            ? -1
+                            : afterMission.TransitionSequence));
+                    bool nativeCheatVictoryPassed =
+                        nativeActiveObserved &&
+                        cheatInputSent &&
+                        cheatKeyCount == "FLIPMISSION".Length &&
+                        nativeVictoryObserved;
+                    WriteNativeMissionCheatVictoryTrace(
+                        outputDirectory,
+                        selectorLevel,
+                        route.EngineMission,
+                        beforeMission,
+                        afterMission,
+                        cheatKeyCount,
+                        nativeCheatVictoryPassed);
+                    samplerStop = true;
+                    sampler.Join(1500);
+                    bool nativeCursorClipSafe;
+                    lock (perf)
+                        nativeCursorClipSafe = perf.All(
+                            delegate(PerfSample sample)
+                            {
+                                return !sample.CursorClipRestricted;
+                            });
+                    exitCode =
+                        missionStarted &&
+                        nativeCheatVictoryPassed &&
+                        nativeCursorClipSafe ? 0 : 1;
+                    WriteArtifacts(
+                        outputDirectory,
+                        selectorLevel,
+                        route.EngineMission,
+                        stages,
+                        perf,
+                        transitionsLogged: nativeVictoryObserved,
+                        replayConsumed: cheatInputSent,
+                        passed: exitCode == 0);
+                    return exitCode;
+                }
+
                 if (nativeMissionFailureOnly)
                 {
                     string nativeTelemetryPath = Path.Combine(
@@ -1910,6 +2061,8 @@ internal static class ModRegressionProbe
                             parityCheckpoints,
                             clock,
                             true,
+                            movementCrawl,
+                            movementSingleLeg,
                             movementPlayerRuntimeIndex,
                             movementPlayerSelectionDik,
                             out movementOnlyEvidence);
@@ -2657,6 +2810,8 @@ internal static class ModRegressionProbe
                         parityCheckpoints,
                         clock,
                         true,
+                        false,
+                        false,
                         -1,
                         DikF4,
                         out contactMovementEvidence);
@@ -2885,6 +3040,8 @@ internal static class ModRegressionProbe
                     returnCellX, returnCellY,
                     movementObservationMilliseconds,
                     parityCheckpoints, clock, false,
+                    false,
+                    false,
                     movementPlayerRuntimeIndex,
                     movementPlayerSelectionDik,
                     out movementEvidence);
@@ -3361,6 +3518,65 @@ internal static class ModRegressionProbe
         Thread.Sleep(180);
         bool up = SendReplay(window, ReplayKeyUp, dik);
         return down && up;
+    }
+
+    private static bool SendCheatText(
+        IntPtr window,
+        string text,
+        out int keyCount)
+    {
+        keyCount = 0;
+        if (window == IntPtr.Zero || String.IsNullOrWhiteSpace(text))
+            return false;
+
+        foreach (char rawCharacter in text)
+        {
+            int dik = DikForUppercaseLetter(
+                Char.ToUpperInvariant(rawCharacter));
+            if (dik < 0 || !PulseKey(window, dik))
+                return false;
+            ++keyCount;
+            // The original cheat recognizer consumes release edges in its
+            // gameplay tick.  Keep adjacent letters on separate ticks while
+            // remaining entirely inside the target process's DirectInput
+            // replay queue (no system keyboard or focus manipulation).
+            Thread.Sleep(100);
+        }
+        return keyCount == text.Length;
+    }
+
+    private static int DikForUppercaseLetter(char character)
+    {
+        switch (character)
+        {
+            case 'Q': return 0x10;
+            case 'W': return 0x11;
+            case 'E': return 0x12;
+            case 'R': return 0x13;
+            case 'T': return 0x14;
+            case 'Y': return 0x15;
+            case 'U': return 0x16;
+            case 'I': return 0x17;
+            case 'O': return 0x18;
+            case 'P': return 0x19;
+            case 'A': return 0x1E;
+            case 'S': return 0x1F;
+            case 'D': return 0x20;
+            case 'F': return 0x21;
+            case 'G': return 0x22;
+            case 'H': return 0x23;
+            case 'J': return 0x24;
+            case 'K': return 0x25;
+            case 'L': return 0x26;
+            case 'Z': return 0x2C;
+            case 'X': return 0x2D;
+            case 'C': return 0x2E;
+            case 'V': return 0x2F;
+            case 'B': return 0x30;
+            case 'N': return 0x31;
+            case 'M': return 0x32;
+            default: return -1;
+        }
     }
 
     private static bool PulseKeyAndObserve(
@@ -6622,7 +6838,7 @@ internal static class ModRegressionProbe
             out cameraY);
         if (!visible)
             return false;
-        for (int attempt = 0; attempt < 3; ++attempt)
+        for (int attempt = 0; attempt < 10; ++attempt)
         {
             cameraX = ReadInt(
                 process, imageBase + EngineAddresses.CameraX);
@@ -6653,7 +6869,31 @@ internal static class ModRegressionProbe
             if (
                 Math.Abs(actualCursorX - settledScreenX) <= 3 &&
                 Math.Abs(actualCursorY - settledScreenY) <= 3)
-                return true;
+            {
+                // ReplayCameraCenter may be implemented as a smooth target by
+                // the compatibility proxy.  A cursor can momentarily match a
+                // world point while that camera is still settling, causing the
+                // following click to land hundreds of world pixels away.  The
+                // target is safe only after both camera and cursor remain
+                // stable across another input frame.
+                Thread.Sleep(180);
+                int stableCameraX = ReadInt(
+                    process, imageBase + EngineAddresses.CameraX);
+                int stableCameraY = ReadInt(
+                    process, imageBase + EngineAddresses.CameraY);
+                int stableScreenX = worldX - stableCameraX;
+                int stableScreenY = worldY - stableCameraY;
+                actualCursorX = ReadInt(
+                    process, imageBase + EngineAddresses.CursorX);
+                actualCursorY = ReadInt(
+                    process, imageBase + EngineAddresses.CursorY);
+                if (
+                    Math.Abs(stableCameraX - settledCameraX) <= 1 &&
+                    Math.Abs(stableCameraY - settledCameraY) <= 1 &&
+                    Math.Abs(actualCursorX - stableScreenX) <= 3 &&
+                    Math.Abs(actualCursorY - stableScreenY) <= 3)
+                    return true;
+            }
         }
         return false;
     }
@@ -7104,6 +7344,8 @@ internal static class ModRegressionProbe
         List<ParityCheckpoint> parityCheckpoints,
         Stopwatch runClock,
         bool allowContactInterruption,
+        bool crawlBeforeMovement,
+        bool singleLegOnly,
         int playerRuntimeIndex,
         int playerSelectionDik,
         out string evidence)
@@ -7183,6 +7425,8 @@ internal static class ModRegressionProbe
             runClock,
             "player_selected");
 
+        bool crawlSent = false;
+
         int targetWorldX = checked(targetCellX * 32 + 16);
         int targetWorldY = checked(targetCellY * 16 + 8);
         int targetScreenX = targetWorldX - cameraX;
@@ -7222,9 +7466,9 @@ internal static class ModRegressionProbe
 
         int cursorX;
         int cursorY;
-        bool cursorReached = MoveReplayCursor(
+        bool cursorReached = MoveReplayCursorToWorldPoint(
             process, imageBase, window,
-            targetScreenX, targetScreenY,
+            targetWorldX, targetWorldY,
             out cursorX, out cursorY);
         // Some large missions need one actor tick after an F-key camera jump
         // before their process-local DirectInput cursor consumes deltas. Retry
@@ -7232,11 +7476,17 @@ internal static class ModRegressionProbe
         for (int attempt = 0; !cursorReached && attempt < 2; ++attempt)
         {
             Thread.Sleep(220);
-            cursorReached = MoveReplayCursor(
+            cursorReached = MoveReplayCursorToWorldPoint(
                 process, imageBase, window,
-                targetScreenX, targetScreenY,
+                targetWorldX, targetWorldY,
                 out cursorX, out cursorY);
         }
+        cameraX = ReadInt(
+            process, imageBase + EngineAddresses.CameraX);
+        cameraY = ReadInt(
+            process, imageBase + EngineAddresses.CameraY);
+        targetScreenX = targetWorldX - cameraX;
+        targetScreenY = targetWorldY - cameraY;
         bool clickSent = false;
         ActorSnapshot firstGoal = null;
         bool firstGoalAccepted = false;
@@ -7247,9 +7497,9 @@ internal static class ModRegressionProbe
             if (attempt > 0)
             {
                 Thread.Sleep(220);
-                cursorReached = MoveReplayCursor(
+                cursorReached = MoveReplayCursorToWorldPoint(
                     process, imageBase, window,
-                    targetScreenX, targetScreenY,
+                    targetWorldX, targetWorldY,
                     out cursorX, out cursorY);
             }
             bool attemptClickSent =
@@ -7265,6 +7515,17 @@ internal static class ModRegressionProbe
                     900,
                     playerRuntimeIndex,
                     out firstGoal);
+        }
+        if (crawlBeforeMovement && firstGoalAccepted)
+        {
+            // Commit the path first, then toggle posture through the original
+            // release-edge C action.  Sending C before a world click races the
+            // stance animation's temporary command owner and the original can
+            // legitimately reject that click.  Once a path exists, the same
+            // action changes the movement slot to crawl without fabricating a
+            // position or touching the system keyboard.
+            crawlSent = PulseKey(window, DikC);
+            Thread.Sleep(420);
         }
         CaptureParityCheckpoint(
             parityCheckpoints,
@@ -7294,6 +7555,43 @@ internal static class ModRegressionProbe
             outbound.MovingSamples >= 2 &&
             outbound.AlignedSamples > 0 &&
             outbound.OppositeSamples == 0;
+        if (singleLegOnly)
+        {
+            ActorSnapshot oneWayAfter = outbound.Last ?? firstGoal ?? selected;
+            bool oneWayAlive = oneWayAfter != null && oneWayAfter.Dead == 0;
+            bool oneWayDirectionValid = oneWayAfter != null &&
+                oneWayAfter.Direction >= 1 && oneWayAfter.Direction <= 8;
+            evidence =
+                "target_cell=(" + targetCellX + "," + targetCellY + ")" +
+                "; target_screen=(" + targetScreenX + "," +
+                targetScreenY + ")" +
+                "; outbound_camera_panned=" + outboundCameraPanned +
+                "; cursor=(" + cursorX + "," + cursorY + ")" +
+                "; selection_sent=" + selectionSent +
+                "; selection_dik=" + playerSelectionDik +
+                "; crawl_requested=" + crawlBeforeMovement +
+                "; crawl_sent=" + crawlSent +
+                "; player_runtime_index=" + playerRuntimeIndex +
+                "; primary_click_sent=" + clickSent +
+                "; primary_goal_exact=" + firstGoalAccepted +
+                "; outbound_displacement=" +
+                outbound.MaximumDisplacement +
+                "; outbound_distance=" +
+                outbound.StartTargetDistance + "->" +
+                outbound.EndTargetDistance + " (min=" +
+                outbound.MinimumTargetDistance + ")" +
+                "; outbound_end=(" + oneWayAfter.WorldX + "," +
+                oneWayAfter.WorldY + ")" +
+                "; outbound_facing=" + outbound.AlignedSamples + "/" +
+                outbound.MovingSamples +
+                "; outbound_opposite=" + outbound.OppositeSamples +
+                "; single_leg=true; dead=" + oneWayAfter.Dead;
+            return selectionSent && clickSent && cursorReached &&
+                (!crawlBeforeMovement || crawlSent) &&
+                firstGoalAccepted && firstMoved && firstFacingAligned &&
+                oneWayDirectionValid &&
+                (allowContactInterruption || oneWayAlive);
+        }
 
         // A second primary click must replace the still-active first goal.
         // Click a second verified open cell on the other side of the route.
@@ -7434,6 +7732,8 @@ internal static class ModRegressionProbe
             "; cursor=(" + cursorX + "," + cursorY + ")" +
             "; selection_sent=" + selectionSent +
             "; selection_dik=" + playerSelectionDik +
+            "; crawl_requested=" + crawlBeforeMovement +
+            "; crawl_sent=" + crawlSent +
             "; player_runtime_index=" + playerRuntimeIndex +
             "; selection_actor_bytes_changed=" +
             selectionActorChangeCount +
@@ -7495,6 +7795,7 @@ internal static class ModRegressionProbe
             after.PathOverrideActive + "); dead=" + after.Dead;
         bool commandDelivery =
             selectionSent && clickSent && cursorReached &&
+            (!crawlBeforeMovement || crawlSent) &&
             returnTargetVisible && returnClickSent &&
             returnCursorReached && directionValid &&
             firstGoalAccepted && returnGoalAccepted &&
@@ -7742,6 +8043,8 @@ internal static class ModRegressionProbe
                     observation.PerpendicularSamples++;
             }
             previous = sample;
+            if (sample.Dead != 0)
+                break;
         }
         return observation;
     }
@@ -8238,6 +8541,118 @@ internal static class ModRegressionProbe
                 "mod-" + scenarioId + ".json"),
             json.ToString(),
             new UTF8Encoding(false));
+    }
+
+    private static void WriteNativeMissionCheatVictoryTrace(
+        string outputDirectory,
+        int selectorLevel,
+        int engineMission,
+        NativeMissionObservation beforeMission,
+        NativeMissionObservation afterMission,
+        int cheatKeyCount,
+        bool passed)
+    {
+        string levelId = String.Format(
+            CultureInfo.InvariantCulture,
+            "m{0:D3}",
+            selectorLevel - 1);
+        string scenarioId =
+            levelId + "-human-input-cheat-victory-v1";
+        var json = new StringBuilder();
+        json.Append("{\n");
+        json.Append("  \"schema_version\": 1,\n");
+        json.Append(
+            "  \"trace_id\": \"mod-" + scenarioId + "\",\n");
+        json.Append("  \"runtime\": \"mod\",\n");
+        json.Append(
+            "  \"content_profile\": " +
+            "\"repository-mod-12-level-20260729\",\n");
+        json.AppendFormat(
+            CultureInfo.InvariantCulture,
+            "  \"level\": {{\"id\":\"{0}\",\"selector_level\":{1}," +
+            "\"engine_mission\":{2}}},\n",
+            levelId,
+            selectorLevel,
+            engineMission);
+        json.Append(
+            "  \"scenario\": {\"id\":\"" + scenarioId + "\"," +
+            "\"description\":\"Type the original built-in FLIPMISSION " +
+            "cheat through process-local DirectInput and observe the " +
+            "original mission evaluator choose victory. This proves the " +
+            "input-to-victory-transition contract, not a non-cheat " +
+            "gameplay completion.\"},\n");
+        json.AppendFormat(
+            CultureInfo.InvariantCulture,
+            "  \"metadata\": {{\"producer\":\"ModRegressionProbe\"," +
+            "\"input_isolation\":" +
+            "\"window-message-to-process-local-DirectInput\"," +
+            "\"mission_evaluator\":\"sub_405410\"," +
+            "\"mission_observer\":\"read-only-post-evaluation\"," +
+            "\"evidence_scope\":\"cheat-victory-transition-only\"," +
+            "\"cheat_code\":\"FLIPMISSION\"," +
+            "\"cheat_key_count\":{0}," +
+            "\"mission_result_writes\":0," +
+            "\"actor_state_writes\":0," +
+            "\"system_cursor_calls\":0," +
+            "\"system_keyboard_calls\":0," +
+            "\"global_focus_calls\":0}},\n",
+            cheatKeyCount);
+        json.AppendFormat(
+            CultureInfo.InvariantCulture,
+            "  \"input\": {{\"action_kind\":" +
+            "\"original_builtin_cheat_text\"," +
+            "\"text\":\"FLIPMISSION\"," +
+            "\"process_local_input_events\":{0}}},\n",
+            cheatKeyCount * 2);
+        json.Append("  \"checkpoints\": [\n");
+        AppendNativeMissionTransitionCheckpoint(
+            json,
+            "gameplay_active",
+            beforeMission);
+        json.Append(",\n");
+        AppendNativeMissionTransitionCheckpoint(
+            json,
+            "cheat_input_committed",
+            afterMission);
+        json.Append("\n  ],\n");
+        json.Append(
+            "  \"passed\": " +
+            (passed ? "true" : "false") + "\n");
+        json.Append("}\n");
+        File.WriteAllText(
+            Path.Combine(
+                outputDirectory,
+                "mod-" + scenarioId + ".json"),
+            json.ToString(),
+            new UTF8Encoding(false));
+    }
+
+    private static void AppendNativeMissionTransitionCheckpoint(
+        StringBuilder json,
+        string id,
+        NativeMissionObservation mission)
+    {
+        json.Append("    {\n");
+        json.Append(
+            "      \"id\":\"" + Escape(id) + "\",\n");
+        json.AppendFormat(
+            CultureInfo.InvariantCulture,
+            "      \"mission\":{{\"status\":\"{0}\"," +
+            "\"engine_mission\":{1},\"game_flow_state\":{2}," +
+            "\"evaluation_active\":{3},\"result_state\":{4}," +
+            "\"evaluator_calls\":{5},\"transition_sequence\":{6}," +
+            "\"last_evaluated_tick_ms\":{7}}}\n",
+            mission == null ? "unknown" : Escape(mission.Status),
+            mission == null ? -1 : mission.EngineMission,
+            mission == null ? -1 : mission.GameFlowState,
+            mission == null ? -1 : mission.EvaluationActive,
+            mission == null ? -1 : mission.ResultState,
+            mission == null ? -1 : mission.EvaluatorCalls,
+            mission == null ? -1 : mission.TransitionSequence,
+            mission == null
+                ? -1
+                : mission.LastEvaluatedTickMilliseconds);
+        json.Append("    }");
     }
 
     private static void WriteNativeNaturalMissionFailureTrace(

@@ -3007,12 +3007,15 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 	elif event is InputEventKey and not event.echo:
 		var key_event := event as InputEventKey
+		if key_event.pressed and _consume_original_cheat_key(key_event):
+			# The final letter of FLIPMISSION is N, which is also the modern
+			# noise-lure shortcut. Give the complete original sequence priority.
+			get_viewport().set_input_as_handled()
+			return
 		if key_event.pressed and key_event.keycode == KEY_N:
 			emit_noise_at(_mouse_world_position(), 640.0)
 			get_viewport().set_input_as_handled()
 			return
-		if key_event.pressed:
-			_consume_original_cheat_key(key_event)
 		var controls := runtime_settings.get("controls", {}) as Dictionary
 		var action: String = GAME_INPUT_BINDINGS.action_for_event(key_event, controls)
 		if (
@@ -3098,16 +3101,17 @@ func _handle_original_left_click(
 		issue_formation_move(world_position)
 
 
-func _consume_original_cheat_key(event: InputEventKey) -> void:
+func _consume_original_cheat_key(event: InputEventKey) -> bool:
 	if event.ctrl_pressed or event.alt_pressed or event.meta_pressed or event.unicode <= 0:
-		return
+		return false
 	var typed := String.chr(event.unicode).to_upper()
 	if typed.length() != 1 or typed < "A" or typed > "Z":
-		return
+		return false
 	original_cheat_buffer = (original_cheat_buffer + typed).right(16)
 	if original_cheat_buffer.ends_with(ORIGINAL_CHEAT_COMPLETE):
 		original_cheat_buffer = ""
 		_complete_current_mission_from_original_cheat()
+		return true
 	elif original_cheat_buffer.ends_with(ORIGINAL_CHEAT_ABOUT):
 		original_cheat_buffer = ""
 		_open_pause_menu()
@@ -3115,6 +3119,8 @@ func _consume_original_cheat_key(event: InputEventKey) -> void:
 			game_shell.set_menu_message(
 				"关于《1937特种兵》：原版 LOVEBABY 彩蛋已识别。\n现代复刻工程保留历史玩法并明确标注补写内容。"
 			)
+		return true
+	return false
 
 
 func _complete_current_mission_from_original_cheat() -> void:
