@@ -7,6 +7,12 @@ const MAIN_SCRIPT: Script = preload("res://scripts/main.gd")
 const ORIGINAL_STARTUP_CATALOG: Script = preload(
 	"res://scripts/original_crt_random_startup_catalog.gd"
 )
+const ORIGINAL_RUNTIME_STATE: Script = preload(
+	"res://scripts/original_crt_random_runtime_state.gd"
+)
+const LEGACY_AMBIENT_PARTICLE_FIELD: Script = preload(
+	"res://scripts/legacy_ambient_particle_field.gd"
+)
 const SQUAD_UNIT_SCRIPT: Script = preload(
 	"res://scripts/squad_unit.gd"
 )
@@ -29,6 +35,9 @@ func _init() -> void:
 	_test_exact_startup_checkpoint_and_next_draw()
 	_test_exact_first_gameplay_update_replay()
 	_test_first_gameplay_actor_side_effects()
+	_test_twelve_level_runtime_state_and_pursuit()
+	_test_recovered_shared_counter_cadence()
+	_test_original_ambient_particle_stream()
 	_test_imported_actor_profile_and_gate()
 	_test_dynamic_actor_constructor_sequence()
 	_test_timing_snapshot_round_trip()
@@ -482,6 +491,389 @@ func _test_first_gameplay_actor_side_effects() -> void:
 	timeline_enemy.free()
 
 
+func _test_twelve_level_runtime_state_and_pursuit() -> void:
+	var catalog: Dictionary = ORIGINAL_RUNTIME_STATE.load_catalog()
+	var levels_value: Variant = catalog.get("levels", [])
+	_expect(
+		levels_value is Array and (levels_value as Array).size() == 12,
+		"runtime-state catalog exposes exactly the 12 formal MOD levels",
+	)
+	var actor_total := 0
+	var pursuit_link_total := 0
+	if levels_value is Array:
+		for level_value: Variant in levels_value as Array:
+			if not level_value is Dictionary:
+				continue
+			var level := level_value as Dictionary
+			var actors_value: Variant = level.get("actors", [])
+			if actors_value is Array:
+				actor_total += (actors_value as Array).size()
+			var pursuit_value: Variant = level.get("pursuit", {})
+			if pursuit_value is Dictionary:
+				var links_value: Variant = (
+					(pursuit_value as Dictionary).get("links", [])
+				)
+				if links_value is Array:
+					pursuit_link_total += (links_value as Array).size()
+	_expect(
+		actor_total == 772 and pursuit_link_total == 140,
+		"runtime-state catalog retains all 772 actors and 140 pursuit links",
+	)
+
+	var expected_m000_chain := {
+		104: 107,
+		107: 106,
+		106: 105,
+		105: 103,
+		119: 118,
+		121: 124,
+		124: 122,
+		122: 123,
+		123: 120,
+	}
+	var chain_matches := true
+	for runtime_index: Variant in expected_m000_chain:
+		chain_matches = (
+			chain_matches
+			and ORIGINAL_RUNTIME_STATE.pursuit_target_runtime_index(
+				"m000",
+				int(runtime_index),
+			) == int(expected_m000_chain[runtime_index])
+			and ORIGINAL_RUNTIME_STATE.pursuit_call_site_rva(
+				"m000",
+				int(runtime_index),
+			) == 0x0005D47E
+		)
+	_expect(
+		chain_matches,
+		"m000 retains every recovered native pursuit-chain edge",
+	)
+
+	var follower_profile: Dictionary = ORIGINAL_RUNTIME_STATE.actor_profile(
+		"m000",
+		119,
+	)
+	var entry_value: Variant = follower_profile.get("entry", {})
+	_expect(
+		int(follower_profile.get("scene_index", -1)) == 1615
+		and int(follower_profile.get("runtime_type", -1)) == 12
+		and entry_value is Dictionary
+		and int((entry_value as Dictionary).get(
+			"pursuit_runtime_index",
+			-1,
+		)) == 118,
+		"m000 actor 119 maps scene 1615 to its exact type-56 leader",
+	)
+
+	var game = MAIN_SCRIPT.new()
+	game.call("_apply_original_crt_random_startup_checkpoint", "m000")
+	game.legacy_crt_random_trace_enabled = true
+	var target = SQUAD_UNIT_SCRIPT.new()
+	target.scene_index = 1614
+	target.configure_runtime_actor_type({
+		"database_header_values": [0, 0, 56],
+		"original_runtime_profile": {"runtime_index": 118},
+	})
+	target.bind_original_crt_random_source(game, "m000")
+	target.position = Vector2(300.0, 0.0)
+	var follower = SQUAD_UNIT_SCRIPT.new()
+	follower.scene_index = 1615
+	follower.configure_runtime_actor_type({
+		"database_header_values": [0, 0, 12],
+		"original_runtime_profile": {"runtime_index": 119},
+	})
+	follower.bind_original_crt_random_source(game, "m000")
+	follower.position = Vector2.ZERO
+	var linked: bool = follower.bind_original_pursuit_target(target)
+	var advanced: bool = bool(
+		follower.call("_advance_original_pursuit_once")
+	)
+	_expect(
+		linked
+		and advanced
+		and follower.original_pursuit_serial == 1
+		and follower.original_pursuit_target_runtime_index == 118
+		and follower.original_pursuit_call_site_rva == 0x0005D47E
+		and follower.process_physics_priority == 1119,
+		"runtime actor 119 consumes one ordered native pursuit update",
+	)
+	_expect(
+		game.legacy_crt_random_trace.size() == 1
+		and int(game.legacy_crt_random_trace[0].get(
+			"call_site_rva",
+			0,
+		)) == 0x0005D47E,
+		"pursuit update records its recovered native call site",
+	)
+
+	follower.original_pursuit_delay_counter = 4
+	follower.original_pursuit_elapsed = 0.0125
+	follower.original_pursuit_last_command_variant = 1
+	var snapshot: Dictionary = (
+		follower.original_crt_random_timing_snapshot()
+	)
+	var restored = SQUAD_UNIT_SCRIPT.new()
+	restored.scene_index = 1615
+	restored.configure_runtime_actor_type({
+		"database_header_values": [0, 0, 12],
+		"original_runtime_profile": {"runtime_index": 119},
+	})
+	restored.bind_original_crt_random_source(game, "m000")
+	restored.bind_original_pursuit_target(target)
+	var restored_ok: bool = restored.restore_original_crt_random_timing(
+		snapshot
+	)
+	_expect(
+		restored_ok
+		and restored.original_pursuit_delay_counter == 4
+		and is_equal_approx(
+			restored.original_pursuit_elapsed,
+			0.0125,
+		)
+		and restored.original_pursuit_serial == 1
+		and restored.original_pursuit_last_command_variant == 1,
+		"save/load restores the recovered pursuit scheduler phase",
+	)
+	restored.free()
+	follower.free()
+	target.free()
+	game.free()
+
+
+func _test_recovered_shared_counter_cadence() -> void:
+	var route_game = MAIN_SCRIPT.new()
+	route_game.call(
+		"_apply_original_crt_random_startup_checkpoint",
+		"m000",
+	)
+	route_game.legacy_crt_random_trace_enabled = true
+	var route_expected: Dictionary = _draw_values(
+		route_game.legacy_crt_random_state,
+		1,
+	)
+	var route_actor = SQUAD_UNIT_SCRIPT.new()
+	route_actor.scene_index = 1415
+	route_actor.configure_runtime_actor_type({
+		"database_header_values": [0, 0, 5],
+		"original_runtime_profile": {"runtime_index": 0},
+	})
+	route_actor.bind_original_crt_random_source(route_game, "m000")
+	route_actor.position = Vector2(100.0, 100.0)
+	route_actor.original_ai_previous_world_position = route_actor.position
+	route_actor.original_ai_idle_tick_counter = 8
+	route_actor.original_ai_idle_tick_limit = 10
+	route_actor.original_route_update_active = true
+	route_actor.call(
+		"_advance_original_ai_shared_counter",
+		1.0 / 60.0,
+	)
+	var route_values: Array = route_expected.get("values", [])
+	_expect(
+		route_actor.original_ai_idle_tick_counter == 0
+		and route_actor.original_ai_idle_tick_limit
+			== int(route_values[0]) % 160 + 40
+		and not route_actor.original_route_update_active
+		and route_actor.original_ai_route_reset_serial == 1
+		and route_actor.original_ai_stationary_reset_serial == 0,
+		"a stationary route actor advances the native shared counter twice",
+	)
+	_expect(
+		route_game.legacy_crt_random_trace.size() == 1
+		and int(route_game.legacy_crt_random_trace[0].get(
+			"call_site_rva",
+			0,
+		)) == 0x00058946,
+		"the second shared-counter increment uses the native route call site",
+	)
+	route_actor.free()
+	route_game.free()
+
+	var stationary_game = MAIN_SCRIPT.new()
+	stationary_game.call(
+		"_apply_original_crt_random_startup_checkpoint",
+		"m000",
+	)
+	stationary_game.legacy_crt_random_trace_enabled = true
+	var stationary_actor = SQUAD_UNIT_SCRIPT.new()
+	stationary_actor.scene_index = 1415
+	stationary_actor.configure_runtime_actor_type({
+		"database_header_values": [0, 0, 5],
+		"original_runtime_profile": {"runtime_index": 0},
+	})
+	stationary_actor.bind_original_crt_random_source(
+		stationary_game,
+		"m000",
+	)
+	stationary_actor.position = Vector2(100.0, 100.0)
+	stationary_actor.original_ai_previous_world_position = (
+		stationary_actor.position
+	)
+	stationary_actor.original_ai_idle_tick_counter = 9
+	stationary_actor.original_ai_idle_tick_limit = 10
+	stationary_actor.original_route_update_active = false
+	stationary_actor.call(
+		"_advance_original_ai_shared_counter",
+		1.0 / 60.0,
+	)
+	_expect(
+		stationary_actor.original_ai_idle_tick_counter == 0
+		and stationary_actor.original_ai_stationary_reset_serial == 1
+		and stationary_game.legacy_crt_random_trace.size() == 1
+		and int(stationary_game.legacy_crt_random_trace[0].get(
+			"call_site_rva",
+			0,
+		)) == 0x00056105,
+		"a stationary non-route actor uses the native stationary call site",
+	)
+	stationary_actor.free()
+	stationary_game.free()
+
+	var moving_game = MAIN_SCRIPT.new()
+	moving_game.call(
+		"_apply_original_crt_random_startup_checkpoint",
+		"m000",
+	)
+	moving_game.legacy_crt_random_trace_enabled = true
+	var moving_actor = SQUAD_UNIT_SCRIPT.new()
+	moving_actor.scene_index = 1415
+	moving_actor.configure_runtime_actor_type({
+		"database_header_values": [0, 0, 5],
+		"original_runtime_profile": {"runtime_index": 0},
+	})
+	moving_actor.bind_original_crt_random_source(moving_game, "m000")
+	moving_actor.position = Vector2(100.0, 100.0)
+	moving_actor.original_ai_previous_world_position = Vector2(
+		98.0,
+		100.0,
+	)
+	moving_actor.original_ai_idle_tick_counter = 8
+	moving_actor.original_ai_idle_tick_limit = 10
+	moving_actor.original_route_update_active = true
+	moving_actor.call(
+		"_advance_original_ai_shared_counter",
+		1.0 / 60.0,
+	)
+	_expect(
+		moving_actor.original_ai_idle_tick_counter == 9
+		and moving_actor.original_route_update_active
+		and moving_game.legacy_crt_random_trace.is_empty(),
+		"a moving route actor advances the shared counter only once",
+	)
+	moving_actor.free()
+	moving_game.free()
+
+
+func _test_original_ambient_particle_stream() -> void:
+	var game = MAIN_SCRIPT.new()
+	game.call("_apply_original_crt_random_startup_checkpoint", "m002")
+	var first_update_ok: bool = bool(game.call(
+		"_replay_original_first_gameplay_random_update",
+		"m002",
+		false,
+	))
+	game.legacy_crt_random_trace_enabled = true
+	game.legacy_crt_random_trace.clear()
+	var field = LEGACY_AMBIENT_PARTICLE_FIELD.new()
+	var configured: bool = field.configure(game, "m002")
+	var advanced: bool = bool(field.call("_advance_original_update"))
+	var counts: Dictionary = {}
+	for draw: Dictionary in game.legacy_crt_random_trace:
+		var call_site := int(draw.get("call_site_rva", 0))
+		counts[call_site] = int(counts.get(call_site, 0)) + 1
+	var secondary_respawns := int(counts.get(0x00060374, 0))
+	_expect(
+		first_update_ok
+		and configured
+		and advanced
+		and int(counts.get(0x0005FF45, 0)) == 1
+		and int(counts.get(0x0005FF65, 0)) == 0,
+		"m002 starts one original ambient-field update after actor processing",
+	)
+	_expect(
+		int(counts.get(0x0005FD2C, 0)) == 150
+		and int(counts.get(0x0005FD41, 0)) == 150
+		and int(counts.get(0x0005FD54, 0)) == 150
+		and int(counts.get(0x0005FD6A, 0)) == 150
+		and int(counts.get(0x0005FD7F, 0)) == 150
+		and int(counts.get(0x0005FDA8, 0)) == 150
+		and int(counts.get(0x0005FDDB, 0)) == 20
+		and int(counts.get(0x0005FDEE, 0)) == 20
+		and int(counts.get(0x0005FE02, 0)) == 20
+		and int(counts.get(0x0005FE19, 0)) == 20,
+		"first active weather frame resets the exact 150+20 native arrays",
+	)
+	_expect(
+		int(counts.get(0x000600F0, 0)) == 2
+		and int(counts.get(0x00060105, 0)) == 2
+		and int(counts.get(0x000601D6, 0)) == 18
+		and int(counts.get(0x000601E5, 0)) == 18
+		and int(counts.get(0x00060202, 0)) == 18
+		and int(counts.get(0x0006026D, 0)) == 18
+		and int(counts.get(0x00060291, 0)) == 18
+		and int(counts.get(0x000602A7, 0)) == 18
+		and int(counts.get(0x000602BC, 0)) == 18
+		and int(counts.get(0x000602D1, 0)) == 18
+		and int(counts.get(0x000602FA, 0)) == 18
+		and secondary_respawns in [0, 1, 2]
+		and int(counts.get(0x00060396, 0)) == secondary_respawns
+		and int(counts.get(0x000603AD, 0)) == secondary_respawns
+		and int(counts.get(0x000603C4, 0)) == secondary_respawns,
+		"80-degree field update preserves native visibility and respawn order",
+	)
+	var snapshot: Dictionary = field.runtime_snapshot()
+	for particle_value: Variant in (
+		snapshot.get("primary_particles", []) as Array
+	):
+		var particle := particle_value as Dictionary
+		var position := particle.get("position", Vector2.ZERO) as Vector2
+		particle["position"] = {"x": position.x, "y": position.y}
+	for particle_value: Variant in (
+		snapshot.get("secondary_particles", []) as Array
+	):
+		var particle := particle_value as Dictionary
+		var position := particle.get("position", Vector2.ZERO) as Vector2
+		particle["position"] = {"x": position.x, "y": position.y}
+	var restored = LEGACY_AMBIENT_PARTICLE_FIELD.new()
+	restored.configure(game, "m002")
+	_expect(
+		restored.restore_runtime_snapshot(snapshot)
+		and restored.update_serial == field.update_serial
+		and restored.weather_phase == 1
+		and restored.runtime_snapshot() == field.runtime_snapshot(),
+		"ambient weather state is deterministic and save/load complete",
+	)
+	var fast_game = MAIN_SCRIPT.new()
+	fast_game.call(
+		"_apply_original_crt_random_startup_checkpoint",
+		"m002",
+	)
+	fast_game.call(
+		"_replay_original_first_gameplay_random_update",
+		"m002",
+		false,
+	)
+	var fast_field = LEGACY_AMBIENT_PARTICLE_FIELD.new()
+	fast_field.configure(fast_game, "m002")
+	_expect(
+		fast_field.call("_advance_original_update")
+		and (
+			fast_game.legacy_crt_random_state
+			== game.legacy_crt_random_state
+		)
+		and (
+			fast_game.legacy_crt_random_draw_index
+			== game.legacy_crt_random_draw_index
+		)
+		and fast_field.runtime_snapshot() == field.runtime_snapshot(),
+		"ordinary-play particle fast path is bit-identical to traced native order",
+	)
+	fast_field.free()
+	fast_game.free()
+	restored.free()
+	field.free()
+	game.free()
+
+
 func _test_imported_actor_profile_and_gate() -> void:
 	var game = MAIN_SCRIPT.new()
 	game.call("_apply_original_crt_random_startup_checkpoint", "m000")
@@ -522,8 +914,8 @@ func _test_imported_actor_profile_and_gate() -> void:
 		"runtime actor 0 exposes the four captured constructor values",
 	)
 	_expect(
-		actor.process_physics_priority == 0,
-		"random binding does not disturb established actor physics order",
+		actor.process_physics_priority == 1000,
+		"runtime actor 0 receives the first recovered actor physics priority",
 	)
 	var state_before: int = game.legacy_crt_random_state
 	var expected_state: int = LEGACY_CRT_RANDOM_CATALOG.next_state(
@@ -609,8 +1001,8 @@ func _test_dynamic_actor_constructor_sequence() -> void:
 		"dynamic actor constructor preserves exact original call-site order",
 	)
 	_expect(
-		actor.process_physics_priority == 0,
-		"dynamic actor binding leaves append order to the scene tree",
+		actor.process_physics_priority == 2_000_000,
+		"dynamic actors append after the recovered runtime-index priorities",
 	)
 	actor.free()
 	game.free()

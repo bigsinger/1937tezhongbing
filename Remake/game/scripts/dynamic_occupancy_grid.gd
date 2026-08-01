@@ -55,6 +55,10 @@ var source_movement_blocked_bits := PackedByteArray()
 var footprint_clearance_precompute_usec := 0
 var footprint_clearance_incremental_usec := 0
 var prewarmed_paths: Dictionary = {}
+## The same actor can expose a different connected collision footprint in
+## each directional animation. Retain every precomputed route variant instead
+## of replacing the north/south profile with the east/west profile.
+var prewarmed_paths_by_footprint: Dictionary = {}
 var prewarmed_path_build_count := 0
 var prewarmed_path_hit_count := 0
 var prewarmed_path_suffix_hit_count := 0
@@ -65,9 +69,11 @@ var prewarmed_path_suffix_hit_count := 0
 ## collision has displaced an actor, the runtime query is recomputed against
 ## the current start and destination instead of replaying stale geometry.
 var runtime_evidence_paths: Dictionary = {}
+var runtime_evidence_paths_by_footprint: Dictionary = {}
 var runtime_evidence_path_build_count := 0
 var runtime_evidence_path_hit_count := 0
 var runtime_evidence_translated_hit_count := 0
+var runtime_evidence_translation_rejections: Dictionary = {}
 var static_prewarm_cache_namespace := ""
 var static_prewarm_cache_hit_count := 0
 var last_prewarmed_path_nearest_distance := -1
@@ -110,13 +116,16 @@ func configure(
 	footprint_clearance_precompute_usec = 0
 	footprint_clearance_incremental_usec = 0
 	prewarmed_paths.clear()
+	prewarmed_paths_by_footprint.clear()
 	prewarmed_path_build_count = 0
 	prewarmed_path_hit_count = 0
 	prewarmed_path_suffix_hit_count = 0
 	runtime_evidence_paths.clear()
+	runtime_evidence_paths_by_footprint.clear()
 	runtime_evidence_path_build_count = 0
 	runtime_evidence_path_hit_count = 0
 	runtime_evidence_translated_hit_count = 0
+	runtime_evidence_translation_rejections.clear()
 	static_prewarm_cache_hit_count = 0
 	last_prewarmed_path_nearest_distance = -1
 	accepted_moves.clear()
@@ -199,7 +208,9 @@ func finalize_registration() -> void:
 	navigation.prepare_astar(scene_indices, movement_cells, sight_cells)
 	_rebuild_source_movement_blocked_bits()
 	prewarmed_paths.clear()
+	prewarmed_paths_by_footprint.clear()
 	runtime_evidence_paths.clear()
+	runtime_evidence_paths_by_footprint.clear()
 	registration_finalized = true
 	_precompute_footprint_clearance()
 
@@ -271,7 +282,9 @@ func set_source_scene_disabled(scene_index: int, disabled: bool) -> bool:
 	# therefore keeps the conservative cache reset.
 	if not disabled:
 		prewarmed_paths.clear()
+		prewarmed_paths_by_footprint.clear()
 		runtime_evidence_paths.clear()
+		runtime_evidence_paths_by_footprint.clear()
 	return true
 
 
@@ -412,6 +425,16 @@ func find_path_for_scene(
 		var cached_path := prewarmed_path as PackedVector2Array
 		if not used_runtime_evidence_path:
 			cached_path = cached_path.duplicate()
+			if (
+				not cached_path.is_empty()
+				and navigation.world_to_cell(cached_path[-1])
+					== query_destination_cell
+				and navigation.is_valid_cell(query_destination_cell)
+				and not navigation.astar.is_point_solid(
+					query_destination_cell
+				)
+			):
+				cached_path[-1] = world_destination
 		_reserve_path_goal(scene_index, movement_offsets, cached_path)
 		_record_path_query(
 			scene_index,
@@ -429,12 +452,6 @@ func find_path_for_scene(
 	var needs_actor_clearance := (
 		movement_offsets.size() != 1 or movement_offsets[0] != Vector2i.ZERO
 	)
-	if needs_actor_clearance:
-		for candidate: Vector2i in _blocked_origins_for_offsets(
-			movement_offsets
-		):
-			if candidate != start_cell:
-				_mark_temporary_solid(candidate, changed_solids)
 	var include_dynamic_path_obstacles := (
 		not ignore_dynamic_actors
 		and (
@@ -442,6 +459,39 @@ func find_path_for_scene(
 			or movement_owners.size() <= MAX_DYNAMIC_PATH_OBSTACLE_CELLS
 		)
 	)
+	var uses_dense_static_path := (
+		not ignore_dynamic_actors
+		and not include_dynamic_path_obstacles
+	)
+	# Dense maps and runtime-evidence replay deliberately ignore transient
+	# actor reservations. For multi-cell actors their only extra constraint is
+	# the authored footprint-clearance grid, which is already available as a
+	# compact byte mask. Passing it directly to the recovered pathfinder avoids
+	# setting/restoring thousands of AStarGrid2D cells for every motorcycle,
+	# cart and vehicle route while retaining the exact original search order.
+	var use_packed_footprint_lookup := (
+		needs_actor_clearance
+		and (
+			ignore_dynamic_actors
+			or not include_dynamic_path_obstacles
+		)
+	)
+	var additional_solid_lookup := PackedByteArray()
+	if needs_actor_clearance:
+		var footprint_key := _movement_offsets_cache_key(movement_offsets)
+		_blocked_origins_for_offsets(movement_offsets)
+		if use_packed_footprint_lookup:
+			additional_solid_lookup = (
+				footprint_blocked_origin_lookups[footprint_key]
+				as PackedByteArray
+			)
+		else:
+			for candidate: Vector2i in (
+				footprint_blocked_origins[footprint_key]
+				as Array[Vector2i]
+			):
+				if candidate != start_cell:
+					_mark_temporary_solid(candidate, changed_solids)
 	if include_dynamic_path_obstacles:
 		for cell_value: Variant in movement_owners.keys():
 			var cell := cell_value as Vector2i
@@ -466,7 +516,25 @@ func find_path_for_scene(
 		world_destination,
 		true,
 		not changed_solids.is_empty(),
+		additional_solid_lookup,
 	)
+	# A packed mask intentionally skips Godot's native partial-path fallback.
+	# If the exact legacy route is empty, reproduce the former temporary-solid
+	# query once so unreachable large actors keep the same safe edge route.
+	# Successful routes—the performance-sensitive common case—never pay this
+	# mutation cost.
+	if path.is_empty() and not additional_solid_lookup.is_empty():
+		for candidate: Vector2i in _blocked_origins_for_offsets(
+			movement_offsets
+		):
+			if candidate != start_cell:
+				_mark_temporary_solid(candidate, changed_solids)
+		path = navigation.find_path(
+			world_start,
+			world_destination,
+			true,
+			not changed_solids.is_empty(),
+		)
 	for cell: Vector2i in changed_solids:
 		navigation.astar.set_point_solid(cell, false)
 	# A temporary actor/goal reservation can split a narrow but statically
@@ -490,6 +558,18 @@ func find_path_for_scene(
 	):
 		path.append(world_destination)
 		deferred_dynamic_destination_count += 1
+	if uses_dense_static_path:
+		# Dense formal maps deliberately keep transient actors out of A* and
+		# enforce separation during relocation. Their resulting route depends
+		# only on the authored grid, start/destination cells and the current
+		# footprint, so later identical commands and route suffixes can reuse
+		# it without changing collision behavior.
+		_cache_dense_static_path(
+			scene_index,
+			world_start,
+			world_destination,
+			path,
+		)
 	_reserve_path_goal(scene_index, movement_offsets, path)
 	_record_path_query(
 		scene_index,
@@ -574,9 +654,14 @@ func prewarm_runtime_evidence_path_for_scene(
 		world_start,
 		world_destination,
 	)
-	var scene_cache := (
-		runtime_evidence_paths.get(scene_index, {}) as Dictionary
+	var footprint_key := _scene_movement_footprint_key(scene_index)
+	var profile_caches := (
+		runtime_evidence_paths_by_footprint.get(
+			scene_index,
+			{},
+		) as Dictionary
 	)
+	var scene_cache := profile_caches.get(footprint_key, {}) as Dictionary
 	if scene_cache.has(cache_key):
 		return not (
 			scene_cache[cache_key] as PackedVector2Array
@@ -591,13 +676,86 @@ func prewarm_runtime_evidence_path_for_scene(
 		true,
 	)
 	_clear_goal(scene_index)
-	scene_cache = (
-		runtime_evidence_paths.get(scene_index, {}) as Dictionary
+	profile_caches = (
+		runtime_evidence_paths_by_footprint.get(
+			scene_index,
+			{},
+		) as Dictionary
 	)
+	scene_cache = profile_caches.get(footprint_key, {}) as Dictionary
 	scene_cache[cache_key] = path.duplicate()
+	profile_caches[footprint_key] = scene_cache
+	runtime_evidence_paths_by_footprint[scene_index] = profile_caches
 	runtime_evidence_paths[scene_index] = scene_cache
 	runtime_evidence_path_build_count += 1
 	return not path.is_empty()
+
+
+func prewarm_runtime_evidence_path_footprint_profiles_for_scene(
+	scene_index: int,
+	world_start: Vector2,
+	world_destination: Vector2,
+	movement_profiles: Array,
+) -> int:
+	if (
+		not actors.has(scene_index)
+		or movement_profiles.is_empty()
+	):
+		return (
+			1
+			if prewarm_runtime_evidence_path_for_scene(
+				scene_index,
+				world_start,
+				world_destination,
+			)
+			else 0
+		)
+	var actor := actors[scene_index] as Dictionary
+	var original_offsets := (
+		actor.get("movement_offsets", [Vector2i.ZERO])
+		as Array[Vector2i]
+	)
+	var unique_profiles: Dictionary = {}
+	unique_profiles[_movement_offsets_cache_key(original_offsets)] = (
+		original_offsets
+	)
+	for profile_value: Variant in movement_profiles:
+		if not profile_value is Array:
+			continue
+		var profile_offsets: Array[Vector2i] = []
+		for offset_value: Variant in profile_value as Array:
+			if offset_value is Vector2i:
+				profile_offsets.append(offset_value as Vector2i)
+		var normalized := _normalized_footprint_offsets(profile_offsets)
+		unique_profiles[_movement_offsets_cache_key(normalized)] = normalized
+	var profile_keys: Array = unique_profiles.keys()
+	profile_keys.sort()
+	var build_count_before := runtime_evidence_path_build_count
+	for profile_key_value: Variant in profile_keys:
+		var profile_key := str(profile_key_value)
+		actor["movement_offsets"] = (
+			unique_profiles[profile_key] as Array[Vector2i]
+		)
+		actors[scene_index] = actor
+		prewarm_runtime_evidence_path_for_scene(
+			scene_index,
+			world_start,
+			world_destination,
+		)
+	actor["movement_offsets"] = original_offsets
+	actors[scene_index] = actor
+	var profile_caches := (
+		runtime_evidence_paths_by_footprint.get(
+			scene_index,
+			{},
+		) as Dictionary
+	)
+	var original_key := _movement_offsets_cache_key(original_offsets)
+	if profile_caches.has(original_key):
+		runtime_evidence_paths[scene_index] = (
+			profile_caches[original_key] as Dictionary
+		)
+	return runtime_evidence_path_build_count - build_count_before
 
 
 func prewarm_patrol_cycle_for_scene(
@@ -656,14 +814,86 @@ func prewarm_patrol_cycle_for_scene(
 	return prewarmed_path_build_count - build_count_before
 
 
+func prewarm_patrol_cycle_footprint_profiles_for_scene(
+	scene_index: int,
+	world_start: Vector2,
+	waypoints: PackedVector2Array,
+	current_waypoint_index: int,
+	movement_profiles: Array,
+	lap_count: int = 2,
+) -> int:
+	if (
+		not actors.has(scene_index)
+		or movement_profiles.is_empty()
+	):
+		return prewarm_patrol_cycle_for_scene(
+			scene_index,
+			world_start,
+			waypoints,
+			current_waypoint_index,
+			lap_count,
+		)
+	var actor := actors[scene_index] as Dictionary
+	var original_offsets := (
+		actor.get("movement_offsets", [Vector2i.ZERO])
+		as Array[Vector2i]
+	)
+	var unique_profiles: Dictionary = {}
+	unique_profiles[_movement_offsets_cache_key(original_offsets)] = (
+		original_offsets
+	)
+	for profile_value: Variant in movement_profiles:
+		if not profile_value is Array:
+			continue
+		var profile_offsets: Array[Vector2i] = []
+		for offset_value: Variant in profile_value as Array:
+			if offset_value is Vector2i:
+				profile_offsets.append(offset_value as Vector2i)
+		var normalized := _normalized_footprint_offsets(profile_offsets)
+		unique_profiles[_movement_offsets_cache_key(normalized)] = normalized
+	var profile_keys: Array = unique_profiles.keys()
+	profile_keys.sort()
+	var build_count_before := prewarmed_path_build_count
+	for profile_key_value: Variant in profile_keys:
+		var profile_key := str(profile_key_value)
+		actor["movement_offsets"] = (
+			unique_profiles[profile_key] as Array[Vector2i]
+		)
+		actors[scene_index] = actor
+		prewarm_patrol_cycle_for_scene(
+			scene_index,
+			world_start,
+			waypoints,
+			current_waypoint_index,
+			lap_count,
+		)
+	actor["movement_offsets"] = original_offsets
+	actors[scene_index] = actor
+	var profile_caches := (
+		prewarmed_paths_by_footprint.get(scene_index, {}) as Dictionary
+	)
+	var original_key := _movement_offsets_cache_key(original_offsets)
+	if profile_caches.has(original_key):
+		prewarmed_paths[scene_index] = (
+			profile_caches[original_key] as Dictionary
+		)
+	return prewarmed_path_build_count - build_count_before
+
+
 func _runtime_evidence_path(
 	scene_index: int,
 	world_start: Vector2,
 	world_destination: Vector2,
 ) -> Variant:
-	if not runtime_evidence_paths.has(scene_index):
+	if not runtime_evidence_paths_by_footprint.has(scene_index):
 		return null
-	var scene_cache := runtime_evidence_paths[scene_index] as Dictionary
+	var footprint_key := _scene_movement_footprint_key(scene_index)
+	var profile_caches := (
+		runtime_evidence_paths_by_footprint[scene_index] as Dictionary
+	)
+	if not profile_caches.has(footprint_key):
+		return null
+	var scene_cache := profile_caches[footprint_key] as Dictionary
 	var cache_key := _runtime_evidence_path_cache_key(
 		world_start,
 		world_destination,
@@ -682,6 +912,8 @@ func _runtime_evidence_path(
 	scene_cache[cache_key] = (
 		translated_path as PackedVector2Array
 	).duplicate()
+	profile_caches[footprint_key] = scene_cache
+	runtime_evidence_paths_by_footprint[scene_index] = profile_caches
 	runtime_evidence_paths[scene_index] = scene_cache
 	runtime_evidence_translated_hit_count += 1
 	return scene_cache[cache_key]
@@ -699,14 +931,12 @@ func _translated_runtime_evidence_path(
 		actor.get("movement_offsets", [Vector2i.ZERO])
 		as Array[Vector2i]
 	)
-	# Translation is only proven for ordinary one-cell actors. Larger
-	# footprints require their exact clearance search because translating a
-	# clear anchor route does not prove every occupied component remains clear.
-	if (
-		movement_offsets.size() != 1
-		or movement_offsets[0] != Vector2i.ZERO
-	):
-		return null
+	# A translated route is valid for a multi-cell actor only when every
+	# occupied component is clear at every translated anchor, including the
+	# two possible cardinal anchors around a diagonal. This is the same
+	# clearance condition used when the original route was built, but avoids
+	# repeating the full-map A* search for collision-shifted motorcycles and
+	# carts whose captured displacement is unchanged.
 	var requested_delta := Vector2i(
 		requested_key.z - requested_key.x,
 		requested_key.w - requested_key.y,
@@ -739,11 +969,16 @@ func _translated_runtime_evidence_path(
 				start_distance == best_start_distance
 				and _runtime_evidence_key_precedes(candidate_key, best_key)
 			)
-		):
-			best_key = candidate_key
-			best_start_distance = start_distance
-			has_best = true
+			):
+				best_key = candidate_key
+				best_start_distance = start_distance
+				has_best = true
 	if not has_best:
+		_record_runtime_evidence_translation_rejection(
+			scene_index,
+			"no_matching_displacement",
+			requested_key,
+		)
 		return null
 	var source_start := Vector2(
 		float(best_key.x) / 1024.0,
@@ -763,7 +998,20 @@ func _translated_runtime_evidence_path(
 		if not _runtime_evidence_step_is_clear(
 			previous_cell,
 			translated_cell,
+			movement_offsets,
 		):
+			_record_runtime_evidence_translation_rejection(
+				scene_index,
+				"blocked_translated_step",
+				requested_key,
+				{
+					"from": previous_cell,
+					"to": translated_cell,
+					"footprint": _movement_offsets_cache_key(
+						movement_offsets
+					),
+				},
+			)
 			return null
 		translated.append(navigation.cell_to_world(translated_cell))
 		previous_cell = translated_cell
@@ -775,19 +1023,51 @@ func _translated_runtime_evidence_path(
 		or previous_cell != requested_destination_cell
 		or navigation.astar.is_point_solid(requested_destination_cell)
 	):
+		_record_runtime_evidence_translation_rejection(
+			scene_index,
+			"destination_mismatch_or_solid",
+			requested_key,
+			{
+				"resolved": previous_cell,
+				"requested": requested_destination_cell,
+			},
+		)
 		return null
 	translated[-1] = world_destination
 	return translated
 
 
+func _record_runtime_evidence_translation_rejection(
+	scene_index: int,
+	reason: String,
+	requested_key: Vector4i,
+	details: Dictionary = {},
+) -> void:
+	var scene_record := (
+		runtime_evidence_translation_rejections.get(
+			scene_index,
+			{},
+		) as Dictionary
+	)
+	scene_record["count"] = int(scene_record.get("count", 0)) + 1
+	scene_record[reason] = int(scene_record.get(reason, 0)) + 1
+	scene_record["last_requested_key"] = requested_key
+	scene_record["last_details"] = details.duplicate(true)
+	runtime_evidence_translation_rejections[scene_index] = scene_record
+
+
 func _runtime_evidence_step_is_clear(
 	from_cell: Vector2i,
 	to_cell: Vector2i,
+	movement_offsets: Array[Vector2i],
 ) -> bool:
 	if (
 		not navigation.is_valid_cell(from_cell)
 		or not navigation.is_valid_cell(to_cell)
-		or navigation.astar.is_point_solid(to_cell)
+		or not _runtime_evidence_anchor_is_clear(
+			to_cell,
+			movement_offsets,
+		)
 	):
 		return false
 	var delta := to_cell - from_cell
@@ -798,13 +1078,29 @@ func _runtime_evidence_step_is_clear(
 	# The recovered graph permits a diagonal around one blocked cardinal side,
 	# but never through a corner where both cardinal neighbors are blocked.
 	return (
-		not navigation.astar.is_point_solid(
-			from_cell + Vector2i(delta.x, 0)
+		_runtime_evidence_anchor_is_clear(
+			from_cell + Vector2i(delta.x, 0),
+			movement_offsets,
 		)
-		or not navigation.astar.is_point_solid(
-			from_cell + Vector2i(0, delta.y)
+		or _runtime_evidence_anchor_is_clear(
+			from_cell + Vector2i(0, delta.y),
+			movement_offsets,
 		)
 	)
+
+
+func _runtime_evidence_anchor_is_clear(
+	anchor: Vector2i,
+	movement_offsets: Array[Vector2i],
+) -> bool:
+	for offset: Vector2i in movement_offsets:
+		var occupied_cell := anchor + offset
+		if (
+			not navigation.is_valid_cell(occupied_cell)
+			or navigation.astar.is_point_solid(occupied_cell)
+		):
+			return false
+	return true
 
 
 static func _runtime_evidence_key_precedes(
@@ -850,7 +1146,11 @@ func _cache_prewarmed_path(
 	):
 		return PackedVector2Array()
 	var cache_key := _path_cache_key(world_start, world_destination)
-	var scene_cache := prewarmed_paths.get(scene_index, {}) as Dictionary
+	var footprint_key := _scene_movement_footprint_key(scene_index)
+	var profile_caches := (
+		prewarmed_paths_by_footprint.get(scene_index, {}) as Dictionary
+	)
+	var scene_cache := profile_caches.get(footprint_key, {}) as Dictionary
 	if scene_cache.has(cache_key):
 		return (scene_cache[cache_key] as PackedVector2Array).duplicate()
 	var global_cache_key := ""
@@ -865,6 +1165,8 @@ func _cache_prewarmed_path(
 				as PackedVector2Array
 			).duplicate()
 			scene_cache[cache_key] = global_path.duplicate()
+			profile_caches[footprint_key] = scene_cache
+			prewarmed_paths_by_footprint[scene_index] = profile_caches
 			prewarmed_paths[scene_index] = scene_cache
 			static_prewarm_cache_hit_count += 1
 			return global_path
@@ -876,8 +1178,15 @@ func _cache_prewarmed_path(
 	_clear_goal(scene_index)
 	if path.is_empty() and not cache_empty_path:
 		return path
-	scene_cache = prewarmed_paths.get(scene_index, {}) as Dictionary
+	profile_caches = (
+		prewarmed_paths_by_footprint.get(scene_index, {}) as Dictionary
+	)
+	scene_cache = profile_caches.get(footprint_key, {}) as Dictionary
 	scene_cache[cache_key] = path.duplicate()
+	profile_caches[footprint_key] = scene_cache
+	prewarmed_paths_by_footprint[scene_index] = profile_caches
+	# Keep the current profile mirrored for diagnostics and compatibility with
+	# existing tooling that inspects prewarmed_paths directly.
 	prewarmed_paths[scene_index] = scene_cache
 	if not global_cache_key.is_empty():
 		if (
@@ -920,9 +1229,15 @@ func _prewarmed_path(
 	world_destination: Vector2,
 ) -> Variant:
 	last_prewarmed_path_nearest_distance = -1
-	if not prewarmed_paths.has(scene_index):
+	if not prewarmed_paths_by_footprint.has(scene_index):
 		return null
-	var scene_cache := prewarmed_paths[scene_index] as Dictionary
+	var footprint_key := _scene_movement_footprint_key(scene_index)
+	var profile_caches := (
+		prewarmed_paths_by_footprint[scene_index] as Dictionary
+	)
+	if not profile_caches.has(footprint_key):
+		return null
+	var scene_cache := profile_caches[footprint_key] as Dictionary
 	var cache_key := _path_cache_key(world_start, world_destination)
 	if scene_cache.has(cache_key):
 		last_prewarmed_path_nearest_distance = 0
@@ -962,9 +1277,38 @@ func _prewarmed_path(
 	if best_suffix.is_empty():
 		return null
 	scene_cache[cache_key] = best_suffix.duplicate()
+	profile_caches[footprint_key] = scene_cache
+	prewarmed_paths_by_footprint[scene_index] = profile_caches
 	prewarmed_paths[scene_index] = scene_cache
 	prewarmed_path_suffix_hit_count += 1
 	return best_suffix
+
+
+func _cache_dense_static_path(
+	scene_index: int,
+	world_start: Vector2,
+	world_destination: Vector2,
+	path: PackedVector2Array,
+) -> void:
+	var cache_key := _path_cache_key(world_start, world_destination)
+	var footprint_key := _scene_movement_footprint_key(scene_index)
+	var profile_caches := (
+		prewarmed_paths_by_footprint.get(scene_index, {}) as Dictionary
+	)
+	var scene_cache := profile_caches.get(footprint_key, {}) as Dictionary
+	scene_cache[cache_key] = path.duplicate()
+	profile_caches[footprint_key] = scene_cache
+	prewarmed_paths_by_footprint[scene_index] = profile_caches
+	prewarmed_paths[scene_index] = scene_cache
+
+
+func _scene_movement_footprint_key(scene_index: int) -> String:
+	var actor := actors.get(scene_index, {}) as Dictionary
+	var movement_offsets := (
+		actor.get("movement_offsets", [Vector2i.ZERO])
+		as Array[Vector2i]
+	)
+	return _movement_offsets_cache_key(movement_offsets)
 
 
 func _path_cache_key(

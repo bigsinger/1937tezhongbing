@@ -100,6 +100,18 @@ class MockGame:
 	var field_inventory: Dictionary = {}
 	var dynamic_occupancy: RefCounted
 	var world_entities_by_scene: Dictionary = {}
+	var legacy_crt_random_state := 1
+	var legacy_crt_random_draw_index := 0
+	var legacy_ambient_particle_state: Dictionary = {}
+
+	func legacy_ambient_particle_snapshot() -> Dictionary:
+		return legacy_ambient_particle_state.duplicate(true)
+
+	func restore_legacy_ambient_particle_snapshot(
+		state: Dictionary,
+	) -> bool:
+		legacy_ambient_particle_state = state.duplicate(true)
+		return not state.is_empty()
 
 
 var check_count := 0
@@ -1006,6 +1018,28 @@ func _test_mid_mission_capture_and_apply(failures: Array[String]) -> void:
 		"mission AI durable state is captured with the world",
 		failures,
 	)
+	_expect(
+		(
+			int((session["world"] as Dictionary).get(
+				"legacy_crt_random_state",
+				0,
+			)) == 0x12345678
+			and int((session["world"] as Dictionary).get(
+				"legacy_crt_random_draw_index",
+				-1,
+			)) == 4321
+			and int(
+				(
+					(session["world"] as Dictionary).get(
+						"legacy_ambient_particle",
+						{},
+					) as Dictionary
+				).get("update_serial", -1)
+			) == 37
+		),
+		"the process-global CRT stream and ambient particle phase are captured together",
+		failures,
+	)
 	var store = GAME_SAVE_STORE.new(test_root + "/capture-saves")
 	_expect(bool(store.save_slot("midgame", session)["ok"]), "captured runtime satisfies save schema", failures)
 	var disk_session := ((store.load_slot("midgame")["data"] as Dictionary)["session"] as Dictionary)
@@ -1093,6 +1127,20 @@ func _test_mid_mission_capture_and_apply(failures: Array[String]) -> void:
 		)
 		and bool(target_game.ambient_units[0].patrol_path_in_flight),
 		"ambient position, faction, and patrol state survive a mid-mission save",
+		failures,
+	)
+	_expect(
+		(
+			int(target_game.legacy_crt_random_state) == 0x12345678
+			and int(target_game.legacy_crt_random_draw_index) == 4321
+			and int(
+				target_game.legacy_ambient_particle_state.get(
+					"update_serial",
+					-1,
+				)
+			) == 37
+		),
+		"ambient particles resume at the same visual and process-global random phase",
 		failures,
 	)
 	_expect(target_unit.ammo_item_count(43) == 2, "integer-key deployable inventory restores", failures)
@@ -1416,6 +1464,22 @@ func _make_mock_game(populated: bool) -> MockGame:
 	game.ambient_units.append(ambient)
 	game.add_child(ambient)
 	if populated:
+		game.legacy_crt_random_state = 0x12345678
+		game.legacy_crt_random_draw_index = 4321
+		game.legacy_ambient_particle_state = {
+			"level_id": "m002",
+			"update_serial": 37,
+			"primary_particles": [
+				{
+					"position": Vector2(12.0, 34.0),
+					"alpha": 128,
+					"lifetime": 240,
+					"speed": 7,
+					"size": 11,
+				},
+			],
+			"secondary_particles": [],
+		}
 		unit.position = Vector2(321.0, 654.0)
 		unit.move_speed = 177.0
 		unit.selected = true

@@ -7,10 +7,10 @@ const BASE_SPRITE_TICK_SECONDS := 0.085
 ## primary candidate-scan rand() calls therefore follow the 60 Hz actor
 ## update, independently of the slower idle/reaction counters below.
 const ORIGINAL_ACTOR_RANDOM_TICK_SECONDS := 1.0 / 60.0
-## The actor AI counters recovered around M1937.exe sub_4587E0/sub_458A80
-## advance on the same 30 Hz logic cadence already used by the recovered
-## enemy reaction counter.
-const ORIGINAL_AI_IDLE_TICK_SECONDS := 1.0 / 30.0
+## sub_456070 (stationary action) and sub_4587E0 (route wait) run in the
+## same measured 60 Hz actor update and mutate one shared counter. A
+## stationary route actor therefore advances that counter twice per tick.
+const ORIGINAL_AI_IDLE_TICK_SECONDS := ORIGINAL_ACTOR_RANDOM_TICK_SECONDS
 ## RuntimeActor movement is advanced by M1937's 60 Hz actor update.  The
 ## secondary SPR triplet supplies the maximum X and Y displacement per tick
 ## (components 0 and 2); run mode uses three times the walk values.
@@ -45,6 +45,9 @@ const LEGACY_ROW_SLICE_SPRITE_SCRIPT: Script = preload(
 )
 const ORIGINAL_CRT_RANDOM_STARTUP_CATALOG: Script = preload(
 	"res://scripts/original_crt_random_startup_catalog.gd"
+)
+const ORIGINAL_CRT_RANDOM_RUNTIME_STATE: Script = preload(
+	"res://scripts/original_crt_random_runtime_state.gd"
 )
 const WORLD_DEPTH: Script = preload("res://scripts/world_depth.gd")
 
@@ -106,6 +109,16 @@ var original_crt_primary_candidate_scan_elapsed := 0.0
 var original_crt_primary_candidate_scan_passed := false
 var original_crt_primary_candidate_scan_serial := 0
 var original_crt_primary_candidate_last_physics_frame := -1
+var original_crt_runtime_state_profile: Dictionary = {}
+var original_pursuit_target_runtime_index := -1
+var original_pursuit_target: Node2D
+var original_pursuit_call_site_rva := 0
+var original_pursuit_delay_counter := 0
+var original_pursuit_elapsed := 0.0
+var original_pursuit_serial := 0
+var original_pursuit_last_physics_frame := -1
+var original_pursuit_last_command_variant := 0
+var original_pursuit_last_navigation_applied := false
 var original_first_gameplay_update_serial := 0
 var original_first_gameplay_semantic_effects: Array[String] = []
 var original_first_gameplay_call_sites := PackedInt32Array()
@@ -160,6 +173,11 @@ var original_ai_idle_tick_elapsed := 0.0
 var original_ai_idle_frame_index := 0
 var original_ai_idle_frame_elapsed := 0.0
 var original_ai_idle_random_state := 1
+var original_ai_previous_world_position := Vector2.ZERO
+var original_ai_shared_counter_last_physics_frame := -1
+var original_ai_stationary_reset_serial := 0
+var original_ai_route_reset_serial := 0
+var original_route_update_active := false
 var weapon_profile: Dictionary = {}
 var attack_groups: Array[Dictionary] = []
 var death_groups: Array[Dictionary] = []
@@ -233,6 +251,11 @@ func configure(
 	original_ai_idle_frame_index = 0
 	original_ai_idle_frame_elapsed = 0.0
 	original_ai_idle_random_state = 1
+	original_ai_previous_world_position = start_position
+	original_ai_shared_counter_last_physics_frame = -1
+	original_ai_stationary_reset_serial = 0
+	original_ai_route_reset_serial = 0
+	original_route_update_active = false
 	is_running = true
 	is_crawling = false
 	move_speed = RUN_SPEED
@@ -252,6 +275,16 @@ func configure(
 	original_crt_primary_candidate_scan_passed = false
 	original_crt_primary_candidate_scan_serial = 0
 	original_crt_primary_candidate_last_physics_frame = -1
+	original_crt_runtime_state_profile.clear()
+	original_pursuit_target_runtime_index = -1
+	original_pursuit_target = null
+	original_pursuit_call_site_rva = 0
+	original_pursuit_delay_counter = 0
+	original_pursuit_elapsed = 0.0
+	original_pursuit_serial = 0
+	original_pursuit_last_physics_frame = -1
+	original_pursuit_last_command_variant = 0
+	original_pursuit_last_navigation_applied = false
 	original_first_gameplay_update_serial = 0
 	original_first_gameplay_semantic_effects.clear()
 	original_first_gameplay_call_sites.clear()
@@ -365,6 +398,8 @@ func configure_original_ai_idle_animation(
 			)
 			% AI_IDLE_RANDOM_RULES.SEARCH_WAIT_RANDOM_SPAN
 		)
+	original_ai_previous_world_position = position
+	original_ai_shared_counter_last_physics_frame = -1
 	apply_idle_frame()
 	return original_ai_idle_animation_enabled
 
@@ -391,6 +426,11 @@ func original_ai_idle_animation_snapshot() -> Dictionary:
 		"frame_index": original_ai_idle_frame_index,
 		"frame_elapsed": original_ai_idle_frame_elapsed,
 		"random_state": original_ai_idle_random_state,
+		"previous_world_x": original_ai_previous_world_position.x,
+		"previous_world_y": original_ai_previous_world_position.y,
+		"stationary_reset_serial": original_ai_stationary_reset_serial,
+		"route_reset_serial": original_ai_route_reset_serial,
+		"route_update_active": original_route_update_active,
 	}
 
 
@@ -426,6 +466,22 @@ func restore_original_ai_idle_animation(state: Dictionary) -> bool:
 		int(state.get("random_state", original_ai_idle_random_state)),
 		1,
 	)
+	original_ai_previous_world_position = Vector2(
+		float(state.get("previous_world_x", position.x)),
+		float(state.get("previous_world_y", position.y)),
+	)
+	original_ai_stationary_reset_serial = maxi(
+		int(state.get("stationary_reset_serial", 0)),
+		0,
+	)
+	original_ai_route_reset_serial = maxi(
+		int(state.get("route_reset_serial", 0)),
+		0,
+	)
+	original_route_update_active = bool(
+		state.get("route_update_active", original_route_update_active)
+	)
+	original_ai_shared_counter_last_physics_frame = -1
 	original_ai_idle_action_active = original_ai_idle_uses_stand_action(
 		original_ai_idle_tick_counter,
 		original_ai_idle_tick_limit,
@@ -490,10 +546,82 @@ func bind_original_crt_random_source(
 	original_crt_primary_candidate_scan_passed = false
 	original_crt_primary_candidate_scan_serial = 0
 	original_crt_primary_candidate_last_physics_frame = -1
-	# Main creates actors in their recovered runtime-array order and appends
-	# reinforcements afterward, so normal scene-tree physics order already
-	# preserves the CRT consumer order. Do not override physics priority:
-	# players must keep processing their command before an enemy senses it.
+	original_crt_runtime_state_profile = (
+		ORIGINAL_CRT_RANDOM_RUNTIME_STATE.actor_profile(
+			level_id,
+			original_runtime_index,
+		)
+		if original_runtime_index >= 0
+		else {}
+	)
+	var runtime_entry_value: Variant = (
+		original_crt_runtime_state_profile.get("entry", {})
+	)
+	if runtime_entry_value is Dictionary:
+		original_route_update_active = (
+			int((runtime_entry_value as Dictionary).get(
+				"route_update_active",
+				0,
+			)) == 1
+		)
+	else:
+		original_route_update_active = false
+	original_ai_previous_world_position = position
+	original_ai_shared_counter_last_physics_frame = -1
+	original_ai_stationary_reset_serial = 0
+	original_ai_route_reset_serial = 0
+	original_ai_idle_tick_counter = 0
+	original_ai_idle_tick_elapsed = 0.0
+	if original_crt_initialization_profile.has("initial_idle_limit"):
+		original_ai_idle_tick_limit = clampi(
+			int(original_crt_initialization_profile.get(
+				"initial_idle_limit",
+				0,
+			)),
+			0,
+			AI_IDLE_RANDOM_RULES.SEARCH_WAIT_RANDOM_SPAN - 1,
+		)
+	original_pursuit_target_runtime_index = (
+		ORIGINAL_CRT_RANDOM_RUNTIME_STATE
+		. pursuit_target_runtime_index(
+			level_id,
+			original_runtime_index,
+		)
+		if original_runtime_index >= 0
+		else -1
+	)
+	original_pursuit_target = null
+	original_pursuit_call_site_rva = (
+		ORIGINAL_CRT_RANDOM_RUNTIME_STATE.pursuit_call_site_rva(
+			level_id,
+			original_runtime_index,
+		)
+		if original_runtime_index >= 0
+		else 0
+	)
+	if (
+		original_pursuit_target_runtime_index >= 0
+		and original_pursuit_call_site_rva == 0
+	):
+		original_pursuit_call_site_rva = (
+			0x0005D394
+			if runtime_actor_type == 56
+			else 0x0005D47E
+		)
+	original_pursuit_delay_counter = 0
+	original_pursuit_elapsed = 0.0
+	original_pursuit_serial = 0
+	original_pursuit_last_physics_frame = -1
+	original_pursuit_last_command_variant = 0
+	original_pursuit_last_navigation_applied = false
+	# Playable, ambient and enemy nodes are created in separate batches, while
+	# the native executable updates one runtime-index array. Physics priority
+	# restores that exact actor consumer order without changing input/focus.
+	process_physics_priority = (
+		1000 + original_runtime_index
+		if original_runtime_index >= 0
+		else 2_000_000
+	)
 	return (
 		original_crt_random_source != null
 		and is_instance_valid(original_crt_random_source)
@@ -528,7 +656,41 @@ func initialize_dynamic_original_crt_random() -> bool:
 		"initial_ai_phase": phase_value % 60,
 		"initial_reaction_limit": (reaction_value % 40) + 40,
 	}
+	original_ai_idle_tick_counter = 0
+	original_ai_idle_tick_limit = idle_value % 160
+	original_ai_idle_tick_elapsed = 0.0
+	original_ai_previous_world_position = position
+	original_ai_shared_counter_last_physics_frame = -1
 	return true
+
+
+func bind_original_pursuit_target(target: Node2D) -> bool:
+	if original_pursuit_target_runtime_index < 0:
+		original_pursuit_target = null
+		return target == null
+	if (
+		target == null
+		or not is_instance_valid(target)
+		or int(target.get("original_runtime_index"))
+			!= original_pursuit_target_runtime_index
+	):
+		return false
+	original_pursuit_target = target
+	return true
+
+
+func original_pursuit_snapshot() -> Dictionary:
+	return {
+		"target_runtime_index": original_pursuit_target_runtime_index,
+		"call_site_rva": original_pursuit_call_site_rva,
+		"delay_counter": original_pursuit_delay_counter,
+		"elapsed": original_pursuit_elapsed,
+		"serial": original_pursuit_serial,
+		"last_command_variant": original_pursuit_last_command_variant,
+		"last_navigation_applied": (
+			original_pursuit_last_navigation_applied
+		),
+	}
 
 
 func next_original_crt_random_value(call_site_rva: int) -> int:
@@ -597,6 +759,7 @@ func original_crt_random_timing_snapshot() -> Dictionary:
 		"primary_candidate_scan_serial": (
 			original_crt_primary_candidate_scan_serial
 		),
+		"pursuit": original_pursuit_snapshot(),
 		"first_gameplay_update_serial": (
 			original_first_gameplay_update_serial
 		),
@@ -674,6 +837,39 @@ func restore_original_crt_random_timing(state: Dictionary) -> bool:
 		int(state.get("primary_candidate_scan_serial", 0)),
 		0,
 	)
+	var pursuit_value: Variant = state.get("pursuit", {})
+	if pursuit_value is Dictionary:
+		var pursuit_state := pursuit_value as Dictionary
+		if (
+			int(pursuit_state.get(
+				"target_runtime_index",
+				original_pursuit_target_runtime_index,
+			)) != original_pursuit_target_runtime_index
+			or int(pursuit_state.get(
+				"call_site_rva",
+				original_pursuit_call_site_rva,
+			)) != original_pursuit_call_site_rva
+		):
+			return false
+		original_pursuit_delay_counter = maxi(
+			int(pursuit_state.get("delay_counter", 0)),
+			0,
+		)
+		original_pursuit_elapsed = clampf(
+			float(pursuit_state.get("elapsed", 0.0)),
+			0.0,
+			ORIGINAL_ACTOR_RANDOM_TICK_SECONDS,
+		)
+		original_pursuit_serial = maxi(
+			int(pursuit_state.get("serial", 0)),
+			0,
+		)
+		original_pursuit_last_command_variant = int(
+			pursuit_state.get("last_command_variant", 0)
+		)
+		original_pursuit_last_navigation_applied = bool(
+			pursuit_state.get("last_navigation_applied", false)
+		)
 	original_first_gameplay_update_serial = maxi(
 		int(state.get("first_gameplay_update_serial", 0)),
 		0,
@@ -726,12 +922,109 @@ func restore_original_crt_random_timing(state: Dictionary) -> bool:
 	)
 	original_crt_last_physics_frame = -1
 	original_crt_primary_candidate_last_physics_frame = -1
+	original_pursuit_last_physics_frame = -1
 	return true
 
 
 func _advance_original_crt_actor_random_tick(delta: float) -> void:
 	_advance_original_crt_observation_gate(delta)
+	_advance_original_pursuit(delta)
 	_advance_original_crt_primary_candidate_scan(delta)
+
+
+func _advance_original_pursuit(delta: float) -> void:
+	var physics_frame := Engine.get_physics_frames()
+	if original_pursuit_last_physics_frame == physics_frame:
+		return
+	original_pursuit_last_physics_frame = physics_frame
+	if (
+		original_pursuit_target_runtime_index < 0
+		or original_pursuit_call_site_rva not in [
+			0x0005D394,
+			0x0005D47E,
+		]
+		or original_crt_random_source == null
+		or not is_instance_valid(original_crt_random_source)
+	):
+		return
+	original_pursuit_elapsed += maxf(delta, 0.0)
+	while (
+		original_pursuit_elapsed
+		>= ORIGINAL_ACTOR_RANDOM_TICK_SECONDS
+	):
+		original_pursuit_elapsed -= ORIGINAL_ACTOR_RANDOM_TICK_SECONDS
+		_advance_original_pursuit_once()
+
+
+func _advance_original_pursuit_once() -> bool:
+	var target := _resolved_original_pursuit_target()
+	if (
+		target == null
+		or not is_alive
+		or movement_path_index < movement_path.size()
+	):
+		return false
+	var random_value := next_original_crt_random_value(
+		original_pursuit_call_site_rva
+	)
+	if random_value < 0:
+		return false
+	original_pursuit_serial += 1
+	if original_pursuit_call_site_rva == 0x0005D394:
+		original_pursuit_delay_counter += 1
+		if original_pursuit_delay_counter <= random_value % 10:
+			original_pursuit_last_navigation_applied = false
+			return true
+		original_pursuit_delay_counter = 0
+	else:
+		original_pursuit_delay_counter = 0
+	var destination := target.position
+	var far_override := (
+		original_pursuit_call_site_rva == 0x0005D47E
+		and random_value % 10 < 5
+		and position.distance_to(destination) > 128.0
+	)
+	original_pursuit_last_command_variant = 1 if far_override else 0
+	original_pursuit_last_navigation_applied = false
+	if not _should_apply_original_pursuit_navigation():
+		return true
+	set_crawling(false)
+	set_running(far_override or bool(target.get("is_running")))
+	original_pursuit_last_navigation_applied = (
+		_issue_original_first_gameplay_path(destination)
+	)
+	return true
+
+
+func _resolved_original_pursuit_target() -> Node2D:
+	if (
+		original_pursuit_target == null
+		or not is_instance_valid(original_pursuit_target)
+	):
+		return null
+	if bool(original_pursuit_target.get("is_alive")):
+		return original_pursuit_target
+	var chained_value: Variant = original_pursuit_target.get(
+		"original_pursuit_target"
+	)
+	if (
+		chained_value is Node2D
+		and is_instance_valid(chained_value as Node2D)
+		and bool((chained_value as Node2D).get("is_alive"))
+	):
+		original_pursuit_target = chained_value as Node2D
+		original_pursuit_target_runtime_index = int(
+			original_pursuit_target.get("original_runtime_index")
+		)
+		return original_pursuit_target
+	original_pursuit_target = null
+	original_pursuit_target_runtime_index = -1
+	original_pursuit_call_site_rva = 0
+	return null
+
+
+func _should_apply_original_pursuit_navigation() -> bool:
+	return true
 
 
 func _advance_original_crt_observation_gate(delta: float) -> void:
@@ -932,6 +1225,8 @@ func apply_original_first_gameplay_update_outcome(
 		original_ai_idle_action_active = false
 		original_ai_idle_frame_index = 0
 		original_ai_idle_frame_elapsed = 0.0
+		original_route_update_active = false
+		original_ai_route_reset_serial += 1
 	var navigation_effect := ""
 	var destination := Vector2.ZERO
 	if effects.has("secondary_search_destination"):
@@ -1968,6 +2263,7 @@ func contains_parent_point(parent_point: Vector2) -> bool:
 func _physics_process(delta: float) -> void:
 	var safe_delta := maxf(delta, 0.0)
 	_advance_original_crt_actor_random_tick(safe_delta)
+	_advance_original_ai_shared_counter(safe_delta)
 	attack_cooldown_remaining = maxf(attack_cooldown_remaining - safe_delta, 0.0)
 	if combat_action != CombatAction.NONE:
 		_suspend_original_ai_idle_action()
@@ -2077,9 +2373,18 @@ func _physics_process(delta: float) -> void:
 		blocked_elapsed += safe_delta
 		if blocked_elapsed >= maxf(blocked_replan_seconds, 0.05):
 			blocked_elapsed = 0.0
-			var replanned := _find_movement_path_runtime(target_position)
-			if not replanned.is_empty():
-				issue_path(replanned)
+			# sub_45D330 pursuit commands retain the commanded target
+			# coordinate while a followed actor occupies or clears the next
+			# cell. Re-running A* against that same coordinate every retry
+			# interval is both behaviorally wrong (the original command stays
+			# pending) and produces a visible hitch for the two-cell pushcart
+			# follower in m005. Keep retrying the already proven route; the
+			# next original pursuit command is issued only after this path
+			# actually completes.
+			if not original_pursuit_last_navigation_applied:
+				var replanned := _find_movement_path_runtime(target_position)
+				if not replanned.is_empty():
+					issue_path(replanned)
 		var accepted_displacement := position - previous_position
 		if accepted_displacement.is_zero_approx():
 			_apply_idle_state()
@@ -2491,42 +2796,6 @@ func _advance_original_ai_idle_animation(delta: float) -> void:
 	):
 		_suspend_original_ai_idle_action()
 		return
-	original_ai_idle_tick_elapsed += maxf(delta, 0.0)
-	while (
-		original_ai_idle_tick_elapsed
-		>= ORIGINAL_AI_IDLE_TICK_SECONDS
-	):
-		original_ai_idle_tick_elapsed -= ORIGINAL_AI_IDLE_TICK_SECONDS
-		original_ai_idle_tick_counter += 1
-		if original_ai_idle_tick_counter >= original_ai_idle_tick_limit:
-			original_ai_idle_tick_counter = 0
-			var random_value := next_original_crt_random_value(
-				0x00056105
-			)
-			if random_value >= 0:
-				original_ai_idle_tick_limit = (
-					random_value
-					% AI_IDLE_RANDOM_RULES.SEARCH_WAIT_RANDOM_SPAN
-					+ AI_IDLE_RANDOM_RULES.SEARCH_WAIT_MINIMUM_LIMIT
-				)
-			else:
-				var sampled: Dictionary = (
-					AI_IDLE_RANDOM_RULES.initial_search_wait_from_state(
-						original_ai_idle_random_state
-					)
-				)
-				original_ai_idle_random_state = int(
-					sampled.get(
-						"state",
-						original_ai_idle_random_state,
-					)
-				)
-				original_ai_idle_tick_limit = int(
-					sampled.get(
-						"limit",
-						AI_IDLE_RANDOM_RULES.SEARCH_WAIT_MINIMUM_LIMIT,
-					)
-				)
 	var next_action_active := original_ai_idle_uses_stand_action(
 		original_ai_idle_tick_counter,
 		original_ai_idle_tick_limit,
@@ -2538,6 +2807,95 @@ func _advance_original_ai_idle_animation(delta: float) -> void:
 	if not _apply_current_idle_visual(maxf(delta, 0.0)):
 		return
 	queue_redraw()
+
+
+func set_original_route_update_active(value: bool) -> void:
+	original_route_update_active = value
+
+
+func _advance_original_ai_shared_counter(delta: float) -> void:
+	var physics_frame := Engine.get_physics_frames()
+	if original_ai_shared_counter_last_physics_frame == physics_frame:
+		return
+	original_ai_shared_counter_last_physics_frame = physics_frame
+	var current_world_position := position
+	var stationary := current_world_position.is_equal_approx(
+		original_ai_previous_world_position
+	)
+	original_ai_previous_world_position = current_world_position
+	if (
+		not is_alive
+		or (
+			original_crt_level_id.is_empty()
+			and original_crt_initialization_profile.is_empty()
+		)
+	):
+		return
+	original_ai_idle_tick_elapsed += maxf(delta, 0.0)
+	while (
+		original_ai_idle_tick_elapsed
+		>= ORIGINAL_AI_IDLE_TICK_SECONDS
+	):
+		original_ai_idle_tick_elapsed -= ORIGINAL_AI_IDLE_TICK_SECONDS
+		if stationary:
+			original_ai_idle_tick_counter += 1
+			if (
+				original_ai_idle_tick_counter
+				>= original_ai_idle_tick_limit
+			):
+				var stationary_limit := _next_original_ai_wait_limit(
+					0x00056105
+				)
+				if stationary_limit >= 0:
+					original_ai_idle_tick_counter = 0
+					original_ai_idle_tick_limit = stationary_limit
+					original_ai_stationary_reset_serial += 1
+		if original_route_update_active:
+			original_ai_idle_tick_counter += 1
+			if (
+				original_ai_idle_tick_counter
+				>= original_ai_idle_tick_limit
+			):
+				var route_limit := _next_original_ai_wait_limit(
+					0x00058946
+				)
+				if route_limit >= 0:
+					original_ai_idle_tick_counter = 0
+					original_ai_idle_tick_limit = route_limit
+					original_route_update_active = false
+					original_ai_route_reset_serial += 1
+					_on_original_route_wait_completed()
+
+
+func _next_original_ai_wait_limit(call_site_rva: int) -> int:
+	var random_value := next_original_crt_random_value(call_site_rva)
+	if random_value >= 0:
+		return (
+			random_value
+			% AI_IDLE_RANDOM_RULES.SEARCH_WAIT_RANDOM_SPAN
+			+ AI_IDLE_RANDOM_RULES.SEARCH_WAIT_MINIMUM_LIMIT
+		)
+	var sampled: Dictionary = (
+		AI_IDLE_RANDOM_RULES.initial_search_wait_from_state(
+			original_ai_idle_random_state
+		)
+	)
+	original_ai_idle_random_state = int(
+		sampled.get(
+			"state",
+			original_ai_idle_random_state,
+		)
+	)
+	return int(
+		sampled.get(
+			"limit",
+			AI_IDLE_RANDOM_RULES.SEARCH_WAIT_MINIMUM_LIMIT,
+		)
+	)
+
+
+func _on_original_route_wait_completed() -> void:
+	pass
 
 
 func _suspend_original_ai_idle_action() -> void:
@@ -2733,6 +3091,42 @@ func _apply_dynamic_sprite_footprint(group: Dictionary) -> bool:
 		return false
 	active_sprite_footprint_key = profile_key
 	return true
+
+
+func patrol_movement_footprint_profiles() -> Array:
+	var profiles: Array = []
+	if (
+		dynamic_occupancy == null
+		or movement_groups.is_empty()
+	):
+		return profiles
+	var source_navigation: Variant = dynamic_occupancy.get("navigation")
+	if source_navigation == null:
+		return profiles
+	var cell_size_value: Variant = source_navigation.get("cell_size")
+	if not cell_size_value is Vector2i:
+		return profiles
+	var profile_keys: Dictionary = {}
+	for group: Dictionary in movement_groups:
+		if (
+			group.is_empty()
+			or not group.has("lookup_dimensions")
+			or not group.has("movement_lookup")
+		):
+			continue
+		var movement_offsets: Array[Vector2i] = (
+			SPR_ANIMATION_RULES.lookup_footprint_offsets(
+				group,
+				"movement_lookup",
+				cell_size_value as Vector2i,
+			)
+		)
+		var profile_key := str(movement_offsets)
+		if profile_keys.has(profile_key):
+			continue
+		profile_keys[profile_key] = true
+		profiles.append(movement_offsets)
+	return profiles
 
 
 func _apply_row_slice_visual(group: Dictionary) -> bool:

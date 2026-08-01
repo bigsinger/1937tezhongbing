@@ -2278,6 +2278,67 @@ func _init() -> void:
 		failures,
 	)
 	prewarm_grid.release_goal(50)
+	var multi_cell_navigation: NavigationGridData = (
+		NAVIGATION_GRID_DATA.create_for_tests(
+			6,
+			2,
+			Vector2i(32, 16),
+			PackedInt64Array([
+				0, 0, 0, 0, 0, 0,
+				0, 0, 0, 0, 0, 0,
+			]),
+		)
+	)
+	var multi_cell_grid: RefCounted = DYNAMIC_OCCUPANCY_GRID.new()
+	multi_cell_grid.configure(multi_cell_navigation)
+	var multi_cell_start := multi_cell_navigation.cell_to_world(
+		Vector2i(0, 0)
+	)
+	var multi_cell_destination := multi_cell_navigation.cell_to_world(
+		Vector2i(3, 0)
+	)
+	multi_cell_grid.register_scene(51, multi_cell_start)
+	multi_cell_grid.finalize_registration()
+	var multi_cell_movement_offsets: Array[Vector2i] = [
+		Vector2i.ZERO,
+		Vector2i(0, 1),
+	]
+	var multi_cell_sight_offsets: Array[Vector2i] = [Vector2i.ZERO]
+	multi_cell_grid.update_scene_footprint(
+		51,
+		multi_cell_movement_offsets,
+		multi_cell_sight_offsets,
+	)
+	expect(
+		multi_cell_grid.prewarm_runtime_evidence_path_for_scene(
+			51,
+			multi_cell_start,
+			multi_cell_destination,
+		),
+		"a two-cell actor can preload a stable-MOD evidence route",
+		failures,
+	)
+	var multi_cell_shift := Vector2(32.0, 0.0)
+	var translated_multi_cell_path: PackedVector2Array = (
+		multi_cell_grid.find_path_for_scene(
+			51,
+			multi_cell_start + multi_cell_shift,
+			multi_cell_destination + multi_cell_shift,
+			true,
+		)
+	)
+	expect(
+		not translated_multi_cell_path.is_empty()
+			and translated_multi_cell_path[-1].is_equal_approx(
+				multi_cell_destination + multi_cell_shift
+			)
+			and multi_cell_grid.runtime_evidence_translated_hit_count == 1,
+		(
+			"a collision-shifted multi-cell actor reuses evidence only "
+			+ "after every translated footprint anchor is clear"
+		),
+		failures,
+	)
 	var evidence_hit_count_before_displacement: int = (
 		prewarm_grid.runtime_evidence_path_hit_count
 	)

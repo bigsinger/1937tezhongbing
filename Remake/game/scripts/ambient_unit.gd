@@ -96,7 +96,10 @@ func _update_patrol(delta: float) -> void:
 	if patrol_path_in_flight:
 		patrol_path_in_flight = false
 		patrol_wait_remaining = WAYPOINT_HOLD_SECONDS
+		set_original_route_update_active(true)
 		apply_idle_frame()
+		return
+	if original_route_update_active:
 		return
 	if patrol_wait_remaining > 0.0:
 		patrol_wait_remaining = maxf(patrol_wait_remaining - delta, 0.0)
@@ -118,6 +121,12 @@ func _update_patrol(delta: float) -> void:
 		return
 	issue_path(path)
 	patrol_path_in_flight = true
+	set_original_route_update_active(false)
+
+
+func _on_original_route_wait_completed() -> void:
+	patrol_wait_remaining = 0.0
+	path_request_delay_remaining = 0.0
 
 
 func _next_unreached_patrol_index() -> int:

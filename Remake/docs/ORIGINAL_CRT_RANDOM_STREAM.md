@@ -54,6 +54,10 @@ $env:M1937_RNG_TRACE = '1'
 角色地址映射、逐轮角色顺序和节拍稳定性；固化结果由
 `Test-CrtRandomRuntimeTimingBaseline.ps1` 纳入每次 `Verify.ps1`。
 
+十二关约五秒的角色运行态、路线/静止共用计数器、持久追击关系、五点搜索、
+环境粒子和压缩寻路优化的完整证据、命令及边界见
+[原版全局随机运行态基线](CRT_RUNTIME_STATE_BASELINE.md)。
+
 ## 十二关启动基线
 
 机器可读结果位于

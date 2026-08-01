@@ -81,8 +81,13 @@ internal static class ModRegressionProbe
     private const int ActorFactionOffset = 0x074;
     private const int ActorWorldXOffset = 0x0D8;
     private const int ActorWorldYOffset = 0x0E0;
+    private const int ActorPreviousWorldXOffset = 0x0F0;
+    private const int ActorPreviousWorldYOffset = 0x0F8;
     private const int ActorWorldItemPlayerSelectedOffset = 0x168;
+    private const int ActorStationaryTickCounterOffset = 0x16C;
+    private const int ActorStationaryTickLimitOffset = 0x170;
     private const int ActorFacingDirectionOffset = 0x178;
+    private const int ActorRouteUpdateActiveOffset = 0x184;
     private const int ActorDeadOffset = 0x188;
     private const int ActorTargetStatusOffset = 0x190;
     private const int ActorGoalKindOffset = 0x194;
@@ -104,6 +109,7 @@ internal static class ModRegressionProbe
     private const int ActorItemInventoryAddressOffset = 0x228;
     private const int ActorInventoryAddressOffset = 0x22C;
     private const int ActorHypnosisActiveOffset = 0x238;
+    private const int ActorPursuitAddressOffset = 0x23C;
     private const int ActorSearchDelayLimitOffset = 0x248;
     private const int ActorSearchDelayCounterOffset = 0x24C;
     private const int ActorContactStateOffset = 0x250;
@@ -115,6 +121,7 @@ internal static class ModRegressionProbe
     private const int ActorHypnosisCounterLimitOffset = 0x278;
     private const int ActorHypnosisCounterOffset = 0x27C;
     private const int ActorPathOverrideActiveOffset = 0x290;
+    private const int ActorPursuitDelayCounterOffset = 0x29C;
     private const long HoverWorldXRelativeAddress = 0x000E7014L;
     private const long HoverWorldYRelativeAddress = 0x000E7018L;
     private const long HoverCommandArmedRelativeAddress = 0x000E7034L;
@@ -202,6 +209,9 @@ internal static class ModRegressionProbe
     private static extern bool GetProcessIoCounters(
         IntPtr process, out IoCounters counters);
 
+    [DllImport("kernel32.dll")]
+    private static extern uint GetTickCount();
+
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool PostMessage(
         IntPtr window, uint message, IntPtr wparam, IntPtr lparam);
@@ -285,7 +295,12 @@ internal static class ModRegressionProbe
         public int Faction;
         public int WorldX;
         public int WorldY;
+        public int PreviousWorldX;
+        public int PreviousWorldY;
+        public int StationaryTickCounter;
+        public int StationaryTickLimit;
         public int Direction;
+        public int RouteUpdateActive;
         public int Dead;
         public int TargetStatus;
         public int GoalKind;
@@ -311,6 +326,8 @@ internal static class ModRegressionProbe
         public int ReactionState;
         public int WorldItemPlayerSelected;
         public int HypnosisActive;
+        public long PursuitAddress;
+        public int PursuitDelayCounter;
         public int HypnosisCounter;
         public int HypnosisCounterLimit;
         public int PoisonActive;
@@ -430,6 +447,8 @@ internal static class ModRegressionProbe
                 "[RETURN_CELL_X RETURN_CELL_Y]] " +
                 "[--briefing-only | --briefing-dismissal-only] " +
                 "[--crt-random-startup-only] " +
+                "[--crt-random-runtime-only " +
+                "--crt-random-runtime-ms=MS] " +
                 "[--movement-only] " +
                 "[--movement-player-scene=SCENE_INDEX] " +
                 "[--movement-observation-ms=MS] " +
@@ -470,6 +489,27 @@ internal static class ModRegressionProbe
                 "--crt-random-startup-only",
                 StringComparison.OrdinalIgnoreCase);
         });
+        bool crtRandomRuntimeOnly = args.Any(delegate(string argument)
+        {
+            return argument.Equals(
+                "--crt-random-runtime-only",
+                StringComparison.OrdinalIgnoreCase);
+        });
+        int crtRandomRuntimeMilliseconds = 12500;
+        string crtRandomRuntimeValue = ArgumentValue(
+            args, "--crt-random-runtime-ms=");
+        int parsedCrtRandomRuntimeMilliseconds;
+        if (!String.IsNullOrWhiteSpace(crtRandomRuntimeValue) &&
+            int.TryParse(
+                crtRandomRuntimeValue,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out parsedCrtRandomRuntimeMilliseconds))
+        {
+            crtRandomRuntimeMilliseconds = Math.Max(
+                1000,
+                Math.Min(60000, parsedCrtRandomRuntimeMilliseconds));
+        }
         bool movementOnly = args.Any(delegate(string argument)
         {
             return argument.Equals(
@@ -657,14 +697,19 @@ internal static class ModRegressionProbe
                 "Briefing-only and briefing-dismissal-only are mutually " +
                 "exclusive.");
         }
-        if (crtRandomStartupOnly &&
+        if ((crtRandomStartupOnly || crtRandomRuntimeOnly) &&
             (briefingOnly || briefingDismissalOnly ||
              movementOnly || inventoryOnly ||
              visualCaptureOnly || parityModeCount > 0))
         {
             throw new InvalidOperationException(
-                "CRT-random-startup-only cannot be combined with another " +
+                "CRT-random capture cannot be combined with another " +
                 "specialized probe mode.");
+        }
+        if (crtRandomStartupOnly && crtRandomRuntimeOnly)
+        {
+            throw new InvalidOperationException(
+                "CRT-random startup and runtime modes are mutually exclusive.");
         }
         if (inventoryOnly &&
             (briefingOnly || briefingDismissalOnly ||
@@ -1424,6 +1469,76 @@ internal static class ModRegressionProbe
                     imageBase,
                     Path.Combine(
                         outputDirectory, "actor-states-entry.csv"));
+                if (crtRandomRuntimeOnly)
+                {
+                    // Observe the original scene without issuing gameplay
+                    // commands. Menu transitions remain target-window /
+                    // process-local DirectInput messages; the observation
+                    // itself is read-only and never touches the system cursor.
+                    DateTime runtimeDeadline = DateTime.UtcNow.AddMilliseconds(
+                        crtRandomRuntimeMilliseconds);
+                    while (!game.HasExited &&
+                           DateTime.UtcNow < runtimeDeadline)
+                    {
+                        Thread.Sleep(Math.Min(
+                            250,
+                            Math.Max(
+                                1,
+                                (int)(runtimeDeadline - DateTime.UtcNow)
+                                    .TotalMilliseconds)));
+                    }
+                    int runtimeActorCount = ReadWorldActorCount(
+                        process, imageBase);
+                    WriteActorStateSnapshot(
+                        process,
+                        imageBase,
+                        Path.Combine(
+                            outputDirectory,
+                            "actor-states-runtime-exit.csv"));
+                    bool runtimeObserved =
+                        !game.HasExited &&
+                        runtimeActorCount > 0;
+                    AddStage(
+                        stages, game, process, imageBase, clock,
+                        "crt_random_runtime_observed",
+                        runtimeObserved,
+                        "read_only=true; process_local_input=true; " +
+                        "observation_ms=" +
+                        crtRandomRuntimeMilliseconds.ToString(
+                            CultureInfo.InvariantCulture) +
+                        "; entry_actors=" +
+                        actorCount.ToString(
+                            CultureInfo.InvariantCulture) +
+                        "; exit_actors=" +
+                        runtimeActorCount.ToString(
+                            CultureInfo.InvariantCulture));
+
+                    samplerStop = true;
+                    sampler.Join(1500);
+                    bool runtimeCursorClipSafe;
+                    lock (perf)
+                        runtimeCursorClipSafe = perf.All(
+                            delegate(PerfSample sample)
+                            {
+                                return !sample.CursorClipRestricted;
+                            });
+                    exitCode =
+                        missionStarted &&
+                        gameplayResumeSent &&
+                        cameraStateSynchronized &&
+                        runtimeObserved &&
+                        runtimeCursorClipSafe ? 0 : 1;
+                    WriteArtifacts(
+                        outputDirectory,
+                        selectorLevel,
+                        route.EngineMission,
+                        stages,
+                        perf,
+                        transitionsLogged: false,
+                        replayConsumed: true,
+                        passed: exitCode == 0);
+                    return exitCode;
+                }
                 if (actorLayoutDump)
                 {
                     WriteActorLayoutSnapshot(
@@ -3285,12 +3400,18 @@ internal static class ModRegressionProbe
             return;
 
         long actorArray = (long)(uint)actorArrayValue;
+        uint capturedTickMilliseconds = GetTickCount();
         var text = new StringBuilder();
         text.AppendLine(
-            "index,address,runtime_type,faction,world_x,world_y," +
+            "captured_tick_ms,index,address,runtime_type,faction,world_x,world_y," +
+            "previous_world_x,previous_world_y," +
             "direction,dead,goal_kind,goal_x,goal_y,command_variant," +
             "command_pending,movement_active,movement_path_state," +
-            "movement_mode,resolved_goal_x,resolved_goal_y,path_override");
+            "movement_mode,resolved_goal_x,resolved_goal_y,path_override," +
+            "stationary_tick_counter,stationary_tick_limit," +
+            "route_update_active,pursuit_address,pursuit_delay_counter," +
+            "target_address,search_delay_limit,search_delay_counter," +
+            "contact_state,target_lost,reaction_state");
         for (int index = 0; index < count; ++index)
         {
             int actorValue = ReadInt(
@@ -3304,14 +3425,19 @@ internal static class ModRegressionProbe
             snapshot.SceneIndex = index;
             text.AppendFormat(
                 CultureInfo.InvariantCulture,
-                "{0},0x{1:X8},{2},{3},{4},{5},{6},{7},{8},{9},{10}," +
-                "{11},{12},{13},{14},{15},{16},{17},{18}\r\n",
+                "{0},{1},0x{2:X8},{3},{4},{5},{6},{7},{8},{9},{10}," +
+                "{11},{12},{13},{14},{15},{16},{17},{18},{19},{20}," +
+                "{21},{22},{23},{24},0x{25:X8},{26},0x{27:X8},{28}," +
+                "{29},{30},{31},{32}\r\n",
+                capturedTickMilliseconds,
                 index,
                 snapshot.Address,
                 snapshot.RuntimeType,
                 snapshot.Faction,
                 snapshot.WorldX,
                 snapshot.WorldY,
+                snapshot.PreviousWorldX,
+                snapshot.PreviousWorldY,
                 snapshot.Direction,
                 snapshot.Dead,
                 snapshot.GoalKind,
@@ -3324,7 +3450,18 @@ internal static class ModRegressionProbe
                 snapshot.MovementMode,
                 snapshot.ResolvedGoalX,
                 snapshot.ResolvedGoalY,
-                snapshot.PathOverrideActive);
+                snapshot.PathOverrideActive,
+                snapshot.StationaryTickCounter,
+                snapshot.StationaryTickLimit,
+                snapshot.RouteUpdateActive,
+                snapshot.PursuitAddress,
+                snapshot.PursuitDelayCounter,
+                snapshot.TargetAddress,
+                snapshot.SearchDelayLimit,
+                snapshot.SearchDelayCounter,
+                snapshot.ContactState,
+                snapshot.TargetLost,
+                snapshot.ReactionState);
         }
         File.WriteAllText(path, text.ToString(), new UTF8Encoding(false));
     }
@@ -3730,8 +3867,18 @@ internal static class ModRegressionProbe
             Faction = ReadInt(process, actor + ActorFactionOffset),
             WorldX = worldX,
             WorldY = worldY,
+            PreviousWorldX = ReadInt(
+                process, actor + ActorPreviousWorldXOffset),
+            PreviousWorldY = ReadInt(
+                process, actor + ActorPreviousWorldYOffset),
+            StationaryTickCounter = ReadInt(
+                process, actor + ActorStationaryTickCounterOffset),
+            StationaryTickLimit = ReadInt(
+                process, actor + ActorStationaryTickLimitOffset),
             Direction = ReadInt(
                 process, actor + ActorFacingDirectionOffset),
+            RouteUpdateActive = ReadInt(
+                process, actor + ActorRouteUpdateActiveOffset),
             Dead = ReadInt(process, actor + ActorDeadOffset),
             TargetStatus = ReadInt(
                 process, actor + ActorTargetStatusOffset),
@@ -3768,6 +3915,10 @@ internal static class ModRegressionProbe
                 process, actor + ActorWorldItemPlayerSelectedOffset),
             HypnosisActive = ReadInt(
                 process, actor + ActorHypnosisActiveOffset),
+            PursuitAddress = (long)(uint)ReadInt(
+                process, actor + ActorPursuitAddressOffset),
+            PursuitDelayCounter = ReadInt(
+                process, actor + ActorPursuitDelayCounterOffset),
             HypnosisCounter = ReadInt(
                 process, actor + ActorHypnosisCounterOffset),
             HypnosisCounterLimit = ReadInt(

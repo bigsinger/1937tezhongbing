@@ -49,8 +49,40 @@ const LEGACY_EXPLOSION_VISUAL_RULES: Script = preload(
 const LEGACY_CRT_RANDOM_CATALOG: Script = preload(
 	"res://scripts/generated/legacy_crt_random_catalog.gd"
 )
+const LEGACY_AMBIENT_PARTICLE_RANDOM_CALL_SITES := {
+	0x0005FD2C: true,
+	0x0005FD41: true,
+	0x0005FD54: true,
+	0x0005FD6A: true,
+	0x0005FD7F: true,
+	0x0005FDA8: true,
+	0x0005FDDB: true,
+	0x0005FDEE: true,
+	0x0005FE02: true,
+	0x0005FE19: true,
+	0x0005FF45: true,
+	0x0005FF65: true,
+	0x000600F0: true,
+	0x00060105: true,
+	0x000601D6: true,
+	0x000601E5: true,
+	0x00060202: true,
+	0x0006026D: true,
+	0x00060291: true,
+	0x000602A7: true,
+	0x000602BC: true,
+	0x000602D1: true,
+	0x000602FA: true,
+	0x00060374: true,
+	0x00060396: true,
+	0x000603AD: true,
+	0x000603C4: true,
+}
 const ORIGINAL_CRT_RANDOM_STARTUP_CATALOG: Script = preload(
 	"res://scripts/original_crt_random_startup_catalog.gd"
+)
+const LEGACY_AMBIENT_PARTICLE_FIELD_SCRIPT: Script = preload(
+	"res://scripts/legacy_ambient_particle_field.gd"
 )
 const LEGACY_EXPLOSION_EFFECT_SCRIPT: Script = preload(
 	"res://scripts/legacy_explosion_effect.gd"
@@ -290,6 +322,8 @@ var mission_zone_elapsed := 0.0
 var navigation_grid: NavigationGridData
 var dynamic_occupancy: RefCounted
 var projectile_world: Node2D
+var legacy_ambient_particle_layer: CanvasLayer
+var legacy_ambient_particle_field: Control
 var media_director: CanvasLayer
 var game_shell: CanvasLayer
 var game_settings: RefCounted
@@ -447,6 +481,86 @@ func commit_legacy_crt_random_draws(draws: Array) -> bool:
 	return true
 
 
+func commit_legacy_ambient_crt_random_batch(
+	state_before: int,
+	state_after: int,
+	call_sites: PackedInt32Array,
+	draw_count: int,
+) -> bool:
+	if state_before != legacy_crt_random_state:
+		push_error(
+			"原版环境粒子 CRT rand 批次起始状态不连续"
+		)
+		return false
+	if draw_count < 0:
+		return false
+	# This hot path can exceed 500 original draws per 60 Hz frame. The
+	# trace-enabled branch below validates every recovered call site and exact
+	# LCG transition in tests/forensics. Ordinary play commits the already
+	# verified internal particle transaction in O(1), avoiding a second
+	# GDScript pass over the same native sequence.
+	if not legacy_crt_random_trace_enabled:
+		legacy_crt_random_state = state_after
+		legacy_crt_random_draw_index += draw_count
+		return true
+	if call_sites.size() != draw_count:
+		push_error(
+			"原版环境粒子 CRT rand 跟踪批次数量不一致"
+		)
+		return false
+	var verified_state := state_before
+	for call_site_rva: int in call_sites:
+		if not LEGACY_AMBIENT_PARTICLE_RANDOM_CALL_SITES.has(
+			call_site_rva
+		):
+			push_error(
+				"原版环境粒子批次包含非法调用点：0x%08X"
+				% call_site_rva
+			)
+			return false
+		verified_state = int(
+			(
+				verified_state * 214013
+				+ 2531011
+			)
+			& 0xFFFFFFFF
+		)
+	if verified_state != state_after:
+		push_error(
+			"原版环境粒子 CRT rand 批次结束状态不连续"
+		)
+		return false
+	var trace_state := state_before
+	for call_site_rva: int in call_sites:
+		var draw_state_before := trace_state
+		trace_state = int(
+			(
+				trace_state * 214013
+				+ 2531011
+			)
+			& 0xFFFFFFFF
+		)
+		var metadata: Dictionary = (
+			LEGACY_CRT_RANDOM_CATALOG.metadata_for_rva(
+				call_site_rva
+			)
+		)
+		legacy_crt_random_draw_index += 1
+		_record_legacy_crt_random_draw({
+			"draw_index": legacy_crt_random_draw_index,
+			"call_site_rva": call_site_rva,
+			"state_before": draw_state_before,
+			"state": trace_state,
+			"value": LEGACY_CRT_RANDOM_CATALOG.random_value(
+				trace_state
+			),
+			"domain": str(metadata.get("domain", "")),
+			"purpose": str(metadata.get("purpose", "")),
+		})
+	legacy_crt_random_state = state_after
+	return true
+
+
 func _record_legacy_crt_random_draw(draw: Dictionary) -> void:
 	if not legacy_crt_random_trace_enabled:
 		return
@@ -459,6 +573,75 @@ func _reset_legacy_crt_random_for_level_load() -> void:
 	legacy_crt_random_state = LEGACY_CRT_RANDOM_CATALOG.INITIAL_STATE
 	legacy_crt_random_draw_index = 0
 	legacy_crt_random_trace.clear()
+
+
+func _configure_legacy_ambient_particle_field(level_id: String) -> bool:
+	_clear_legacy_ambient_particle_field()
+	if not LEGACY_AMBIENT_PARTICLE_FIELD_SCRIPT.ACTIVE_LEVEL_IDS.has(
+		level_id
+	):
+		return false
+	legacy_ambient_particle_layer = CanvasLayer.new()
+	legacy_ambient_particle_layer.name = "LegacyAmbientParticleLayer"
+	legacy_ambient_particle_layer.layer = 20
+	add_child(legacy_ambient_particle_layer)
+	legacy_ambient_particle_field = (
+		LEGACY_AMBIENT_PARTICLE_FIELD_SCRIPT.new()
+	)
+	legacy_ambient_particle_field.name = "LegacyAmbientParticleField"
+	legacy_ambient_particle_layer.add_child(
+		legacy_ambient_particle_field
+	)
+	return bool(legacy_ambient_particle_field.call(
+		"configure",
+		self,
+		level_id,
+	))
+
+
+func _clear_legacy_ambient_particle_field() -> void:
+	if (
+		legacy_ambient_particle_field != null
+		and is_instance_valid(legacy_ambient_particle_field)
+	):
+		legacy_ambient_particle_field.set_physics_process(false)
+	legacy_ambient_particle_field = null
+	if (
+		legacy_ambient_particle_layer != null
+		and is_instance_valid(legacy_ambient_particle_layer)
+	):
+		legacy_ambient_particle_layer.queue_free()
+	legacy_ambient_particle_layer = null
+
+
+func legacy_ambient_particle_snapshot() -> Dictionary:
+	if (
+		legacy_ambient_particle_field == null
+		or not is_instance_valid(legacy_ambient_particle_field)
+		or not legacy_ambient_particle_field.has_method(
+			"runtime_snapshot"
+		)
+	):
+		return {}
+	return legacy_ambient_particle_field.call(
+		"runtime_snapshot"
+	) as Dictionary
+
+
+func restore_legacy_ambient_particle_snapshot(
+	state: Dictionary,
+) -> bool:
+	return (
+		legacy_ambient_particle_field != null
+		and is_instance_valid(legacy_ambient_particle_field)
+		and legacy_ambient_particle_field.has_method(
+			"restore_runtime_snapshot"
+		)
+		and bool(legacy_ambient_particle_field.call(
+			"restore_runtime_snapshot",
+			state,
+		))
+	)
 
 
 func _apply_original_crt_random_startup_checkpoint(
@@ -766,6 +949,7 @@ func switch_level(
 	burial_mode = false
 	current_level_index = posmod(level_index, FORMAL_LEVEL_IDS.size())
 	var level_id := FORMAL_LEVEL_IDS[current_level_index]
+	_clear_legacy_ambient_particle_field()
 	_reset_legacy_crt_random_for_level_load()
 	last_level_load_phase_usec["state_reset"] = (
 		Time.get_ticks_usec() - level_load_phase_started_usec
@@ -784,6 +968,7 @@ func switch_level(
 	spawn_squad()
 	if _apply_original_crt_random_startup_checkpoint(level_id):
 		_replay_original_first_gameplay_random_update(level_id)
+	_configure_legacy_ambient_particle_field(level_id)
 	last_level_load_phase_usec["squad"] = (
 		Time.get_ticks_usec() - level_load_phase_started_usec
 	)
@@ -1775,6 +1960,7 @@ func spawn_squad() -> void:
 		Time.get_ticks_usec() - spawn_phase_started_usec
 	)
 	spawn_phase_started_usec = Time.get_ticks_usec()
+	_link_original_pursuit_actors()
 	var target_nodes: Array[Node2D] = []
 	for unit: SQUAD_UNIT in units:
 		target_nodes.append(unit)
@@ -1797,6 +1983,43 @@ func spawn_squad() -> void:
 	last_squad_spawn_phase_usec["total"] = (
 		Time.get_ticks_usec() - spawn_started_usec
 	)
+
+
+func _link_original_pursuit_actors() -> int:
+	var actors_by_runtime_index: Dictionary = {}
+	for actor: Node2D in _all_active_runtime_actors():
+		var runtime_index := int(actor.get("original_runtime_index"))
+		if runtime_index >= 0:
+			actors_by_runtime_index[runtime_index] = actor
+	var linked_count := 0
+	for actor: Node2D in _all_active_runtime_actors():
+		var target_runtime_index := int(
+			actor.get("original_pursuit_target_runtime_index")
+		)
+		if target_runtime_index < 0:
+			continue
+		var target_value: Variant = actors_by_runtime_index.get(
+			target_runtime_index
+		)
+		if (
+			target_value is Node2D
+			and bool(actor.call(
+				"bind_original_pursuit_target",
+				target_value as Node2D,
+			))
+		):
+			linked_count += 1
+		else:
+			push_error(
+				(
+					"Missing original pursuit target %d for runtime actor %d"
+				)
+				% [
+					target_runtime_index,
+					int(actor.get("original_runtime_index")),
+				]
+			)
+	return linked_count
 
 
 func _stage_loaded_animation_footprint_profiles() -> int:
@@ -1860,12 +2083,26 @@ func _prewarm_authored_patrol_paths() -> void:
 			0,
 			waypoints.size() - 1,
 		)
-		dynamic_occupancy.prewarm_patrol_cycle_for_scene(
-			int(actor.get("scene_index")),
-			actor.position,
-			waypoints,
-			patrol_index,
-		)
+		if (
+			actor is AMBIENT_UNIT
+			and actor.has_method(
+				"patrol_movement_footprint_profiles"
+			)
+		):
+			dynamic_occupancy.prewarm_patrol_cycle_footprint_profiles_for_scene(
+				int(actor.get("scene_index")),
+				actor.position,
+				waypoints,
+				patrol_index,
+				actor.call("patrol_movement_footprint_profiles") as Array,
+			)
+		else:
+			dynamic_occupancy.prewarm_patrol_cycle_for_scene(
+				int(actor.get("scene_index")),
+				actor.position,
+				waypoints,
+				patrol_index,
+			)
 
 
 func _prewarm_stable_mod_patrol_timeline_paths(
@@ -1875,6 +2112,11 @@ func _prewarm_stable_mod_patrol_timeline_paths(
 	if dynamic_occupancy == null or timeline.size() < 2:
 		return
 	var actor_scene_index := int(actor.get("scene_index"))
+	var movement_profiles: Array = (
+		actor.call("patrol_movement_footprint_profiles") as Array
+		if actor.has_method("patrol_movement_footprint_profiles")
+		else []
+	)
 	for target_index: int in range(1, timeline.size()):
 		var previous_value: Variant = timeline[target_index - 1]
 		var target_value: Variant = timeline[target_index]
@@ -1897,10 +2139,11 @@ func _prewarm_stable_mod_patrol_timeline_paths(
 		# and never ask A* for a route at runtime.
 		if previous_position.distance_to(target_position) <= 48.0:
 			continue
-		dynamic_occupancy.prewarm_runtime_evidence_path_for_scene(
+		dynamic_occupancy.prewarm_runtime_evidence_path_footprint_profiles_for_scene(
 			actor_scene_index,
 			previous_position,
 			target_position,
+			movement_profiles,
 		)
 
 

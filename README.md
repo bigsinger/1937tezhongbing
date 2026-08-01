@@ -101,6 +101,9 @@ Remake 还已通过十二关双轮 600 秒真实窗口性能门禁：33,125 帧�
 P95 18.389 ms、P99 20.714 ms、零个 >50 ms 帧，且不会控制系统鼠标。
 参考硬件与逐关数据见
 [`Remake/validation/baselines/remake/campaign-performance-1920x1080-v1.json`](Remake/validation/baselines/remake/campaign-performance-1920x1080-v1.json)。
+十二关后续运行态取证、共用路线/静止计数器、追击关系、80° 环境粒子场和
+对应性能优化见
+[`Remake/docs/CRT_RUNTIME_STATE_BASELINE.md`](Remake/docs/CRT_RUNTIME_STATE_BASELINE.md)。
 
 ## 地图编辑器
 

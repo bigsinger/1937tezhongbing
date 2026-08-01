@@ -7,6 +7,9 @@ param(
     [switch]$KeepRuntime,
     [switch]$BriefingOnly,
     [switch]$CrtRandomStartupOnly,
+    [switch]$CrtRandomRuntimeOnly,
+    [ValidateRange(1000, 60000)]
+    [int]$CrtRandomRuntimeMilliseconds = 12500,
     [switch]$MovementOnly
 )
 
@@ -152,21 +155,48 @@ foreach ($level in $Levels) {
     if ($CrtRandomStartupOnly) {
         $probeArguments += '--crt-random-startup-only'
     }
+    if ($CrtRandomRuntimeOnly) {
+        $probeArguments += '--crt-random-runtime-only'
+        $probeArguments += (
+            '--crt-random-runtime-ms=' +
+            $CrtRandomRuntimeMilliseconds)
+    }
     if ($MovementOnly) {
         $probeArguments += '--movement-only'
     }
-    & $probe @probeArguments
-    $probeExit = $LASTEXITCODE
+    $previousRandomTrace = $env:M1937_RNG_TRACE
+    try {
+        if ($CrtRandomStartupOnly -or $CrtRandomRuntimeOnly) {
+            # Enable the test-only process-local hook only for this child
+            # launch. Ordinary MOD launches never inherit the diagnostic
+            # instrumentation from this regression script.
+            $env:M1937_RNG_TRACE = '1'
+        }
+        & $probe @probeArguments
+        $probeExit = $LASTEXITCODE
+    }
+    finally {
+        if ($null -eq $previousRandomTrace) {
+            Remove-Item Env:M1937_RNG_TRACE -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:M1937_RNG_TRACE = $previousRandomTrace
+        }
+    }
     if (
-        $CrtRandomStartupOnly -and
-        $env:M1937_RNG_TRACE -eq '1'
+        $CrtRandomStartupOnly -or $CrtRandomRuntimeOnly
     ) {
         $runtimeTelemetry = Join-Path $runtime (
             'M1937Telemetry.jsonl')
         if (Test-Path -LiteralPath $runtimeTelemetry -PathType Leaf) {
             Copy-Item -LiteralPath $runtimeTelemetry `
                 -Destination (Join-Path $levelOutput (
-                    'crt-random-telemetry.jsonl')) -Force
+                    $(if ($CrtRandomStartupOnly) {
+                        'crt-random-telemetry.jsonl'
+                    }
+                    else {
+                        'crt-random-runtime-telemetry.jsonl'
+                    }))) -Force
         }
     }
     $resultPath = Join-Path $levelOutput 'result.json'

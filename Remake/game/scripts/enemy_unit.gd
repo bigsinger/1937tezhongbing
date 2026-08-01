@@ -402,6 +402,13 @@ func _should_apply_original_first_gameplay_navigation(
 	)
 
 
+func _should_apply_original_pursuit_navigation() -> bool:
+	# The process-captured patrol timeline already contains the same authored
+	# formation motion. Consume sub_45D330's global draw and retain its state,
+	# but do not issue a second competing A* command over stronger evidence.
+	return stable_mod_patrol_timeline.is_empty()
+
+
 func set_potential_targets(targets: Array[Node2D]) -> void:
 	potential_targets = targets.duplicate()
 
@@ -808,7 +815,10 @@ func _update_patrol(delta: float) -> void:
 	if patrol_path_in_flight:
 		patrol_path_in_flight = false
 		patrol_wait_remaining = STABLE_MOD_PATROL_WAYPOINT_HOLD_SECONDS
+		set_original_route_update_active(true)
 		apply_idle_frame()
+		return
+	if original_route_update_active:
 		return
 	if patrol_wait_remaining > 0.0:
 		patrol_wait_remaining = maxf(patrol_wait_remaining - maxf(delta, 0.0), 0.0)
@@ -820,6 +830,8 @@ func _update_patrol(delta: float) -> void:
 	patrol_index = next_index
 	var destination := patrol_waypoints[patrol_index]
 	patrol_path_in_flight = _issue_path_to(destination)
+	if patrol_path_in_flight:
+		set_original_route_update_active(false)
 
 
 func _update_stable_mod_patrol_timeline(delta: float) -> void:
@@ -866,6 +878,7 @@ func _update_stable_mod_patrol_timeline(delta: float) -> void:
 		stable_mod_patrol_transition_delay_ticks = (
 			STABLE_MOD_TIMELINE_HANDOFF_TICKS
 		)
+		set_original_route_update_active(true)
 		# The commanded checkpoint is captured on this boundary. Defer the new
 		# segment until the following physics tick so an interval that is idle
 		# in the MOD cannot gain one stray movement frame in the Remake.
@@ -1001,7 +1014,14 @@ func _update_stable_mod_patrol_timeline(delta: float) -> void:
 		STABLE_MOD_TIMELINE_MAX_SPEED,
 	)
 	issue_path(path)
+	set_original_route_update_active(false)
 	stable_mod_patrol_segment_issued = true
+
+
+func _on_original_route_wait_completed() -> void:
+	if stable_mod_patrol_timeline.is_empty():
+		patrol_wait_remaining = 0.0
+		path_request_delay_remaining = 0.0
 
 
 func _prepare_stable_mod_patrol_segment(

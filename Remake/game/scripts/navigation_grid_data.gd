@@ -363,23 +363,32 @@ func find_path(
 	world_destination: Vector2,
 	allow_scene_occupied_start: bool = false,
 	precheck_dynamic_disconnect: bool = false,
+	additional_solid_lookup: PackedByteArray = PackedByteArray(),
 ) -> PackedVector2Array:
 	if world_start.is_equal_approx(world_destination):
 		return PackedVector2Array()
 	if astar == null:
 		prepare_astar()
 	var start_cell := world_to_cell(world_start)
-	var destination_cell := nearest_walkable_cell(world_to_cell(world_destination))
+	var destination_cell := nearest_walkable_cell(
+		world_to_cell(world_destination),
+		additional_solid_lookup,
+		start_cell,
+	)
 	if not is_valid_cell(start_cell) or destination_cell.x < 0:
 		return PackedVector2Array()
 	var component_destination := _nearest_static_component_destination(
 		start_cell,
 		destination_cell,
+		additional_solid_lookup,
 	)
 	if component_destination.x >= 0 and component_destination != destination_cell:
 		destination_cell = component_destination
 		static_component_redirect_count += 1
 	var temporarily_opened_start := false
+	# The packed footprint mask deliberately marks many legal actor anchors,
+	# including the actor's current origin. Only exempt that additional mask;
+	# an authored/static AStar solid retains the original occupied-start rule.
 	if astar.is_point_solid(start_cell):
 		var start_value := movement_value(start_cell)
 		if not allow_scene_occupied_start or start_value < 1000:
@@ -396,6 +405,7 @@ func find_path(
 	# its observable tie-breaking and final facing.
 	if (
 		precheck_dynamic_disconnect
+		and additional_solid_lookup.is_empty()
 		and astar.get_id_path(
 			start_cell,
 			destination_cell,
@@ -408,12 +418,16 @@ func find_path(
 			destination_cell,
 		)
 	else:
-		path = _original_uniform_path(start_cell, destination_cell)
+		path = _original_uniform_path(
+			start_cell,
+			destination_cell,
+			additional_solid_lookup,
+		)
 	# Temporary multi-cell footprint reservations are not part of the static
 	# component table. If they split a corridor, retain the remake's safe
 	# partial-route behavior so a large actor stops at the reachable edge.
 	# Reachable routes always use the exact legacy pathfinder above.
-	if path.is_empty():
+	if path.is_empty() and additional_solid_lookup.is_empty():
 		path = _temporary_obstacle_partial_path(
 			start_cell,
 			destination_cell,
@@ -432,7 +446,11 @@ func find_path(
 		is_valid_cell(requested_destination_cell)
 		and requested_destination_cell == destination_cell
 		and requested_destination_cell == resolved_destination_cell
-		and not astar.is_point_solid(requested_destination_cell)
+		and not _path_cell_is_solid(
+			requested_destination_cell,
+			additional_solid_lookup,
+			start_cell,
+		)
 	):
 		if path.is_empty() or path[-1].distance_squared_to(world_destination) > 1.0:
 			path.append(world_destination)
@@ -519,6 +537,7 @@ func _rebuild_static_components() -> void:
 func _nearest_static_component_destination(
 	start_cell: Vector2i,
 	destination_cell: Vector2i,
+	additional_solid_lookup: PackedByteArray = PackedByteArray(),
 ) -> Vector2i:
 	if (
 		static_component_by_cell.size() != dimensions.x * dimensions.y
@@ -546,7 +565,11 @@ func _nearest_static_component_destination(
 		)
 		if (
 			cached == start_cell
-			or not astar.is_point_solid(cached)
+			or not _path_cell_is_solid(
+				cached,
+				additional_solid_lookup,
+				start_cell,
+			)
 		):
 			return cached
 	var best := Vector2i(-1, -1)
@@ -557,7 +580,14 @@ func _nearest_static_component_destination(
 	):
 		# Runtime actors and reserved destinations can temporarily occupy a
 		# statically reachable cell. Do not redirect another actor onto it.
-		if astar.is_point_solid(candidate) and candidate != start_cell:
+		if (
+			candidate != start_cell
+			and _path_cell_is_solid(
+				candidate,
+				additional_solid_lookup,
+				start_cell,
+			)
+		):
 			continue
 		var heuristic := _chebyshev_distance(candidate, destination_cell)
 		var squared_distance := (candidate - destination_cell).length_squared()
@@ -580,6 +610,7 @@ func _nearest_static_component_destination(
 func _original_uniform_path(
 	start_cell: Vector2i,
 	destination_cell: Vector2i,
+	additional_solid_lookup: PackedByteArray = PackedByteArray(),
 ) -> PackedVector2Array:
 	# Recovered from M1937.exe sub_45F680..sub_45FC10. This deliberately
 	# preserves the original 2001 pathfinder rather than approximating it
@@ -648,7 +679,11 @@ func _original_uniform_path(
 				or neighbor.y < 0
 				or neighbor.x >= dimensions.x
 				or neighbor.y >= dimensions.y
-				or astar.is_point_solid(neighbor)
+				or _path_cell_is_solid(
+					neighbor,
+					additional_solid_lookup,
+					start_cell,
+				)
 			):
 				continue
 			var neighbor_index := cell_to_index(neighbor)
@@ -1088,14 +1123,22 @@ func _reduces_wrong_way_detour(
 	return improves
 
 
-func nearest_walkable_cell(requested: Vector2i) -> Vector2i:
+func nearest_walkable_cell(
+	requested: Vector2i,
+	additional_solid_lookup: PackedByteArray = PackedByteArray(),
+	open_cell: Vector2i = Vector2i(-1, -1),
+) -> Vector2i:
 	if astar == null:
 		return Vector2i(-1, -1)
 	var clamped := Vector2i(
 		clampi(requested.x, 0, dimensions.x - 1),
 		clampi(requested.y, 0, dimensions.y - 1),
 	)
-	if not astar.is_point_solid(clamped):
+	if not _path_cell_is_solid(
+		clamped,
+		additional_solid_lookup,
+		open_cell,
+	):
 		return clamped
 	for radius in range(1, MAX_DESTINATION_SEARCH_RADIUS + 1):
 		var best := Vector2i(-1, -1)
@@ -1111,7 +1154,11 @@ func nearest_walkable_cell(requested: Vector2i) -> Vector2i:
 				):
 					continue
 				var candidate := Vector2i(x, y)
-				if astar.is_point_solid(candidate):
+				if _path_cell_is_solid(
+					candidate,
+					additional_solid_lookup,
+					open_cell,
+				):
 					continue
 				var distance := Vector2(candidate - clamped).length_squared()
 				if distance < best_distance:
@@ -1120,6 +1167,26 @@ func nearest_walkable_cell(requested: Vector2i) -> Vector2i:
 		if best.x >= 0:
 			return best
 	return Vector2i(-1, -1)
+
+
+func _path_cell_is_solid(
+	cell: Vector2i,
+	additional_solid_lookup: PackedByteArray,
+	open_cell: Vector2i = Vector2i(-1, -1),
+) -> bool:
+	if not is_valid_cell(cell):
+		return true
+	# The current actor origin is exempt only from the additional multi-cell
+	# clearance mask. A real AStar solid still has to be explicitly opened by
+	# find_path(), preserving the original occupied-start validation.
+	if (
+		cell != open_cell
+		and additional_solid_lookup.size()
+			== dimensions.x * dimensions.y
+		and additional_solid_lookup[cell_to_index(cell)] != 0
+	):
+		return true
+	return astar.is_point_solid(cell)
 
 
 func has_line_of_sight(

@@ -183,7 +183,7 @@ int g_last_telemetry_camera_y = INT32_MIN;
 // background. When a very slow disk fills the queue, the oldest diagnostic
 // line is discarded and the loss is reported in the next snapshot.
 constexpr size_t kTelemetryQueueCapacity = 64;
-constexpr size_t kTelemetryLineCapacity = 1536;
+constexpr size_t kTelemetryLineCapacity = 16384;
 struct TelemetryLine {
     DWORD length = 0;
     char text[kTelemetryLineCapacity]{};
@@ -202,7 +202,10 @@ volatile LONG g_telemetry_lines_dropped = 0;
 // existing below-normal telemetry writer performs all disk I/O after the
 // message pump drains records into bounded JSON batches.
 bool g_crt_random_trace_enabled = false;
-constexpr LONG kCrtRandomTraceCapacity = 131072;
+// Particle-heavy missions m002/m005 consume about 260,000 process-global
+// draws across load, menu and a five-second read-only gameplay sample. Keep
+// the test-only ring large enough to retain that complete causal stream.
+constexpr LONG kCrtRandomTraceCapacity = 524288;
 struct CrtRandomTraceRecord {
     volatile LONG sequence = 0;
     DWORD thread_id = 0;
@@ -210,6 +213,42 @@ struct CrtRandomTraceRecord {
     std::uint32_t call_site_rva = 0;
     std::uint32_t caller_esi = 0;
     int value = 0;
+    bool actor_snapshot_valid = false;
+    int actor_runtime_type = 0;
+    int actor_scene_index = -1;
+    int actor_faction_id = 0;
+    int actor_world_x = 0;
+    int actor_world_y = 0;
+    int actor_previous_world_x = 0;
+    int actor_previous_world_y = 0;
+    int actor_facing_direction = 0;
+    int actor_dead_or_disabled = 0;
+    int actor_stationary_tick_counter = 0;
+    int actor_stationary_tick_limit = 0;
+    int actor_route_update_active = 0;
+    int actor_goal_kind = 0;
+    int actor_goal_x = 0;
+    int actor_goal_y = 0;
+    int actor_command_variant = 0;
+    int actor_command_pending = 0;
+    int actor_movement_active = 0;
+    int actor_movement_path_state = 0;
+    int actor_movement_mode = 0;
+    std::uint32_t actor_target_address = 0;
+    std::uint32_t actor_pursuit_address = 0;
+    int actor_search_delay_limit = 0;
+    int actor_search_delay_counter = 0;
+    int actor_contact_state = 0;
+    int actor_target_lost = 0;
+    int actor_reaction_state = 0;
+    int actor_pursuit_delay_counter = 0;
+    bool pursuit_snapshot_valid = false;
+    int pursuit_runtime_type = 0;
+    int pursuit_scene_index = -1;
+    int pursuit_world_x = 0;
+    int pursuit_world_y = 0;
+    int pursuit_dead_or_disabled = 0;
+    int pursuit_command_variant = 0;
 };
 CrtRandomTraceRecord *g_crt_random_trace = nullptr;
 volatile LONG g_crt_random_trace_count = 0;
@@ -240,6 +279,7 @@ int g_ai_last_mission = -1;
 std::uintptr_t g_ai_actor_table = 0;
 
 void ClearEnhancedSearchStates();
+bool IsReadableRange(const void *address, size_t size);
 
 using ImmDisableIMEProc = BOOL(WINAPI *)(DWORD);
 using ImmAssociateContextExProc = BOOL(WINAPI *)(HWND, HANDLE, DWORD);
@@ -535,14 +575,14 @@ void WriteCrtRandomTraceRecords(HANDLE file) {
                 expected_sequence) {
                 break;
             }
-            const int written = snprintf(
-                line + length,
-                sizeof(line) - static_cast<size_t>(length),
-                "%s{\"sequence\":%ld,\"thread\":%lu,"
+            char record_text[2048]{};
+            int record_length = snprintf(
+                record_text,
+                sizeof(record_text),
+                "{\"sequence\":%ld,\"thread\":%lu,"
                 "\"tick_ms\":%lu,"
                 "\"call_site_rva\":\"0x%08lX\","
-                "\"caller_esi\":\"0x%08lX\",\"value\":%d}",
-                appended == 0 ? "" : ",",
+                "\"caller_esi\":\"0x%08lX\",\"value\":%d",
                 expected_sequence,
                 record.thread_id,
                 record.tick_ms,
@@ -550,6 +590,108 @@ void WriteCrtRandomTraceRecords(HANDLE file) {
                     record.call_site_rva),
                 static_cast<unsigned long>(record.caller_esi),
                 record.value);
+            if (record_length <= 0 ||
+                record_length >=
+                    static_cast<int>(sizeof(record_text) - 2)) {
+                break;
+            }
+            if (record.actor_snapshot_valid) {
+                const int actor_written = snprintf(
+                    record_text + record_length,
+                    sizeof(record_text) -
+                        static_cast<size_t>(record_length),
+                    ",\"actor_snapshot\":{\"runtime_type\":%d,"
+                    "\"scene_index\":%d,\"faction_id\":%d,"
+                    "\"world_x\":%d,\"world_y\":%d,"
+                    "\"previous_world_x\":%d,"
+                    "\"previous_world_y\":%d,"
+                    "\"facing_direction\":%d,"
+                    "\"dead_or_disabled\":%d,"
+                    "\"stationary_tick_counter\":%d,"
+                    "\"stationary_tick_limit\":%d,"
+                    "\"route_update_active\":%d,"
+                    "\"goal_kind\":%d,\"goal_x\":%d,\"goal_y\":%d,"
+                    "\"command_variant\":%d,\"command_pending\":%d,"
+                    "\"movement_active\":%d,"
+                    "\"movement_path_state\":%d,"
+                    "\"movement_mode\":%d,"
+                    "\"target_address\":\"0x%08lX\","
+                    "\"pursuit_address\":\"0x%08lX\","
+                    "\"search_delay_limit\":%d,"
+                    "\"search_delay_counter\":%d,"
+                    "\"contact_state\":%d,\"target_lost\":%d,"
+                    "\"reaction_state\":%d,"
+                    "\"pursuit_delay_counter\":%d}",
+                    record.actor_runtime_type,
+                    record.actor_scene_index,
+                    record.actor_faction_id,
+                    record.actor_world_x,
+                    record.actor_world_y,
+                    record.actor_previous_world_x,
+                    record.actor_previous_world_y,
+                    record.actor_facing_direction,
+                    record.actor_dead_or_disabled,
+                    record.actor_stationary_tick_counter,
+                    record.actor_stationary_tick_limit,
+                    record.actor_route_update_active,
+                    record.actor_goal_kind,
+                    record.actor_goal_x,
+                    record.actor_goal_y,
+                    record.actor_command_variant,
+                    record.actor_command_pending,
+                    record.actor_movement_active,
+                    record.actor_movement_path_state,
+                    record.actor_movement_mode,
+                    static_cast<unsigned long>(
+                        record.actor_target_address),
+                    static_cast<unsigned long>(
+                        record.actor_pursuit_address),
+                    record.actor_search_delay_limit,
+                    record.actor_search_delay_counter,
+                    record.actor_contact_state,
+                    record.actor_target_lost,
+                    record.actor_reaction_state,
+                    record.actor_pursuit_delay_counter);
+                if (actor_written <= 0 ||
+                    actor_written >= static_cast<int>(
+                        sizeof(record_text) -
+                        static_cast<size_t>(record_length) - 2)) {
+                    break;
+                }
+                record_length += actor_written;
+                if (record.pursuit_snapshot_valid) {
+                    const int pursuit_written = snprintf(
+                        record_text + record_length,
+                        sizeof(record_text) -
+                            static_cast<size_t>(record_length),
+                        ",\"pursuit_snapshot\":{"
+                        "\"runtime_type\":%d,\"scene_index\":%d,"
+                        "\"world_x\":%d,\"world_y\":%d,"
+                        "\"dead_or_disabled\":%d,"
+                        "\"command_variant\":%d}",
+                        record.pursuit_runtime_type,
+                        record.pursuit_scene_index,
+                        record.pursuit_world_x,
+                        record.pursuit_world_y,
+                        record.pursuit_dead_or_disabled,
+                        record.pursuit_command_variant);
+                    if (pursuit_written <= 0 ||
+                        pursuit_written >= static_cast<int>(
+                            sizeof(record_text) -
+                            static_cast<size_t>(record_length) - 2)) {
+                        break;
+                    }
+                    record_length += pursuit_written;
+                }
+            }
+            record_text[record_length++] = '}';
+            record_text[record_length] = '\0';
+            const int written = snprintf(
+                line + length,
+                sizeof(line) - static_cast<size_t>(length),
+                "%s%s",
+                appended == 0 ? "" : ",",
+                record_text);
             if (written <= 0 ||
                 written >= static_cast<int>(
                     sizeof(line) - static_cast<size_t>(length) - 3)) {
@@ -2140,6 +2282,119 @@ bool PatchExecutableCall(
 
 using OriginalCrtRandProc = int(__cdecl *)();
 
+bool IsDetailedActorRandomCallSite(std::uint32_t call_site) {
+    switch (call_site) {
+        case 0x00055216:
+        case 0x00055BFB:
+        case 0x00055C0F:
+        case 0x00055C23:
+        case 0x00055C3A:
+        case 0x00056105:
+        case 0x00058946:
+        case 0x0005D08F:
+        case 0x0005D09D:
+        case 0x0005D0B4:
+        case 0x0005D0CB:
+        case 0x0005D15F:
+        case 0x0005D394:
+        case 0x0005D47E:
+        case 0x0005D64F:
+        case 0x0005D67C:
+        case 0x0005D6A9:
+        case 0x0005D6D6:
+        case 0x0005D7CF:
+        case 0x0005D7F8:
+        case 0x0005D821:
+        case 0x0005D855:
+        case 0x0005D921:
+        case 0x0005D960:
+        case 0x0005D989:
+        case 0x0005D9BD:
+        case 0x0005DA81:
+        case 0x0005DAAA:
+        case 0x0005DAD3:
+        case 0x0005DB07:
+        case 0x0005DB3B:
+            return true;
+        default:
+            return false;
+    }
+}
+
+void CaptureCrtRandomActorSnapshot(
+    std::uint32_t call_site,
+    std::uintptr_t caller_esi,
+    CrtRandomTraceRecord *record) {
+    if (!record ||
+        !IsDetailedActorRandomCallSite(call_site) ||
+        caller_esi == 0) {
+        return;
+    }
+    auto *actor =
+        reinterpret_cast<m1937::sdk::RuntimeActorV1 *>(caller_esi);
+    if (!IsReadableRange(actor, sizeof(*actor)) ||
+        actor->runtime_type <= 0 ||
+        actor->runtime_type > 255 ||
+        actor->world_scene_index < 0) {
+        return;
+    }
+    record->actor_snapshot_valid = true;
+    record->actor_runtime_type = actor->runtime_type;
+    record->actor_scene_index = actor->world_scene_index;
+    record->actor_faction_id = actor->faction_id;
+    record->actor_world_x = actor->world_x;
+    record->actor_world_y = actor->world_y;
+    record->actor_previous_world_x = actor->previous_world_x;
+    record->actor_previous_world_y = actor->previous_world_y;
+    record->actor_facing_direction = actor->facing_direction;
+    record->actor_dead_or_disabled = actor->dead_or_disabled;
+    record->actor_stationary_tick_counter =
+        actor->stationary_tick_counter;
+    record->actor_stationary_tick_limit =
+        actor->stationary_tick_limit;
+    record->actor_route_update_active =
+        actor->route_update_active;
+    record->actor_goal_kind = actor->goal_kind;
+    record->actor_goal_x = actor->goal_x;
+    record->actor_goal_y = actor->goal_y;
+    record->actor_command_variant = actor->command_variant;
+    record->actor_command_pending = actor->command_pending;
+    record->actor_movement_active = actor->movement_active;
+    record->actor_movement_path_state =
+        actor->movement_path_state;
+    record->actor_movement_mode = actor->movement_mode;
+    record->actor_target_address = actor->target_actor_address;
+    record->actor_pursuit_address = actor->pursuit_actor_address;
+    record->actor_search_delay_limit = actor->search_delay_limit;
+    record->actor_search_delay_counter = actor->search_delay_counter;
+    record->actor_contact_state = actor->contact_state;
+    record->actor_target_lost = actor->target_lost;
+    record->actor_reaction_state = actor->reaction_state;
+    record->actor_pursuit_delay_counter =
+        actor->pursuit_delay_counter;
+
+    auto *pursuit =
+        reinterpret_cast<m1937::sdk::RuntimeActorV1 *>(
+            static_cast<std::uintptr_t>(
+                actor->pursuit_actor_address));
+    if (!pursuit ||
+        !IsReadableRange(pursuit, sizeof(*pursuit)) ||
+        pursuit->runtime_type <= 0 ||
+        pursuit->runtime_type > 255 ||
+        pursuit->world_scene_index < 0) {
+        return;
+    }
+    record->pursuit_snapshot_valid = true;
+    record->pursuit_runtime_type = pursuit->runtime_type;
+    record->pursuit_scene_index = pursuit->world_scene_index;
+    record->pursuit_world_x = pursuit->world_x;
+    record->pursuit_world_y = pursuit->world_y;
+    record->pursuit_dead_or_disabled =
+        pursuit->dead_or_disabled;
+    record->pursuit_command_variant =
+        pursuit->pursuit_command_variant;
+}
+
 void RecordCrtRandomTrace(
     void *caller_return_address,
     std::uintptr_t caller_esi,
@@ -2175,6 +2430,8 @@ void RecordCrtRandomTrace(
     record.caller_esi =
         static_cast<std::uint32_t>(caller_esi);
     record.value = value;
+    CaptureCrtRandomActorSnapshot(
+        record.call_site_rva, caller_esi, &record);
     // Publish the record only after every payload field is complete.
     InterlockedExchange(&record.sequence, index + 1);
 }

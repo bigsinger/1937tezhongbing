@@ -34,6 +34,7 @@ if ($LASTEXITCODE -ne 0) {
 & (Join-Path $PSScriptRoot 'Test-OriginalRuntimeActorCatalog.ps1')
 & (Join-Path $PSScriptRoot 'Test-CrtRandomStartupBaseline.ps1')
 & (Join-Path $PSScriptRoot 'Test-CrtRandomRuntimeTimingBaseline.ps1')
+& (Join-Path $PSScriptRoot 'Test-CrtRandomRuntimeStateBaseline.ps1')
 if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
     & (Join-Path $PSScriptRoot 'Test-ModRuntimeIdentityCatalog.ps1') `
         -LevelManifest $realAssetManifest
@@ -164,6 +165,12 @@ if ($LASTEXITCODE -ne 0) {
 & $GodotExecutable --headless --path $game --script 'res://tests/original_crt_random_test.gd'
 if ($LASTEXITCODE -ne 0) {
     throw "Godot original CRT random-stream tests failed with exit code $LASTEXITCODE."
+}
+
+& $GodotExecutable --headless --path $game `
+    --script 'res://tests/ambient_particle_performance_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot legacy ambient-particle performance test failed with exit code $LASTEXITCODE."
 }
 
 & $GodotExecutable --headless --path $game --script 'res://tests/legacy_doors_test.gd'

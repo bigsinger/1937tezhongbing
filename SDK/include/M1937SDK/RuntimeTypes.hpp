@@ -47,7 +47,13 @@ struct RuntimeActorV1 final {
     std::int32_t world_x;                 // +0x0D8
     std::int32_t world_height;            // +0x0DC
     std::int32_t world_y;                 // +0x0E0
-    std::byte unknown_0e4[36];
+    std::byte unknown_0e4[12];
+    // sub_456070 compares the current planar position against this prior
+    // update triplet before advancing the shared stationary counter.
+    std::int32_t previous_world_x;        // +0x0F0
+    std::int32_t previous_world_height;   // +0x0F4
+    std::int32_t previous_world_y;        // +0x0F8
+    std::byte unknown_0fc[12];
     std::int32_t navigation_cell_x;       // +0x108
     std::int32_t navigation_height_cell;  // +0x10C
     std::int32_t navigation_cell_y;       // +0x110
@@ -55,11 +61,22 @@ struct RuntimeActorV1 final {
     // sub_458270 sets this while item 49 temporarily exposes the enemy to
     // player commands. sub_45C710 clears it with the hypnosis state.
     std::int32_t world_item_player_selected; // +0x168
-    std::byte unknown_16c[12];
+    // Shared sub_456070/sub_4587E0 stationary/route counter. The constructor
+    // initializes the limit with rand()%160; later resets add 40. Depending
+    // on the active controller, sub_456070 resets it at call site 0x56105
+    // while stationary and sub_4587E0 resets it at 0x58946 when a route point
+    // completes.
+    std::int32_t stationary_tick_counter;   // +0x16C
+    std::int32_t stationary_tick_limit;     // +0x170
+    std::byte unknown_174[4];
     std::int32_t facing_direction;        // +0x178, 1..8
-    std::byte unknown_17c[12];
+    std::byte unknown_17c[8];
+    // sub_4587E0 increments the shared counter only while this flag is one.
+    std::int32_t route_update_active;       // +0x184
     std::int32_t dead_or_disabled;         // +0x188
-    std::byte unknown_18c[4];
+    // Updated from the original global run/forced-target flag and copied by
+    // sub_45D330 into a follower's command_variant at +0x1A4.
+    std::int32_t pursuit_command_variant;   // +0x18C
     std::int32_t target_status;            // +0x190
     std::int32_t goal_kind;                // +0x194
     std::int32_t goal_x;                   // +0x198
@@ -108,7 +125,11 @@ struct RuntimeActorV1 final {
     std::uint32_t inventory_address;         // +0x22C
     std::byte unknown_230[8];
     std::int32_t hypnosis_active;           // +0x238
-    std::byte unknown_23c[12];
+    // Persistent actor followed by sub_45D330. This is distinct from the
+    // active combat/action target at +0x214 and is also used by authored
+    // formation followers.
+    std::uint32_t pursuit_actor_address;    // +0x23C
+    std::byte unknown_240[8];
     std::int32_t search_delay_limit;        // +0x248
     std::int32_t search_delay_counter;      // +0x24C
     std::int32_t contact_state;             // +0x250
@@ -140,7 +161,11 @@ struct RuntimeActorV1 final {
     // Unseen updates restore faction 1 only when counter > limit.
     std::int32_t disguise_recovery_active;  // +0x294
     std::int32_t disguise_recovery_limit;   // +0x298, default 100
-    std::int32_t disguise_recovery_counter; // +0x29C
+    union {
+        std::int32_t disguise_recovery_counter; // +0x29C
+        // sub_45D330 reuses this slot as the type-56 pursuit delay counter.
+        std::int32_t pursuit_delay_counter;      // +0x29C
+    };
 };
 
 struct RuntimeInventoryContainerV1 final {
@@ -198,12 +223,19 @@ static_assert(offsetof(RuntimeActorV1, crawl_step) == 0x0CC);
 static_assert(offsetof(RuntimeActorV1, world_x) == 0x0D8);
 static_assert(offsetof(RuntimeActorV1, world_height) == 0x0DC);
 static_assert(offsetof(RuntimeActorV1, world_y) == 0x0E0);
+static_assert(offsetof(RuntimeActorV1, previous_world_x) == 0x0F0);
+static_assert(offsetof(RuntimeActorV1, previous_world_height) == 0x0F4);
+static_assert(offsetof(RuntimeActorV1, previous_world_y) == 0x0F8);
 static_assert(offsetof(RuntimeActorV1, navigation_cell_x) == 0x108);
 static_assert(offsetof(RuntimeActorV1, navigation_height_cell) == 0x10C);
 static_assert(offsetof(RuntimeActorV1, navigation_cell_y) == 0x110);
 static_assert(offsetof(RuntimeActorV1, world_item_player_selected) == 0x168);
+static_assert(offsetof(RuntimeActorV1, stationary_tick_counter) == 0x16C);
+static_assert(offsetof(RuntimeActorV1, stationary_tick_limit) == 0x170);
 static_assert(offsetof(RuntimeActorV1, facing_direction) == 0x178);
+static_assert(offsetof(RuntimeActorV1, route_update_active) == 0x184);
 static_assert(offsetof(RuntimeActorV1, dead_or_disabled) == 0x188);
+static_assert(offsetof(RuntimeActorV1, pursuit_command_variant) == 0x18C);
 static_assert(offsetof(RuntimeActorV1, goal_kind) == 0x194);
 static_assert(offsetof(RuntimeActorV1, goal_x) == 0x198);
 static_assert(offsetof(RuntimeActorV1, goal_y) == 0x19C);
@@ -227,7 +259,9 @@ static_assert(offsetof(RuntimeActorV1, resolved_goal_y) == 0x220);
 static_assert(offsetof(RuntimeActorV1, item_inventory_address) == 0x228);
 static_assert(offsetof(RuntimeActorV1, inventory_address) == 0x22C);
 static_assert(offsetof(RuntimeActorV1, hypnosis_active) == 0x238);
+static_assert(offsetof(RuntimeActorV1, pursuit_actor_address) == 0x23C);
 static_assert(offsetof(RuntimeActorV1, search_delay_limit) == 0x248);
+static_assert(offsetof(RuntimeActorV1, search_delay_counter) == 0x24C);
 static_assert(offsetof(RuntimeActorV1, contact_state) == 0x250);
 static_assert(offsetof(RuntimeActorV1, target_lost) == 0x254);
 static_assert(offsetof(RuntimeActorV1, corpse_discovered) == 0x258);
@@ -244,6 +278,7 @@ static_assert(offsetof(RuntimeActorV1, special_attention_hold) == 0x290);
 static_assert(offsetof(RuntimeActorV1, disguise_recovery_active) == 0x294);
 static_assert(offsetof(RuntimeActorV1, disguise_recovery_limit) == 0x298);
 static_assert(offsetof(RuntimeActorV1, disguise_recovery_counter) == 0x29C);
+static_assert(offsetof(RuntimeActorV1, pursuit_delay_counter) == 0x29C);
 static_assert(sizeof(RuntimeActorV1) == 0x2A0);
 static_assert(offsetof(RuntimeInventoryContainerV1, item_ids_address) == 0x00);
 static_assert(offsetof(RuntimeInventoryContainerV1, quantities_address) == 0x04);

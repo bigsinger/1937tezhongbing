@@ -307,6 +307,11 @@ static func _capture_world(game: Node) -> Dictionary:
 			if _has_property(game, "legacy_crt_random_draw_index")
 			else 0
 		),
+		"legacy_ambient_particle": (
+			_json_value(game.call("legacy_ambient_particle_snapshot"))
+			if game.has_method("legacy_ambient_particle_snapshot")
+			else {}
+		),
 		"projectiles": [],
 		"mission_direction": {},
 		"mission_ai_coordinator": {},
@@ -1021,6 +1026,26 @@ static func _restore_world(game: Node, world: Dictionary, warnings: Array[String
 		game.set(
 			"legacy_crt_random_draw_index",
 			maxi(int(world.get("legacy_crt_random_draw_index", 0)), 0),
+		)
+	var ambient_particle_state: Variant = world.get(
+		"legacy_ambient_particle",
+		{},
+	)
+	if (
+		ambient_particle_state is Dictionary
+		and not (ambient_particle_state as Dictionary).is_empty()
+		and (
+			not game.has_method(
+				"restore_legacy_ambient_particle_snapshot"
+			)
+			or not bool(game.call(
+				"restore_legacy_ambient_particle_snapshot",
+				ambient_particle_state,
+			))
+		)
+	):
+		warnings.append(
+			"legacy ambient particle state could not be restored"
 		)
 	var buried: Dictionary = {}
 	for value: Variant in world.get("buried_enemy_scene_indices", []) as Array:
