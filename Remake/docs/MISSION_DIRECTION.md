@@ -12,6 +12,15 @@
 
 编排数据位于 `game/data/mission_direction.json`。`MissionDirectionData` 负责 schema 与跨目录引用验证；`MissionDirectionRuntime` 把任务事件转换为对白、镜头、教程和 AI 指令；`MissionAiCoordinator` 把逐关难度应用到敌人，并提供延迟警报共享、协同搜索小组、同时攻击者上限、确定性侧翼/压制决策和增援预算。
 
+这套编排是可选增强，不是严格复刻的默认演出。运行时边界如下：
+
+| 难度配置 | 关内补写对白/镜头/教程 | 补写 AI 协调与数值 | 恢复出的简报/结局 |
+|---|---|---|---|
+| `original`（默认） | 不创建导演，不播放 `remake_editorial` cue | 不创建协调器，完全沿用已恢复的原生规则 | 保留 |
+| `easy` / `normal` / `hard` | 显式启用 43 节奏节点和 45 行补写对白 | 显式启用逐关增强配置 | 保留 |
+
+这样“有可玩的现代导演第一版”和“默认完全不依赖无来源内容”可以同时成立。
+
 ## 来源边界
 
 原资源中没有发现可自动绑定到关内 scene 的逐句对白表或镜头脚本。因此本次严格分两层记录：
@@ -21,7 +30,7 @@
 | 任务 ID、目标 ID、scene binding | `recovered_scene_binding` / `mixed` | 引用 `missions.json` 中由 VWF 与原程序控制流恢复的事实 |
 | 对白措辞、镜头时长/缩放、教程文本、AI 策略、难度数值 | `remake_editorial` | 为复刻版可玩性新增，不能视为原版对白或原版平衡参数 |
 
-目录顶层还固定声明 `original_dialogue_claimed=false`。校验器会拒绝把当前补写对白改标成 `recovered_transcript`，也会拒绝镜头引用不存在的目标、objective 或 scene binding。这样以后若从原版实机录像恢复到精确对白，可以逐条附证据升级，而不会混淆已经恢复的任务事实与后期创作。
+目录顶层还固定声明 `original_dialogue_claimed=false`。校验器会拒绝把当前补写对白改标成 `recovered_transcript`，也会拒绝镜头引用不存在的目标、objective 或 scene binding。产品默认的 `original` 进一步在运行时完全绕过 `MissionDirectionRuntime` 和 `MissionAiCoordinator`，并屏蔽 `missions.json` 中标成 `remake_editorial` 的 cue；`recovered_media_mapping` 的简报/结局不受影响。这样以后若从原版实机录像恢复到精确对白，可以逐条附证据升级，而不会混淆已经恢复的任务事实与后期创作。
 
 m000 已完成第一轮人物身份校准：原 VWF 中唯一可控角色是强子 scene 1436，因此开场/胜利补写对白和首次营救确认音均由强子承担；早期误用老赵的接线已经移除。详细数据与窗口探针结果见 [第一关复刻对照与验收](M000_FIDELITY.md)。
 
@@ -89,7 +98,7 @@ direction.publish_event(
 
 玩家执行教程动作时调用 `report_tutorial_action()`。目标事件会被持久保存；如果目标先完成、教程动作稍后才发生，导演会在门控打开后重放待处理事实，不会永久漏掉节奏节点。
 
-当前 `main.gd` 已完成上述产品接线：世界事件会比较目标计数并发布 `objective_progress`，目标完成、胜利和十二类教程动作均进入导演；警报由 `MissionAiCoordinator` 按本关延迟和小组上限传播，侧翼/压制确定性采样会改变搜索落点或攻击复查时机，搜索/防御/增援指令会实际唤醒受限数量的敌人。窗口化运行时播放对白与镜头，headless 及运行探针只执行状态和 AI，不打开模态媒体。
+当前 `main.gd` 已完成上述产品接线：在 `easy/normal/hard` 中，世界事件会比较目标计数并发布 `objective_progress`，目标完成、胜利和十二类教程动作均进入导演；警报由 `MissionAiCoordinator` 按本关延迟和小组上限传播，侧翼/压制确定性采样会改变搜索落点或攻击复查时机，搜索/防御/增援指令会实际唤醒受限数量的敌人。窗口化运行时可播放补写对白与镜头；headless 不打开模态媒体。`original` 和所有运行探针都不创建这两个编辑运行时，从构造边界保证它们无法影响原生任务、AI 或随机流。
 
 ### 镜头命令
 
@@ -128,7 +137,8 @@ direction.ai_directive_requested.connect(
 
 产品默认 `original` 是稳定 MOD 的可审计复刻模式：生命、伤害、反应、
 巡逻、感知和警报半径乘数均为 1.0，不启用补写的协作增援、同时攻击者上限
-或确定性瞄准误差。全局 `easy/normal/hard` 是显式可选的重制调校，不是
+或确定性瞄准误差，也不创建补写的对白、镜头与教程导演。全局
+`easy/normal/hard` 是显式可选的重制调校，不是
 另一套关卡数据；它们在逐关 Normal 曲线上做 ±15% 缩放，反应时间和瞄准
 误差因“越高越容易”而反向缩放。暂停菜单会持久化选择，并提示在重开、
 切关或读取对应存档时生效。
@@ -156,7 +166,7 @@ direction.ai_directive_requested.connect(
 - 十二关目录与 `missions.json` 的 title/objective/binding 交叉校验；
 - 每关对白、镜头、教程、AI、开场、胜利覆盖；
 - 43 节奏节点与 45 行补写对白来源标签；
-- `original` 中性复刻 profile，以及 Easy/Normal/Hard 曲线方向；
+- `original` 完全不构造补写导演/AI、屏蔽编辑型 cue 但保留恢复媒体，以及 Easy/Normal/Hard 显式启用和曲线方向；
 - 教程门控、先发生事件的回放、单次触发和定时节点；
 - 同帧“目标完成 + 胜利”对白的顺序队列，防止后一句覆盖前一句；
 - 存档恢复与非法快照拒绝；

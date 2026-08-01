@@ -37,9 +37,6 @@ func _init() -> void:
 func _run() -> void:
 	var failures: Array[String] = []
 	var main: Node = MAIN_SCRIPT.new()
-	var recorder := TutorialRecorder.new()
-	main.add_child(recorder)
-	main.mission_direction_runtime = recorder
 
 	main.current_mission = {
 		"id": "m000",
@@ -51,6 +48,29 @@ func _run() -> void:
 		1428: {"x": 4304, "y": 1176},
 		2637: {"x": 10, "y": 20},
 	}
+	main.runtime_settings["difficulty_mode"] = "original"
+	main.call("_configure_mission_direction")
+	_expect(
+		main.mission_direction_runtime == null
+		and main.mission_ai_coordinator == null,
+		"original profile has no remake-editorial dialogue/camera/tutorial/AI layer",
+		failures,
+	)
+	main.runtime_settings["difficulty_mode"] = "normal"
+	main.call("_configure_mission_direction")
+	_expect(
+		main.mission_direction_runtime != null
+		and main.mission_ai_coordinator != null,
+		"enhanced difficulty explicitly enables the editorial director and AI coordinator",
+		failures,
+	)
+	main.mission_direction_runtime.free()
+	main.mission_direction_runtime = null
+	main.mission_ai_coordinator.free()
+	main.mission_ai_coordinator = null
+	var recorder := TutorialRecorder.new()
+	main.add_child(recorder)
+	main.mission_direction_runtime = recorder
 	_expect(
 		main._direction_binding_positions("rescued", "first") == [Vector2(4176, 1128)],
 		"m000 first-rescue selection focuses Pengxin rather than the final rescued binding",

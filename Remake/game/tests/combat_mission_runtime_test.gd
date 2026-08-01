@@ -1129,6 +1129,13 @@ func _test_mission_media_cues(failures: Array[String]) -> void:
 	main.media_director = director
 	main.current_mission = MISSION_DATA.load_mission("m000")
 	_expect(
+		not main._play_mission_media_cue("on_start")
+		and director.calls.is_empty(),
+		"original difficulty suppresses explicitly editorial mission dialogue",
+		failures,
+	)
+	main.runtime_settings["difficulty_mode"] = "normal"
+	_expect(
 		main._play_mission_media_cue("on_start")
 		and director.calls.size() == 1
 		and str(director.calls[0].get("kind", "")) == "dialogue"

@@ -5885,11 +5885,26 @@ func _configure_mission_direction() -> void:
 	if mission_ai_coordinator != null:
 		mission_ai_coordinator.free()
 		mission_ai_coordinator = null
+	# The MOD/original path has the per-level briefing surface and the recovered
+	# ending, but no source-backed evidence for the Remake-authored in-game
+	# dialogue, camera, tutorial or cooperation beats. Keep that entire layer
+	# opt-in through easy/normal/hard instead of presenting editorial material
+	# while the player selected the auditable original profile.
+	var difficulty_mode := (
+		"original"
+		if _is_runtime_probe()
+		else str(runtime_settings.get("difficulty_mode", "original"))
+	)
+	if difficulty_mode not in ["original", "easy", "normal", "hard"]:
+		difficulty_mode = "original"
 	# Several missions have recovered stable-MOD control-flow profiles whose actual
 	# objective set conflicts with the later Remake editorial sequences. Keep
 	# those sequences available in repaired mode, but never narrate repaired
 	# goals while the player selected strict stable-MOD behaviour.
-	if bool(current_mission.get("disable_editorial_direction", false)):
+	if (
+		difficulty_mode == "original"
+		or bool(current_mission.get("disable_editorial_direction", false))
+	):
 		return
 	mission_direction_runtime = MISSION_DIRECTION_RUNTIME_SCRIPT.new()
 	mission_direction_runtime.name = "MissionDirectionRuntime"
@@ -5901,16 +5916,6 @@ func _configure_mission_direction() -> void:
 	var direction_media: Node = media_director
 	if DisplayServer.get_name() == "headless" or _is_runtime_probe():
 		direction_media = null
-	# Runtime probes always exercise the stable MOD contract, independently of
-	# a developer's persisted local settings.  The shipped default is likewise
-	# original parity; easy/normal/hard remain opt-in editorial modes.
-	var difficulty_mode := (
-		"original"
-		if _is_runtime_probe()
-		else str(runtime_settings.get("difficulty_mode", "original"))
-	)
-	if difficulty_mode not in ["original", "easy", "normal", "hard"]:
-		difficulty_mode = "original"
 	if not mission_direction_runtime.configure_for_mission(
 		mission_id,
 		direction_media,
@@ -7282,7 +7287,7 @@ func _play_mission_media_cue(section: String, key: String = "") -> bool:
 	if media_director == null:
 		return false
 	var cue := _mission_media_cue(section, key)
-	if cue.is_empty():
+	if cue.is_empty() or not _mission_media_cue_enabled(cue):
 		return false
 	match str(cue.get("kind", "")):
 		"audio":
@@ -7330,6 +7335,12 @@ func _play_mission_media_cue(section: String, key: String = "") -> bool:
 				)
 			)
 	return false
+
+
+func _mission_media_cue_enabled(cue: Dictionary) -> bool:
+	if str(cue.get("source_status", "")) != "remake_editorial":
+		return true
+	return str(runtime_settings.get("difficulty_mode", "original")) != "original"
 
 
 func _mission_media_cue(section: String, key: String = "") -> Dictionary:

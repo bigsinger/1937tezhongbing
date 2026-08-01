@@ -110,6 +110,11 @@ func _run() -> void:
 func _exercise_level(main: Node, level_index: int) -> void:
 	var level_id := LEVEL_IDS[level_index]
 	main.switch_level(level_index, false, false)
+	_expect(
+		main.mission_direction_runtime == null
+		and main.mission_ai_coordinator == null,
+		"%s original profile starts without remake-editorial presentation or AI" % level_id,
+	)
 	_disable_autonomous_world(main)
 	_expect(
 		str(main.current_mission.get("id", "")) == level_id,

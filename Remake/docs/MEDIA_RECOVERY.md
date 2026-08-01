@@ -79,7 +79,7 @@ media.play_movie("historical_intro")
 
 `missions.json` 可选的 `media_cues` 让任务状态机在 `on_start`、`on_objective`、`on_story_anchor` 和 `on_victory` 调用同一个媒体导演；cue 类型可以是 `audio`、`dialogue`、`movie` 或 `ending`。所有 cue 都必须带 `source_status`：`recovered_media_mapping` 表示媒体身份/位置有原资源映射证据，`remake_editorial` 表示为可玩性新增的编排提示，`mixed` 则要求两者并存时明确承认边界。
 
-原有 `missions.json/media_cues` 接线仍负责 m000 的教程提示与确认音、m006 仅在 `repaired` 规则启用的接头点提示、m011 的恢复结局图。除此之外，十二关第一版关内对白节奏、镜头提示和教程门控已经放入独立的 `mission_direction.json`，由 `MissionDirectionRuntime` 派发，并可直接把文字序列送入本 `MediaDirector`。该目录共 43 个节奏节点、45 行补写对白；所有补写文本均标为 `remake_editorial`，不会宣称为原版对白。完整来源边界和逐关表见 `MISSION_DIRECTION.md`。
+原有 `missions.json/media_cues` 接线仍负责 m000 的教程提示与确认音、m006 仅在 `repaired` 规则启用的接头点提示、m011 的恢复结局图。严格 `original` 会屏蔽前两类 `remake_editorial` cue，但保留 m011 的 `recovered_media_mapping` 结局。除此之外，十二关第一版关内对白节奏、镜头提示和教程门控已经放入独立的 `mission_direction.json`，由 `MissionDirectionRuntime` 派发，并可直接把文字序列送入本 `MediaDirector`。该目录共 43 个节奏节点、45 行补写对白；所有补写文本均标为 `remake_editorial`，只在显式选择 `easy/normal/hard` 时创建运行时，不会宣称为原版对白。完整来源边界和逐关表见 `MISSION_DIRECTION.md`。
 
 对白序列支持纯文字、指定 WAV 索引或按事件/角色选择音频：
 
