@@ -7488,12 +7488,20 @@ internal static class ModRegressionProbe
             afterDamage ? "original_sub_458700" : "none");
         json.AppendFormat(
             CultureInfo.InvariantCulture,
-            "      \"mission\":{{\"status\":\"{0}\"," +
-            "\"engine_mission\":{1},\"game_flow_state\":{2}," +
-            "\"evaluation_active\":{3},\"result_state\":{4}," +
-            "\"evaluator_calls\":{5},\"transition_sequence\":{6}," +
-            "\"last_evaluated_tick_ms\":{7}}}\n",
-            mission == null ? "unknown" : Escape(mission.Status),
+            "      \"mission\":{{\"status\":\"{0}\",",
+            mission == null ? "unknown" : Escape(mission.Status));
+        if (afterDamage)
+        {
+            json.Append(
+                "\"semantic_failure_id\":" +
+                "\"required_character_lost\",");
+        }
+        json.AppendFormat(
+            CultureInfo.InvariantCulture,
+            "\"engine_mission\":{0},\"game_flow_state\":{1}," +
+            "\"evaluation_active\":{2},\"result_state\":{3}," +
+            "\"evaluator_calls\":{4},\"transition_sequence\":{5}," +
+            "\"last_evaluated_tick_ms\":{6}}}\n",
             mission == null ? -1 : mission.EngineMission,
             mission == null ? -1 : mission.GameFlowState,
             mission == null ? -1 : mission.EvaluationActive,

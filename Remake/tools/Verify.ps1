@@ -261,38 +261,43 @@ if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
     if ($LASTEXITCODE -ne 0) {
         throw "Godot obstacle-route parity probe failed with exit code $LASTEXITCODE."
     }
-    $nativeMissionFailureScenario = (
-        'm000-native-required-player-failure-v1')
-    & $GodotExecutable --headless --path $game `
-        --max-fps 60 --disable-vsync `
-        --script 'res://tests/parity_runtime_probe.gd' -- `
-        "--output-dir=$parityProbeOutput" `
-        "--scenario-id=$nativeMissionFailureScenario"
-    if ($LASTEXITCODE -ne 0) {
-        throw (
-            'Godot native mission failure parity probe failed with exit ' +
-            "code $LASTEXITCODE.")
+    foreach ($nativeFailureLevelIndex in 0..11) {
+        $nativeFailureLevelId = (
+            'm{0:D3}' -f $nativeFailureLevelIndex)
+        $nativeMissionFailureScenario = (
+            "$nativeFailureLevelId-native-required-player-failure-v1")
+        & $GodotExecutable --headless --path $game `
+            --max-fps 60 --disable-vsync `
+            --script 'res://tests/parity_runtime_probe.gd' -- `
+            "--output-dir=$parityProbeOutput" `
+            "--level-id=$nativeFailureLevelId" `
+            "--scenario-id=$nativeMissionFailureScenario"
+        if ($LASTEXITCODE -ne 0) {
+            throw (
+                "Godot $nativeFailureLevelId native mission failure parity " +
+                "probe failed with exit code $LASTEXITCODE.")
+        }
+        & (Join-Path $PSScriptRoot `
+            'Compare-NativeMissionFailureParity.ps1') `
+            -ReferenceTrace (
+                Join-Path $remakeRoot (
+                    'validation\baselines\mod\' +
+                    $nativeMissionFailureScenario +
+                    '.json')) `
+            -CandidateTrace (
+                Join-Path $parityProbeOutput (
+                    'remake-' +
+                    $nativeMissionFailureScenario +
+                    '.json')) `
+            -OutputJson (
+                Join-Path $parityProbeOutput (
+                    $nativeMissionFailureScenario +
+                    '-comparison.json')) `
+            -OutputMarkdown (
+                Join-Path $parityProbeOutput (
+                    $nativeMissionFailureScenario +
+                    '-comparison.md')) | Out-Null
     }
-    & (Join-Path $PSScriptRoot `
-        'Compare-NativeMissionFailureParity.ps1') `
-        -ReferenceTrace (
-            Join-Path $remakeRoot (
-                'validation\baselines\mod\' +
-                $nativeMissionFailureScenario +
-                '.json')) `
-        -CandidateTrace (
-            Join-Path $parityProbeOutput (
-                'remake-' +
-                $nativeMissionFailureScenario +
-                '.json')) `
-        -OutputJson (
-            Join-Path $parityProbeOutput (
-                $nativeMissionFailureScenario +
-                '-comparison.json')) `
-        -OutputMarkdown (
-            Join-Path $parityProbeOutput (
-                $nativeMissionFailureScenario +
-                '-comparison.md')) | Out-Null
     $movementParityRoutes = @(
         [pscustomobject]@{ level = 0; scene = 1436; out_x = 9; out_y = 7; back_x = 1; back_y = 1 },
         [pscustomobject]@{ level = 1; scene = 1993; out_x = 112; out_y = 248; back_x = 125; back_y = 254 },

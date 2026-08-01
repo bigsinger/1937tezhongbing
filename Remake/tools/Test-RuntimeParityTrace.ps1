@@ -48,8 +48,17 @@ $contactBaselinePath = Join-Path $remakeRoot `
     'validation\baselines\mod\m000-natural-contact-v1.json'
 $nativeAlertBaselinePath = Join-Path $remakeRoot `
     'validation\baselines\mod\m000-native-alert-command-v1.json'
-$nativeFailureBaselinePath = Join-Path $remakeRoot `
-    'validation\baselines\mod\m000-native-required-player-failure-v1.json'
+$nativeFailureSceneIndices = @(
+    1436, 1994, 886, 1150, 2629, 663,
+    1458, 2325, 753, 1709, 1590, 1176
+)
+$nativeFailureBaselinePaths = @(
+    0..11 | ForEach-Object {
+        Join-Path $remakeRoot (
+            'validation\baselines\mod\' +
+            ('m{0:D3}-native-required-player-failure-v1.json' -f $_))
+    })
+$nativeFailureBaselinePath = $nativeFailureBaselinePaths[0]
 $minePickupBaselinePath = Join-Path $remakeRoot `
     'validation\baselines\mod\m001-mine-pickup-inventory-v1.json'
 $pistolAttackBaselinePath = Join-Path $remakeRoot `
@@ -272,45 +281,71 @@ if ($nativeAlertBaseline.scenario.id -ne
         }).Count -ne 0) {
     throw 'The checked-in m000 native alert-command evidence is invalid.'
 }
-$nativeFailureBaseline = Get-Content `
-    -LiteralPath $nativeFailureBaselinePath `
-    -Raw -Encoding UTF8 | ConvertFrom-Json
-$nativeFailureActive = @(
-    $nativeFailureBaseline.checkpoints |
-        Where-Object id -CEQ 'gameplay_active'
-)[0]
-$nativeFailureFailed = @(
-    $nativeFailureBaseline.checkpoints |
-        Where-Object id -CEQ 'required_player_lost'
-)[0]
-if (-not (Test-Path -LiteralPath $nativeFailureCompareScript -PathType Leaf) -or
-    $nativeFailureBaseline.runtime -ne 'mod' -or
-    $nativeFailureBaseline.content_profile -ne
-        'repository-mod-12-level-20260729' -or
-    $nativeFailureBaseline.level.id -ne 'm000' -or
-    $nativeFailureBaseline.scenario.id -ne
-        'm000-native-required-player-failure-v1' -or
-    @($nativeFailureBaseline.checkpoints).Count -ne 2 -or
-    (@($nativeFailureBaseline.checkpoints.id) -join ',') -ne
-        'gameplay_active,required_player_lost' -or
-    $null -eq $nativeFailureActive -or
-    $null -eq $nativeFailureFailed -or
-    [int]$nativeFailureActive.actor.scene_index -ne 1436 -or
-    [int]$nativeFailureFailed.actor.scene_index -ne 1436 -or
-    [int]$nativeFailureActive.actor.current_hit_points -ne 8 -or
-    [int]$nativeFailureFailed.actor.current_hit_points -ne 0 -or
-    [int]$nativeFailureActive.actor.dead_or_disabled -ne 0 -or
-    [int]$nativeFailureFailed.actor.dead_or_disabled -ne 1 -or
-    $nativeFailureActive.mission.status -ne 'active' -or
-    $nativeFailureFailed.mission.status -ne 'failed' -or
-    [int]$nativeFailureActive.mission.result_state -ne 0 -or
-    [int]$nativeFailureFailed.mission.result_state -ne 2 -or
-    [int]$nativeFailureActive.mission.transition_sequence -ne 0 -or
-    [int]$nativeFailureFailed.mission.transition_sequence -ne 1 -or
-    $nativeFailureFailed.mission.semantic_failure_id -ne
-        'required_character_lost') {
-    throw 'The checked-in m000 native mission-failure evidence is invalid.'
+if (-not (Test-Path -LiteralPath $nativeFailureCompareScript -PathType Leaf)) {
+    throw 'The native mission-failure comparator is missing.'
 }
+$nativeFailureBaselineDocuments = [Collections.Generic.List[object]]::new()
+for ($levelIndex = 0; $levelIndex -lt 12; $levelIndex++) {
+    $levelId = 'm{0:D3}' -f $levelIndex
+    $scenarioId = "$levelId-native-required-player-failure-v1"
+    $nativeFailureBaseline = Get-Content `
+        -LiteralPath $nativeFailureBaselinePaths[$levelIndex] `
+        -Raw -Encoding UTF8 | ConvertFrom-Json
+    $nativeFailureActive = @(
+        $nativeFailureBaseline.checkpoints |
+            Where-Object id -CEQ 'gameplay_active'
+    )[0]
+    $nativeFailureFailed = @(
+        $nativeFailureBaseline.checkpoints |
+            Where-Object id -CEQ 'required_player_lost'
+    )[0]
+    $requiredScene = $nativeFailureSceneIndices[$levelIndex]
+    if ($nativeFailureBaseline.runtime -ne 'mod' -or
+        $nativeFailureBaseline.content_profile -ne
+            'repository-mod-12-level-20260729' -or
+        $nativeFailureBaseline.level.id -ne $levelId -or
+        [int]$nativeFailureBaseline.level.selector_level -ne
+            ($levelIndex + 1) -or
+        [int]$nativeFailureBaseline.level.engine_mission -ne
+            ($levelIndex + 1) -or
+        $nativeFailureBaseline.scenario.id -ne $scenarioId -or
+        @($nativeFailureBaseline.checkpoints).Count -ne 2 -or
+        (@($nativeFailureBaseline.checkpoints.id) -join ',') -ne
+            'gameplay_active,required_player_lost' -or
+        $null -eq $nativeFailureActive -or
+        $null -eq $nativeFailureFailed -or
+        [int]$nativeFailureActive.actor.scene_index -ne $requiredScene -or
+        [int]$nativeFailureFailed.actor.scene_index -ne $requiredScene -or
+        [int]$nativeFailureActive.actor.runtime_index -ne
+            [int]$nativeFailureFailed.actor.runtime_index -or
+        [int]$nativeFailureActive.actor.faction_id -ne 3 -or
+        [int]$nativeFailureActive.actor.current_hit_points -ne 8 -or
+        [int]$nativeFailureFailed.actor.current_hit_points -ne 0 -or
+        [int]$nativeFailureActive.actor.dead_or_disabled -ne 0 -or
+        [int]$nativeFailureFailed.actor.dead_or_disabled -ne 1 -or
+        $nativeFailureActive.actor.damage_source -ne 'none' -or
+        $nativeFailureFailed.actor.damage_source -ne
+            'original_sub_458700' -or
+        (@($nativeFailureActive.actor.position) -join ',') -ne
+            (@($nativeFailureFailed.actor.position) -join ',') -or
+        $nativeFailureActive.mission.status -ne 'active' -or
+        $nativeFailureFailed.mission.status -ne 'failed' -or
+        [int]$nativeFailureActive.mission.result_state -ne 0 -or
+        [int]$nativeFailureFailed.mission.result_state -ne 2 -or
+        [int]$nativeFailureActive.mission.transition_sequence -ne 0 -or
+        [int]$nativeFailureFailed.mission.transition_sequence -ne 1 -or
+        [long]$nativeFailureFailed.mission.evaluator_calls -le
+            [long]$nativeFailureActive.mission.evaluator_calls -or
+        $nativeFailureFailed.mission.semantic_failure_id -ne
+            'required_character_lost' -or
+        -not [bool]$nativeFailureBaseline.passed) {
+        throw (
+            "The checked-in $levelId native mission-failure evidence is " +
+            'invalid.')
+    }
+    $nativeFailureBaselineDocuments.Add($nativeFailureBaseline)
+}
+$nativeFailureBaseline = $nativeFailureBaselineDocuments[0]
 
 $inventoryBaselineDefinitions = @(
     [pscustomobject]@{
@@ -675,7 +710,7 @@ try {
         -ReferenceTrace $nativeFailureBaselinePath `
         -CandidateTrace $nativeFailureCandidatePath
     if (-not [bool]$nativeFailureSelf.passed -or
-        [int]$nativeFailureSelf.check_count -ne 25 -or
+        [int]$nativeFailureSelf.check_count -ne 26 -or
         [int]$nativeFailureSelf.mismatches.Count -ne 0) {
         throw 'The native mission-failure comparator is not self-consistent.'
     }

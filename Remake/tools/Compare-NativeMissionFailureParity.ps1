@@ -84,7 +84,7 @@ foreach ($field in @('id', 'selector_level', 'engine_mission')) {
 Expect-Exact 'scenario.id' `
     $reference.scenario.id $candidate.scenario.id
 
-$sceneIndex = 1436
+$sceneIndex = -1
 $referenceActive = Checkpoint-ById $reference 'gameplay_active'
 $referenceFailed = Checkpoint-ById $reference 'required_player_lost'
 $candidateActive = Checkpoint-ById $candidate 'gameplay_active'
@@ -114,6 +114,22 @@ foreach ($checkpoint in @(
             expected = 'present'
             actual = 'missing'
             rule = 'required checkpoint'
+        })
+    }
+}
+
+if ($mismatches.Count -eq 0) {
+    $sceneIndex = [int]$referenceActive.actor.scene_index
+    $checkCount++
+    if ($sceneIndex -le 0 -or
+        [int]$referenceFailed.actor.scene_index -ne $sceneIndex) {
+        $mismatches.Add([pscustomobject][ordered]@{
+            path = 'reference.required_actor.scene_index'
+            expected = 'matching positive scene identity'
+            actual = (
+                "$($referenceActive.actor.scene_index)->" +
+                "$($referenceFailed.actor.scene_index)")
+            rule = 'required actor identity'
         })
     }
 }
@@ -190,7 +206,7 @@ if ($mismatches.Count -eq 0) {
 
 $result = [pscustomobject][ordered]@{
     schema_version = 1
-    comparison_id = 'm000-native-required-player-failure-v1'
+    comparison_id = [string]$reference.scenario.id
     passed = $mismatches.Count -eq 0
     check_count = $checkCount
     reference = (Resolve-Path -LiteralPath $ReferenceTrace).Path

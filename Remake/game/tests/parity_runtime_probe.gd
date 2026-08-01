@@ -19,9 +19,21 @@ const PATROL_SETTLE_ARGUMENT_PREFIX := "--patrol-settle-seconds="
 const PRIMARY_DATABASE_ENTRY_ID := 924
 const MINE_PICKUP_SCENARIO_ID := "m001-mine-pickup-inventory-v1"
 const PISTOL_ATTACK_SCENARIO_ID := "m000-pistol-attack-inventory-v1"
-const NATIVE_REQUIRED_FAILURE_SCENARIO_ID := (
-	"m000-native-required-player-failure-v1"
-)
+const NATIVE_REQUIRED_FAILURE_SUFFIX := "-native-required-player-failure-v1"
+const NATIVE_REQUIRED_FAILURE_SCENES := {
+	"m000": 1436,
+	"m001": 1994,
+	"m002": 886,
+	"m003": 1150,
+	"m004": 2629,
+	"m005": 663,
+	"m006": 1458,
+	"m007": 2325,
+	"m008": 753,
+	"m009": 1709,
+	"m010": 1590,
+	"m011": 1176,
+}
 const SIGHT_DIRECT_TARGET_SCENARIO_ID := "m010-sight-direct-target-v1"
 const BURIAL_COMMAND_SCENARIO_ID := "m010-burial-command-v1"
 const M010_CONTEXT_TARGET_SCENE_INDEX := 1126
@@ -360,8 +372,14 @@ func _run_probe() -> void:
 	if scenario_id == MINE_PICKUP_SCENARIO_ID:
 		await _run_mine_pickup_probe(main, trace, started)
 		return
-	if scenario_id == NATIVE_REQUIRED_FAILURE_SCENARIO_ID:
-		await _run_native_required_failure_probe(main, trace, started)
+	if scenario_id == _native_required_failure_scenario_id(level_id):
+		await _run_native_required_failure_probe(
+			main,
+			trace,
+			started,
+			int(NATIVE_REQUIRED_FAILURE_SCENES.get(level_id, -1)),
+			scenario_id,
+		)
 		return
 	if WEAPON_ATTACK_SCENARIOS.has(scenario_id):
 		await _run_weapon_attack_probe(main, trace, started, scenario_id)
@@ -564,9 +582,14 @@ func _run_native_required_failure_probe(
 	main: Node,
 	trace: RefCounted,
 	started: int,
+	required_scene_index: int,
+	scenario_id: String,
 ) -> void:
-	var player := _player_for_scene(main, 1436)
-	_expect(player != null, "m000 required player scene 1436 exists")
+	var player := _player_for_scene(main, required_scene_index)
+	_expect(
+		player != null,
+		"required player scene %d exists" % required_scene_index,
+	)
 	if player != null:
 		trace.call(
 			"capture_main",
@@ -587,13 +610,14 @@ func _run_native_required_failure_probe(
 		_expect(
 			not bool(player.get("is_alive"))
 			and int(player.get("current_hit_points")) == 0,
-			"scene 1436 reaches the authentic dead/zero-HP state",
+			"scene %d reaches the authentic dead/zero-HP state"
+			% required_scene_index,
 		)
 		_expect(
 			main.current_mission_state.is_failed()
 			and str(main.current_mission_state.failure_id)
 				== "required_character_lost",
-			"real actor death reaches the m000 required-character failure",
+			"real actor death reaches the required-character failure",
 		)
 		trace.call(
 			"capture_main",
@@ -609,7 +633,7 @@ func _run_native_required_failure_probe(
 	await _finish_inventory_probe(
 		main,
 		trace,
-		NATIVE_REQUIRED_FAILURE_SCENARIO_ID,
+		scenario_id,
 	)
 
 
@@ -1565,12 +1589,15 @@ func _scenario_description(scenario_id: String, level_id: String) -> String:
 			+ "scene-2096 mine through the original automatic approach path; "
 			+ "capture both inventory containers before and after."
 		)
-	if scenario_id == NATIVE_REQUIRED_FAILURE_SCENARIO_ID:
+	if scenario_id == _native_required_failure_scenario_id(level_id):
 		return (
 			"Apply the original unconditional damage threshold to required "
-			+ "player scene 1436 and verify that the real combatant-death "
-			+ "event closes m000 through required_character_lost."
-		)
+			+ "player scene %d and verify that the real combatant-death "
+			+ "event closes %s through required_character_lost."
+		) % [
+			int(NATIVE_REQUIRED_FAILURE_SCENES.get(level_id, -1)),
+			level_id,
+		]
 	if WEAPON_ATTACK_SCENARIOS.has(scenario_id):
 		var scenario: Dictionary = WEAPON_ATTACK_SCENARIOS[scenario_id]
 		return str(scenario.get("description", "Weapon inventory parity probe."))
@@ -1630,6 +1657,10 @@ func _parse_level_id(arguments: PackedStringArray) -> String:
 
 func _enemy_patrol_scenario_id(level_id: String) -> String:
 	return "%s-enemy-patrol-v1" % level_id
+
+
+func _native_required_failure_scenario_id(level_id: String) -> String:
+	return level_id + NATIVE_REQUIRED_FAILURE_SUFFIX
 
 
 func _parse_move_speed(arguments: PackedStringArray) -> float:

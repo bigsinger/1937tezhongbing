@@ -144,14 +144,20 @@ consumes the press in the modal layer and closes exactly once on release so the
 same click cannot leak into gameplay. Both capture workflows assert
 `global_pointer_control=false`.
 
-`m000-native-required-player-failure-v1.json` is a paired mission-outcome
-baseline. In an isolated stable-MOD process, the probe queues fatal damage for
-scene 1436 at a process-local input boundary, invokes the original
-`sub_458700` actor-damage routine, and then only observes `sub_405410` select
-engine result 2. It never writes a mission-result field. The matching Remake
-scenario applies the same 8 HP damage through the product `take_damage()` path
-and requires `MissionRuntime` to produce `required_character_lost`.
+`m000-native-required-player-failure-v1.json` through
+`m011-native-required-player-failure-v1.json` are paired mission-outcome
+baselines. In twelve isolated stable-MOD processes, the probe queues fatal
+damage for an evaluator-required player at a process-local input boundary,
+invokes the original `sub_458700` actor-damage routine, and then only observes
+`sub_405410` select engine result 2. It never writes a mission-result field.
+The matching Remake scenarios apply the same 8 HP damage through the product
+`take_damage()` path and require `MissionRuntime` to produce
+`required_character_lost`.
 `Compare-NativeMissionFailureParity.ps1` strictly checks the actor identity,
 position, faction/runtime type, HP/alive transition, damage event and native
 active-to-failed result. The observer and replay diagnostic are opt-in through
 `M1937_MISSION_TRACE=1` and do not alter normal MOD input or cursor behavior.
+`Capture-TwelveLevelNativeMissionFailureParity.ps1` reproduces all twelve
+captures, comparisons and the summary from one isolated runtime. The audited
+scene/type/result matrix is retained in
+`twelve-level-native-mission-failure-v1.md`.

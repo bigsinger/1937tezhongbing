@@ -141,7 +141,7 @@ VWF/SLIST 本身保存场景事实，不保存一份完整的高层任务图。�
 
 除表中单独列出的限时或修复规则失败外，十二关都包含“必要角色损失”入口。现在不再采用“所有可控角色一律必要”的保守近似：`required_survivors` 精确列出原 evaluator 在该关显式检查的现役队员，`required_escort_bindings` 列出被关押/护送角色；二者死亡都会进入相同失败事件，而无关队员死亡不会误判。撤离到场成员由 `exit_party` 单独约束：m001 为古明+铁蛋爹，m002 为老赵+获救强子，m008 为老赵+大牛，m011 稳定规则为老赵+强子；其余有出口的关卡按其全部在场队员和已救护送对象判定。`real_mission_failure_matrix_test.gd` 每次重载一张真实关卡，只通过角色 `take_damage()`、`MissionRuntime.advance_time()` 或产品手动引爆入口执行一条独立轨迹；当前 43 条失败轨迹覆盖所有解析出的必要队员、全部 8 个护送 scene、m001/m007/m010 的精确限时边界和 m008 修复规则提前引爆，另有 3 条反例确认非必要死亡与稳定 m008 引爆不会误判。该矩阵不发送键鼠，也不直接注入任务事件。
 
-m000 另有一条原版与 Remake 成对的实机失败证据：隔离运行的稳定 MOD 通过原函数 `sub_458700` 将 scene 1436 从 8 HP 降到 0，随后只读观察原任务 evaluator `sub_405410` 把结果从 0 切换为失败值 2；探针没有写入任何任务结果字段。Remake 对应轨迹在真实 m000 上仅调用角色产品入口 `take_damage(32, null)`，由正常死亡事件和 `MissionRuntime` 得出 `required_character_lost`。`Compare-NativeMissionFailureParity.ps1` 对角色身份、阵营/运行类型、位置、生命值、死亡、伤害事件及 active→failed 语义执行严格比较，该路径已纳入有真实资源时的 `Verify.ps1` 门禁。
+十二关现在各有一条原版与 Remake 成对的实机必要角色失败证据：隔离运行的稳定 MOD 通过原函数 `sub_458700` 将该关 evaluator 明确检查的玩家从 8 HP 降到 0，随后只读观察原任务 evaluator `sub_405410` 把结果从 0 切换为失败值 2；探针没有写入任何任务结果字段。Remake 对应轨迹在同一真实关卡、同一 scene 上仅调用角色产品入口 `take_damage(32, null)`，由正常死亡事件和 `MissionRuntime` 得出 `required_character_lost`。`Compare-NativeMissionFailureParity.ps1` 每关对角色身份、阵营/运行类型、位置、生命值、死亡、伤害事件及 active→failed 语义执行 26 项严格比较；`Capture-TwelveLevelNativeMissionFailureParity.ps1` 可完整重采，十二关路径已纳入有真实资源时的 `Verify.ps1` 门禁。
 
 ## 关键关卡的最终控制流语义
 

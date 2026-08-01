@@ -38,7 +38,9 @@ Remake 差分测试复用。
 `sub_458700` 伤害入口。任务失败仍由下一次原 `sub_405410` 求值自然产生，
 探针不写任务结果，也不控制系统鼠标。
 
-已提交的 `m000-native-required-player-failure-v1.json` 证明 scene 1436
-从 8 HP 变为死亡后，原结果从 0 变为 2。Remake 使用同一角色与位置，
-通过产品 `take_damage()` 路径产生 `required_character_lost`；专用比较器
-对两端执行严格差分。
+已提交的 `m000`—`m011-native-required-player-failure-v1.json` 逐关证明
+evaluator 必要角色从 8 HP 变为死亡后，原结果从 0 变为 2。Remake 使用
+同一角色与位置，通过产品 `take_damage()` 路径产生
+`required_character_lost`；专用比较器每关执行 26 项严格差分。
+`Remake/tools/Capture-TwelveLevelNativeMissionFailureParity.ps1` 可在隔离
+MOD 中重采全部十二关并重放 Remake 对应轨迹。
