@@ -24,6 +24,11 @@ inline constexpr std::int32_t search_vertical_span = 16;
 inline constexpr std::int32_t search_wait_minimum_limit = 40;
 inline constexpr std::int32_t search_wait_random_span = 160;
 inline constexpr std::int32_t world_margin = 16;
+inline constexpr std::int32_t secondary_search_candidate_radius = 128;
+inline constexpr std::int32_t secondary_search_horizontal_minimum = 64;
+inline constexpr std::int32_t secondary_search_horizontal_span = 128;
+inline constexpr std::int32_t secondary_search_vertical_minimum = 32;
+inline constexpr std::int32_t secondary_search_vertical_span = 64;
 
 struct Point final {
     std::int32_t x = 0;
@@ -40,6 +45,13 @@ struct WorldBounds final {
 struct LimitSample final {
     std::uint32_t random_state = 1;
     std::int32_t limit = 0;
+};
+
+struct AlertSourceReaction final {
+    std::int32_t search_delay_limit = 0;
+    std::int32_t search_delay_counter = 0;
+    std::int32_t reaction_state = 0;
+    std::int32_t special_attention_hold = 0;
 };
 
 struct SearchPointSample final {
@@ -63,6 +75,15 @@ constexpr LimitSample sample_reaction_limit(
             reaction_minimum_limit)};
 }
 
+constexpr AlertSourceReaction alert_source_reaction_from_random(
+    std::int32_t random_value) noexcept {
+    return {
+        random_value % reaction_random_span + reaction_minimum_limit,
+        0,
+        0,
+        0};
+}
+
 constexpr bool counter_has_completed(
     std::int32_t counter,
     std::int32_t limit) noexcept {
@@ -78,6 +99,70 @@ constexpr bool alert_recipient_is_eligible(
         runtime_type != excluded_alert_runtime_type &&
         alive &&
         !has_unlost_live_contact;
+}
+
+constexpr bool secondary_search_runtime_type_enabled(
+    std::int32_t runtime_type) noexcept {
+    switch (runtime_type) {
+    case 16:
+    case 20:
+    case 25:
+    case 27:
+    case 28:
+    case 29:
+        return true;
+    default:
+        return false;
+    }
+}
+
+constexpr bool secondary_search_candidate_is_eligible(
+    std::int32_t faction_id,
+    bool alive) noexcept {
+    return faction_id == enemy_faction_id && alive;
+}
+
+constexpr bool is_within_secondary_search_radius(
+    Point source,
+    Point candidate) noexcept {
+    const auto delta_x =
+        static_cast<std::int64_t>(candidate.x) - source.x;
+    const auto delta_y =
+        static_cast<std::int64_t>(candidate.y) - source.y;
+    return delta_x * delta_x + delta_y * delta_y <
+        static_cast<std::int64_t>(secondary_search_candidate_radius) *
+            secondary_search_candidate_radius;
+}
+
+constexpr Point secondary_search_point_from_values(
+    std::int32_t horizontal_value,
+    std::int32_t vertical_value,
+    std::int32_t horizontal_sign_value,
+    std::int32_t vertical_sign_value,
+    Point origin,
+    WorldBounds bounds) noexcept {
+    auto offset_x =
+        horizontal_value % secondary_search_horizontal_span +
+        secondary_search_horizontal_minimum;
+    auto offset_y =
+        vertical_value % secondary_search_vertical_span +
+        secondary_search_vertical_minimum;
+    if (horizontal_sign_value % 2 != 0)
+        offset_x = -offset_x;
+    if (vertical_sign_value % 2 != 0)
+        offset_y = -offset_y;
+    Point result{origin.x + offset_x, origin.y + offset_y};
+    // sub_45CE90 keeps positive coordinates inside the margin and only
+    // corrects a value after it crosses an outer world edge.
+    if (result.x <= bounds.minimum_x)
+        result.x = bounds.minimum_x + world_margin;
+    else if (result.x >= bounds.maximum_x)
+        result.x = bounds.maximum_x - world_margin;
+    if (result.y <= bounds.minimum_y)
+        result.y = bounds.minimum_y + world_margin;
+    else if (result.y >= bounds.maximum_y)
+        result.y = bounds.maximum_y - world_margin;
+    return result;
 }
 
 constexpr bool is_within_alert_ellipse(
@@ -157,6 +242,20 @@ static_assert(
     is_within_alert_ellipse({0, 0}, {320, 320}));
 static_assert(alert_recipient_is_eligible(1, 6, true, false));
 static_assert(!alert_recipient_is_eligible(1, 91, true, false));
+static_assert(
+    alert_source_reaction_from_random(18467).search_delay_limit == 67);
+static_assert(secondary_search_runtime_type_enabled(16));
+static_assert(secondary_search_runtime_type_enabled(29));
+static_assert(!secondary_search_runtime_type_enabled(19));
+static_assert(
+    secondary_search_candidate_is_eligible(1, true) &&
+    !secondary_search_candidate_is_eligible(2, true));
+static_assert(
+    is_within_secondary_search_radius({0, 0}, {127, 0}) &&
+    !is_within_secondary_search_radius({0, 0}, {128, 0}));
+static_assert(
+    secondary_search_point_from_values(
+        0, 0, 0, 0, {100, 100}, {0, 0, 1000, 500}).x == 164);
 static_assert(!counter_has_completed(40, 40));
 static_assert(counter_has_completed(41, 40));
 static_assert(offsetof(RuntimeActorV1, runtime_type) == 0x064);

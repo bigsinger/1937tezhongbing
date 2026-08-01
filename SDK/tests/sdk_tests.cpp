@@ -265,7 +265,7 @@ int main(int argc, char** argv) {
                 checks);
         }
         require(
-            formal_site_count == 114 &&
+            formal_site_count == 110 &&
                 find_call_site(0) == nullptr,
             "CRT rand formal-mission classification mismatch", checks);
         }
@@ -703,6 +703,50 @@ int main(int argc, char** argv) {
                 !alert_recipient_is_eligible(1, 6, false, false) &&
                 !alert_recipient_is_eligible(1, 6, true, true),
             "original coordinate-alert recipient filter mismatch", checks);
+        const auto source_reaction =
+            alert_source_reaction_from_random(18467);
+        require(
+            source_reaction.search_delay_limit == 67 &&
+                source_reaction.search_delay_counter == 0 &&
+                source_reaction.reaction_state == 0 &&
+                source_reaction.special_attention_hold == 0,
+            "coordinate-alert source-side reaction write mismatch", checks);
+        require(
+            secondary_search_runtime_type_enabled(16) &&
+                secondary_search_runtime_type_enabled(20) &&
+                secondary_search_runtime_type_enabled(25) &&
+                secondary_search_runtime_type_enabled(27) &&
+                secondary_search_runtime_type_enabled(28) &&
+                secondary_search_runtime_type_enabled(29) &&
+                !secondary_search_runtime_type_enabled(19) &&
+                !secondary_search_runtime_type_enabled(30),
+            "secondary-search runtime-type dispatcher mismatch", checks);
+        require(
+            secondary_search_candidate_is_eligible(1, true) &&
+                !secondary_search_candidate_is_eligible(2, true) &&
+                !secondary_search_candidate_is_eligible(1, false) &&
+                is_within_secondary_search_radius(
+                    {0, 0}, {127, 0}) &&
+                !is_within_secondary_search_radius(
+                    {0, 0}, {128, 0}),
+            "secondary-search strict candidate filter mismatch", checks);
+        const WorldBounds secondary_bounds{0, 0, 1000, 500};
+        require(
+            secondary_search_point_from_values(
+                0, 0, 0, 0, {100, 100}, secondary_bounds).x == 164 &&
+                secondary_search_point_from_values(
+                    0, 0, 0, 0, {100, 100}, secondary_bounds).y == 132 &&
+                secondary_search_point_from_values(
+                    0, 0, 1, 1, {100, 100}, secondary_bounds).x == 36 &&
+                secondary_search_point_from_values(
+                    0, 0, 1, 1, {100, 100}, secondary_bounds).y == 68 &&
+                secondary_search_point_from_values(
+                    0, 0, 1, 1, {70, 50}, secondary_bounds).x == 6 &&
+                secondary_search_point_from_values(
+                    0, 0, 1, 1, {10, 10}, secondary_bounds).x == 16 &&
+                secondary_search_point_from_values(
+                    0, 0, 0, 0, {950, 480}, secondary_bounds).x == 984,
+            "secondary-search destination sampling mismatch", checks);
         auto original_random_state = 0x1937u;
         for (int sample_index = 0; sample_index < 512; ++sample_index) {
             const auto reaction =

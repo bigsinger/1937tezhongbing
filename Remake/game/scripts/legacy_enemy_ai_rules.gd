@@ -24,6 +24,20 @@ const SEARCH_VERTICAL_SPAN := 16
 const SEARCH_WAIT_MINIMUM_LIMIT := 40
 const SEARCH_WAIT_RANDOM_SPAN := 160
 const WORLD_MARGIN := 16.0
+## sub_454960 dispatches these six runtime types to sub_45CE90.
+const SECONDARY_SEARCH_RUNTIME_TYPES: Array[int] = [
+	16,
+	20,
+	25,
+	27,
+	28,
+	29,
+]
+const SECONDARY_SEARCH_CANDIDATE_RADIUS := 128.0
+const SECONDARY_SEARCH_HORIZONTAL_MINIMUM := 64
+const SECONDARY_SEARCH_HORIZONTAL_SPAN := 128
+const SECONDARY_SEARCH_VERTICAL_MINIMUM := 32
+const SECONDARY_SEARCH_VERTICAL_SPAN := 64
 
 
 static func msvc_rand_step(state: int) -> int:
@@ -178,3 +192,62 @@ static func alert_recipient_is_eligible(
 		and is_alive
 		and not has_unlost_live_contact
 	)
+
+
+static func secondary_search_runtime_type_enabled(
+	runtime_actor_type: int,
+) -> bool:
+	return runtime_actor_type in SECONDARY_SEARCH_RUNTIME_TYPES
+
+
+static func secondary_search_candidate_is_eligible(
+	faction_id: int,
+	is_alive: bool,
+) -> bool:
+	return faction_id == ENEMY_FACTION_ID and is_alive
+
+
+static func is_within_secondary_search_radius(
+	source_position: Vector2,
+	candidate_position: Vector2,
+) -> bool:
+	return (
+		source_position.distance_squared_to(candidate_position)
+		< (
+			SECONDARY_SEARCH_CANDIDATE_RADIUS
+			* SECONDARY_SEARCH_CANDIDATE_RADIUS
+		)
+	)
+
+
+static func secondary_search_point_from_values(
+	values: Array[int],
+	origin: Vector2,
+	world_bounds: Rect2,
+) -> Vector2:
+	if values.size() != 4:
+		return origin
+	var offset_x := (
+		values[0] % SECONDARY_SEARCH_HORIZONTAL_SPAN
+		+ SECONDARY_SEARCH_HORIZONTAL_MINIMUM
+	)
+	var offset_y := (
+		values[1] % SECONDARY_SEARCH_VERTICAL_SPAN
+		+ SECONDARY_SEARCH_VERTICAL_MINIMUM
+	)
+	if values[2] % 2 > 0:
+		offset_x = -offset_x
+	if values[3] % 2 > 0:
+		offset_y = -offset_y
+	var point := origin + Vector2(offset_x, offset_y)
+	# sub_45CE90 only clamps a coordinate after it crosses an outer edge.
+	# A still-positive coordinate inside the 16-pixel band is retained.
+	if point.x <= world_bounds.position.x:
+		point.x = world_bounds.position.x + WORLD_MARGIN
+	elif point.x >= world_bounds.end.x:
+		point.x = world_bounds.end.x - WORLD_MARGIN
+	if point.y <= world_bounds.position.y:
+		point.y = world_bounds.position.y + WORLD_MARGIN
+	elif point.y >= world_bounds.end.y:
+		point.y = world_bounds.end.y - WORLD_MARGIN
+	return point

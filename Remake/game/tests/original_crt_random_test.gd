@@ -36,6 +36,7 @@ func _init() -> void:
 	_test_exact_first_gameplay_update_replay()
 	_test_first_gameplay_actor_side_effects()
 	_test_twelve_level_runtime_state_and_pursuit()
+	_test_recurring_secondary_search_runtime()
 	_test_recovered_shared_counter_cadence()
 	_test_original_ambient_particle_stream()
 	_test_imported_actor_profile_and_gate()
@@ -425,7 +426,7 @@ func _test_first_gameplay_actor_side_effects() -> void:
 	var candidate_actor = SQUAD_UNIT_SCRIPT.new()
 	candidate_actor.scene_index = 1621
 	candidate_actor.configure_runtime_actor_type({
-		"database_header_values": [0, 0, 20],
+		"database_header_values": [0, 0, 33],
 		"original_runtime_profile": {"runtime_index": 125},
 	})
 	candidate_actor.bind_original_crt_random_source(
@@ -1100,6 +1101,210 @@ func _test_timing_snapshot_round_trip() -> void:
 	)
 	source.free()
 	restored.free()
+	game.free()
+
+
+func _test_recurring_secondary_search_runtime() -> void:
+	var game = MAIN_SCRIPT.new()
+	game.world_size = Vector2(1000.0, 500.0)
+	game.legacy_crt_random_trace_enabled = true
+	var source = SQUAD_UNIT_SCRIPT.new()
+	source.position = Vector2(100.0, 100.0)
+	source.scene_index = 700
+	source.configure_runtime_actor_type({
+		"database_header_values": [0, 0, 29],
+		"original_runtime_profile": {"runtime_index": 20},
+	})
+	source.bind_original_crt_random_source(game, "m004", 0)
+	var later_candidate = SQUAD_UNIT_SCRIPT.new()
+	later_candidate.position = Vector2(110.0, 100.0)
+	later_candidate.scene_index = 701
+	later_candidate.faction_id = 1
+	later_candidate.configure_runtime_actor_type({
+		"database_header_values": [0, 0, 6],
+		"original_runtime_profile": {"runtime_index": 9},
+	})
+	var first_candidate = SQUAD_UNIT_SCRIPT.new()
+	first_candidate.position = Vector2(120.0, 100.0)
+	first_candidate.scene_index = 702
+	first_candidate.faction_id = 1
+	first_candidate.configure_runtime_actor_type({
+		"database_header_values": [0, 0, 6],
+		"original_runtime_profile": {"runtime_index": 5},
+	})
+	game.units.append(source)
+	game.units.append(later_candidate)
+	game.units.append(first_candidate)
+	_expect(
+		game.first_original_secondary_search_candidate(
+			source,
+			128.0,
+		) == first_candidate,
+		"secondary candidate scan preserves native runtime-index insertion order",
+	)
+	var cache_rebuild_serial: int = (
+		game.original_runtime_actor_order_cache_rebuild_serial
+	)
+	_expect(
+		game.first_original_secondary_search_candidate(
+			source,
+			128.0,
+		) == first_candidate
+		and game.original_runtime_actor_order_cache_rebuild_serial
+			== cache_rebuild_serial,
+		"unchanged actor collections reuse the sorted runtime-order cache",
+	)
+	var dynamic_candidate = SQUAD_UNIT_SCRIPT.new()
+	dynamic_candidate.position = Vector2(115.0, 100.0)
+	dynamic_candidate.scene_index = 703
+	dynamic_candidate.faction_id = 1
+	dynamic_candidate.configure_runtime_actor_type({
+		"database_header_values": [0, 0, 6],
+		"original_runtime_profile": {"runtime_index": 3},
+	})
+	game.units.append(dynamic_candidate)
+	_expect(
+		game.first_original_secondary_search_candidate(
+			source,
+			128.0,
+		) == dynamic_candidate
+		and game.original_runtime_actor_order_cache.size() == 4
+		and game.original_runtime_actor_order_cache_rebuild_serial
+			== cache_rebuild_serial + 1,
+		"dynamic actor insertion invalidates and rebuilds the order cache",
+	)
+	dynamic_candidate.faction_id = 2
+
+	game.legacy_crt_random_state = 3
+	game.legacy_crt_random_draw_index = 0
+	game.legacy_crt_random_trace.clear()
+	source.call("_advance_original_secondary_search_once")
+	_expect(
+		source.original_secondary_search_gate_serial == 1
+		and source.original_secondary_search_last_gate_value % 2 == 0
+		and source.original_secondary_search_trigger_serial == 0
+		and not source.original_secondary_search_contact_state
+		and game.legacy_crt_random_trace.size() == 1
+		and int(game.legacy_crt_random_trace[0].get(
+			"call_site_rva",
+			0,
+		)) == 0x0005CEA6,
+		"even secondary gate consumes only the exact candidate-scan draw",
+	)
+
+	first_candidate.faction_id = 2
+	later_candidate.faction_id = 2
+	game.legacy_crt_random_state = 1
+	game.legacy_crt_random_draw_index = 0
+	game.legacy_crt_random_trace.clear()
+	source.call("_advance_original_secondary_search_once")
+	_expect(
+		source.original_secondary_search_gate_serial == 2
+		and source.original_secondary_search_last_gate_value % 2 == 1
+		and source.original_secondary_search_trigger_serial == 0
+		and game.legacy_crt_random_trace.size() == 1,
+		"odd gate without a nearby faction-1 actor consumes no destination draws",
+	)
+
+	first_candidate.faction_id = 1
+	game.legacy_crt_random_state = 1
+	game.legacy_crt_random_draw_index = 0
+	game.legacy_crt_random_trace.clear()
+	source.call("_advance_original_secondary_search_once")
+	var expected_sites := PackedInt32Array([
+		0x0005CEA6,
+		0x0005CF33,
+		0x0005CF4A,
+		0x0005CF61,
+		0x0005CF78,
+	])
+	var actual_sites := PackedInt32Array()
+	for record: Dictionary in game.legacy_crt_random_trace:
+		actual_sites.append(int(record.get("call_site_rva", 0)))
+	_expect(
+		actual_sites == expected_sites
+		and source.original_secondary_search_contact_state
+		and source.original_secondary_search_trigger_serial == 1
+		and source.original_secondary_search_last_candidate_runtime_index
+			== 5
+		and source.original_secondary_search_last_goal
+			== Vector2(199.0, 6.0)
+		and not source.original_secondary_search_last_navigation_applied,
+		"odd gate applies the four exact sub_45CE90 destination draws",
+	)
+
+	var draws_after_trigger: int = game.legacy_crt_random_draw_index
+	source.call("_advance_original_secondary_search_once")
+	_expect(
+		not source.original_secondary_search_contact_state
+		and game.legacy_crt_random_draw_index == draws_after_trigger,
+		"first idle tick after a secondary route clears contact without a gate",
+	)
+	source.movement_path = PackedVector2Array([
+		source.position + Vector2(32.0, 0.0),
+	])
+	source.movement_path_index = 0
+	source.original_secondary_search_contact_state = true
+	source.call("_advance_original_secondary_search_once")
+	_expect(
+		source.original_secondary_search_contact_state
+		and game.legacy_crt_random_draw_index == draws_after_trigger,
+		"active secondary route suppresses all candidate random calls",
+	)
+	source.movement_path.clear()
+	source.movement_path_index = 0
+	source.call("_advance_original_secondary_search_once")
+	_expect(
+		not source.original_secondary_search_contact_state
+		and game.legacy_crt_random_draw_index == draws_after_trigger,
+		"route completion clears contact on its own native update",
+	)
+	source.call("_advance_original_secondary_search_once")
+	_expect(
+		game.legacy_crt_random_draw_index == draws_after_trigger + 1,
+		"candidate gating resumes on the update after contact is cleared",
+	)
+
+	source.original_secondary_search_elapsed = 0.0125
+	source.original_secondary_search_contact_state = true
+	source.original_secondary_search_gate_serial = 11
+	source.original_secondary_search_trigger_serial = 4
+	source.original_secondary_search_last_gate_value = 10141
+	source.original_secondary_search_last_candidate_runtime_index = 5
+	source.original_secondary_search_last_goal = Vector2(321.0, 123.0)
+	source.original_secondary_search_last_navigation_applied = true
+	var snapshot: Dictionary = (
+		source.original_crt_random_timing_snapshot()
+	)
+	var restored = SQUAD_UNIT_SCRIPT.new()
+	restored.scene_index = 700
+	restored.configure_runtime_actor_type({
+		"database_header_values": [0, 0, 29],
+		"original_runtime_profile": {"runtime_index": 20},
+	})
+	restored.bind_original_crt_random_source(game, "m004", 0)
+	_expect(
+		restored.restore_original_crt_random_timing(snapshot)
+		and is_equal_approx(
+			restored.original_secondary_search_elapsed,
+			0.0125,
+		)
+		and restored.original_secondary_search_contact_state
+		and restored.original_secondary_search_gate_serial == 11
+		and restored.original_secondary_search_trigger_serial == 4
+		and restored.original_secondary_search_last_gate_value == 10141
+		and restored.original_secondary_search_last_candidate_runtime_index
+			== 5
+		and restored.original_secondary_search_last_goal
+			== Vector2(321.0, 123.0)
+		and restored.original_secondary_search_last_navigation_applied,
+		"secondary-search phase and active contact survive save/load",
+	)
+	restored.free()
+	source.free()
+	later_candidate.free()
+	first_candidate.free()
+	dynamic_candidate.free()
 	game.free()
 
 

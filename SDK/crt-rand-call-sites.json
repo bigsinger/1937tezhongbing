@@ -306,15 +306,15 @@
     {
       "caller_rva": "0x0005DFC0",
       "engine_symbol": "sub_45DFC0",
-      "semantic_name": "investigate_nearby_special_actor",
+      "semantic_name": "dormant_unreferenced_special_actor_search",
       "domain": "enemy_ai",
-      "formal_missions": true,
+      "formal_missions": false,
       "confidence": "disassembled",
       "operations": [
-        {"purpose": "investigation_x_magnitude_rand_mod_128_plus_64", "sites": ["0x0005E078"]},
-        {"purpose": "investigation_y_magnitude_rand_mod_64_plus_32", "sites": ["0x0005E08F"]},
-        {"purpose": "investigation_x_sign_rand_mod_2", "sites": ["0x0005E0A6"]},
-        {"purpose": "investigation_y_sign_rand_mod_2", "sites": ["0x0005E0BD"]}
+        {"purpose": "dormant_x_magnitude_rand_mod_128_plus_64", "sites": ["0x0005E078"]},
+        {"purpose": "dormant_y_magnitude_rand_mod_64_plus_32", "sites": ["0x0005E08F"]},
+        {"purpose": "dormant_x_sign_rand_mod_2", "sites": ["0x0005E0A6"]},
+        {"purpose": "dormant_y_sign_rand_mod_2", "sites": ["0x0005E0BD"]}
       ]
     },
     {

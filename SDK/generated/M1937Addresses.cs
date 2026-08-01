@@ -112,9 +112,11 @@ namespace Mission1937.SDK.Generated
         public const long ObservationMarkerScan = 0x0005C320L;
         public const long PlayerGroundCommandResetCall = 0x00058B81L;
         public const long EnemyAiUpdate = 0x0005C710L;
+        public const long SecondaryEnemySearchUpdate = 0x0005CE90L;
         public const long OriginalLocalSearchPoint = 0x0005D060L;
+        public const long FindNearbySecondarySearchCandidate = 0x0005DCE0L;
         public const long AlertPropagation = 0x0005DDA0L;
-        public const long InvestigateNearbySpecialActor = 0x0005DFC0L;
+        public const long DormantUnreferencedSpecialActorSearch = 0x0005DFC0L;
         public const long OriginalLocalSearchContinue = 0x0005E4B0L;
         public const long LoadGameFile = 0x0004BB00L;
         public const long SaveGameFile = 0x0004BEA0L;

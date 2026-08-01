@@ -100,6 +100,68 @@ func _test_exact_alert_geometry_and_eligibility() -> void:
 		and RULES.counter_has_completed(41, 40),
 		"reaction and search counters use the recovered strict greater-than transition",
 	)
+	var enabled_secondary_types: Array[int] = []
+	for runtime_type: int in range(100):
+		if RULES.secondary_search_runtime_type_enabled(runtime_type):
+			enabled_secondary_types.append(runtime_type)
+	_expect(
+		enabled_secondary_types == [16, 20, 25, 27, 28, 29],
+		"sub_454960 dispatches exactly six runtime types to secondary search",
+	)
+	_expect(
+		RULES.secondary_search_candidate_is_eligible(1, true)
+		and not RULES.secondary_search_candidate_is_eligible(2, true)
+		and not RULES.secondary_search_candidate_is_eligible(1, false),
+		"secondary search accepts only living faction-1 actors",
+	)
+	_expect(
+		RULES.is_within_secondary_search_radius(
+			Vector2.ZERO,
+			Vector2(127.0, 0.0),
+		)
+		and not RULES.is_within_secondary_search_radius(
+			Vector2.ZERO,
+			Vector2(128.0, 0.0),
+		),
+		"sub_45DCE0 uses a strict 128-pixel candidate boundary",
+	)
+	var secondary_bounds := Rect2(
+		Vector2.ZERO,
+		Vector2(1000.0, 500.0),
+	)
+	var secondary_positive_values: Array[int] = [0, 0, 0, 0]
+	var secondary_negative_values: Array[int] = [0, 0, 1, 1]
+	_expect(
+		RULES.secondary_search_point_from_values(
+			secondary_positive_values,
+			Vector2(100.0, 100.0),
+			secondary_bounds,
+		) == Vector2(164.0, 132.0)
+		and RULES.secondary_search_point_from_values(
+			secondary_negative_values,
+			Vector2(100.0, 100.0),
+			secondary_bounds,
+		) == Vector2(36.0, 68.0),
+		"secondary destination uses recovered +64/+32 magnitudes and sign draws",
+	)
+	_expect(
+		RULES.secondary_search_point_from_values(
+			secondary_negative_values,
+			Vector2(70.0, 50.0),
+			secondary_bounds,
+		) == Vector2(6.0, 18.0)
+		and RULES.secondary_search_point_from_values(
+			secondary_negative_values,
+			Vector2(10.0, 10.0),
+			secondary_bounds,
+		) == Vector2(16.0, 16.0)
+		and RULES.secondary_search_point_from_values(
+			secondary_positive_values,
+			Vector2(950.0, 480.0),
+			secondary_bounds,
+		) == Vector2(984.0, 484.0),
+		"secondary destination clamps only after crossing a world edge",
+	)
 
 	var minimum_reaction := 1000
 	var maximum_reaction := -1
@@ -252,6 +314,8 @@ func _test_original_coordinate_broadcast() -> void:
 		source.position + Vector2(639.0, 0.0),
 		navigation,
 	)
+	horizontal_inside.legacy_search_wait_limit = 55
+	horizontal_inside.legacy_search_wait_counter = 7
 	var horizontal_boundary = _enemy(
 		22,
 		source.position + Vector2(640.0, 0.0),
@@ -262,6 +326,8 @@ func _test_original_coordinate_broadcast() -> void:
 		source.position + Vector2(0.0, 319.0),
 		navigation,
 	)
+	vertical_inside.legacy_search_wait_limit = 61
+	vertical_inside.legacy_search_wait_counter = 9
 	var vertical_boundary = _enemy(
 		24,
 		source.position + Vector2(0.0, 320.0),
@@ -296,6 +362,10 @@ func _test_original_coordinate_broadcast() -> void:
 		busy,
 	]
 	var main = MAIN.new()
+	main.legacy_crt_random_trace_enabled = true
+	source.original_ai_idle_tick_counter = 12
+	source.original_ai_idle_tick_limit = 40
+	source.special_control_lock_count = 2
 	for recipient: ENEMY_UNIT in recipients:
 		main.enemies.append(recipient)
 	var alerted_count: int = main.call(
@@ -320,6 +390,31 @@ func _test_original_coordinate_broadcast() -> void:
 		and horizontal_inside.last_known_target_position == source.position
 		and vertical_inside.last_known_target_position == source.position,
 		"broadcast writes the source coordinate without assigning a target pointer",
+	)
+	var reaction_sites_match: bool = (
+		main.legacy_crt_random_trace.size() == 2
+	)
+	for record: Dictionary in main.legacy_crt_random_trace:
+		reaction_sites_match = (
+			reaction_sites_match
+			and int(record.get("call_site_rva", 0)) == 0x0005DF71
+		)
+	_expect(
+		reaction_sites_match
+		and main.legacy_crt_random_draw_index == 2
+		and source.original_ai_idle_tick_counter == 0
+		and source.original_ai_idle_tick_limit == 67
+		and source.legacy_search_wait_counter == 0
+		and source.legacy_search_wait_limit == 67
+		and source.special_control_lock_count == 0,
+		"each accepted recipient consumes a source-side 40..79 reaction draw",
+	)
+	_expect(
+		horizontal_inside.legacy_search_wait_limit == 55
+		and horizontal_inside.legacy_search_wait_counter == 7
+		and vertical_inside.legacy_search_wait_limit == 61
+		and vertical_inside.legacy_search_wait_counter == 9,
+		"coordinate alert does not invent a recipient-side reaction draw",
 	)
 	_expect(
 		horizontal_boundary.behavior_state

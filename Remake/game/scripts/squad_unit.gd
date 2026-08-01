@@ -115,6 +115,16 @@ var original_crt_primary_candidate_scan_passed := false
 var original_crt_primary_candidate_scan_serial := 0
 var original_crt_primary_candidate_last_physics_frame := -1
 var original_crt_runtime_state_profile: Dictionary = {}
+var original_secondary_search_enabled := false
+var original_secondary_search_elapsed := 0.0
+var original_secondary_search_contact_state := false
+var original_secondary_search_gate_serial := 0
+var original_secondary_search_trigger_serial := 0
+var original_secondary_search_last_gate_value := -1
+var original_secondary_search_last_candidate_runtime_index := -1
+var original_secondary_search_last_goal := Vector2.ZERO
+var original_secondary_search_last_navigation_applied := false
+var original_secondary_search_last_physics_frame := -1
 var original_pursuit_target_runtime_index := -1
 var original_pursuit_target: Node2D
 var original_pursuit_call_site_rva := 0
@@ -281,6 +291,16 @@ func configure(
 	original_crt_primary_candidate_scan_serial = 0
 	original_crt_primary_candidate_last_physics_frame = -1
 	original_crt_runtime_state_profile.clear()
+	original_secondary_search_enabled = false
+	original_secondary_search_elapsed = 0.0
+	original_secondary_search_contact_state = false
+	original_secondary_search_gate_serial = 0
+	original_secondary_search_trigger_serial = 0
+	original_secondary_search_last_gate_value = -1
+	original_secondary_search_last_candidate_runtime_index = -1
+	original_secondary_search_last_goal = Vector2.ZERO
+	original_secondary_search_last_navigation_applied = false
+	original_secondary_search_last_physics_frame = -1
 	original_pursuit_target_runtime_index = -1
 	original_pursuit_target = null
 	original_pursuit_call_site_rva = 0
@@ -515,6 +535,11 @@ func configure_runtime_actor_type(entity: Dictionary) -> int:
 		)
 	else:
 		original_runtime_index = -1
+	original_secondary_search_enabled = (
+		AI_IDLE_RANDOM_RULES.secondary_search_runtime_type_enabled(
+			runtime_actor_type
+		)
+	)
 	return runtime_actor_type
 
 
@@ -553,6 +578,20 @@ func bind_original_crt_random_source(
 	original_crt_primary_candidate_scan_passed = false
 	original_crt_primary_candidate_scan_serial = 0
 	original_crt_primary_candidate_last_physics_frame = -1
+	original_secondary_search_enabled = (
+		AI_IDLE_RANDOM_RULES.secondary_search_runtime_type_enabled(
+			runtime_actor_type
+		)
+	)
+	original_secondary_search_elapsed = 0.0
+	original_secondary_search_contact_state = false
+	original_secondary_search_gate_serial = 0
+	original_secondary_search_trigger_serial = 0
+	original_secondary_search_last_gate_value = -1
+	original_secondary_search_last_candidate_runtime_index = -1
+	original_secondary_search_last_goal = Vector2.ZERO
+	original_secondary_search_last_navigation_applied = false
+	original_secondary_search_last_physics_frame = -1
 	original_crt_runtime_state_profile = (
 		ORIGINAL_CRT_RANDOM_RUNTIME_STATE.actor_profile(
 			level_id,
@@ -766,6 +805,7 @@ func original_crt_random_timing_snapshot() -> Dictionary:
 		"primary_candidate_scan_serial": (
 			original_crt_primary_candidate_scan_serial
 		),
+		"secondary_search": original_secondary_search_snapshot(),
 		"pursuit": original_pursuit_snapshot(),
 		"first_gameplay_update_serial": (
 			original_first_gameplay_update_serial
@@ -844,6 +884,56 @@ func restore_original_crt_random_timing(state: Dictionary) -> bool:
 		int(state.get("primary_candidate_scan_serial", 0)),
 		0,
 	)
+	var secondary_search_value: Variant = state.get(
+		"secondary_search",
+		{},
+	)
+	if secondary_search_value is Dictionary:
+		var secondary_search_state := (
+			secondary_search_value as Dictionary
+		)
+		if (
+			bool(secondary_search_state.get(
+				"enabled",
+				original_secondary_search_enabled,
+			)) != original_secondary_search_enabled
+		):
+			return false
+		original_secondary_search_elapsed = clampf(
+			float(secondary_search_state.get("elapsed", 0.0)),
+			0.0,
+			ORIGINAL_ACTOR_RANDOM_TICK_SECONDS,
+		)
+		original_secondary_search_contact_state = bool(
+			secondary_search_state.get("contact_state", false)
+		)
+		original_secondary_search_gate_serial = maxi(
+			int(secondary_search_state.get("gate_serial", 0)),
+			0,
+		)
+		original_secondary_search_trigger_serial = maxi(
+			int(secondary_search_state.get("trigger_serial", 0)),
+			0,
+		)
+		original_secondary_search_last_gate_value = int(
+			secondary_search_state.get("last_gate_value", -1)
+		)
+		original_secondary_search_last_candidate_runtime_index = int(
+			secondary_search_state.get(
+				"last_candidate_runtime_index",
+				-1,
+			)
+		)
+		original_secondary_search_last_goal = Vector2(
+			float(secondary_search_state.get("last_goal_x", 0.0)),
+			float(secondary_search_state.get("last_goal_y", 0.0)),
+		)
+		original_secondary_search_last_navigation_applied = bool(
+			secondary_search_state.get(
+				"last_navigation_applied",
+				false,
+			)
+		)
 	var pursuit_value: Variant = state.get("pursuit", {})
 	if pursuit_value is Dictionary:
 		var pursuit_state := pursuit_value as Dictionary
@@ -929,14 +1019,160 @@ func restore_original_crt_random_timing(state: Dictionary) -> bool:
 	)
 	original_crt_last_physics_frame = -1
 	original_crt_primary_candidate_last_physics_frame = -1
+	original_secondary_search_last_physics_frame = -1
 	original_pursuit_last_physics_frame = -1
 	return true
 
 
 func _advance_original_crt_actor_random_tick(delta: float) -> void:
 	_advance_original_crt_observation_gate(delta)
-	_advance_original_pursuit(delta)
+	if original_secondary_search_enabled:
+		_advance_original_secondary_search(delta)
+	else:
+		_advance_original_pursuit(delta)
 	_advance_original_crt_primary_candidate_scan(delta)
+
+
+func original_secondary_search_snapshot() -> Dictionary:
+	return {
+		"enabled": original_secondary_search_enabled,
+		"elapsed": original_secondary_search_elapsed,
+		"contact_state": original_secondary_search_contact_state,
+		"gate_serial": original_secondary_search_gate_serial,
+		"trigger_serial": original_secondary_search_trigger_serial,
+		"last_gate_value": original_secondary_search_last_gate_value,
+		"last_candidate_runtime_index": (
+			original_secondary_search_last_candidate_runtime_index
+		),
+		"last_goal_x": original_secondary_search_last_goal.x,
+		"last_goal_y": original_secondary_search_last_goal.y,
+		"last_navigation_applied": (
+			original_secondary_search_last_navigation_applied
+		),
+	}
+
+
+func _advance_original_secondary_search(delta: float) -> void:
+	var physics_frame := Engine.get_physics_frames()
+	if original_secondary_search_last_physics_frame == physics_frame:
+		return
+	original_secondary_search_last_physics_frame = physics_frame
+	if (
+		not original_secondary_search_enabled
+		or not is_alive
+		or original_crt_random_source == null
+		or not is_instance_valid(original_crt_random_source)
+	):
+		return
+	original_secondary_search_elapsed += maxf(delta, 0.0)
+	while (
+		original_secondary_search_elapsed
+		>= ORIGINAL_ACTOR_RANDOM_TICK_SECONDS
+	):
+		original_secondary_search_elapsed -= (
+			ORIGINAL_ACTOR_RANDOM_TICK_SECONDS
+		)
+		_advance_original_secondary_search_once()
+
+
+func _advance_original_secondary_search_once() -> bool:
+	if (
+		not original_secondary_search_enabled
+		or not is_alive
+		or original_crt_random_source == null
+		or not is_instance_valid(original_crt_random_source)
+	):
+		return false
+	var candidate: Node2D
+	if not original_secondary_search_contact_state:
+		var gate_value := next_original_crt_random_value(0x0005CEA6)
+		if gate_value < 0:
+			return false
+		original_secondary_search_gate_serial += 1
+		original_secondary_search_last_gate_value = gate_value
+		if (
+			gate_value % 2 > 0
+			and original_crt_random_source.has_method(
+				"first_original_secondary_search_candidate"
+			)
+		):
+			var candidate_value: Variant = (
+				original_crt_random_source.call(
+					"first_original_secondary_search_candidate",
+					self,
+					AI_IDLE_RANDOM_RULES
+					. SECONDARY_SEARCH_CANDIDATE_RADIUS,
+				)
+			)
+			if (
+				candidate_value is Node2D
+				and is_instance_valid(candidate_value as Node2D)
+			):
+				candidate = candidate_value as Node2D
+	var candidate_found := (
+		candidate != null and is_instance_valid(candidate)
+	)
+	if original_secondary_search_contact_state or candidate_found:
+		if original_secondary_search_contact_state:
+			if movement_path_index < movement_path.size():
+				_advance_original_pursuit_once()
+				return true
+			# sub_45CE90 clears contact on this tick and resumes candidate
+			# gating only on the following actor update.
+			original_secondary_search_contact_state = false
+		if candidate_found:
+			var values := next_original_crt_random_values([
+				0x0005CF33,
+				0x0005CF4A,
+				0x0005CF61,
+				0x0005CF78,
+			])
+			if values.size() != 4:
+				return false
+			original_secondary_search_last_goal = (
+				AI_IDLE_RANDOM_RULES
+				. secondary_search_point_from_values(
+					values,
+					position,
+					_original_secondary_search_world_bounds(),
+				)
+			)
+			original_secondary_search_contact_state = true
+			original_secondary_search_trigger_serial += 1
+			original_secondary_search_last_candidate_runtime_index = (
+				int(candidate.get("original_runtime_index"))
+			)
+			original_secondary_search_last_navigation_applied = (
+				_issue_original_first_gameplay_path(
+					original_secondary_search_last_goal
+				)
+			)
+		_advance_original_pursuit_once()
+		return true
+	# sub_45CE90 reaches sub_45D330 both before and after its route/local-search
+	# fallback when neither an active contact nor a candidate is present.
+	_advance_original_pursuit_once()
+	_advance_original_pursuit_once()
+	return true
+
+
+func _original_secondary_search_world_bounds() -> Rect2:
+	if (
+		original_crt_random_source != null
+		and is_instance_valid(original_crt_random_source)
+		and original_crt_random_source.has_method(
+			"original_secondary_search_world_bounds"
+		)
+	):
+		var bounds_value: Variant = original_crt_random_source.call(
+			"original_secondary_search_world_bounds"
+		)
+		if bounds_value is Rect2:
+			return bounds_value as Rect2
+	return Rect2(
+		Vector2.ZERO,
+		Vector2(1_000_000.0, 1_000_000.0),
+	)
 
 
 func _advance_original_pursuit(delta: float) -> void:
@@ -968,9 +1204,12 @@ func _advance_original_pursuit_once() -> bool:
 	if (
 		target == null
 		or not is_alive
-		or movement_path_index < movement_path.size()
 	):
 		return false
+	# Native sub_45D330 reports a handled pursuit while +0x1FC is non-zero,
+	# but performs no rand() call and leaves the active route untouched.
+	if movement_path_index < movement_path.size():
+		return true
 	var random_value := next_original_crt_random_value(
 		original_pursuit_call_site_rva
 	)
@@ -1259,6 +1498,22 @@ func apply_original_first_gameplay_update_outcome(
 		)
 		original_first_gameplay_navigation_applied = (
 			_issue_original_first_gameplay_path(destination)
+		)
+	if navigation_effect == "secondary_search_destination":
+		# The captured post-update command is the active +0x250 contact
+		# produced by the same gate plus four destination draws.
+		original_secondary_search_contact_state = true
+		original_secondary_search_gate_serial = maxi(
+			original_secondary_search_gate_serial,
+			1,
+		)
+		original_secondary_search_trigger_serial = maxi(
+			original_secondary_search_trigger_serial,
+			1,
+		)
+		original_secondary_search_last_goal = destination
+		original_secondary_search_last_navigation_applied = (
+			original_first_gameplay_navigation_applied
 		)
 	return true
 
@@ -2095,6 +2350,23 @@ func apply_special_control(source: Node2D = null) -> bool:
 			cancel_path()
 			_face_special_control_source()
 		queue_redraw()
+	return true
+
+
+func apply_original_alert_source_reaction(random_value: int) -> bool:
+	if random_value < 0:
+		return false
+	# sub_45DDA0 writes +0x24C/+0x25C/+0x290 on the source actor after
+	# every accepted recipient, then stores rand()%40+40 at +0x248.
+	original_ai_idle_tick_counter = 0
+	original_ai_idle_tick_limit = (
+		random_value
+		% AI_IDLE_RANDOM_RULES.REACTION_RANDOM_SPAN
+		+ AI_IDLE_RANDOM_RULES.REACTION_MINIMUM_LIMIT
+	)
+	original_ai_idle_tick_elapsed = 0.0
+	special_control_lock_count = 0
+	special_control_source = null
 	return true
 
 

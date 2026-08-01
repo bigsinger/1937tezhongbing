@@ -379,6 +379,19 @@ func apply_original_crt_enemy_startup_profile() -> bool:
 	return true
 
 
+func apply_original_alert_source_reaction(random_value: int) -> bool:
+	if not super.apply_original_alert_source_reaction(random_value):
+		return false
+	legacy_search_wait_counter = 0
+	legacy_search_wait_limit = (
+		random_value
+		% LEGACY_ENEMY_AI_RULES.REACTION_RANDOM_SPAN
+		+ LEGACY_ENEMY_AI_RULES.REACTION_MINIMUM_LIMIT
+	)
+	legacy_search_tick_elapsed = 0.0
+	return true
+
+
 func _should_apply_original_first_gameplay_navigation(
 	effect: String,
 ) -> bool:
@@ -1242,10 +1255,13 @@ func receive_original_coordinate_alert(world_position: Vector2) -> bool:
 		)
 	):
 		return false
-	return _begin_legacy_coordinate_search(world_position)
+	return _begin_legacy_coordinate_search(world_position, true)
 
 
-func _begin_legacy_coordinate_search(world_position: Vector2) -> bool:
+func _begin_legacy_coordinate_search(
+	world_position: Vector2,
+	preserve_native_search_delay: bool = false,
+) -> bool:
 	if not is_alive:
 		return false
 	_clear_legacy_world_item_target()
@@ -1258,20 +1274,21 @@ func _begin_legacy_coordinate_search(world_position: Vector2) -> bool:
 	legacy_search_active = true
 	legacy_search_finishing = false
 	legacy_search_point_index = 0
-	legacy_search_wait_counter = 0
-	legacy_search_tick_elapsed = 0.0
-	var sampled: Dictionary = (
-		LEGACY_ENEMY_AI_RULES.reaction_limit_from_state(
-			legacy_search_random_state
+	if not preserve_native_search_delay:
+		legacy_search_wait_counter = 0
+		legacy_search_tick_elapsed = 0.0
+		var sampled: Dictionary = (
+			LEGACY_ENEMY_AI_RULES.reaction_limit_from_state(
+				legacy_search_random_state
+			)
 		)
-	)
-	legacy_search_random_state = int(sampled.get("state", 1))
-	legacy_search_wait_limit = int(
-		sampled.get(
-			"limit",
-			LEGACY_ENEMY_AI_RULES.REACTION_MINIMUM_LIMIT,
+		legacy_search_random_state = int(sampled.get("state", 1))
+		legacy_search_wait_limit = int(
+			sampled.get(
+				"limit",
+				LEGACY_ENEMY_AI_RULES.REACTION_MINIMUM_LIMIT,
+			)
 		)
-	)
 	search_elapsed = 0.0
 	chase_replan_elapsed = CHASE_REPLAN_SECONDS
 	behavior_state = BehaviorState.SEARCH

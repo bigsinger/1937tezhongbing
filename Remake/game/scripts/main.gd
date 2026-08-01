@@ -260,6 +260,8 @@ var units: Array[SQUAD_UNIT] = []
 var enemies: Array[ENEMY_UNIT] = []
 var escorts: Array[ESCORT_UNIT] = []
 var ambient_units: Array[AMBIENT_UNIT] = []
+var original_runtime_actor_order_cache: Array[Node2D] = []
+var original_runtime_actor_order_cache_rebuild_serial := 0
 var mission_pickups: Array[MISSION_PICKUP] = []
 var next_mission_pickup_serial := 1
 var next_legacy_reinforcement_scene_index := 1000000
@@ -830,6 +832,76 @@ func _all_active_runtime_actors() -> Array[Node2D]:
 	for enemy: ENEMY_UNIT in enemies:
 		result.append(enemy)
 	return result
+
+
+func first_original_secondary_search_candidate(
+	source: Node2D,
+	_radius: float = (
+		LEGACY_ENEMY_AI_RULES.SECONDARY_SEARCH_CANDIDATE_RADIUS
+	),
+) -> Node2D:
+	if source == null or not is_instance_valid(source):
+		return null
+	_ensure_original_runtime_actor_order_cache()
+	for candidate: Node2D in original_runtime_actor_order_cache:
+		if (
+			candidate == null
+			or not is_instance_valid(candidate)
+			or not LEGACY_ENEMY_AI_RULES
+			. secondary_search_candidate_is_eligible(
+				int(candidate.get("faction_id")),
+				bool(candidate.get("is_alive")),
+			)
+			or not LEGACY_ENEMY_AI_RULES
+			. is_within_secondary_search_radius(
+				source.position,
+				candidate.position,
+			)
+		):
+			continue
+		return candidate
+	return null
+
+
+func _active_runtime_actor_count() -> int:
+	return (
+		units.size()
+		+ enemies.size()
+		+ escorts.size()
+		+ ambient_units.size()
+	)
+
+
+func _ensure_original_runtime_actor_order_cache() -> void:
+	if (
+		original_runtime_actor_order_cache.size()
+		== _active_runtime_actor_count()
+	):
+		return
+	original_runtime_actor_order_cache = _all_active_runtime_actors()
+	original_runtime_actor_order_cache.sort_custom(
+		_original_runtime_actor_precedes
+	)
+	original_runtime_actor_order_cache_rebuild_serial += 1
+
+
+func original_secondary_search_world_bounds() -> Rect2:
+	return Rect2(Vector2.ZERO, world_size)
+
+
+func _original_runtime_actor_precedes(
+	left: Node2D,
+	right: Node2D,
+) -> bool:
+	var left_index := int(left.get("original_runtime_index"))
+	var right_index := int(right.get("original_runtime_index"))
+	if left_index < 0:
+		left_index = 2_000_000_000
+	if right_index < 0:
+		right_index = 2_000_000_000
+	if left_index != right_index:
+		return left_index < right_index
+	return int(left.get("scene_index")) < int(right.get("scene_index"))
 
 
 func _bind_original_crt_random_actor(
@@ -1784,6 +1856,8 @@ func spawn_squad() -> void:
 	enemies.clear()
 	escorts.clear()
 	ambient_units.clear()
+	original_runtime_actor_order_cache.clear()
+	original_runtime_actor_order_cache_rebuild_serial = 0
 	mission_pickups.clear()
 	selected_units.clear()
 	dynamic_occupancy = null
@@ -4757,6 +4831,19 @@ func _queue_or_broadcast_alert(
 			continue
 		if enemy.receive_original_coordinate_alert(alert_coordinate):
 			alerted_count += 1
+			var reaction_draw: Dictionary = next_legacy_crt_random(
+				0x0005DF71
+			)
+			if (
+				not reaction_draw.is_empty()
+				and source.has_method(
+					"apply_original_alert_source_reaction"
+				)
+			):
+				source.call(
+					"apply_original_alert_source_reaction",
+					int(reaction_draw.get("value", -1)),
+				)
 	return alerted_count
 
 func emit_noise_at(world_position: Vector2, radius: float = 640.0) -> int:
