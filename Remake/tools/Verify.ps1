@@ -546,6 +546,12 @@ if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
     }
 
     & $GodotExecutable --headless --path $game `
+        --script 'res://tests/real_mission_failure_matrix_test.gd' -- --skip-briefing
+    if ($LASTEXITCODE -ne 0) {
+        throw "Godot real mission failure-matrix tests failed with exit code $LASTEXITCODE."
+    }
+
+    & $GodotExecutable --headless --path $game `
         --script 'res://tests/real_input_world_test.gd' -- --skip-briefing
     if ($LASTEXITCODE -ne 0) {
         throw "Godot real frame-input world test failed with exit code $LASTEXITCODE."
