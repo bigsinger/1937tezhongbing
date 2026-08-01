@@ -75,7 +75,7 @@ func configure_ambient(
 
 func _physics_process(delta: float) -> void:
 	var safe_delta := maxf(delta, 0.0)
-	_advance_original_crt_observation_gate(safe_delta)
+	_advance_original_crt_actor_random_tick(safe_delta)
 	path_request_delay_remaining = maxf(
 		path_request_delay_remaining - safe_delta,
 		0.0,

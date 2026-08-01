@@ -398,6 +398,66 @@ func _test_first_gameplay_actor_side_effects() -> void:
 	)
 	route_actor.free()
 
+	var candidate_outcome: Dictionary = {}
+	for outcome: Dictionary in (
+		ORIGINAL_STARTUP_CATALOG.first_gameplay_update_outcomes(
+			"m000"
+		)
+	):
+		if int(outcome.get("runtime_index", -1)) == 125:
+			candidate_outcome = outcome
+			break
+	var candidate_game = MAIN_SCRIPT.new()
+	candidate_game.call(
+		"_apply_original_crt_random_startup_checkpoint",
+		"m000",
+	)
+	candidate_game.legacy_crt_random_trace_enabled = true
+	var candidate_actor = SQUAD_UNIT_SCRIPT.new()
+	candidate_actor.scene_index = 1621
+	candidate_actor.configure_runtime_actor_type({
+		"database_header_values": [0, 0, 20],
+		"original_runtime_profile": {"runtime_index": 125},
+	})
+	candidate_actor.bind_original_crt_random_source(
+		candidate_game,
+		"m000",
+	)
+	var candidate_records: Array[Dictionary] = [{
+		"runtime_index": 125,
+		"call_site_rva": "0x00055216",
+		"value": 16139,
+	}]
+	var candidate_applied: bool = (
+		candidate_actor
+		. apply_original_first_gameplay_update_outcome(
+			candidate_outcome,
+			candidate_records,
+		)
+	)
+	candidate_actor.call(
+		"_advance_original_crt_actor_random_tick",
+		1.0 / 60.0,
+	)
+	_expect(
+		candidate_applied
+		and candidate_actor
+			.original_crt_primary_candidate_scan_enabled
+		and candidate_actor
+			.original_crt_primary_candidate_scan_serial == 2
+		and candidate_actor
+			.original_crt_primary_candidate_scan_passed
+		and candidate_game.legacy_crt_random_draw_index == 8490
+		and candidate_game.legacy_crt_random_trace.size() == 1
+		and int(candidate_game.legacy_crt_random_trace[0].get(
+			"call_site_rva",
+			0,
+		)) == 0x00055216,
+		"primary candidate scan continues every recovered 60 Hz actor tick",
+	)
+	candidate_actor.free()
+	candidate_game.free()
+
 	var timeline_enemy = ENEMY_UNIT_SCRIPT.new()
 	var timeline: Array[Dictionary] = [
 		{"elapsed_seconds": 0.0, "position": Vector2.ZERO},
@@ -472,13 +532,13 @@ func _test_imported_actor_profile_and_gate() -> void:
 	var expected_value: int = LEGACY_CRT_RANDOM_CATALOG.random_value(
 		expected_state
 	)
-	actor.call("_advance_original_crt_observation_gate", 0.04)
+	actor.call("_advance_original_crt_observation_gate", 0.02)
 	_expect(
 		game.legacy_crt_random_draw_index == 8490
 		and actor.original_crt_observation_gate_serial == 1
 		and actor.original_crt_observation_gate_passed
 			== (expected_value % 2 > 0),
-		"the actor consumes one exact global observation-gate draw at 30 Hz",
+		"the actor consumes one exact global observation-gate draw at 60 Hz",
 	)
 	_expect(
 		game.legacy_crt_random_trace.size() == 1
@@ -568,6 +628,10 @@ func _test_timing_snapshot_round_trip() -> void:
 	source.original_crt_observation_gate_elapsed = 0.0125
 	source.original_crt_observation_gate_passed = true
 	source.original_crt_observation_gate_serial = 7
+	source.original_crt_primary_candidate_scan_enabled = true
+	source.original_crt_primary_candidate_scan_elapsed = 0.00625
+	source.original_crt_primary_candidate_scan_passed = true
+	source.original_crt_primary_candidate_scan_serial = 9
 	source.original_first_gameplay_update_serial = 1
 	source.original_first_gameplay_semantic_effects.append(
 		"blocked_retry_destination"
@@ -609,6 +673,16 @@ func _test_timing_snapshot_round_trip() -> void:
 		and restored.original_crt_observation_gate_passed
 		and restored.original_crt_observation_gate_serial == 7,
 		"save/load restores the per-actor global-stream gate phase",
+	)
+	_expect(
+		restored.original_crt_primary_candidate_scan_enabled
+		and is_equal_approx(
+			restored.original_crt_primary_candidate_scan_elapsed,
+			0.00625,
+		)
+		and restored.original_crt_primary_candidate_scan_passed
+		and restored.original_crt_primary_candidate_scan_serial == 9,
+		"save/load restores the 60 Hz primary candidate-scan phase",
 	)
 	_expect(
 		restored.original_first_gameplay_update_serial == 1

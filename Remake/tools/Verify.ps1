@@ -33,6 +33,7 @@ if ($LASTEXITCODE -ne 0) {
 & (Join-Path $PSScriptRoot 'Test-OriginalWorldPickups.ps1')
 & (Join-Path $PSScriptRoot 'Test-OriginalRuntimeActorCatalog.ps1')
 & (Join-Path $PSScriptRoot 'Test-CrtRandomStartupBaseline.ps1')
+& (Join-Path $PSScriptRoot 'Test-CrtRandomRuntimeTimingBaseline.ps1')
 if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
     & (Join-Path $PSScriptRoot 'Test-ModRuntimeIdentityCatalog.ps1') `
         -LevelManifest $realAssetManifest

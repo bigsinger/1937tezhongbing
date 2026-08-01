@@ -206,6 +206,7 @@ constexpr LONG kCrtRandomTraceCapacity = 131072;
 struct CrtRandomTraceRecord {
     volatile LONG sequence = 0;
     DWORD thread_id = 0;
+    DWORD tick_ms = 0;
     std::uint32_t call_site_rva = 0;
     std::uint32_t caller_esi = 0;
     int value = 0;
@@ -538,11 +539,13 @@ void WriteCrtRandomTraceRecords(HANDLE file) {
                 line + length,
                 sizeof(line) - static_cast<size_t>(length),
                 "%s{\"sequence\":%ld,\"thread\":%lu,"
+                "\"tick_ms\":%lu,"
                 "\"call_site_rva\":\"0x%08lX\","
                 "\"caller_esi\":\"0x%08lX\",\"value\":%d}",
                 appended == 0 ? "" : ",",
                 expected_sequence,
                 record.thread_id,
+                record.tick_ms,
                 static_cast<unsigned long>(
                     record.call_site_rva),
                 static_cast<unsigned long>(record.caller_esi),
@@ -2166,6 +2169,7 @@ void RecordCrtRandomTrace(
     }
     auto &record = g_crt_random_trace[index];
     record.thread_id = GetCurrentThreadId();
+    record.tick_ms = GetTickCount();
     record.call_site_rva =
         static_cast<std::uint32_t>(call_site);
     record.caller_esi =

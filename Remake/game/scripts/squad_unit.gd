@@ -2,6 +2,11 @@ class_name SquadUnit
 extends Node2D
 
 const BASE_SPRITE_TICK_SECONDS := 0.085
+## A timestamped process-local trace of 710 consecutive m000 update rounds
+## measured a 16.686 ms steady interval (59.930 Hz). Observation-marker and
+## primary candidate-scan rand() calls therefore follow the 60 Hz actor
+## update, independently of the slower idle/reaction counters below.
+const ORIGINAL_ACTOR_RANDOM_TICK_SECONDS := 1.0 / 60.0
 ## The actor AI counters recovered around M1937.exe sub_4587E0/sub_458A80
 ## advance on the same 30 Hz logic cadence already used by the recovered
 ## enemy reaction counter.
@@ -96,6 +101,11 @@ var original_crt_observation_gate_elapsed := 0.0
 var original_crt_observation_gate_passed := false
 var original_crt_observation_gate_serial := 0
 var original_crt_last_physics_frame := -1
+var original_crt_primary_candidate_scan_enabled := false
+var original_crt_primary_candidate_scan_elapsed := 0.0
+var original_crt_primary_candidate_scan_passed := false
+var original_crt_primary_candidate_scan_serial := 0
+var original_crt_primary_candidate_last_physics_frame := -1
 var original_first_gameplay_update_serial := 0
 var original_first_gameplay_semantic_effects: Array[String] = []
 var original_first_gameplay_call_sites := PackedInt32Array()
@@ -237,6 +247,11 @@ func configure(
 	original_crt_observation_gate_passed = false
 	original_crt_observation_gate_serial = 0
 	original_crt_last_physics_frame = -1
+	original_crt_primary_candidate_scan_enabled = false
+	original_crt_primary_candidate_scan_elapsed = 0.0
+	original_crt_primary_candidate_scan_passed = false
+	original_crt_primary_candidate_scan_serial = 0
+	original_crt_primary_candidate_last_physics_frame = -1
 	original_first_gameplay_update_serial = 0
 	original_first_gameplay_semantic_effects.clear()
 	original_first_gameplay_call_sites.clear()
@@ -470,6 +485,11 @@ func bind_original_crt_random_source(
 	original_crt_observation_gate_passed = false
 	original_crt_observation_gate_serial = 0
 	original_crt_last_physics_frame = -1
+	original_crt_primary_candidate_scan_enabled = false
+	original_crt_primary_candidate_scan_elapsed = 0.0
+	original_crt_primary_candidate_scan_passed = false
+	original_crt_primary_candidate_scan_serial = 0
+	original_crt_primary_candidate_last_physics_frame = -1
 	# Main creates actors in their recovered runtime-array order and appends
 	# reinforcements afterward, so normal scene-tree physics order already
 	# preserves the CRT consumer order. Do not override physics priority:
@@ -565,6 +585,18 @@ func original_crt_random_timing_snapshot() -> Dictionary:
 		"observation_gate_serial": (
 			original_crt_observation_gate_serial
 		),
+		"primary_candidate_scan_enabled": (
+			original_crt_primary_candidate_scan_enabled
+		),
+		"primary_candidate_scan_elapsed": (
+			original_crt_primary_candidate_scan_elapsed
+		),
+		"primary_candidate_scan_passed": (
+			original_crt_primary_candidate_scan_passed
+		),
+		"primary_candidate_scan_serial": (
+			original_crt_primary_candidate_scan_serial
+		),
 		"first_gameplay_update_serial": (
 			original_first_gameplay_update_serial
 		),
@@ -615,13 +647,31 @@ func restore_original_crt_random_timing(state: Dictionary) -> bool:
 	original_crt_observation_gate_elapsed = clampf(
 		float(state.get("observation_gate_elapsed", 0.0)),
 		0.0,
-		ORIGINAL_AI_IDLE_TICK_SECONDS,
+		ORIGINAL_ACTOR_RANDOM_TICK_SECONDS,
 	)
 	original_crt_observation_gate_passed = bool(
 		state.get("observation_gate_passed", false)
 	)
 	original_crt_observation_gate_serial = maxi(
 		int(state.get("observation_gate_serial", 0)),
+		0,
+	)
+	original_crt_primary_candidate_scan_enabled = bool(
+		state.get(
+			"primary_candidate_scan_enabled",
+			original_crt_primary_candidate_scan_enabled,
+		)
+	)
+	original_crt_primary_candidate_scan_elapsed = clampf(
+		float(state.get("primary_candidate_scan_elapsed", 0.0)),
+		0.0,
+		ORIGINAL_ACTOR_RANDOM_TICK_SECONDS,
+	)
+	original_crt_primary_candidate_scan_passed = bool(
+		state.get("primary_candidate_scan_passed", false)
+	)
+	original_crt_primary_candidate_scan_serial = maxi(
+		int(state.get("primary_candidate_scan_serial", 0)),
 		0,
 	)
 	original_first_gameplay_update_serial = maxi(
@@ -675,7 +725,13 @@ func restore_original_crt_random_timing(state: Dictionary) -> bool:
 		state.get("first_gameplay_navigation_applied", false)
 	)
 	original_crt_last_physics_frame = -1
+	original_crt_primary_candidate_last_physics_frame = -1
 	return true
+
+
+func _advance_original_crt_actor_random_tick(delta: float) -> void:
+	_advance_original_crt_observation_gate(delta)
+	_advance_original_crt_primary_candidate_scan(delta)
 
 
 func _advance_original_crt_observation_gate(delta: float) -> void:
@@ -692,10 +748,10 @@ func _advance_original_crt_observation_gate(delta: float) -> void:
 	original_crt_observation_gate_elapsed += maxf(delta, 0.0)
 	while (
 		original_crt_observation_gate_elapsed
-		>= ORIGINAL_AI_IDLE_TICK_SECONDS
+		>= ORIGINAL_ACTOR_RANDOM_TICK_SECONDS
 	):
 		original_crt_observation_gate_elapsed -= (
-			ORIGINAL_AI_IDLE_TICK_SECONDS
+			ORIGINAL_ACTOR_RANDOM_TICK_SECONDS
 		)
 		var random_value := next_original_crt_random_value(0x0005C81C)
 		if random_value < 0:
@@ -722,6 +778,53 @@ func apply_original_crt_observation_gate_value(
 			self,
 			original_crt_observation_gate_passed,
 		)
+	return true
+
+
+func _advance_original_crt_primary_candidate_scan(delta: float) -> void:
+	var physics_frame := Engine.get_physics_frames()
+	if (
+		original_crt_primary_candidate_last_physics_frame
+		== physics_frame
+	):
+		return
+	original_crt_primary_candidate_last_physics_frame = physics_frame
+	if (
+		not original_crt_primary_candidate_scan_enabled
+		or original_crt_random_source == null
+		or not is_instance_valid(original_crt_random_source)
+	):
+		return
+	original_crt_primary_candidate_scan_elapsed += maxf(delta, 0.0)
+	while (
+		original_crt_primary_candidate_scan_elapsed
+		>= ORIGINAL_ACTOR_RANDOM_TICK_SECONDS
+	):
+		original_crt_primary_candidate_scan_elapsed -= (
+			ORIGINAL_ACTOR_RANDOM_TICK_SECONDS
+		)
+		var random_value := next_original_crt_random_value(
+			0x00055216
+		)
+		if random_value < 0:
+			return
+		apply_original_crt_primary_candidate_scan_value(
+			random_value
+		)
+
+
+func apply_original_crt_primary_candidate_scan_value(
+	random_value: int,
+) -> bool:
+	if (
+		not original_crt_primary_candidate_scan_enabled
+		or random_value < 0
+	):
+		return false
+	original_crt_primary_candidate_scan_passed = (
+		random_value % 2 > 0
+	)
+	original_crt_primary_candidate_scan_serial += 1
 	return true
 
 
@@ -791,6 +894,30 @@ func apply_original_first_gameplay_update_outcome(
 	original_first_gameplay_route_wait_limit = int(
 		outcome.get("route_wait_limit", -1)
 	)
+	if effects.has("primary_candidate_scan"):
+		var primary_candidate_value := -1
+		for random_record: Dictionary in random_records:
+			if (
+				str(
+					random_record.get("call_site_rva", "0x0")
+				).hex_to_int()
+				== 0x00055216
+			):
+				primary_candidate_value = int(
+					random_record.get("value", -1)
+				)
+				break
+		if primary_candidate_value < 0:
+			return false
+		original_crt_primary_candidate_scan_enabled = true
+		original_crt_primary_candidate_scan_elapsed = 0.0
+		original_crt_primary_candidate_scan_passed = false
+		original_crt_primary_candidate_scan_serial = 0
+		original_crt_primary_candidate_last_physics_frame = -1
+		if not apply_original_crt_primary_candidate_scan_value(
+			primary_candidate_value
+		):
+			return false
 	if effects.has("route_wait_limit"):
 		if (
 			original_first_gameplay_route_wait_limit < 40
@@ -1840,7 +1967,7 @@ func contains_parent_point(parent_point: Vector2) -> bool:
 
 func _physics_process(delta: float) -> void:
 	var safe_delta := maxf(delta, 0.0)
-	_advance_original_crt_observation_gate(safe_delta)
+	_advance_original_crt_actor_random_tick(safe_delta)
 	attack_cooldown_remaining = maxf(attack_cooldown_remaining - safe_delta, 0.0)
 	if combat_action != CombatAction.NONE:
 		_suspend_original_ai_idle_action()

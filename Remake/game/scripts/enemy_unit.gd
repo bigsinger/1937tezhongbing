@@ -514,7 +514,7 @@ static func deterministic_aim_sample(enemy_scene_index: int, attack_serial: int)
 
 func _physics_process(delta: float) -> void:
 	var safe_delta := maxf(delta, 0.0)
-	_advance_original_crt_observation_gate(safe_delta)
+	_advance_original_crt_actor_random_tick(safe_delta)
 	if not is_alive or combat_action != CombatAction.NONE or hurt_remaining > 0.0:
 		super._physics_process(safe_delta)
 		_advance_tactical_range_cache(safe_delta)
