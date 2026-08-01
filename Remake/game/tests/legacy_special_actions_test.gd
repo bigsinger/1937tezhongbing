@@ -354,6 +354,34 @@ func _test_type_11_reversible_control_without_assets(failures: Array[String]) ->
 	_expect(not effect.release(), "released type 11 state is idempotent", failures)
 
 	source.configure(3, Vector2.ZERO, 300)
+	var controllable_target = SQUAD_UNIT_SCRIPT.new()
+	controllable_target.scene_index = 2298
+	controllable_target.faction_id = 1
+	controllable_target.runtime_actor_type = 9
+	controllable_target.current_hit_points = 8
+	controllable_target.maximum_hit_points = 8
+	controllable_target.is_alive = true
+	controllable_target.position = Vector2(24.0, 0.0)
+	controllable_target.target_position = controllable_target.position
+	arena.add_child(controllable_target)
+	var controllable_effect = SPECIAL_CONTROL_SCRIPT.new()
+	arena.add_child(controllable_effect)
+	_expect(
+		controllable_effect.configure(profile, source, controllable_target)
+		and controllable_target.is_special_controlled(),
+		"type 11 preserves the attention flag on a faction-1 controllable slot",
+		failures,
+	)
+	source.issue_move(Vector2(16.0, 0.0))
+	controllable_effect.advance_world_ticks(1)
+	_expect(
+		not controllable_effect.is_active()
+		and not controllable_target.is_special_controlled(),
+		"type 11 releases a controllable-slot target on source movement",
+		failures,
+	)
+
+	source.configure(3, Vector2.ZERO, 300)
 	var combat_effect = SPECIAL_CONTROL_SCRIPT.new()
 	arena.add_child(combat_effect)
 	_expect(

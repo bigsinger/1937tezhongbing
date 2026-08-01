@@ -154,6 +154,12 @@ $scenarios = @(
         parity_flag = '--parity-attack-only'
     },
     [pscustomobject]@{
+        id = 'm007-slingshot-attack-inventory-v1'
+        level_id = 'm007'
+        selector_level = 8
+        parity_flag = '--parity-attack-only'
+    },
+    [pscustomobject]@{
         id = 'm007-special-attention-attack-inventory-v1'
         level_id = 'm007'
         selector_level = 8
@@ -438,7 +444,23 @@ finally {
                 'Refusing to remove inventory probe output outside the ' +
                 'validated E:\1937 temporary root.')
         }
-        Remove-Item -LiteralPath $resolvedRuntime -Recurse -Force
+        for ($attempt = 0; $attempt -lt 8; ++$attempt) {
+            try {
+                Remove-Item -LiteralPath $resolvedRuntime `
+                    -Recurse -Force -ErrorAction Stop
+                break
+            }
+            catch {
+                if ($attempt -eq 7) {
+                    Write-Warning (
+                        'The isolated inventory runtime remains locked: ' +
+                        $resolvedRuntime)
+                }
+                else {
+                    Start-Sleep -Milliseconds 250
+                }
+            }
+        }
     }
     elseif ($KeepRuntime) {
         Write-Host "Isolated MOD runtime retained: $runtime"

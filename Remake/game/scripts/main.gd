@@ -1255,6 +1255,9 @@ func spawn_imported_entities() -> int:
 		if _is_rescue_bound_scene(scene_index):
 			spawned += 1
 			continue
+		var authored_faction_id := int(
+			entity.get("faction_id", entity.get("team_id", 0))
+		)
 		var original_player_loadout: Dictionary = (
 			ORIGINAL_INITIAL_WEAPON_INVENTORY.loadout_for_scene(
 				level_id,
@@ -1264,9 +1267,42 @@ func spawn_imported_entities() -> int:
 		if not original_player_loadout.is_empty():
 			playable_entities[display_name] = entity
 			continue
-		var authored_faction_id := int(
-			entity.get("faction_id", entity.get("team_id", 0))
-		)
+		if (
+			authored_faction_id == 3
+			and _is_original_squad_display_name(display_name)
+		):
+			# Some original player slots remain controllable while their live
+			# faction differs from the authored VWF faction.  m007 Tiedan is
+			# the recovered case: scene 2298 occupies player slot 2 but starts
+			# as faction 1, so the faction-only inventory catalog deliberately
+			# does not list it under `players`.
+			var controllable_entity := entity.duplicate(true)
+			var controllable_runtime_profile: Dictionary = (
+				ORIGINAL_RUNTIME_ACTOR_CATALOG.actor_for_scene(
+					level_id,
+					scene_index,
+				)
+			)
+			if not controllable_runtime_profile.is_empty():
+				controllable_entity["original_runtime_profile"] = (
+					controllable_runtime_profile
+				)
+				controllable_entity["original_runtime_profile_source"] = (
+					"stable_mod_read_only_process_snapshot"
+				)
+			var controllable_runtime_faction: int = (
+				ORIGINAL_RUNTIME_ACTOR_CATALOG.runtime_faction_id(
+					level_id,
+					scene_index,
+					authored_faction_id,
+				)
+			)
+			if controllable_runtime_faction != authored_faction_id:
+				controllable_entity["faction_id"] = controllable_runtime_faction
+				controllable_entity["runtime_faction_override"] = true
+			controllable_entity["original_controllable_slot_override"] = true
+			playable_entities[display_name] = controllable_entity
+			continue
 		var runtime_faction_id: int = (
 			ORIGINAL_RUNTIME_ACTOR_CATALOG.runtime_faction_id(
 				level_id,
@@ -1856,6 +1892,14 @@ func spawn_squad() -> void:
 				name,
 			)
 		)
+		if original_loadout.is_empty() and not entity.is_empty():
+			original_loadout = (
+				ORIGINAL_INITIAL_WEAPON_INVENTORY.loadout_for_any_actor(
+					level_id,
+					scene_index,
+					name,
+				)
+			)
 		var weapon_profile: Dictionary = COMBAT_PROFILES.weapon_profile_for_attack_type(
 			attack_type
 		)
@@ -1867,7 +1911,7 @@ func spawn_squad() -> void:
 			)
 			death_groups = load_entity_action_groups(entity, "death")
 		unit.configure_combat(
-			3,
+			int(entity.get("faction_id", 3)),
 			maxi(int(entity.get("current_hit_points", 8)), 1),
 			weapon_profile,
 			attack_groups,
@@ -2152,6 +2196,13 @@ static func playable_initial_attack_type(entity: Dictionary, display_name: Strin
 	if authored_attack_type >= 1 and authored_attack_type <= 11:
 		return authored_attack_type
 	return int(PLAYABLE_LOADOUT_ATTACK_TYPES.get(display_name, 1))
+
+
+static func _is_original_squad_display_name(display_name: String) -> bool:
+	for specification: Dictionary in PLAYABLE_SQUAD:
+		if str(specification.get("name", "")) == display_name:
+			return true
+	return false
 
 
 func _configure_original_backpack(

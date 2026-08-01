@@ -146,8 +146,6 @@ var attack_recheck_seconds := ATTACK_RECHECK_MIN_SECONDS
 var attack_count := 0
 var path_request_delay_remaining := 0.0
 var patrol_path_retry_seconds := PATROL_PATH_RETRY_MIN_SECONDS
-var special_control_lock_count := 0
-var special_control_source: Node2D
 var tactical_ranges_visible := false
 var tactical_outer_outline := PackedVector2Array()
 var tactical_inner_outline := PackedVector2Array()

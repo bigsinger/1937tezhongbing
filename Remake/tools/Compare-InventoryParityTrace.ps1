@@ -304,7 +304,7 @@ $scenarioDefinitions = @{
         delta_quantity = 0
         expected_before_quantity = 1
         expected_after_quantity = 1
-        target_scene = 2287
+        target_scene = 2389
         compare_target_hit_points = $true
     }
     'm007-special-attention-attack-inventory-v1' = [ordered]@{

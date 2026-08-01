@@ -93,6 +93,11 @@ var maximum_hit_points := 8
 var damage_event_count := 0
 var damage_taken_total := 0
 var last_damage_attacker_scene_index := -1
+## The original runtime can keep an actor in a player command slot while its
+## live faction/type still accepts the type-11 attention flag.  m007 Tiedan
+## (scene 2298, runtime type 9, faction 1) is the recovered example.
+var special_control_lock_count := 0
+var special_control_source: Node2D
 var scene_index := -1
 var runtime_actor_type := 0
 var original_runtime_index := -1
@@ -329,6 +334,8 @@ func configure(
 	damage_event_count = 0
 	damage_taken_total = 0
 	last_damage_attacker_scene_index = -1
+	special_control_lock_count = 0
+	special_control_source = null
 	if (
 		dynamic_occupancy != null
 		and scene_index >= 0
@@ -2076,6 +2083,63 @@ func cancel_path() -> void:
 	queue_redraw()
 
 
+func apply_special_control(source: Node2D = null) -> bool:
+	if not is_alive:
+		return false
+	special_control_lock_count += 1
+	special_control_source = source
+	if special_control_lock_count == 1:
+		# Target +656 suppresses an ordinary idle/movement command but does not
+		# erase a combat transition already in progress.
+		if combat_action == CombatAction.NONE and combat_target == null:
+			cancel_path()
+			_face_special_control_source()
+		queue_redraw()
+	return true
+
+
+func refresh_special_control_source(source: Node2D = null) -> bool:
+	if special_control_lock_count <= 0:
+		return false
+	special_control_source = source
+	_face_special_control_source()
+	return true
+
+
+func release_special_control(_source: Node2D = null) -> bool:
+	if special_control_lock_count <= 0:
+		return false
+	special_control_lock_count -= 1
+	if special_control_lock_count == 0:
+		special_control_source = null
+		queue_redraw()
+	return true
+
+
+func is_special_controlled() -> bool:
+	return special_control_lock_count > 0
+
+
+func _release_special_control_for_combat() -> bool:
+	if special_control_lock_count <= 0:
+		return false
+	special_control_lock_count = 0
+	special_control_source = null
+	queue_redraw()
+	return true
+
+
+func _face_special_control_source() -> void:
+	if not is_instance_valid(special_control_source):
+		return
+	var direction := special_control_source.position - position
+	if direction.is_zero_approx():
+		return
+	set_animation_group(direction_group_index(direction))
+	apply_idle_frame()
+	queue_redraw()
+
+
 func issue_attack(target: Node2D, force_target: bool = false) -> bool:
 	if not is_alive or not _target_is_alive(target) or weapon_profile.is_empty():
 		return false
@@ -2155,6 +2219,7 @@ func try_start_attack(target: Node2D, force_target: bool = false) -> bool:
 		or not can_attack_target(target, forced)
 	):
 		return false
+	_release_special_control_for_combat()
 	var ammo_per_attack := maxi(int(weapon_profile.get("ammo_per_attack", 0)), 0)
 	var attack_type := int(weapon_profile.get("attack_type", 0))
 	var defer_item_cost_to_hit_frame := attack_type in [8, 10]
@@ -2272,6 +2337,10 @@ func _physics_process(delta: float) -> void:
 	if not is_alive:
 		return
 	if auto_combat_enabled and _update_auto_combat(safe_delta):
+		_advance_original_ai_idle_animation(safe_delta)
+		return
+	if is_special_controlled():
+		_face_special_control_source()
 		_advance_original_ai_idle_animation(safe_delta)
 		return
 
@@ -2752,6 +2821,8 @@ func _die(killer: Node2D) -> void:
 	if not is_alive or death_emitted:
 		return
 	is_alive = false
+	special_control_lock_count = 0
+	special_control_source = null
 	selected = false
 	action_progress_ratio = -1.0
 	cancel_original_disguise_transition()

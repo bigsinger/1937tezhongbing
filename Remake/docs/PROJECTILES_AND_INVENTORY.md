@@ -178,6 +178,7 @@ type 8/10 世界对象和汽油桶走统一的世界爆炸结算，可伤害单�
 | `validation/baselines/mod/m010-rifle-attack-inventory-v1.json` | scene 1589 步枪攻击 scene 1126 后项目 37 的 `20→19` 稳定 MOD 运行基线 |
 | `validation/baselines/mod/m010-machine-gun-attack-inventory-v1.json` | scene 1589 机枪攻击 scene 1126 后项目 38 的 `10→9` 稳定 MOD 运行基线 |
 | `validation/baselines/mod/m004-dart-attack-inventory-v1.json` | scene 2629 飞镖攻击 scene 2685 后项目 41 的 `20→19` 稳定 MOD 运行基线 |
+| `validation/baselines/mod/m007-slingshot-attack-inventory-v1.json` | 可控但实时 faction 1 的铁蛋 scene 2298 强制攻击相邻古明；项目 42 保持 `1→1`、目标生命 `8→7` |
 | `validation/baselines/mod/m010-dagger-attack-inventory-v1.json` | scene 1591 匕首攻击 scene 1126，项目 39 保持 `1→1` 且目标生命 `8→0` |
 | `validation/baselines/mod/m010-broadsword-attack-inventory-v1.json` | scene 1591 大刀攻击 scene 1126，项目 40 保持 `1→1` 且目标生命 `8→0` |
 | `validation/baselines/mod/m010-grenade-attack-inventory-v1.json` | scene 1589 手榴弹攻击 scene 1126 后项目 44 的 `3→2` 稳定 MOD 运行基线 |

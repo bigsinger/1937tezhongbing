@@ -413,13 +413,13 @@ internal static class ModRegressionProbe
         public bool SelectWeaponPanelItem;
         public int ExpectedRuntimeType;
         public bool UsesWorldPoint;
-        public bool UsesTargetWorldOrigin;
         public int TargetWorldX;
         public int TargetWorldY;
         public bool RequiresTargetDamage;
         public bool RequiresTargetAttentionHold;
         public bool ForceTarget;
         public bool CommitSpecialAttentionViaReplay;
+        public int AttackTimeoutMilliseconds;
     }
 
     private sealed class WorldItemParityScenario
@@ -4902,9 +4902,10 @@ internal static class ModRegressionProbe
                 Id = scenarioId,
                 Description =
                     "Select Tiedan scene 2298, equip his original durable " +
-                    "slingshot with digit 2, and attack live scene 2287 " +
-                    "through process-local DirectInput; verify item 42 " +
-                    "remains owned and the projectile commits target damage.",
+                    "slingshot with digit 2, and force-target adjacent Gu " +
+                    "Ming scene 2389 through process-local DirectInput; " +
+                    "verify item 42 remains owned and the projectile commits " +
+                    "target damage without conflating path finding.",
                 StageName = "original_slingshot_attack_inventory_delta",
                 SelectorLevel = 8,
                 PlayerSceneIndex = 2298,
@@ -4914,11 +4915,12 @@ internal static class ModRegressionProbe
                 ItemId = 42,
                 ExpectedBeforeQuantity = 1,
                 ExpectedAfterQuantity = 1,
-                TargetSceneIndex = 2287,
+                TargetSceneIndex = 2389,
                 PlayerSlotIndex = 2,
                 ExpectedRuntimeType = 9,
-                UsesTargetWorldOrigin = true,
-                RequiresTargetDamage = true
+                RequiresTargetDamage = true,
+                ForceTarget = true,
+                AttackTimeoutMilliseconds = 12000
             };
         }
         else if (String.Equals(
@@ -5627,8 +5629,17 @@ internal static class ModRegressionProbe
         int lastClickWorldY = int.MinValue;
         int lastCursorX = int.MinValue;
         int lastCursorY = int.MinValue;
+        int lastPreClickHoverWorldX = int.MinValue;
+        int lastPreClickHoverWorldY = int.MinValue;
+        int lastPreClickHoverStatus = int.MinValue;
+        int lastPreClickHoverTarget = int.MinValue;
+        int lastPreClickHoverCommandArmed = int.MinValue;
+        int attackTimeoutMilliseconds =
+            scenario.AttackTimeoutMilliseconds > 0
+                ? scenario.AttackTimeoutMilliseconds
+                : 15000;
         Stopwatch wait = Stopwatch.StartNew();
-        while (wait.ElapsedMilliseconds < 15000)
+        while (wait.ElapsedMilliseconds < attackTimeoutMilliseconds)
         {
             if (!scenario.UsesWorldPoint)
             {
@@ -5658,33 +5669,16 @@ internal static class ModRegressionProbe
                 }
                 else
                 {
-                    if (scenario.UsesTargetWorldOrigin)
-                    {
-                        lastClickWorldX = target.WorldX;
-                        lastClickWorldY = target.WorldY;
-                        clickPointReady = true;
-                    }
-                    else
-                    {
-                        clickPointReady = TryGetActorClickWorldPoint(
-                            process,
-                            target,
-                            out lastClickWorldX,
-                            out lastClickWorldY);
-                    }
+                    clickPointReady = TryGetActorClickWorldPoint(
+                        process,
+                        target,
+                        out lastClickWorldX,
+                        out lastClickWorldY);
                 }
                 if (clickPointReady)
                 {
-                    if (scenario.ForceTarget)
-                    {
-                        SendReplay(
-                            window,
-                            ReplayKeyDown,
-                            DikLeftControl);
-                        Thread.Sleep(100);
-                    }
-                    bool attemptClickSent =
-                        ClickReplayWorldPoint(
+                    bool cursorReached =
+                        MoveReplayCursorToWorldPoint(
                             process,
                             imageBase,
                             window,
@@ -5692,6 +5686,32 @@ internal static class ModRegressionProbe
                             lastClickWorldY,
                             out lastCursorX,
                             out lastCursorY);
+                    Thread.Sleep(180);
+                    if (scenario.ForceTarget)
+                    {
+                        SendReplay(
+                            window,
+                            ReplayKeyDown,
+                            DikLeftControl);
+                        Thread.Sleep(180);
+                    }
+                    lastPreClickHoverWorldX = ReadInt(
+                        process,
+                        imageBase + HoverWorldXRelativeAddress);
+                    lastPreClickHoverWorldY = ReadInt(
+                        process,
+                        imageBase + HoverWorldYRelativeAddress);
+                    lastPreClickHoverStatus = ReadInt(
+                        process,
+                        imageBase + HoverTargetStatusRelativeAddress);
+                    lastPreClickHoverTarget = ReadInt(
+                        process,
+                        imageBase + HoverTargetAddressRelativeAddress);
+                    lastPreClickHoverCommandArmed = ReadInt(
+                        process,
+                        imageBase + HoverCommandArmedRelativeAddress);
+                    bool attemptClickSent =
+                        cursorReached && PulseMouseButton(window, 0);
                     if (scenario.ForceTarget)
                     {
                         SendReplay(
@@ -5792,11 +5812,22 @@ internal static class ModRegressionProbe
             "; weapon_active=" + weaponActive +
             "; player_runtime_type=" +
             (player == null ? -1 : player.RuntimeType) +
+            "; player_faction=" +
+            (player == null ? -1 : player.Faction) +
             "; click_sent=" + clickSent +
             "; attempts=" + attempts +
             "; click_world=(" + lastClickWorldX + "," +
             lastClickWorldY + ")" +
             "; cursor=(" + lastCursorX + "," + lastCursorY + ")" +
+            "; pre_click_hover_world=(" +
+            lastPreClickHoverWorldX + "," +
+            lastPreClickHoverWorldY + ")" +
+            "; pre_click_hover_status=" + lastPreClickHoverStatus +
+            "; pre_click_hover_target=0x" +
+            ((long)(uint)lastPreClickHoverTarget).ToString(
+                "X8", CultureInfo.InvariantCulture) +
+            "; pre_click_hover_command_armed=" +
+            lastPreClickHoverCommandArmed +
             "; action_id=" + ReadInt(
                 process,
                 imageBase + EngineAddresses.CurrentActionId) +
@@ -5804,6 +5835,11 @@ internal static class ModRegressionProbe
             beforeQuantity + "->" + afterQuantity +
             "; target_hp=" + beforeTargetHitPoints + "->" +
             afterTargetHitPoints +
+            "; target_faction=" +
+            (target == null ? -1 : target.Faction) +
+            "; target_address=0x" +
+            (target == null ? 0L : target.Address).ToString(
+                "X8", CultureInfo.InvariantCulture) +
             "; target_damaged=" + targetDamaged +
             "; target_attention_hold=" +
             beforeTargetAttentionHold + "->" +
@@ -5811,6 +5847,24 @@ internal static class ModRegressionProbe
             "; force_target=" + scenario.ForceTarget +
             "; special_commit_replay=" +
             specialCommitQueued +
+            "; hover_world=(" +
+            ReadInt(
+                process,
+                imageBase + HoverWorldXRelativeAddress) + "," +
+            ReadInt(
+                process,
+                imageBase + HoverWorldYRelativeAddress) + ")" +
+            "; hover_status=" + ReadInt(
+                process,
+                imageBase + HoverTargetStatusRelativeAddress) +
+            "; hover_target=0x" +
+            ((long)(uint)ReadInt(
+                process,
+                imageBase + HoverTargetAddressRelativeAddress)).ToString(
+                    "X8", CultureInfo.InvariantCulture) +
+            "; hover_command_armed=" + ReadInt(
+                process,
+                imageBase + HoverCommandArmedRelativeAddress) +
             "; player_dead=" +
             (player == null ? -1 : player.Dead);
         return selected &&
@@ -5906,6 +5960,26 @@ internal static class ModRegressionProbe
         out int actualCursorX,
         out int actualCursorY)
     {
+        return MoveReplayCursorToWorldPoint(
+                process,
+                imageBase,
+                window,
+                worldX,
+                worldY,
+                out actualCursorX,
+                out actualCursorY) &&
+            PulseMouseButton(window, 0);
+    }
+
+    private static bool MoveReplayCursorToWorldPoint(
+        IntPtr process,
+        long imageBase,
+        IntPtr window,
+        int worldX,
+        int worldY,
+        out int actualCursorX,
+        out int actualCursorY)
+    {
         actualCursorX = int.MinValue;
         actualCursorY = int.MinValue;
         int screenWidth = ReadInt(
@@ -5914,6 +5988,19 @@ internal static class ModRegressionProbe
             process, imageBase + EngineAddresses.ScreenHeight);
         if (screenWidth <= 0 || screenHeight <= 80)
             return false;
+        int mapBottom = Math.Max(24, screenHeight - 96);
+        int neutralCursorX;
+        int neutralCursorY;
+        if (!MoveReplayCursor(
+                process,
+                imageBase,
+                window,
+                screenWidth / 2,
+                mapBottom / 2,
+                out neutralCursorX,
+                out neutralCursorY))
+            return false;
+        Thread.Sleep(140);
         int cameraX;
         int cameraY;
         bool visible = PanReplayCameraToWorldPoint(
@@ -5929,17 +6016,40 @@ internal static class ModRegressionProbe
             out cameraY);
         if (!visible)
             return false;
-        int screenX = worldX - cameraX;
-        int screenY = worldY - cameraY;
-        bool cursorReached = MoveReplayCursor(
-            process,
-            imageBase,
-            window,
-            screenX,
-            screenY,
-            out actualCursorX,
-            out actualCursorY);
-        return cursorReached && PulseMouseButton(window, 0);
+        for (int attempt = 0; attempt < 3; ++attempt)
+        {
+            cameraX = ReadInt(
+                process, imageBase + EngineAddresses.CameraX);
+            cameraY = ReadInt(
+                process, imageBase + EngineAddresses.CameraY);
+            int screenX = worldX - cameraX;
+            int screenY = worldY - cameraY;
+            if (!MoveReplayCursor(
+                    process,
+                    imageBase,
+                    window,
+                    screenX,
+                    screenY,
+                    out actualCursorX,
+                    out actualCursorY))
+                continue;
+            Thread.Sleep(120);
+            int settledCameraX = ReadInt(
+                process, imageBase + EngineAddresses.CameraX);
+            int settledCameraY = ReadInt(
+                process, imageBase + EngineAddresses.CameraY);
+            int settledScreenX = worldX - settledCameraX;
+            int settledScreenY = worldY - settledCameraY;
+            actualCursorX = ReadInt(
+                process, imageBase + EngineAddresses.CursorX);
+            actualCursorY = ReadInt(
+                process, imageBase + EngineAddresses.CursorY);
+            if (
+                Math.Abs(actualCursorX - settledScreenX) <= 3 &&
+                Math.Abs(actualCursorY - settledScreenY) <= 3)
+                return true;
+        }
+        return false;
     }
 
     private static bool MoveReplayCursor(
@@ -7670,11 +7780,18 @@ internal static class ModRegressionProbe
                     ? identity.VwfFactionId
                     : actor.Faction;
                 // Type 91 is Gu Ming's authentic enemy-uniform runtime
-                // replacement. Keep his authored player role/scene identity,
-                // but report the live faction used by the original hostility
-                // checks so the modern runtime can be compared exactly.
+                // replacement.  M007 scene 2298 is the other recovered
+                // controllable exception: Tiedan remains in player slot 2
+                // while original type 9 starts at live faction 1. Keep their
+                // authored player role/scene identities, but report the live
+                // faction used by hostility checks.
+                bool reportsLiveControllableFaction =
+                    hasIdentity &&
+                    (actor.RuntimeType == 91 ||
+                     (actor.RuntimeType == 9 &&
+                      identity.SceneIndex == 2298));
                 int traceFaction =
-                    hasIdentity && actor.RuntimeType == 91
+                    reportsLiveControllableFaction
                         ? actor.Faction
                         : identityFaction;
                 int targetX = actor.GoalKind == 1

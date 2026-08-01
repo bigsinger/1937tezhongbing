@@ -88,10 +88,13 @@ click-to-route-to-transfer lifecycle rather than calling the inventory API.
 
 `m000-pistol-attack-inventory-v1.json` similarly selects scene 1436, equips
 the pistol and clicks live enemy scene 1598. Ordered weapon item 36 changes
-from 7 to 6. Eight additional live-command traces cover Qiangzi's rifle
+from 7 to 6. Ten additional live-command traces cover Qiangzi's rifle
 (item 37, 20 to 19), machine gun (item 38, 10 to 9) and grenade (item 44,
 3 to 2) in m010, plus Daniu's dart (item 41, 20 to 19) against stationary
-scene 2685 in m004. Daniu's m010 dagger and broadsword traces preserve their
+scene 2685 in m004. The m007 slingshot trace keeps controllable Tiedan in
+original player slot 2 while preserving his live faction 1, then force-targets
+adjacent Gu Ming; durable item 42 remains 1 and target HP changes from 8 to 7.
+Daniu's m010 dagger and broadsword traces preserve their
 mode-1 item quantities at 1 while matching the target transition from 8 HP
 to dead at 0 HP. Lao Zhao's mine and timed-explosive traces both consume one
 mode-0 item (3 to 2) and require the runtime object count to increase by one.
@@ -112,12 +115,12 @@ remain strict, and all before/after-collection container checks remain strict.
 
 All traces retain the complete audited actor roster, but
 `Compare-InventoryParityTrace.ps1` deliberately treats moving-patrol
-positions and target-HP timing as diagnostic: independent launches can begin
-at different patrol phases and an in-flight projectile can cross a checkpoint
-boundary. Canonical ordered inventory contents, modes, active attack type and
-the required quantity transition are strict.
+positions as diagnostic because independent launches can begin at different
+patrol phases. Canonical ordered inventory contents, modes, active attack type,
+the required quantity transition, and target HP in scenarios that require a
+committed hit are strict.
 
-Run `Remake/tools/Capture-InventoryParity.ps1` to recapture all sixteen MOD traces,
+Run `Remake/tools/Capture-InventoryParity.ps1` to recapture all eighteen MOD traces,
 replay every scenario in Remake and produce JSON/Markdown comparisons. Pass
 `-ScenarioId ID` to isolate one scenario while developing. The runner copies
 the MOD to an isolated `E:\1937` runtime, sends input only to the target

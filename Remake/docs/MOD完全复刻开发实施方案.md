@@ -366,6 +366,17 @@ index、item、quantity 与 mode；巡逻位置和在途投射物导致的目标
 `Capture-InventoryParity.ps1` 会从隔离 MOD 重新采集、在 Remake 重放并输出
 双份 JSON/Markdown 报告，全程不捕获、裁剪或移动系统鼠标。
 
+第 8 关又补上了此前被阵营筛选漏掉的铁蛋特殊状态。scene 2298 仍占用
+原玩家槽 2、可由 F3 选择，但稳定 MOD 的实时 faction 为 1；Remake 现把
+“可控角色槽”和“实时敌我阵营”分开建模，并从该 scene 的原始 actor 记录
+加载武器/背包双容器。`m007-slingshot-attack-inventory-v1` 先把虚拟光标
+移离边缘以消除卷屏竞态，再按住 `Ctrl` 强制攻击相邻古明；两端均得到
+项目 42 `1→1`、目标生命 `8→7`。这里也把“进程快照中的 27 名实时
+faction 3 玩家”与“玩法中的 28 个初始命令槽角色”明确区分；真实内容
+门禁逐关验证 28 名角色、85 个武器项目和 77 个背包项目。铁蛋作为可控
+`SquadUnit` 时仍实现原 type 11 注意力保持接口，因此玩家槽、faction 1
+和目标 `+656` 三种状态不再互相排斥。
+
 `m010-sight-direct-target-v1` 与 `m010-burial-command-v1` 又闭环了
 `S`/`B` 的现场歧义。前者在稳定 MOD 与 Remake 中都通过真实按键和目标点击
 选择存活 faction 1 的 scene 1126，并确认没有错误创建 type 90；后者由

@@ -78,16 +78,18 @@ const WEAPON_ATTACK_SCENARIOS := {
 	},
 	"m007-slingshot-attack-inventory-v1": {
 		"player_scene": 2298,
-		"target_scene": 2287,
+		"target_scene": 2389,
+		"target_is_player": true,
 		"attack_type": 7,
 		"item_id": 42,
 		"before_quantity": 1,
 		"after_quantity": 1,
 		"require_target_damage": true,
+		"force_target": true,
 		"description": (
 			"Select Tiedan scene 2298, equip his original durable slingshot, "
-			+ "and attack live scene 2287; verify item 42 remains owned and "
-			+ "the projectile commits target damage."
+			+ "and force-target adjacent Gu Ming scene 2389; verify item 42 "
+			+ "remains owned and the projectile commits target damage."
 		),
 	},
 	"m007-special-attention-attack-inventory-v1": {

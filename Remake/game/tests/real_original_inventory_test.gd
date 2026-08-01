@@ -49,8 +49,39 @@ func _run_tests() -> void:
 			.get(level_id, {}) as Dictionary
 		)
 		var expected_players := expected_level.get("players", []) as Array
+		var expected_controllable_scenes: Dictionary = {}
+		for player_value: Variant in expected_players:
+			if player_value is Dictionary:
+				expected_controllable_scenes[
+					int((player_value as Dictionary).get("scene_index", -1))
+				] = true
+		for actor_value: Variant in expected_level.get("actors", []):
+			if not actor_value is Dictionary:
+				continue
+			var expected_actor := actor_value as Dictionary
+			var expected_scene_index := int(
+				expected_actor.get("scene_index", -1)
+			)
+			if (
+				int(expected_actor.get("vwf_faction_id", 0)) == 3
+				and not bool(
+					main.call(
+						"_is_rescue_bound_scene",
+						expected_scene_index,
+					)
+				)
+				and bool(
+					main.call(
+						"_is_original_squad_display_name",
+						str(expected_actor.get("display_name", "")),
+					)
+				)
+			):
+				expected_controllable_scenes[
+					expected_scene_index
+				] = true
 		_expect(
-			(main.units as Array).size() == expected_players.size(),
+			(main.units as Array).size() == expected_controllable_scenes.size(),
 			"%s spawns the exact original player count" % level_id,
 		)
 		for unit_value: Variant in main.units:
@@ -59,6 +90,11 @@ func _run_tests() -> void:
 				level_id,
 				int(unit.get("scene_index")),
 			)
+			if expected.is_empty():
+				expected = ORIGINAL_INVENTORY.loadout_for_any_actor_scene(
+					level_id,
+					int(unit.get("scene_index")),
+				)
 			_expect(
 				not expected.is_empty(),
 				"%s scene %d resolves an exact original loadout"
@@ -145,14 +181,20 @@ func _run_tests() -> void:
 						% level_id
 					)
 	_expect(
-		player_count == 27 and entry_count == 83,
-		"all 27 original players and 83 ordered weapon entries reach gameplay",
+		player_count == 28 and entry_count == 85,
+		(
+			"all 28 original command-slot actors and 85 ordered weapon entries "
+			+ "reach gameplay"
+		),
 	)
 	_expect(
-		backpack_player_count == 27
-		and backpack_entry_count == 74
+		backpack_player_count == 28
+		and backpack_entry_count == 77
 		and empty_backpack_player_count == 1,
-		"all 27 original players and 74 backpack entries reach gameplay",
+		(
+			"all 28 original command-slot actors and 77 backpack entries "
+			+ "reach gameplay"
+		),
 	)
 	_expect(
 		exact_weapon_actor_count == 660
