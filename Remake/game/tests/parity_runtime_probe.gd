@@ -20,6 +20,7 @@ const PRIMARY_DATABASE_ENTRY_ID := 924
 const MINE_PICKUP_SCENARIO_ID := "m001-mine-pickup-inventory-v1"
 const PISTOL_ATTACK_SCENARIO_ID := "m000-pistol-attack-inventory-v1"
 const NATIVE_REQUIRED_FAILURE_SUFFIX := "-native-required-player-failure-v1"
+const HUMAN_INPUT_NATURAL_FAILURE_SUFFIX := "-human-input-natural-failure-v1"
 const NATIVE_REQUIRED_FAILURE_SCENES := {
 	"m000": 1436,
 	"m001": 1994,
@@ -33,6 +34,105 @@ const NATIVE_REQUIRED_FAILURE_SCENES := {
 	"m009": 1709,
 	"m010": 1590,
 	"m011": 1176,
+}
+const HUMAN_INPUT_NATURAL_FAILURE_ROUTES := {
+	"m000": {
+		"player_scene": 1436,
+		"selection_key": KEY_F4,
+		"target_world": Vector2(1392.0, 536.0),
+	},
+	"m001": {
+		"player_scene": 1994,
+		"selection_key": KEY_F5,
+		"target_world": Vector2(2800.0, 3848.0),
+	},
+	"m002": {
+		"player_scene": 886,
+		"selection_key": KEY_F2,
+		"action_kind": "weapon_noise_lure",
+		"weapon_key": KEY_5,
+		"target_scene": 840,
+		"approach_world": Vector2(464.0, 1688.0),
+	},
+	"m003": {
+		"player_scene": 1150,
+		"selection_key": KEY_F2,
+		"target_world": Vector2(1104.0, 2968.0),
+	},
+	"m004": {
+		"player_scene": 2629,
+		"selection_key": KEY_F6,
+		"target_world": Vector2(1936.0, 312.0),
+	},
+	"m005": {
+		"player_scene": 663,
+		"selection_key": KEY_F2,
+		"target_world": Vector2(432.0, 2856.0),
+	},
+	"m006": {
+		"player_scene": 1458,
+		"selection_key": KEY_F4,
+		"action_kind": "weapon_noise_lure",
+		"weapon_key": KEY_5,
+		"target_scene": 1429,
+	},
+	"m007": {
+		"player_scene": 2325,
+		"selection_key": KEY_F2,
+		"action_kind": "weapon_noise_lure",
+		"weapon_key": KEY_5,
+		"target_scene": 2326,
+		"post_shot_world": Vector2(1200.0, 640.0),
+	},
+	"m008": {
+		"player_scene": 753,
+		"selection_key": KEY_F2,
+		"target_world": Vector2(1072.0, 424.0),
+	},
+	"m009": {
+		"player_scene": 1709,
+		"selection_key": KEY_F2,
+		"action_kind": "weapon_noise_lure",
+		"weapon_key": KEY_5,
+		"target_scene": 1302,
+		"post_shot_world": Vector2(400.0, 1360.0),
+	},
+	"m010": {
+		"player_scene": 1590,
+		"selection_key": KEY_F2,
+		"action_kind": "weapon_noise_lure",
+		"weapon_key": KEY_5,
+		"target_scene": 1133,
+		"cancel_weapon_key": KEY_1,
+		"post_shot_candidates": [
+			Vector2(160.0, 160.0),
+			Vector2(176.0, 160.0),
+			Vector2(192.0, 160.0),
+			Vector2(208.0, 160.0),
+			Vector2(208.0, 88.0),
+			Vector2(240.0, 88.0),
+			Vector2(272.0, 88.0),
+			Vector2(304.0, 88.0),
+			Vector2(208.0, 120.0),
+			Vector2(240.0, 120.0),
+			Vector2(272.0, 120.0),
+			Vector2(304.0, 120.0),
+			Vector2(208.0, 152.0),
+			Vector2(240.0, 152.0),
+			Vector2(272.0, 152.0),
+			Vector2(304.0, 152.0),
+			Vector2(640.0, 120.0),
+			Vector2(640.0, 200.0),
+			Vector2(640.0, 280.0),
+			Vector2(480.0, 280.0),
+			Vector2(800.0, 200.0),
+		],
+	},
+	"m011": {
+		"player_scene": 1176,
+		"selection_key": KEY_F2,
+		"target_world": Vector2(1936.0, 344.0),
+	},
 }
 const SIGHT_DIRECT_TARGET_SCENARIO_ID := "m010-sight-direct-target-v1"
 const BURIAL_COMMAND_SCENARIO_ID := "m010-burial-command-v1"
@@ -372,6 +472,15 @@ func _run_probe() -> void:
 	if scenario_id == MINE_PICKUP_SCENARIO_ID:
 		await _run_mine_pickup_probe(main, trace, started)
 		return
+	if scenario_id == _human_input_natural_failure_scenario_id(level_id):
+		await _run_human_input_natural_failure_probe(
+			main,
+			trace,
+			started,
+			level_id,
+			scenario_id,
+		)
+		return
 	if scenario_id == _native_required_failure_scenario_id(level_id):
 		await _run_native_required_failure_probe(
 			main,
@@ -635,6 +744,403 @@ func _run_native_required_failure_probe(
 		trace,
 		scenario_id,
 	)
+
+
+func _run_human_input_natural_failure_probe(
+	main: Node,
+	trace: RefCounted,
+	started: int,
+	level_id: String,
+	scenario_id: String,
+) -> void:
+	var route := (
+		HUMAN_INPUT_NATURAL_FAILURE_ROUTES.get(level_id, {}) as Dictionary
+	)
+	var player_scene := int(route.get("player_scene", -1))
+	var player := _player_for_scene(main, player_scene)
+	_expect(not route.is_empty(), "%s natural-failure route exists" % level_id)
+	_expect(
+		player != null,
+		"%s required player scene %d exists" % [level_id, player_scene],
+	)
+	var input_kind := str(route.get("action_kind", "ground_danger_route"))
+	var target_scene := int(route.get("target_scene", -1))
+	var target_world := route.get("target_world", Vector2.ZERO) as Vector2
+	var hit_point_samples: Array[int] = []
+	var attacker_scene_indices: Array[int] = []
+	var input_submitted := false
+	var attack_command_observed := false
+	var before_pistol_quantity := -1
+	var after_pistol_quantity := -1
+	var viewport_input_events := 0
+	var input_sequence: Array[Dictionary] = []
+	var post_shot_world_used := Vector2.ZERO
+
+	if player != null:
+		# The stable-MOD capture checks five seconds of spawn safety before it
+		# submits input. Keep the same autonomous-world phase while driving only
+		# target-viewport key and mouse events.
+		await _wait_physics_seconds(5.0)
+		hit_point_samples.append(int(player.get("current_hit_points")))
+		trace.call(
+			"capture_main",
+			"gameplay_active",
+			main,
+			_elapsed_ms(started),
+			{
+				"input_isolation": "target-viewport-events",
+				"mission_result_writes": 0,
+				"system_cursor_calls": 0,
+				"global_focus_calls": 0,
+			},
+		)
+
+		await _tap_key(route.get("selection_key", KEY_F2) as Key)
+		viewport_input_events += 2
+		input_sequence.append({
+			"kind": "character_hotkey",
+			"keycode": int(route.get("selection_key", KEY_F2)),
+			"scene_index": player_scene,
+		})
+		_expect(
+			(main.get("selected_units") as Array).size() == 1
+				and (main.get("selected_units") as Array)[0] == player,
+			"%s original character hotkey selects only scene %d"
+			% [level_id, player_scene],
+		)
+
+		if input_kind == "weapon_noise_lure":
+			var lure := _enemy_for_scene(main, target_scene)
+			_expect(
+				lure != null,
+				"%s noise-lure enemy scene %d exists"
+				% [level_id, target_scene],
+			)
+			if lure != null:
+				if route.has("approach_world"):
+					var approach_world := route["approach_world"] as Vector2
+					await _pan_view_to_world(main, approach_world)
+					await _click_world(main, approach_world)
+					viewport_input_events += 5
+					input_sequence.append({
+						"kind": "ground_move",
+						"world": [approach_world.x, approach_world.y],
+						"purpose": "approach_lure",
+					})
+					var approach_reached := false
+					for _frame_index: int in range(900):
+						if player.position.distance_to(approach_world) <= 18.0:
+							approach_reached = true
+							break
+						if not bool(player.get("is_alive")):
+							break
+						await physics_frame
+					_expect(
+						approach_reached,
+						"%s viewport ground click reaches the audited lure point"
+						% level_id,
+					)
+				target_world = lure.position
+				before_pistol_quantity = _inventory_quantity(
+					player,
+					"weapon_entries",
+					36,
+				)
+				await _tap_key(route.get("weapon_key", KEY_5) as Key)
+				viewport_input_events += 2
+				input_sequence.append({
+					"kind": "weapon_hotkey",
+					"keycode": int(route.get("weapon_key", KEY_5)),
+					"attack_type": 1,
+				})
+				_expect(
+					int(
+						(player.get("weapon_profile") as Dictionary)
+						. get("attack_type", 0)
+					) == 1,
+					"%s original digit 5 equips the pistol" % level_id,
+				)
+				await _pan_view_to_world(main, target_world)
+				# Patrol actors continue moving while the middle-drag input is
+				# processed. Aim at the current actor origin, not the position
+				# sampled before the camera gesture.
+				target_world = lure.position
+				_expect(
+					main.call("enemy_at_world_point", target_world) == lure,
+					"%s current lure coordinate resolves scene %d before input"
+					% [level_id, target_scene],
+				)
+				await _click_world(main, target_world, true)
+				viewport_input_events += 5
+				input_sequence.append({
+					"kind": "force_target_attack",
+					"scene_index": target_scene,
+					"world": [target_world.x, target_world.y],
+					"modifier": "ctrl",
+				})
+				input_submitted = true
+				attack_command_observed = player.get("combat_target") == lure
+				for _frame_index: int in range(180):
+					after_pistol_quantity = _inventory_quantity(
+						player,
+						"weapon_entries",
+						36,
+					)
+					if (
+						after_pistol_quantity < before_pistol_quantity
+						or player.get("combat_target") == lure
+					):
+						attack_command_observed = true
+					if after_pistol_quantity < before_pistol_quantity:
+						break
+					await physics_frame
+				_expect(
+					attack_command_observed
+						and after_pistol_quantity < before_pistol_quantity,
+					(
+						"%s pistol click enters the real combat pipeline "
+						+ "and consumes direct ammunition"
+					) % level_id,
+				)
+				if route.has("cancel_weapon_key"):
+					var action_finished := false
+					for _frame_index: int in range(180):
+						if int(player.get("combat_action")) == 0:
+							action_finished = true
+							break
+						await physics_frame
+					_expect(
+						action_finished,
+						"%s first audible pistol action reaches its final frame" % level_id,
+					)
+					await _tap_key(route["cancel_weapon_key"] as Key)
+					viewport_input_events += 2
+					input_sequence.append({
+						"kind": "weapon_hotkey",
+						"keycode": int(route["cancel_weapon_key"]),
+						"attack_type": 4,
+						"purpose": "release_sustained_fire",
+					})
+					_expect(
+						int(
+							(player.get("weapon_profile") as Dictionary).get(
+								"attack_type", 0
+							)
+						) == 4
+							and player.get("combat_target") == null,
+						"%s original digit 1 releases sustained pistol fire" % level_id,
+					)
+				var has_post_shot_order := (
+					route.has("post_shot_world")
+					or route.has("post_shot_candidates")
+				)
+				if has_post_shot_order:
+					# One follow-up ground command is genuine player input and mirrors
+					# releasing an attack order after its first audible shot.  It keeps
+					# this probe about enemy retaliation instead of letting the player
+					# empty an entire pistol into the selected guard.
+					var post_shot_world := route.get(
+						"post_shot_world", Vector2.ZERO
+					) as Vector2
+					if route.has("post_shot_candidates"):
+						post_shot_world = _first_audited_ground_destination(
+							main,
+							player,
+							route["post_shot_candidates"] as Array,
+						)
+					_expect(
+						not post_shot_world.is_equal_approx(Vector2.ZERO),
+						"%s resolves a reachable interaction-free follow-up point" % level_id,
+					)
+					post_shot_world_used = post_shot_world
+					await _pan_view_to_world(main, post_shot_world)
+					await _click_world(main, post_shot_world)
+					viewport_input_events += 5
+					input_sequence.append({
+						"kind": "ground_move",
+						"world": [post_shot_world.x, post_shot_world.y],
+						"purpose": "enter_retaliation_zone",
+					})
+					await physics_frame
+					var post_shot_target := player.get("target_position") as Vector2
+					_expect(
+						player.get("combat_target") == null
+							and (
+								post_shot_target.distance_to(post_shot_world) <= 24.0
+								or not (
+									player.get("movement_path") as PackedVector2Array
+								).is_empty()
+							),
+						"%s follow-up ground click releases sustained fire"
+						% level_id,
+					)
+		else:
+			await _pan_view_to_world(main, target_world)
+			await _click_world(main, target_world)
+			viewport_input_events += 5
+			input_sequence.append({
+				"kind": "ground_move",
+				"world": [target_world.x, target_world.y],
+				"purpose": "danger_route",
+			})
+			input_submitted = true
+			await physics_frame
+			var target_position := player.get("target_position") as Vector2
+			attack_command_observed = (
+				target_position.distance_to(target_world) <= 1.0
+				or not (player.get("movement_path") as PackedVector2Array).is_empty()
+				or player.get("combat_target") != null
+			)
+			_expect(
+				attack_command_observed,
+				"%s ground click submits the audited danger route" % level_id,
+			)
+		_expect(input_submitted, "%s natural-failure input is submitted" % level_id)
+		trace.call(
+			"capture_main",
+			"failure_input_submitted",
+			main,
+			_elapsed_ms(started),
+			{
+				"action_kind": input_kind,
+				"target_scene_index": target_scene,
+				"target_world": [target_world.x, target_world.y],
+			},
+		)
+
+		for _frame_index: int in range(2400):
+			var hit_points := int(player.get("current_hit_points"))
+			if hit_point_samples.back() != hit_points:
+				hit_point_samples.append(hit_points)
+			var last_attacker := int(
+				player.get("last_damage_attacker_scene_index")
+			)
+			if last_attacker >= 0 and not attacker_scene_indices.has(last_attacker):
+				attacker_scene_indices.append(last_attacker)
+			for enemy: Node2D in main.get("enemies") as Array:
+				if (
+					enemy.get("current_target") == player
+					and not attacker_scene_indices.has(
+						int(enemy.get("scene_index"))
+					)
+				):
+					attacker_scene_indices.append(
+						int(enemy.get("scene_index"))
+					)
+			if (
+				not bool(player.get("is_alive"))
+				or int(player.get("current_hit_points")) <= 0
+			):
+				break
+			await physics_frame
+		attacker_scene_indices.sort()
+		_expect(
+			hit_point_samples.size() >= 2
+				and hit_point_samples.back() == 0
+				and not bool(player.get("is_alive")),
+			"%s original enemy AI naturally reduces scene %d from 8 HP to death"
+			% [level_id, player_scene],
+		)
+		_expect(
+			int(player.get("damage_event_count")) > 0
+				and int(player.get("damage_taken_total"))
+					>= hit_point_samples[0],
+			"%s death contains real enemy damage events" % level_id,
+		)
+		_expect(
+			main.current_mission_state.is_failed()
+				and str(main.current_mission_state.failure_id)
+					== "required_character_lost",
+			"%s natural actor death reaches required_character_lost" % level_id,
+		)
+		trace.call(
+			"capture_main",
+			"required_player_lost",
+			main,
+			_elapsed_ms(started),
+			{
+				"damage_entry": "original_unmodified_gameplay_pipeline",
+				"mission_evaluator": "MissionRuntime.record_event",
+				"original_result_state": 2,
+			},
+		)
+
+	var trace_document: Dictionary = trace.get("document") as Dictionary
+	var metadata := trace_document.get("metadata", {}) as Dictionary
+	metadata.merge(
+		{
+			"input_isolation": "target-viewport-events",
+			"damage_entry": "original_unmodified_gameplay_pipeline",
+			"mission_evaluator": "MissionRuntime.record_event",
+			"mission_result_writes": 0,
+			"system_cursor_calls": 0,
+			"global_focus_calls": 0,
+		},
+		true,
+	)
+	trace_document["metadata"] = metadata
+	var input_document := {
+		"action_kind": input_kind,
+		"player_scene_index": player_scene,
+		"target_scene_index": target_scene,
+		"target_world": [target_world.x, target_world.y],
+		"target_cell": [
+			floori(target_world.x / 32.0),
+			floori(target_world.y / 16.0),
+		],
+		"viewport_input_events": viewport_input_events,
+		"sequence": input_sequence,
+		"pistol_quantity": [
+			before_pistol_quantity,
+			after_pistol_quantity,
+		],
+	}
+	if not post_shot_world_used.is_equal_approx(Vector2.ZERO):
+		input_document["post_shot_world"] = [
+			post_shot_world_used.x,
+			post_shot_world_used.y,
+		]
+	trace_document["input"] = input_document
+	trace_document["combat"] = {
+		"hit_point_samples": hit_point_samples,
+		"attacker_scene_indices": attacker_scene_indices,
+		"damage_event_count": (
+			int(player.get("damage_event_count")) if player != null else 0
+		),
+		"damage_taken_total": (
+			int(player.get("damage_taken_total")) if player != null else 0
+		),
+	}
+	trace_document["passed"] = failures.is_empty()
+	var trace_path := ""
+	if not output_directory.is_empty():
+		trace_path = output_directory.path_join(
+			"remake-%s.json" % _safe_file_component(scenario_id)
+		)
+		var write_error: Error = trace.call("write_to_file", trace_path)
+		_expect(write_error == OK, "Remake natural-failure parity trace writes")
+	print(
+		"PARITY_RUNTIME_PROBE_RESULT %s"
+		% JSON.stringify(
+			{
+				"trace": trace_path,
+				"checkpoints": (
+					trace_document.get("checkpoints", []) as Array
+				).size(),
+				"hit_point_samples": hit_point_samples,
+				"attacker_scene_indices": attacker_scene_indices,
+				"failures": failures,
+			}
+		)
+	)
+	main.queue_free()
+	await process_frame
+	if failures.is_empty():
+		quit(0)
+		return
+	for failure: String in failures:
+		push_error(failure)
+	quit(1)
 
 
 func _run_weapon_attack_probe(
@@ -1589,6 +2095,21 @@ func _scenario_description(scenario_id: String, level_id: String) -> String:
 			+ "scene-2096 mine through the original automatic approach path; "
 			+ "capture both inventory containers before and after."
 		)
+	if scenario_id == _human_input_natural_failure_scenario_id(level_id):
+		var route := (
+			HUMAN_INPUT_NATURAL_FAILURE_ROUTES.get(level_id, {}) as Dictionary
+		)
+		if str(route.get("action_kind", "")) == "weapon_noise_lure":
+			return (
+				"Through target-viewport input, select the required player "
+				+ "and pistol, submit a real attack click as a noise lure, "
+				+ "then observe enemy combat and required_character_lost."
+			)
+		return (
+			"Through target-viewport input, select the required player, "
+			+ "click the audited danger route, then observe enemy combat "
+			+ "and required_character_lost."
+		)
 	if scenario_id == _native_required_failure_scenario_id(level_id):
 		return (
 			"Apply the original unconditional damage threshold to required "
@@ -1661,6 +2182,10 @@ func _enemy_patrol_scenario_id(level_id: String) -> String:
 
 func _native_required_failure_scenario_id(level_id: String) -> String:
 	return level_id + NATIVE_REQUIRED_FAILURE_SUFFIX
+
+
+func _human_input_natural_failure_scenario_id(level_id: String) -> String:
+	return level_id + HUMAN_INPUT_NATURAL_FAILURE_SUFFIX
 
 
 func _parse_move_speed(arguments: PackedStringArray) -> float:
@@ -1835,10 +2360,84 @@ func _tap_key(keycode: Key) -> void:
 	await process_frame
 
 
-func _click_world(main: Node, world_position: Vector2) -> void:
+func _pan_view_to_world(main: Node, world_position: Vector2) -> void:
+	var camera := main.get("level_camera") as Camera2D
+	if camera == null:
+		return
+	var viewport_center := root.size * 0.5
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_MIDDLE
+	press.pressed = true
+	press.position = viewport_center
+	root.push_input(press, true)
+	await process_frame
+	var motion := InputEventMouseMotion.new()
+	motion.position = viewport_center
+	motion.relative = (
+		(camera.position - world_position)
+		* camera.zoom.x
+	)
+	root.push_input(motion, true)
+	await process_frame
+	var release := press.duplicate() as InputEventMouseButton
+	release.pressed = false
+	release.position = viewport_center + motion.relative
+	root.push_input(release, true)
+	await process_frame
+
+
+func _first_audited_ground_destination(
+	main: Node,
+	player: Node2D,
+	candidates: Array,
+) -> Vector2:
+	for candidate_value: Variant in candidates:
+		if not candidate_value is Vector2:
+			continue
+		var candidate := candidate_value as Vector2
+		var hits_squad := false
+		for unit: Node2D in main.get("units") as Array:
+			if (
+				bool(unit.get("is_alive"))
+				and bool(unit.call("contains_parent_point", candidate))
+			):
+				hits_squad = true
+				break
+		if hits_squad:
+			continue
+		if (
+			main.call("enemy_at_world_point", candidate) != null
+			or main.call("explosive_prop_at_world_point", candidate) != null
+			or main.call("field_pickup_at_world_point", candidate) != null
+			or main.call("legacy_door_at_world_point", candidate) != null
+		):
+			continue
+		var hits_burial_cache := false
+		for cache: Node2D in main.get("legacy_burial_caches") as Array:
+			if bool(cache.call("contains_parent_point", candidate)):
+				hits_burial_cache = true
+				break
+		if hits_burial_cache:
+			continue
+		var path: PackedVector2Array = main.dynamic_occupancy.find_path_for_scene(
+			int(player.get("scene_index")),
+			player.position,
+			candidate,
+		)
+		if not path.is_empty() and path[-1].distance_to(candidate) <= 24.0:
+			return candidate
+	return Vector2.ZERO
+
+
+func _click_world(
+	main: Node,
+	world_position: Vector2,
+	ctrl_pressed: bool = false,
+) -> void:
 	var click := InputEventMouseButton.new()
 	click.button_index = MOUSE_BUTTON_LEFT
 	click.pressed = true
+	click.ctrl_pressed = ctrl_pressed
 	click.position = main.get_global_transform_with_canvas() * world_position
 	root.push_input(click, true)
 	await process_frame

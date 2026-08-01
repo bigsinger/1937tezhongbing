@@ -13,6 +13,12 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v6
+        with:
+          # The stable 12-level Mod is the authoritative parity oracle.  Pull
+          # its LFS objects so CI exercises the same real maps, scripts and
+          # resources as a local full verification instead of silently taking
+          # Verify.ps1's clean-room/no-assets branch.
+          lfs: true
 
       - name: Set up .NET 10
         uses: actions/setup-dotnet@v5
@@ -28,6 +34,10 @@ jobs:
 
       - name: Run synthetic format tests
         run: dotnet run --project ./Remake/tools/ResourceFormats.Tests/ResourceFormats.Tests.csproj --configuration Release --no-build
+
+      - name: Import stable Mod assets for parity verification
+        shell: pwsh
+        run: ./Remake/tools/Import-ModAssets.ps1
 
       - name: Download Godot 4.7.1 Standard
         shell: pwsh

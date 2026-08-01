@@ -34,13 +34,13 @@ func _run() -> void:
 	var player: Node2D = main.units[0]
 	main.clear_selection()
 	main.level_camera.position = main.world_size * 0.5
-	_push_key(KEY_F2, true)
+	_push_key(KEY_F4, true)
 	await process_frame
 	_expect(
 		main.selected_units.size() == 1
 			and main.selected_units[0] == player
 			and bool(player.get("selected")),
-		"an actual F2 press selects the first actor",
+		"an actual F4 press selects m000 Qiangzi in his fixed character slot",
 	)
 	var expected_camera: Vector2 = main.LEVEL_VIEW.clamp_camera_center(
 		player.position,
@@ -126,6 +126,73 @@ func _run() -> void:
 					"rescue_pengxin"
 				),
 			"an actual E press rescues scene 1427 and advances the mission",
+		)
+
+	# Original F2..F6 bindings are permanent character identities.  m001 is
+	# deliberately sparse (Lao Zhao, Qiangzi and Gu Ming only), so compact-array
+	# selection would incorrectly make F5 choose Lao Zhao.
+	main.switch_level(1, false, false)
+	_disable_autonomous_world(main)
+	var gu_ming: Node2D
+	for unit_value: Variant in main.units:
+		var level_unit := unit_value as Node2D
+		if int(level_unit.get("scene_index")) == 1994:
+			gu_ming = level_unit
+			break
+	main.clear_selection()
+	_push_key(KEY_F5, true)
+	await process_frame
+	_expect(
+		gu_ming != null
+			and main.selected_units.size() == 1
+			and main.selected_units[0] == gu_ming,
+		"m001 actual F5 press selects fixed Gu Ming scene 1994 despite missing slots",
+	)
+
+	main.switch_level(2, false, false)
+	_disable_autonomous_world(main)
+	var lao_zhao: Node2D
+	var distant_guard: Node2D
+	for unit_value: Variant in main.units:
+		var level_unit := unit_value as Node2D
+		if int(level_unit.get("scene_index")) == 886:
+			lao_zhao = level_unit
+	for enemy_value: Variant in main.enemies:
+		var level_enemy := enemy_value as Node2D
+		if int(level_enemy.get("scene_index")) == 840:
+			distant_guard = level_enemy
+	main.clear_selection()
+	_push_key(KEY_F2, true)
+	await process_frame
+	_push_key(KEY_5, true)
+	await process_frame
+	_expect(
+		lao_zhao != null
+			and distant_guard != null
+			and main.selected_units == [lao_zhao]
+			and int(
+				(lao_zhao.get("weapon_profile") as Dictionary).get(
+					"attack_type", 0
+				)
+			) == 1,
+		"m002 real F2 and digit 5 input select Lao Zhao and his pistol",
+	)
+	if lao_zhao != null and distant_guard != null:
+		main.level_camera.position = distant_guard.position
+		main.clamp_level_camera()
+		var forced_click := InputEventMouseButton.new()
+		forced_click.button_index = MOUSE_BUTTON_LEFT
+		forced_click.pressed = true
+		forced_click.ctrl_pressed = true
+		forced_click.position = (
+			main.get_global_transform_with_canvas() * distant_guard.position
+		)
+		root.push_input(forced_click, true)
+		await process_frame
+		_expect(
+			lao_zhao.get("combat_target") == distant_guard
+				and bool(lao_zhao.get("combat_target_forced")),
+			"Ctrl-modified viewport click reaches the original forced-target command path",
 		)
 
 	_finish(main)

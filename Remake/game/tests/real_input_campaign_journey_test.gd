@@ -22,6 +22,13 @@ const LEVEL_IDS: Array[String] = [
 	"m010",
 	"m011",
 ]
+const ORIGINAL_CHARACTER_HOTKEYS: Array[Key] = [
+	KEY_F2,
+	KEY_F3,
+	KEY_F4,
+	KEY_F5,
+	KEY_F6,
+]
 
 const OVERLAY_NONE := 0
 const OVERLAY_PAUSE := 1
@@ -126,13 +133,19 @@ func _exercise_level(main: Node, level_index: int) -> void:
 
 	var player: Node2D = main.units[0]
 	var selected_player_scene := int(player.get("scene_index"))
+	var player_selection_key := _original_character_hotkey(main, player)
+	_expect(
+		player_selection_key != KEY_NONE,
+		"%s first real player has an original fixed character slot" % level_id,
+	)
 	main.clear_selection()
-	await _tap_key(KEY_F2)
+	if player_selection_key != KEY_NONE:
+		await _tap_key(player_selection_key)
 	_expect(
 		main.selected_units.size() == 1
 			and main.selected_units[0] == player
 			and bool(player.get("selected")),
-		"%s F2 selects its first real player actor" % level_id,
+		"%s original character hotkey selects its first real player actor" % level_id,
 	)
 	var expected_camera: Vector2 = main.LEVEL_VIEW.clamp_camera_center(
 		player.position,
@@ -142,7 +155,7 @@ func _exercise_level(main: Node, level_index: int) -> void:
 	)
 	_expect(
 		main.level_camera.position.is_equal_approx(expected_camera),
-		"%s F2 recenters the camera on that actor" % level_id,
+		"%s original character hotkey recenters the camera on that actor" % level_id,
 	)
 
 	var move_destination := _nearby_walkable_destination(main, player)
@@ -252,7 +265,8 @@ func _exercise_level(main: Node, level_index: int) -> void:
 			"%s clicking a live enemy commits sight observation once" % level_id,
 		)
 
-		await _tap_key(KEY_F2)
+		if player_selection_key != KEY_NONE:
+			await _tap_key(player_selection_key)
 		var direct_weapon_keycode := _first_direct_weapon_keycode(player)
 		if direct_weapon_keycode != KEY_NONE:
 			await _tap_key(direct_weapon_keycode)
@@ -323,7 +337,8 @@ func _exercise_level(main: Node, level_index: int) -> void:
 					% level_id,
 			)
 
-	await _tap_key(KEY_F2)
+	if player_selection_key != KEY_NONE:
+		await _tap_key(player_selection_key)
 	player = main.units[0]
 	var saved_position := player.position
 	await _tap_key(KEY_F5, true)
@@ -374,6 +389,7 @@ func _exercise_level(main: Node, level_index: int) -> void:
 		{
 			"level_id": level_id,
 			"selected_player_scene": selected_player_scene,
+			"selection_keycode": int(player_selection_key),
 			"observed_enemy_scene": observed_scene,
 			"buried_enemy_scene": buried_scene,
 			"physical_quicksave": true,
@@ -422,6 +438,16 @@ func _nearby_walkable_destination(main: Node, player: Node2D) -> Vector2:
 		if route.size() >= 2:
 			return route[-1]
 	return Vector2.INF
+
+
+func _original_character_hotkey(main: Node, player: Node2D) -> Key:
+	var display_name := str(player.get("display_name"))
+	for slot_index: int in range(
+		min(main.PLAYABLE_SQUAD.size(), ORIGINAL_CHARACTER_HOTKEYS.size())
+	):
+		if str(main.PLAYABLE_SQUAD[slot_index].get("name", "")) == display_name:
+			return ORIGINAL_CHARACTER_HOTKEYS[slot_index]
+	return KEY_NONE
 
 
 func _first_living_enemy(main: Node):

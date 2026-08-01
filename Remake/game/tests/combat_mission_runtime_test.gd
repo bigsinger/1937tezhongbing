@@ -136,6 +136,7 @@ func _init() -> void:
 func _run_tests() -> void:
 	var failures: Array[String] = []
 	_test_combat_timing_ammo_and_death(failures)
+	_test_forced_coordinate_attack_commit(failures)
 	_test_original_damage_dispatch(failures)
 	_test_alert_propagation(failures)
 	_test_faction_and_exit_party_rules(failures)
@@ -300,6 +301,82 @@ func _test_combat_timing_ammo_and_death(failures: Array[String]) -> void:
 		failures,
 	)
 
+	arena.free()
+
+
+func _test_forced_coordinate_attack_commit(failures: Array[String]) -> void:
+	var arena := Node2D.new()
+	root.add_child(arena)
+	var clear_sight := ClearSight.new()
+	var empty_groups: Array[Dictionary] = []
+	var attacker = SQUAD_UNIT_SCRIPT.new()
+	attacker.configure(
+		"forced shooter",
+		Color.WHITE,
+		Vector2.ZERO,
+		null,
+		empty_groups,
+		empty_groups,
+		-1,
+		clear_sight,
+	)
+	attacker.configure_combat(
+		3,
+		8,
+		_test_weapon_profile(),
+		empty_groups,
+		empty_groups,
+		false,
+	)
+	var target = SQUAD_UNIT_SCRIPT.new()
+	target.configure(
+		"distant target",
+		Color.WHITE,
+		Vector2(2000.0, 0.0),
+		null,
+		empty_groups,
+		empty_groups,
+		-1,
+		clear_sight,
+	)
+	target.faction_id = 1
+	target.configure_combat(
+		1,
+		8,
+		{},
+		empty_groups,
+		empty_groups,
+		true,
+	)
+	arena.add_child(attacker)
+	arena.add_child(target)
+	var projectile_requests: Array[Dictionary] = []
+	attacker.projectile_requested.connect(
+		func(_attacker: Node2D, requested_target: Node2D, profile: Dictionary) -> void:
+			projectile_requests.append({
+				"target": requested_target,
+				"attack_type": int(profile.get("attack_type", 0)),
+			})
+	)
+	_expect(
+		not attacker.can_attack_target(target),
+		"ordinary fire rejects a target outside the recovered range",
+		failures,
+	)
+	_expect(
+		attacker.can_attack_target(target, true),
+		"forced coordinate fire accepts a projectile target outside range/LOS",
+		failures,
+	)
+	_expect(
+		attacker.try_start_attack(target, true)
+			and attacker.magazine_ammo == 1
+			and projectile_requests.size() == 1
+			and projectile_requests[0]["target"] == target
+			and int(projectile_requests[0]["attack_type"]) == 2,
+		"forced coordinate fire consumes ammo and enters the real projectile pipeline",
+		failures,
+	)
 	arena.free()
 
 

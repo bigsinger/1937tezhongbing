@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "trace_id": "mod-m002-human-input-natural-failure-v1",
+  "runtime": "mod",
+  "content_profile": "repository-mod-12-level-20260729",
+  "level": {"id":"m002","selector_level":3,"engine_mission":3},
+  "scenario": {"id":"m002-human-input-natural-failure-v1","description":"Through process-local DirectInput, select the required player and pistol with the original hotkeys, then issue an original forced-attack click that creates a gameplay noise lure; then observe original enemy combat and the original mission evaluator choose failure."},
+  "metadata": {"producer":"ModRegressionProbe","input_isolation":"window-message-to-process-local-DirectInput","damage_entry":"original_unmodified_gameplay_pipeline","mission_evaluator":"sub_405410","mission_observer":"read-only-post-evaluation","mission_result_writes":0,"system_cursor_calls":0,"global_focus_calls":0},
+  "input": {"action_kind":"weapon_noise_lure","player_scene_index":886,"target_scene_index":840,"target_world":[584,1224],"target_cell":[18,76],"input_evidence":"player_scene=886; lure_scene=840; selection_sent=True; selection_dik=60; weapon_selection_sent=True; pistol_active=True; click_world=(584,1224); cursor=(512,354); forced_attack_click_sent=True; attempts=2; pistol_quantity=21->19; command_observed=True; player_runtime_index=75; player_hp=6; player_dead=0"},
+  "combat": {"hit_point_samples":[8,6,4,2,0],"attacker_scene_indices":[870]},
+  "checkpoints": [
+    {
+      "id":"gameplay_active",
+      "actor":{"scene_index":886,"runtime_index":75,"faction_id":3,"runtime_type":2,"position":[114,1862],"current_hit_points":8,"dead_or_disabled":0,"damage_source":"none"},
+      "mission":{"status":"active","engine_mission":3,"game_flow_state":0,"evaluation_active":0,"result_state":0,"evaluator_calls":577,"transition_sequence":0,"last_evaluated_tick_ms":307078203}
+    },
+    {
+      "id":"required_player_lost",
+      "actor":{"scene_index":886,"runtime_index":75,"faction_id":3,"runtime_type":2,"position":[114,1862],"current_hit_points":0,"dead_or_disabled":1,"damage_source":"original_enemy_combat"},
+      "mission":{"status":"failed","semantic_failure_id":"required_character_lost","engine_mission":3,"game_flow_state":2,"evaluation_active":0,"result_state":2,"evaluator_calls":937,"transition_sequence":1,"last_evaluated_tick_ms":307084203}
+    }
+  ],
+  "passed": true
+}

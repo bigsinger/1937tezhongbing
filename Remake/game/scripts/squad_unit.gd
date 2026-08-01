@@ -2457,6 +2457,17 @@ func can_attack_target(target: Node2D, allow_non_hostile: bool = false) -> bool:
 	var target_scene_index := int(target.get("scene_index"))
 	if target_scene_index >= 0:
 		ignored.append(target_scene_index)
+	var attack_type := int(weapon_profile.get("attack_type", 0))
+	if (
+		allow_non_hostile
+		and LEGACY_COMBAT_RULES.coordinate_projectile_count(attack_type) > 0
+	):
+		# Original forced targeting commits a coordinate projectile even when
+		# L2 blocks the eventual hit or no attack-range approach is reachable.
+		# The projectile world still performs its normal L2 collision, while
+		# attack_started creates the authentic gunshot alert.  m002 depends on
+		# this behavior to lure scene 870 toward Old Zhao's isolated yard.
+		return true
 	return TACTICAL_SENSES_SCRIPT.can_attack(
 		dynamic_occupancy,
 		position,

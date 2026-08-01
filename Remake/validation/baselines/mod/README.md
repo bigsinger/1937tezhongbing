@@ -161,3 +161,23 @@ active-to-failed result. The observer and replay diagnostic are opt-in through
 captures, comparisons and the summary from one isolated runtime. The audited
 scene/type/result matrix is retained in
 `twelve-level-native-mission-failure-v1.md`.
+
+`m000-human-input-natural-failure-v1.json` through
+`m011-human-input-natural-failure-v1.json` close the diagnostic-entry gap in
+that evidence. The stable MOD receives only process-local DirectInput character
+hotkeys and a ground or forced-attack click; the Remake receives only equivalent
+target-viewport events. Each runtime then relies on its ordinary enemy combat
+pipeline to reduce the evaluator-required player from 8 HP to 0 and on its own
+mission evaluator to choose `required_character_lost` / result 2. The probes
+never write actor HP or a mission result, and never call the system cursor or
+global focus APIs. `Compare-HumanInputNaturalMissionFailureParity.ps1` checks
+59 facts per level, including identity, spawn state, isolated input sequence,
+monotonic damage, live attacker evidence and the active-to-failed transition.
+The audited 12-level result is 708 checks, zero mismatches; see
+`twelve-level-human-input-natural-failure-v1.md`.
+
+Use `Capture-TwelveLevelHumanInputNaturalFailureParity.ps1 -UpdateBaselines`
+to recapture both runtimes from an isolated MOD copy. CI uses
+`Verify-TwelveLevelHumanInputNaturalFailureParity.ps1` to replay all twelve
+Remake scenarios against the checked-in read-only MOD evidence without needing
+to launch the legacy executable.

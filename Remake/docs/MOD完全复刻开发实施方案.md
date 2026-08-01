@@ -127,6 +127,9 @@ Godot 运行时分为以下独立系统：
 
 - 已建立仅目标窗口的输入探针和版本化运行轨迹格式；
 - 已为 MOD/Remake 输出同一 schema 的基础移动轨迹，并完成第一条严格比较；
+- 已建立十二关真实输入自然失败基线：稳定 MOD 只接收进程内
+  DirectInput，Remake 只接收目标视口事件；双方均由普通敌方战斗造成必要
+  角色死亡，再由各自任务 evaluator 判负，累计 708 项比较零差异；
 - 继续把 MOD 已有 SDK 地址扩展为已证明身份的只读角色、背包、武器、任务和 AI 快照；
 - 为加载、移动、选择、攻击、拾取、姿态、视线、声音、警报、存读档建立
   最小差分用例；
@@ -432,7 +435,9 @@ faction 3 玩家”与“玩法中的 28 个初始命令槽角色”明确区分
 一份 54 敌军巡逻轨迹、一份自然接敌轨迹，以及机器可读 JSON 和可读
 Markdown/JSON 比较报告。完整十二关巡逻复测使用
 `tools/Capture-TwelveLevelPatrolParity.ps1`；拾取/攻击容器复测使用
-`tools/Capture-InventoryParity.ps1`。
+`tools/Capture-InventoryParity.ps1`；十二关自然交战失败使用
+`tools/Capture-TwelveLevelHumanInputNaturalFailureParity.ps1`，CI 的无原版
+重放使用 `tools/Verify-TwelveLevelHumanInputNaturalFailureParity.ps1`。
 
 ## 9. 每次提交的固定交付
 

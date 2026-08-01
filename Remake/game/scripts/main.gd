@@ -2980,7 +2980,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		)
 		if mouse_event.button_index == MOUSE_BUTTON_LEFT:
 			if LEGACY_INPUT_RULES.should_submit_world_left(mouse_event.pressed):
-				_handle_original_left_click(local_position, mouse_event.shift_pressed)
+				_handle_original_left_click(
+					local_position,
+					mouse_event.shift_pressed,
+					mouse_event.ctrl_pressed or original_force_target_held,
+				)
 			get_viewport().set_input_as_handled()
 		elif mouse_event.button_index == MOUSE_BUTTON_RIGHT:
 			if not LEGACY_INPUT_RULES.should_finish_world_right(mouse_event.pressed):
@@ -3049,7 +3053,11 @@ func _cancel_pending_pointer_mode_from_right_release() -> bool:
 	return canceled
 
 
-func _handle_original_left_click(world_position: Vector2, additive: bool) -> void:
+func _handle_original_left_click(
+	world_position: Vector2,
+	additive: bool,
+	force_target_modifier: bool = false,
+) -> void:
 	if burial_mode:
 		_try_bury_at(world_position)
 		burial_mode = false
@@ -3060,7 +3068,7 @@ func _handle_original_left_click(world_position: Vector2, additive: bool) -> voi
 	if selected_backpack_item_id > 0:
 		drop_selected_item_at(world_position)
 		return
-	if original_force_target_held:
+	if force_target_modifier:
 		var forced_target := force_target_at_world_point(world_position)
 		if forced_target != null:
 			issue_attack_order(forced_target, true)
@@ -3127,9 +3135,10 @@ func _handle_original_key_action(action: String, key_event: InputEventKey) -> bo
 		return true
 	if action.begins_with("select_"):
 		var index := int(action.trim_prefix("select_")) - 1
-		if index >= 0 and index < units.size() and units[index].is_alive:
-			select_only(units[index])
-			update_status("已选择%s" % units[index].display_name)
+		var original_slot_unit := _unit_for_original_character_slot(index)
+		if original_slot_unit != null and original_slot_unit.is_alive:
+			select_only(original_slot_unit)
+			update_status("已选择%s" % original_slot_unit.display_name)
 		return true
 	match action:
 		"pause":
@@ -3174,6 +3183,20 @@ func _handle_original_key_action(action: String, key_event: InputEventKey) -> bo
 		_:
 			return false
 	return true
+
+
+func _unit_for_original_character_slot(slot_index: int) -> SQUAD_UNIT:
+	# F2..F6 are fixed character identities in the original executable, not a
+	# compact list of actors present in the current level.  A missing character
+	# therefore leaves a hole: for example m001 has no Tiedan/Daniu, yet F5 must
+	# still select Gu Ming instead of the fourth entry in `units`.
+	if slot_index < 0 or slot_index >= PLAYABLE_SQUAD.size():
+		return null
+	var required_name := str(PLAYABLE_SQUAD[slot_index].get("name", ""))
+	for unit: SQUAD_UNIT in units:
+		if unit.display_name == required_name:
+			return unit
+	return null
 
 
 func clamp_level_camera() -> void:

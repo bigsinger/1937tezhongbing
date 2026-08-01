@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "trace_id": "mod-m003-human-input-natural-failure-v1",
+  "runtime": "mod",
+  "content_profile": "repository-mod-12-level-20260729",
+  "level": {"id":"m003","selector_level":4,"engine_mission":4},
+  "scenario": {"id":"m003-human-input-natural-failure-v1","description":"Through process-local DirectInput, select the required player with the original character hotkey and issue an ordinary ground click into an audited danger route; then observe original enemy combat and the original mission evaluator choose failure."},
+  "metadata": {"producer":"ModRegressionProbe","input_isolation":"window-message-to-process-local-DirectInput","damage_entry":"original_unmodified_gameplay_pipeline","mission_evaluator":"sub_405410","mission_observer":"read-only-post-evaluation","mission_result_writes":0,"system_cursor_calls":0,"global_focus_calls":0},
+  "input": {"action_kind":"ground_danger_route","player_scene_index":1150,"target_scene_index":-1,"target_world":[1104,2968],"target_cell":[34,185],"input_evidence":"target_cell=(34,185); target_screen=(512,476); camera_panned=True; cursor=(512,476); selection_sent=True; selection_dik=60; player_runtime_index=41; primary_click_sent=True; primary_goal_exact=True; displacement=624; distance=624->0 (min=0); end=(1104,2968); facing=38/38; opposite=0; command_observed=True; dead=0"},
+  "combat": {"hit_point_samples":[8,6,4,2,0],"attacker_scene_indices":[1132,1133,1134]},
+  "checkpoints": [
+    {
+      "id":"gameplay_active",
+      "actor":{"scene_index":1150,"runtime_index":41,"faction_id":3,"runtime_type":2,"position":[498,2950],"current_hit_points":8,"dead_or_disabled":0,"damage_source":"none"},
+      "mission":{"status":"active","engine_mission":4,"game_flow_state":0,"evaluation_active":0,"result_state":0,"evaluator_calls":577,"transition_sequence":0,"last_evaluated_tick_ms":307131875}
+    },
+    {
+      "id":"required_player_lost",
+      "actor":{"scene_index":1150,"runtime_index":41,"faction_id":3,"runtime_type":2,"position":[1104,2968],"current_hit_points":0,"dead_or_disabled":1,"damage_source":"original_enemy_combat"},
+      "mission":{"status":"failed","semantic_failure_id":"required_character_lost","engine_mission":4,"game_flow_state":2,"evaluation_active":0,"result_state":2,"evaluator_calls":817,"transition_sequence":1,"last_evaluated_tick_ms":307135875}
+    }
+  ],
+  "passed": true
+}
