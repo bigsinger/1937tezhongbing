@@ -212,6 +212,7 @@ struct CrtRandomTraceRecord {
     DWORD tick_ms = 0;
     std::uint32_t call_site_rva = 0;
     std::uint32_t caller_esi = 0;
+    std::uint32_t caller_edi = 0;
     int value = 0;
     bool actor_snapshot_valid = false;
     int actor_runtime_type = 0;
@@ -249,6 +250,26 @@ struct CrtRandomTraceRecord {
     int pursuit_world_y = 0;
     int pursuit_dead_or_disabled = 0;
     int pursuit_command_variant = 0;
+    bool alert_recipient_snapshot_valid = false;
+    int alert_recipient_runtime_index = -1;
+    std::uint32_t alert_recipient_address = 0;
+    int alert_recipient_runtime_type = 0;
+    int alert_recipient_scene_index = -1;
+    int alert_recipient_faction_id = 0;
+    int alert_recipient_world_x = 0;
+    int alert_recipient_world_y = 0;
+    int alert_recipient_route_update_active = 0;
+    int alert_recipient_goal_kind = 0;
+    int alert_recipient_goal_x = 0;
+    int alert_recipient_goal_y = 0;
+    int alert_recipient_command_variant = 0;
+    int alert_recipient_command_pending = 0;
+    int alert_recipient_movement_active = 0;
+    int alert_recipient_movement_path_state = 0;
+    int alert_recipient_movement_mode = 0;
+    std::uint32_t alert_recipient_target_address = 0;
+    int alert_recipient_contact_state = 0;
+    int alert_recipient_target_lost = 0;
 };
 CrtRandomTraceRecord *g_crt_random_trace = nullptr;
 volatile LONG g_crt_random_trace_count = 0;
@@ -280,6 +301,8 @@ std::uintptr_t g_ai_actor_table = 0;
 
 void ClearEnhancedSearchStates();
 bool IsReadableRange(const void *address, size_t size);
+bool RuntimeActors(
+    m1937::sdk::RuntimeActorV1 ***actors, int *count);
 
 using ImmDisableIMEProc = BOOL(WINAPI *)(DWORD);
 using ImmAssociateContextExProc = BOOL(WINAPI *)(HWND, HANDLE, DWORD);
@@ -582,13 +605,15 @@ void WriteCrtRandomTraceRecords(HANDLE file) {
                 "{\"sequence\":%ld,\"thread\":%lu,"
                 "\"tick_ms\":%lu,"
                 "\"call_site_rva\":\"0x%08lX\","
-                "\"caller_esi\":\"0x%08lX\",\"value\":%d",
+                "\"caller_esi\":\"0x%08lX\","
+                "\"caller_edi\":\"0x%08lX\",\"value\":%d",
                 expected_sequence,
                 record.thread_id,
                 record.tick_ms,
                 static_cast<unsigned long>(
                     record.call_site_rva),
                 static_cast<unsigned long>(record.caller_esi),
+                static_cast<unsigned long>(record.caller_edi),
                 record.value);
             if (record_length <= 0 ||
                 record_length >=
@@ -682,6 +707,57 @@ void WriteCrtRandomTraceRecords(HANDLE file) {
                         break;
                     }
                     record_length += pursuit_written;
+                }
+                if (record.alert_recipient_snapshot_valid) {
+                    const int recipient_written = snprintf(
+                        record_text + record_length,
+                        sizeof(record_text) -
+                            static_cast<size_t>(record_length),
+                        ",\"alert_recipient_snapshot\":{"
+                        "\"runtime_index\":%d,"
+                        "\"address\":\"0x%08lX\","
+                        "\"runtime_type\":%d,\"scene_index\":%d,"
+                        "\"faction_id\":%d,"
+                        "\"world_x\":%d,\"world_y\":%d,"
+                        "\"route_update_active\":%d,"
+                        "\"goal_kind\":%d,"
+                        "\"goal_x\":%d,\"goal_y\":%d,"
+                        "\"command_variant\":%d,"
+                        "\"command_pending\":%d,"
+                        "\"movement_active\":%d,"
+                        "\"movement_path_state\":%d,"
+                        "\"movement_mode\":%d,"
+                        "\"target_address\":\"0x%08lX\","
+                        "\"contact_state\":%d,"
+                        "\"target_lost\":%d}",
+                        record.alert_recipient_runtime_index,
+                        static_cast<unsigned long>(
+                            record.alert_recipient_address),
+                        record.alert_recipient_runtime_type,
+                        record.alert_recipient_scene_index,
+                        record.alert_recipient_faction_id,
+                        record.alert_recipient_world_x,
+                        record.alert_recipient_world_y,
+                        record.alert_recipient_route_update_active,
+                        record.alert_recipient_goal_kind,
+                        record.alert_recipient_goal_x,
+                        record.alert_recipient_goal_y,
+                        record.alert_recipient_command_variant,
+                        record.alert_recipient_command_pending,
+                        record.alert_recipient_movement_active,
+                        record.alert_recipient_movement_path_state,
+                        record.alert_recipient_movement_mode,
+                        static_cast<unsigned long>(
+                            record.alert_recipient_target_address),
+                        record.alert_recipient_contact_state,
+                        record.alert_recipient_target_lost);
+                    if (recipient_written <= 0 ||
+                        recipient_written >= static_cast<int>(
+                            sizeof(record_text) -
+                            static_cast<size_t>(record_length) - 2)) {
+                        break;
+                    }
+                    record_length += recipient_written;
                 }
             }
             record_text[record_length++] = '}';
@@ -2315,6 +2391,7 @@ bool IsDetailedActorRandomCallSite(std::uint32_t call_site) {
         case 0x0005DAD3:
         case 0x0005DB07:
         case 0x0005DB3B:
+        case 0x0005DF71:
             return true;
         default:
             return false;
@@ -2324,6 +2401,7 @@ bool IsDetailedActorRandomCallSite(std::uint32_t call_site) {
 void CaptureCrtRandomActorSnapshot(
     std::uint32_t call_site,
     std::uintptr_t caller_esi,
+    std::uintptr_t caller_edi,
     CrtRandomTraceRecord *record) {
     if (!record ||
         !IsDetailedActorRandomCallSite(call_site) ||
@@ -2377,27 +2455,79 @@ void CaptureCrtRandomActorSnapshot(
         reinterpret_cast<m1937::sdk::RuntimeActorV1 *>(
             static_cast<std::uintptr_t>(
                 actor->pursuit_actor_address));
-    if (!pursuit ||
-        !IsReadableRange(pursuit, sizeof(*pursuit)) ||
-        pursuit->runtime_type <= 0 ||
-        pursuit->runtime_type > 255 ||
-        pursuit->world_scene_index < 0) {
+    if (pursuit &&
+        IsReadableRange(pursuit, sizeof(*pursuit)) &&
+        pursuit->runtime_type > 0 &&
+        pursuit->runtime_type <= 255 &&
+        pursuit->world_scene_index >= 0) {
+        record->pursuit_snapshot_valid = true;
+        record->pursuit_runtime_type = pursuit->runtime_type;
+        record->pursuit_scene_index = pursuit->world_scene_index;
+        record->pursuit_world_x = pursuit->world_x;
+        record->pursuit_world_y = pursuit->world_y;
+        record->pursuit_dead_or_disabled =
+            pursuit->dead_or_disabled;
+        record->pursuit_command_variant =
+            pursuit->pursuit_command_variant;
+    }
+
+    if (call_site != 0x0005DF71 ||
+        caller_edi > static_cast<std::uintptr_t>(INT_MAX)) {
         return;
     }
-    record->pursuit_snapshot_valid = true;
-    record->pursuit_runtime_type = pursuit->runtime_type;
-    record->pursuit_scene_index = pursuit->world_scene_index;
-    record->pursuit_world_x = pursuit->world_x;
-    record->pursuit_world_y = pursuit->world_y;
-    record->pursuit_dead_or_disabled =
-        pursuit->dead_or_disabled;
-    record->pursuit_command_variant =
-        pursuit->pursuit_command_variant;
+    m1937::sdk::RuntimeActorV1 **actors = nullptr;
+    int actor_count = 0;
+    const int recipient_index = static_cast<int>(caller_edi);
+    if (!RuntimeActors(&actors, &actor_count) ||
+        recipient_index < 0 ||
+        recipient_index >= actor_count) {
+        return;
+    }
+    auto *recipient = actors[recipient_index];
+    if (!recipient ||
+        !IsReadableRange(recipient, sizeof(*recipient)) ||
+        recipient->runtime_type <= 0 ||
+        recipient->runtime_type > 255 ||
+        recipient->world_scene_index < 0) {
+        return;
+    }
+    record->alert_recipient_snapshot_valid = true;
+    record->alert_recipient_runtime_index = recipient_index;
+    record->alert_recipient_address = static_cast<std::uint32_t>(
+        reinterpret_cast<std::uintptr_t>(recipient));
+    record->alert_recipient_runtime_type = recipient->runtime_type;
+    record->alert_recipient_scene_index =
+        recipient->world_scene_index;
+    record->alert_recipient_faction_id = recipient->faction_id;
+    record->alert_recipient_world_x = recipient->world_x;
+    record->alert_recipient_world_y = recipient->world_y;
+    record->alert_recipient_route_update_active =
+        recipient->route_update_active;
+    record->alert_recipient_goal_kind = recipient->goal_kind;
+    record->alert_recipient_goal_x = recipient->goal_x;
+    record->alert_recipient_goal_y = recipient->goal_y;
+    record->alert_recipient_command_variant =
+        recipient->command_variant;
+    record->alert_recipient_command_pending =
+        recipient->command_pending;
+    record->alert_recipient_movement_active =
+        recipient->movement_active;
+    record->alert_recipient_movement_path_state =
+        recipient->movement_path_state;
+    record->alert_recipient_movement_mode =
+        recipient->movement_mode;
+    record->alert_recipient_target_address =
+        recipient->target_actor_address;
+    record->alert_recipient_contact_state =
+        recipient->contact_state;
+    record->alert_recipient_target_lost =
+        recipient->target_lost;
 }
 
 void RecordCrtRandomTrace(
     void *caller_return_address,
     std::uintptr_t caller_esi,
+    std::uintptr_t caller_edi,
     int value) {
     if (!g_crt_random_trace_enabled ||
         !g_crt_random_trace ||
@@ -2429,9 +2559,11 @@ void RecordCrtRandomTrace(
         static_cast<std::uint32_t>(call_site);
     record.caller_esi =
         static_cast<std::uint32_t>(caller_esi);
+    record.caller_edi =
+        static_cast<std::uint32_t>(caller_edi);
     record.value = value;
     CaptureCrtRandomActorSnapshot(
-        record.call_site_rva, caller_esi, &record);
+        record.call_site_rva, caller_esi, caller_edi, &record);
     // Publish the record only after every payload field is complete.
     InterlockedExchange(&record.sequence, index + 1);
 }
@@ -2439,6 +2571,7 @@ void RecordCrtRandomTrace(
 int __cdecl TracedCrtRand() {
     void *caller_return_address = _ReturnAddress();
     std::uintptr_t caller_esi = 0;
+    std::uintptr_t caller_edi = 0;
 #if defined(_M_IX86)
     // Every recovered actor constructor/update keeps its RuntimeActorV1
     // pointer in ESI across the CRT rand() call. Capture the callee-saved
@@ -2446,13 +2579,14 @@ int __cdecl TracedCrtRand() {
     // startup summarizer joins it to the process-local actor table without
     // modifying game state or adding a second gameplay hook.
     __asm mov caller_esi, esi
+    __asm mov caller_edi, edi
 #endif
     const int value = g_crt_rand_trampoline
         ? reinterpret_cast<OriginalCrtRandProc>(
               g_crt_rand_trampoline)()
         : 0;
     RecordCrtRandomTrace(
-        caller_return_address, caller_esi, value);
+        caller_return_address, caller_esi, caller_edi, value);
     return value;
 }
 

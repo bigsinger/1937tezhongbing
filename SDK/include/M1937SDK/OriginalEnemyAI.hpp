@@ -48,11 +48,45 @@ struct LimitSample final {
 };
 
 struct AlertSourceReaction final {
+    // RuntimeActorV1 +0x248 is the source's next reaction/attack deadline
+    // after sub_45DDA0; one sample is applied per accepted recipient and the
+    // final recipient wins.
     std::int32_t search_delay_limit = 0;
     std::int32_t search_delay_counter = 0;
     std::int32_t reaction_state = 0;
     std::int32_t special_attention_hold = 0;
 };
+
+struct CoordinateAlertCommand final {
+    std::int32_t goal_kind = 1;
+    Point coordinate{};
+    std::int32_t command_variant = 1;
+    std::int32_t command_pending = 1;
+    std::int32_t movement_active = 1;
+};
+
+enum class CoordinateAlertWinner : std::uint8_t {
+    queued_alert,
+    recipient_ai
+};
+
+constexpr CoordinateAlertCommand coordinate_alert_command(
+    Point coordinate) noexcept {
+    return {1, coordinate, 1, 1, 1};
+}
+
+// sub_45DDA0 writes the alert command outside the recipient's update.
+// sub_45C710 then runs before sub_458A80. A live-target or authored route
+// command written by that AI pass therefore replaces the older alert fields.
+constexpr CoordinateAlertWinner coordinate_alert_winner(
+    bool recipient_acquired_or_retained_live_target,
+    bool recipient_wrote_newer_authored_command) noexcept {
+    return (
+        recipient_acquired_or_retained_live_target ||
+        recipient_wrote_newer_authored_command)
+        ? CoordinateAlertWinner::recipient_ai
+        : CoordinateAlertWinner::queued_alert;
+}
 
 struct SearchPointSample final {
     std::uint32_t random_state = 1;
@@ -244,6 +278,16 @@ static_assert(alert_recipient_is_eligible(1, 6, true, false));
 static_assert(!alert_recipient_is_eligible(1, 91, true, false));
 static_assert(
     alert_source_reaction_from_random(18467).search_delay_limit == 67);
+static_assert(
+    coordinate_alert_command({1244, 478}).coordinate.x == 1244 &&
+    coordinate_alert_command({1244, 478}).command_pending == 1);
+static_assert(
+    coordinate_alert_winner(false, false) ==
+        CoordinateAlertWinner::queued_alert &&
+    coordinate_alert_winner(true, false) ==
+        CoordinateAlertWinner::recipient_ai &&
+    coordinate_alert_winner(false, true) ==
+        CoordinateAlertWinner::recipient_ai);
 static_assert(secondary_search_runtime_type_enabled(16));
 static_assert(secondary_search_runtime_type_enabled(29));
 static_assert(!secondary_search_runtime_type_enabled(19));

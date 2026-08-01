@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "trace_id": "mod-m000-native-alert-command-v1",
+  "runtime": "mod-process-with-original-ai-seam",
+  "content_profile": "repository-mod-12-level-20260729",
+  "level": {
+    "id": "m000",
+    "selector_level": 1,
+    "engine_mission": 1
+  },
+  "scenario": {
+    "id": "m000-native-alert-command-v1",
+    "description": "Process-local CRT hook at M1937.exe RVA 0x0005DF71 after native sub_45DDA0 recipient writes; M1937_AI_ORIGINAL=1 disables the editorial coordination hook only for this isolated capture."
+  },
+  "metadata": {
+    "producer": "ModRegressionProbe+dinput-proxy fixed memory ring",
+    "input_isolation": "window-message-to-process-local-DirectInput",
+    "global_cursor_calls": 0,
+    "global_focus_calls": 0,
+    "source_capture": "isolated process-local telemetry retained outside the repository",
+    "captured_local_time": "2026-08-01T17:56:17+08:00"
+  },
+  "first_enemy_gunshot": {
+    "call_site_rva": "0x0005DF71",
+    "tick_ms": 281835906,
+    "source": {
+      "runtime_index": 113,
+      "scene_index": 1598,
+      "runtime_type": 5,
+      "position": [1348, 472],
+      "contact_state": 1,
+      "target_lost": 0,
+      "shared_coordinate": [1244, 478]
+    },
+    "recipients": [
+      {
+        "runtime_index": 16,
+        "scene_index": 1433,
+        "runtime_type": 6,
+        "position": [1518, 553],
+        "goal_kind": 1,
+        "goal": [1244, 478],
+        "command_variant": 1,
+        "command_pending": 1,
+        "movement_active": 1,
+        "target_address": "0x00000000",
+        "contact_state": 0,
+        "target_lost": 1,
+        "source_reaction_random_value": 30851
+      },
+      {
+        "runtime_index": 26,
+        "scene_index": 1492,
+        "runtime_type": 6,
+        "position": [1850, 621],
+        "goal_kind": 1,
+        "goal": [1244, 478],
+        "command_variant": 1,
+        "command_pending": 1,
+        "movement_active": 1,
+        "target_address": "0x00000000",
+        "contact_state": 0,
+        "target_lost": 1,
+        "source_reaction_random_value": 17003
+      }
+    ]
+  }
+}

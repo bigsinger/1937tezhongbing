@@ -449,9 +449,22 @@ func _test_alert_propagation(failures: Array[String]) -> void:
 	main._on_attack_started(attacker, target, 2, 640.0)
 	_expect(
 		nearby_enemy.current_target == null
+		and nearby_enemy.behavior_state == ENEMY_UNIT_SCRIPT.BehaviorState.PATROL
+		and nearby_enemy.pending_original_coordinate_alert_active
+		and (
+			nearby_enemy.pending_original_coordinate_alert_position
+			== attacker.position
+		),
+		"gunfire alert queues the shooter's coordinate until the recipient command pass",
+		failures,
+	)
+	nearby_enemy._physics_process(1.0 / 60.0)
+	_expect(
+		nearby_enemy.current_target == null
 		and nearby_enemy.behavior_state == ENEMY_UNIT_SCRIPT.BehaviorState.SEARCH
+		and not nearby_enemy.pending_original_coordinate_alert_active
 		and nearby_enemy.last_known_target_position == attacker.position,
-		"gunfire alert gives nearby enemies the shooter's coordinate without a live target",
+		"recipient command pass consumes the queued coordinate without a live target",
 		failures,
 	)
 	_expect(

@@ -180,8 +180,17 @@ func _test_m001_gu_ming_disguise(main: Node) -> void:
 	)
 	_expect(
 		int(gu_ming.get("faction_id")) == 3
-		and int(living_enemy.get("behavior_state")) == 3,
-		"an actual directional/LOS observer exposes Gu Ming and receives a coordinate search",
+		and bool(
+			living_enemy.get(
+				"pending_original_coordinate_alert_active"
+			)
+		)
+		and (
+			living_enemy.get(
+				"pending_original_coordinate_alert_position"
+			) as Vector2
+		) == living_enemy.position,
+		"an actual directional/LOS observer exposes Gu Ming and queues the attacked coordinate",
 	)
 	for unused_tick: int in range(17):
 		gu_ming.call(

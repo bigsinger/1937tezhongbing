@@ -223,17 +223,29 @@ func _test_coordinate_search_lifecycle_and_snapshot() -> void:
 	var navigation := FakeNavigation.new()
 	var enemy = _enemy(10, Vector2(500.0, 500.0), navigation)
 	var alert_position := Vector2(620.0, 460.0)
+	var command_serial_before_alert: int = enemy.original_actor_command_serial
 	_expect(
 		enemy.receive_original_coordinate_alert(alert_position),
 		"eligible enemy accepts an original coordinate alert",
 	)
 	_expect(
-		enemy.current_target == null
+		enemy.pending_original_coordinate_alert_active
+		and enemy.behavior_state == ENEMY_UNIT.BehaviorState.PATROL
+		and not enemy.legacy_search_active
+		and navigation.path_request_count == 0,
+		"coordinate alert remains pending until the recipient command pass",
+	)
+	_expect(
+		bool(enemy.call(
+			"_consume_pending_original_coordinate_alert",
+			command_serial_before_alert,
+		))
+		and enemy.current_target == null
 		and enemy.behavior_state == ENEMY_UNIT.BehaviorState.SEARCH
 		and enemy.legacy_search_active
 		and enemy.last_known_target_position == alert_position
 		and navigation.last_path_endpoint == alert_position,
-		"coordinate alert preserves no live target and routes to the supplied coordinate",
+		"recipient command pass preserves no live target and routes to the supplied coordinate",
 	)
 	enemy.cancel_path()
 	enemy.legacy_search_wait_limit = 2
@@ -300,9 +312,30 @@ func _test_coordinate_search_lifecycle_and_snapshot() -> void:
 		and busy.behavior_state == ENEMY_UNIT.BehaviorState.CHASE,
 		"unlost live contact is not replaced by a coordinate alert",
 	)
+	var pending = _enemy(13, Vector2(300.0, 200.0), navigation)
+	var pending_position := Vector2(420.0, 260.0)
+	var pending_serial: int = pending.original_actor_command_serial
+	pending.receive_original_coordinate_alert(pending_position)
+	var pending_snapshot: Dictionary = pending.legacy_enemy_ai_state_snapshot()
+	var restored_pending = _enemy(14, pending.position, navigation)
+	_expect(
+		restored_pending.restore_legacy_enemy_ai_state(pending_snapshot)
+		and restored_pending.pending_original_coordinate_alert_active
+		and restored_pending.pending_original_coordinate_alert_position
+			== pending_position
+		and bool(restored_pending.call(
+			"_consume_pending_original_coordinate_alert",
+			pending_serial,
+		))
+		and restored_pending.behavior_state
+			== ENEMY_UNIT.BehaviorState.SEARCH,
+		"in-flight native coordinate command survives save/load and resumes once",
+	)
 	enemy.free()
 	restored.free()
 	busy.free()
+	pending.free()
+	restored_pending.free()
 
 
 func _test_original_coordinate_broadcast() -> void:
@@ -378,18 +411,38 @@ func _test_original_coordinate_broadcast() -> void:
 	)
 	_expect(
 		alerted_count == 2
+		and horizontal_inside.pending_original_coordinate_alert_active
+		and vertical_inside.pending_original_coordinate_alert_active
+		and horizontal_inside.behavior_state
+			== ENEMY_UNIT.BehaviorState.PATROL
+		and vertical_inside.behavior_state
+			== ENEMY_UNIT.BehaviorState.PATROL,
+		"original gunshot broadcast queues only strict-ellipse eligible recipients",
+	)
+	var horizontal_command_serial: int = (
+		horizontal_inside.original_actor_command_serial
+	)
+	var vertical_command_serial: int = (
+		vertical_inside.original_actor_command_serial
+	)
+	_expect(
+		bool(horizontal_inside.call(
+			"_consume_pending_original_coordinate_alert",
+			horizontal_command_serial,
+		))
+		and bool(vertical_inside.call(
+			"_consume_pending_original_coordinate_alert",
+			vertical_command_serial,
+		))
+		and horizontal_inside.current_target == null
+		and vertical_inside.current_target == null
 		and horizontal_inside.behavior_state
 			== ENEMY_UNIT.BehaviorState.SEARCH
 		and vertical_inside.behavior_state
-			== ENEMY_UNIT.BehaviorState.SEARCH,
-		"original gunshot broadcast selects only strict-ellipse eligible recipients",
-	)
-	_expect(
-		horizontal_inside.current_target == null
-		and vertical_inside.current_target == null
+			== ENEMY_UNIT.BehaviorState.SEARCH
 		and horizontal_inside.last_known_target_position == source.position
 		and vertical_inside.last_known_target_position == source.position,
-		"broadcast writes the source coordinate without assigning a target pointer",
+		"recipient command pass consumes source coordinates without assigning target pointers",
 	)
 	var reaction_sites_match: bool = (
 		main.legacy_crt_random_trace.size() == 2
@@ -406,8 +459,13 @@ func _test_original_coordinate_broadcast() -> void:
 		and source.original_ai_idle_tick_limit == 67
 		and source.legacy_search_wait_counter == 0
 		and source.legacy_search_wait_limit == 67
+		and is_equal_approx(
+			source.attack_recheck_seconds,
+			67.0 * ENEMY_UNIT.ORIGINAL_ATTACK_REACTION_TICK_SECONDS,
+		)
+		and is_zero_approx(source.attack_recheck_elapsed)
 		and source.special_control_lock_count == 0,
-		"each accepted recipient consumes a source-side 40..79 reaction draw",
+		"each accepted recipient consumes and schedules its source-side 40..79 reaction draw",
 	)
 	_expect(
 		horizontal_inside.legacy_search_wait_limit == 55
@@ -427,8 +485,35 @@ func _test_original_coordinate_broadcast() -> void:
 		and busy.behavior_state == ENEMY_UNIT.BehaviorState.CHASE,
 		"boundary, type-91, dead and live-contact actors keep their prior state",
 	)
+	var route_wins = _enemy(
+		28,
+		source.position + Vector2(80.0, 0.0),
+		navigation,
+	)
+	var route_serial_before_alert: int = (
+		route_wins.original_actor_command_serial
+	)
+	_expect(
+		route_wins.receive_original_coordinate_alert(source.position),
+		"patroller accepts an external coordinate command before its update",
+	)
+	route_wins.issue_path(PackedVector2Array([
+		route_wins.position + Vector2(160.0, 80.0),
+	]))
+	_expect(
+		not bool(route_wins.call(
+			"_consume_pending_original_coordinate_alert",
+			route_serial_before_alert,
+		))
+		and route_wins.behavior_state
+			== ENEMY_UNIT.BehaviorState.PATROL
+		and route_wins.target_position
+			== route_wins.position + Vector2(160.0, 80.0),
+		"newer authored patrol command wins same-tick alert arbitration",
+	)
 	main.free()
 	source.free()
+	route_wins.free()
 	for recipient: ENEMY_UNIT in recipients:
 		recipient.free()
 

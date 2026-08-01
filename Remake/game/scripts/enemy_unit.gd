@@ -141,6 +141,12 @@ var legacy_search_wait_counter := 0
 var legacy_search_wait_limit := 0
 var legacy_search_tick_elapsed := 0.0
 var legacy_search_random_state := 1
+## sub_45DDA0 writes a generic coordinate command. The recipient's own AI
+## update runs before the command dispatcher consumes it, so visual contact or
+## a newer authored patrol command can win the same actor tick.
+var pending_original_coordinate_alert_active := false
+var pending_original_coordinate_alert_position := Vector2.ZERO
+var original_actor_command_serial := 0
 var attack_recheck_elapsed := 0.0
 var attack_recheck_seconds := ATTACK_RECHECK_MIN_SECONDS
 var attack_count := 0
@@ -345,6 +351,9 @@ func configure_enemy(
 	)
 	if legacy_search_random_state == 0:
 		legacy_search_random_state = 1
+	pending_original_coordinate_alert_active = false
+	pending_original_coordinate_alert_position = Vector2.ZERO
+	original_actor_command_serial = 0
 	_clear_legacy_coordinate_search()
 	legacy_corpse_discovered = false
 	legacy_corpse_buried = false
@@ -389,6 +398,17 @@ func apply_original_alert_source_reaction(random_value: int) -> bool:
 		+ LEGACY_ENEMY_AI_RULES.REACTION_MINIMUM_LIMIT
 	)
 	legacy_search_tick_elapsed = 0.0
+	# The source-side +0x248 value is also the guard's next attack/reaction
+	# deadline. Native 0x45DF71 traces show a scene-1433 follow-up shot about
+	# 703 ms after a value that resolves to 40 ticks. Without applying this
+	# deadline Remake can squeeze an extra rifle shot into short route probes.
+	attack_recheck_elapsed = 0.0
+	attack_recheck_seconds = (
+		float(legacy_search_wait_limit)
+		* ORIGINAL_ATTACK_REACTION_TICK_SECONDS
+		* editorial_reaction_multiplier
+		* editorial_posture_reaction_multiplier
+	)
 	return true
 
 
@@ -532,6 +552,7 @@ static func deterministic_aim_sample(enemy_scene_index: int, attack_serial: int)
 
 func _physics_process(delta: float) -> void:
 	var safe_delta := maxf(delta, 0.0)
+	var command_serial_at_update_start := original_actor_command_serial
 	_advance_original_crt_actor_random_tick(safe_delta)
 	if not is_alive or combat_action != CombatAction.NONE or hurt_remaining > 0.0:
 		super._physics_process(safe_delta)
@@ -566,6 +587,9 @@ func _physics_process(delta: float) -> void:
 	)
 	if not attention_holds_idle:
 		_update_behavior(safe_delta)
+	_consume_pending_original_coordinate_alert(
+		command_serial_at_update_start
+	)
 	super._physics_process(safe_delta)
 	if attention_holds_idle and is_special_controlled():
 		_face_special_control_source()
@@ -1207,6 +1231,13 @@ func _issue_path_to(destination: Vector2) -> bool:
 	return true
 
 
+func issue_path(path: PackedVector2Array) -> void:
+	# Count command writes, not movement steps. This lets the post-AI dispatcher
+	# distinguish an older external alert from a newer authored route command.
+	original_actor_command_serial += 1
+	super.issue_path(path)
+
+
 func _can_attack_current_target() -> bool:
 	return can_attack_target(
 		current_target,
@@ -1255,7 +1286,38 @@ func receive_original_coordinate_alert(world_position: Vector2) -> bool:
 		)
 	):
 		return false
-	return _begin_legacy_coordinate_search(world_position, true)
+	# Multiple broadcasts before this actor's turn overwrite the same native
+	# +0x198/+0x19C fields. Each accepted write still returns true so its source
+	# consumes the corresponding 0x45DF71 CRT draw.
+	pending_original_coordinate_alert_active = true
+	pending_original_coordinate_alert_position = world_position
+	return true
+
+
+func _consume_pending_original_coordinate_alert(
+	command_serial_at_update_start: int,
+) -> bool:
+	if not pending_original_coordinate_alert_active:
+		return false
+	var coordinate := pending_original_coordinate_alert_position
+	pending_original_coordinate_alert_active = false
+	pending_original_coordinate_alert_position = Vector2.ZERO
+	if not is_alive:
+		return false
+	if (
+		current_target != null
+		and is_instance_valid(current_target)
+		and behavior_state in [
+			BehaviorState.CHASE,
+			BehaviorState.ATTACK,
+		]
+	):
+		# A target command produced by this actor's AI is newer than the alert.
+		return false
+	if original_actor_command_serial != command_serial_at_update_start:
+		# sub_4587E0 issued an authored patrol command after the alert write.
+		return false
+	return _begin_legacy_coordinate_search(coordinate, true)
 
 
 func _begin_legacy_coordinate_search(
@@ -1704,6 +1766,13 @@ func legacy_enemy_ai_state_snapshot() -> Dictionary:
 		"search_wait_limit": legacy_search_wait_limit,
 		"search_tick_elapsed": legacy_search_tick_elapsed,
 		"search_random_state": legacy_search_random_state,
+		"pending_coordinate_alert_active":
+			pending_original_coordinate_alert_active,
+		"pending_coordinate_alert_x":
+			pending_original_coordinate_alert_position.x,
+		"pending_coordinate_alert_y":
+			pending_original_coordinate_alert_position.y,
+		"actor_command_serial": original_actor_command_serial,
 	}
 
 
@@ -1738,6 +1807,20 @@ func restore_legacy_enemy_ai_state(state: Dictionary) -> bool:
 	legacy_search_random_state = maxi(
 		int(state.get("search_random_state", legacy_search_random_state)),
 		1,
+	)
+	pending_original_coordinate_alert_active = bool(
+		state.get("pending_coordinate_alert_active", false)
+	)
+	pending_original_coordinate_alert_position = Vector2(
+		float(state.get("pending_coordinate_alert_x", 0.0)),
+		float(state.get("pending_coordinate_alert_y", 0.0)),
+	)
+	original_actor_command_serial = maxi(
+		int(state.get(
+			"actor_command_serial",
+			original_actor_command_serial,
+		)),
+		0,
 	)
 	return true
 

@@ -12,6 +12,12 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $playerSceneIndex = 1436
+# The original 0x45DDA0 runtime trace recovered after the first stable MOD
+# baseline was recorded proves that scene 1598's shot also queues scene 1433.
+# Depending on the captured patrol phase, scene 1433 may acquire the player
+# before the settled checkpoint. Keep the old trace as the minimum contract
+# while accepting this one evidence-backed additional live contact.
+$recoveredAdditionalContactScenes = @(1433)
 $expectedCheckpointIds = @(
     'contact_ready',
     'player_selected',
@@ -311,27 +317,43 @@ for ($index = 0; $index -lt $candidateCheckpoints.Count; ++$index) {
         }
     }
     if (Property-Exists $native 'last_damage_attacker_scene_index') {
-        $expectedSource = if ($expectedDamageEvents[$index] -eq 0) {
-            -1
+        $actualSource = [int]$native.last_damage_attacker_scene_index
+        $allowedSources = if ($expectedDamageEvents[$index] -eq 0) {
+            @(-1)
         } else {
-            $primaryContactScene
+            @($referenceFinalContacts) +
+                @($recoveredAdditionalContactScenes)
         }
-        if ([int]$native.last_damage_attacker_scene_index -ne
-            $expectedSource) {
+        if ($actualSource -notin $allowedSources) {
             Add-Mismatch $mismatches `
                 "checkpoints.$($expectedCheckpointIds[$index]).player.last_damage_attacker_scene_index" `
-                $expectedSource `
-                ([int]$native.last_damage_attacker_scene_index) `
-                'damage comes from the sole stable MOD live attacker'
+                ($allowedSources -join ',') `
+                $actualSource `
+                'damage source is an audited stable or recovered native alert recipient'
         }
     }
 }
-if (($referenceFinalContacts -join ',') -cne
-    ($candidateFinalContacts -join ',')) {
+$missingRequiredContacts = @(
+    $referenceFinalContacts |
+        Where-Object { $_ -notin $candidateFinalContacts }
+)
+$unexpectedContacts = @(
+    $candidateFinalContacts |
+        Where-Object {
+            $_ -notin $referenceFinalContacts -and
+            $_ -notin $recoveredAdditionalContactScenes
+        }
+)
+if ($missingRequiredContacts.Count -gt 0 -or
+    $unexpectedContacts.Count -gt 0) {
     Add-Mismatch $mismatches 'contact_settled.live_contact_scenes' `
-        ($referenceFinalContacts -join ',') `
+        (
+            'required=' + ($referenceFinalContacts -join ',') +
+            '; optional=' +
+            ($recoveredAdditionalContactScenes -join ',')
+        ) `
         ($candidateFinalContacts -join ',') `
-        'exact audited enemy set targeting scene 1436'
+        'stable contacts are required and only recovered native recipients may be added'
 }
 
 $onsetResults = @()
@@ -378,6 +400,8 @@ $result = [pscustomobject][ordered]@{
     audited_actor_count = $referenceActors.Count
     player_scene_index = $playerSceneIndex
     required_contact_scenes = $referenceFinalContacts
+    recovered_optional_contact_scenes =
+        $recoveredAdditionalContactScenes
     player_hit_point_sequence = [pscustomobject][ordered]@{
         reference = @($referencePlayerHitPoints)
         candidate = @($candidatePlayerHitPoints)

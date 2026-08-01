@@ -711,6 +711,23 @@ int main(int argc, char** argv) {
                 source_reaction.reaction_state == 0 &&
                 source_reaction.special_attention_hold == 0,
             "coordinate-alert source-side reaction write mismatch", checks);
+        const auto queued_alert =
+            coordinate_alert_command({1244, 478});
+        require(
+            queued_alert.goal_kind == 1 &&
+                queued_alert.coordinate.x == 1244 &&
+                queued_alert.coordinate.y == 478 &&
+                queued_alert.command_variant == 1 &&
+                queued_alert.command_pending == 1 &&
+                queued_alert.movement_active == 1 &&
+                coordinate_alert_winner(false, false) ==
+                    CoordinateAlertWinner::queued_alert &&
+                coordinate_alert_winner(true, false) ==
+                    CoordinateAlertWinner::recipient_ai &&
+                coordinate_alert_winner(false, true) ==
+                    CoordinateAlertWinner::recipient_ai,
+            "coordinate-alert deferred command arbitration mismatch",
+            checks);
         require(
             secondary_search_runtime_type_enabled(16) &&
                 secondary_search_runtime_type_enabled(20) &&

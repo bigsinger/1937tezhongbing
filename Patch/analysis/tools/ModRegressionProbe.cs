@@ -2090,7 +2090,7 @@ internal static class ModRegressionProbe
                                     {
                                         return actorIdentities.ContainsKey(
                                             actor.SceneIndex);
-                                    }) == 54;
+                                    }) == actorIdentities.Count;
                             });
                     bool naturalContactObserved =
                         HasResolvedPlayerContact(

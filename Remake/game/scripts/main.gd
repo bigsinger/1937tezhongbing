@@ -4779,24 +4779,19 @@ func _queue_or_broadcast_alert(
 	target: Node2D,
 	world_position: Vector2,
 	alert_radius: float,
-	allow_enemy_source_in_original: bool = false,
+	_allow_enemy_source_in_original: bool = false,
 ) -> int:
 	if mission_ai_coordinator != null:
 		var recipients: Array[int] = mission_ai_coordinator.queue_shared_alert(
 			source, target, world_position, alert_radius
 		)
 		return recipients.size()
-	# sub_456DF0 contains a call to sub_45DDA0 for ordinary ranged attacks, but
-	# the stable m000 process trace proves that the adjacent patrolling scene
-	# 1433 retains its authored route while scene 1598 fires twice. The missing
-	# route-controller arbitration has not yet been recovered. Preserve that
-	# verified observable outcome for normal enemy fire; explosion/death call
-	# sites opt in because their 800/256 pulses are independently recovered.
-	if source is ENEMY_UNIT and not allow_enemy_source_in_original:
-		return 0
-	# sub_45DDA0 writes a coordinate command and never assigns a live target
-	# pointer. Player-faction sources expose their own location; enemy sources
-	# that already own a target share that target's current coordinate.
+	# Runtime capture at 0x45DF71 proves ordinary enemy gunfire also writes
+	# coordinate commands: scene 1598's first m000 shot queued the player
+	# coordinate for runtime-index 16 / scene 1433 and runtime-index 26 /
+	# scene 1492. EnemyUnit defers consumption until each recipient's own update
+	# so contact or a later authored route can still win native command
+	# arbitration.
 	var alert_coordinate := world_position
 	if (
 		int(source.get("faction_id")) != 3
@@ -4805,7 +4800,11 @@ func _queue_or_broadcast_alert(
 	):
 		alert_coordinate = target.position
 	var alerted_count := 0
-	for enemy: ENEMY_UNIT in enemies:
+	_ensure_original_runtime_actor_order_cache()
+	for candidate: Node2D in original_runtime_actor_order_cache:
+		if not candidate is ENEMY_UNIT:
+			continue
+		var enemy := candidate as ENEMY_UNIT
 		var has_unlost_live_contact := (
 			enemy.current_target != null
 			and is_instance_valid(enemy.current_target)

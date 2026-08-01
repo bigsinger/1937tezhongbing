@@ -44,6 +44,8 @@ $patrolBaselinePaths = @(
 $patrolBaselinePath = $patrolBaselinePaths[0]
 $contactBaselinePath = Join-Path $remakeRoot `
     'validation\baselines\mod\m000-natural-contact-v1.json'
+$nativeAlertBaselinePath = Join-Path $remakeRoot `
+    'validation\baselines\mod\m000-native-alert-command-v1.json'
 $minePickupBaselinePath = Join-Path $remakeRoot `
     'validation\baselines\mod\m001-mine-pickup-inventory-v1.json'
 $pistolAttackBaselinePath = Join-Path $remakeRoot `
@@ -240,6 +242,31 @@ if ($contactBaseline.runtime -ne 'mod' -or
             $null -eq $_.native.default_attack_type
         }).Count -ne 0) {
     throw 'The checked-in m000 natural-contact baseline is invalid.'
+}
+$nativeAlertBaseline = Get-Content -LiteralPath $nativeAlertBaselinePath `
+    -Raw -Encoding UTF8 | ConvertFrom-Json
+$nativeAlertRecipients = @(
+    $nativeAlertBaseline.first_enemy_gunshot.recipients
+)
+if ($nativeAlertBaseline.scenario.id -ne
+        'm000-native-alert-command-v1' -or
+    $nativeAlertBaseline.first_enemy_gunshot.call_site_rva -ne
+        '0x0005DF71' -or
+    [int]$nativeAlertBaseline.first_enemy_gunshot.source.scene_index -ne
+        1598 -or
+    [int]$nativeAlertBaseline.first_enemy_gunshot.source.runtime_index -ne
+        113 -or
+    (@($nativeAlertRecipients.scene_index) -join ',') -ne
+        '1433,1492' -or
+    @($nativeAlertRecipients |
+        Where-Object {
+            [int]$_.goal_kind -ne 1 -or
+            [int]$_.command_variant -ne 1 -or
+            [int]$_.command_pending -ne 1 -or
+            [int]$_.movement_active -ne 1 -or
+            [string]$_.target_address -ne '0x00000000'
+        }).Count -ne 0) {
+    throw 'The checked-in m000 native alert-command evidence is invalid.'
 }
 
 $inventoryBaselineDefinitions = @(
