@@ -243,6 +243,44 @@ if ($gateActorIndices.Count -gt 0 -and $gateActorIndices[0] -ge 0) {
     }
 }
 
+# The startup-only probe exits after the first complete RuntimeActor update
+# has been published. Preserve that entire tail, not just the observation
+# actors: route waits, pursuit gates, secondary searches, blocked-path retries
+# and the one level-music draw all share the same process-global stream.
+$firstGameplayUpdate = @(
+    foreach ($record in $runtimeRecords) {
+        $site = ConvertTo-CanonicalRva (
+            [string]$record.call_site_rva)
+        $runtimeIndex = Get-ActorRuntimeIndex $record
+        if (
+            $actorIndexByAddress.Count -gt 0 -and
+            $runtimeIndex -lt 0 -and
+            $site -ne '0x00006A73'
+        ) {
+            throw (
+                "First gameplay update contains an unmapped actor at " +
+                "$site.")
+        }
+        [ordered]@{
+            runtime_index = $runtimeIndex
+            call_site_rva = $site
+            value = [int]$record.value
+        }
+    }
+)
+if (
+    $firstGameplayUpdate.Count -eq 0 -or
+    @($firstGameplayUpdate | Where-Object {
+        [string]$_.call_site_rva -eq '0x0005C81C'
+    }).Count -ne $firstGateRound.Count -or
+    @($firstGameplayUpdate | Where-Object {
+        [string]$_.call_site_rva -eq '0x00006A73' -and
+        [int]$_.runtime_index -eq -1
+    }).Count -ne 1
+) {
+    throw 'The captured first gameplay update is incomplete.'
+}
+
 $actorInitialization = @(
     if ($actorIndexByAddress.Count -gt 0) {
         $stateByActor = @{}
@@ -432,6 +470,15 @@ $summary = [ordered]@{
         )
         observation_gate_actor_indices = @($firstGateRound)
         actor_initialization = $actorInitialization
+    }
+    first_gameplay_update = [ordered]@{
+        draw_count = $runtimeRecords.Count
+        ordered_call_site_sha256 = Get-RecordHash `
+            -Values $runtimeRecords
+        ordered_value_sha256 = Get-RecordHash `
+            -Values $runtimeRecords `
+            -IncludeValue
+        records = $firstGameplayUpdate
     }
     call_site_counts = $countRows
 }

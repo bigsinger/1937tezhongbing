@@ -593,16 +593,29 @@ func _advance_original_crt_observation_gate(delta: float) -> void:
 		var random_value := next_original_crt_random_value(0x0005C81C)
 		if random_value < 0:
 			return
-		original_crt_observation_gate_passed = random_value % 2 > 0
-		original_crt_observation_gate_serial += 1
-		if original_crt_random_source.has_method(
+		apply_original_crt_observation_gate_value(random_value)
+
+
+func apply_original_crt_observation_gate_value(
+	random_value: int,
+) -> bool:
+	if not original_crt_observation_gate_enabled or random_value < 0:
+		return false
+	original_crt_observation_gate_passed = random_value % 2 > 0
+	original_crt_observation_gate_serial += 1
+	if (
+		original_crt_random_source != null
+		and is_instance_valid(original_crt_random_source)
+		and original_crt_random_source.has_method(
 			"advance_original_observation_for_actor"
-		):
-			original_crt_random_source.call(
-				"advance_original_observation_for_actor",
-				self,
-				original_crt_observation_gate_passed,
-			)
+		)
+	):
+		original_crt_random_source.call(
+			"advance_original_observation_for_actor",
+			self,
+			original_crt_observation_gate_passed,
+		)
+	return true
 
 
 func configure_movement_modes(

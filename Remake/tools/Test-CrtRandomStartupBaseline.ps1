@@ -20,9 +20,9 @@ $actorCatalog = (
         ConvertFrom-Json)
 
 if (
-    [int]$baseline.schema_version -ne 1 -or
+    [int]$baseline.schema_version -ne 2 -or
     [string]$baseline.catalog_id -ne (
-        'original-crt-random-startup-v1') -or
+        'original-crt-random-startup-v2') -or
     [string]$baseline.content_profile -ne (
         'repository-mod-12-level-20260729') -or
     [string]$baseline.executable_sha256 -ne (
@@ -81,12 +81,63 @@ $expected = [ordered]@{
         '5215B194AFA4AFFEB57CB4CAE7B3C21D0272EBE14B306BCB81934E31F29C0B33',
         '5C8578CAE548CD42810D04FD8F48CD994E6077E1536F86ABCF14689A9CA4B3ED')
 }
+$expectedFirstUpdates = [ordered]@{
+    m000 = @(
+        59,
+        '3231756386A076702BE58FC4271C8324EA5D86368818035DD4957C2DCF348727',
+        '3E4818E0F54531058709D9E122E3DAC2C0AAE8608210367F1CF7F690162AE71E')
+    m001 = @(
+        81,
+        '8C5BA71514E4E53B019E51FFF10974C25C145D38FD70337F3EFC64B7F8E27CC6',
+        'A278E116DF7E13D4C5EB65707592E0B3D61268F5E951E74189BA6CB40A98D895')
+    m002 = @(
+        30,
+        'CBF5A5B916F4FC5617892B996C737C57869E0F9AE23FDBF0A3D448D4C270CF4C',
+        '445A6D1D89325211E337CB951345C89CB0A6267A9CFF77FE617D4491372B9751')
+    m003 = @(
+        50,
+        '22CA923DD09206333EDEC73118FAE01B24E01F43F530276D7197E39DCDD271E6',
+        'AE8D592B138C2F64BBB19473BAE8A9B68222DC54E33DA1FC47E5C21B6233C01C')
+    m004 = @(
+        112,
+        '0A1BD8BFB65D206955EC0131D355A9B79E55942460731294E0F97345E32A3563',
+        'AEA3468F16E80251C22F76615C6CD993F183EF46E0865A7581918A70E5A0FAA3')
+    m005 = @(
+        108,
+        'BB5AE9D73808AE439CADA6A38A7A72DC2E5E7C1A5F457702A1FEB8757DF9E0E2',
+        'FA2C66C62B6B9A2AD1610FBA00A63B5AF6E96898E034F1521D1F92950FC09D92')
+    m006 = @(
+        45,
+        'BD7852474CAF807EF403AC2D1A90FD9808246862B933B6465456F439EF68067F',
+        '945B1C4FE39992A64BB1B00FBB617CDF88DE96F33B0115C40C54B17233F7E37F')
+    m007 = @(
+        89,
+        '5C56C3528E04495BF72B4D703B0BE398991B639E015AC35FED1F0A26F19BE154',
+        'CBB9DAB6B588FFEE07BF5999C40D24A39C7F7861C96A4C8403A2550E02C3826F')
+    m008 = @(
+        30,
+        'C9F2D3B8E471D739C363FCC3F042779A2D557A6A3A880851A8D3FFC44350C6F7',
+        '64A8E1FF50DE9B478E5DAA81641B454585F5D90BF1C925E6AE7CA6CFEAF243D2')
+    m009 = @(
+        44,
+        'DD65236BFB7CD0AE30F5E925AEC7024D728C8DFC6B903B58B7530A97E490D16C',
+        'B1E4C16F3A25A57CEB0D1C30E54A84CC775B194B4D794283823A0851E90CCE48')
+    m010 = @(
+        87,
+        '28F67AC498B744B05CAB19C921AD1F9A729B32A8987D1024D8FD4DE2DBE58190',
+        'CBC8916C2191F44620E6888C915213AD4ED66086AA81F4F6A1147B2C82DAD6A5')
+    m011 = @(
+        34,
+        '693FBA57D12E2B94F955BCC8D476D61CD7BA2E6E27CD1A56BF97737DA3DFB246',
+        'B631048EB48E33B3DE6A036CE1B6CDAB635D801588A64395D648DD26F1BD415E')
+}
 if (@($baseline.levels).Count -ne 12) {
     throw 'The CRT random startup baseline must contain exactly 12 levels.'
 }
 
 $verifiedActors = 0
 $verifiedGateActors = 0
+$verifiedFirstUpdateDraws = 0
 foreach ($levelIndex in 0..11) {
     $levelId = 'm{0:D3}' -f $levelIndex
     $level = @($baseline.levels | Where-Object {
@@ -127,6 +178,54 @@ foreach ($levelIndex in 0..11) {
     if (('0x{0:X8}' -f $state) -ne [string]$level.final_state_hex) {
         throw "CRT random startup LCG checkpoint mismatch for $levelId."
     }
+
+    $firstUpdate = $level.first_gameplay_update
+    $expectedFirstUpdate = $expectedFirstUpdates[$levelId]
+    $firstUpdateRecords = @($firstUpdate.records)
+    if (
+        [int]$firstUpdate.draw_count -ne (
+            [int]$expectedFirstUpdate[0]) -or
+        $firstUpdateRecords.Count -ne (
+            [int]$expectedFirstUpdate[0]) -or
+        [string]$firstUpdate.ordered_call_site_sha256 -ne (
+            [string]$expectedFirstUpdate[1]) -or
+        [string]$firstUpdate.ordered_value_sha256 -ne (
+            [string]$expectedFirstUpdate[2])
+    ) {
+        throw "First gameplay random update mismatch for $levelId."
+    }
+    $musicDraws = 0
+    $gateDraws = 0
+    foreach ($record in $firstUpdateRecords) {
+        $state = (
+            ($state * [uint64]214013 + [uint64]2531011) -band
+            [uint64]4294967295)
+        $expectedValue = [int](($state -shr 16) -band 0x7fff)
+        $site = [string]$record.call_site_rva
+        $runtimeIndex = [int]$record.runtime_index
+        if ([int]$record.value -ne $expectedValue) {
+            throw "First gameplay LCG value mismatch for $levelId."
+        }
+        if ($site -eq '0x00006A73') {
+            if ($runtimeIndex -ne -1) {
+                throw "Level music draw is actor-bound in $levelId."
+            }
+            $musicDraws++
+        }
+        elseif ($runtimeIndex -lt 0) {
+            throw "First gameplay actor draw is unmapped in $levelId."
+        }
+        if ($site -eq '0x0005C81C') {
+            $gateDraws++
+        }
+    }
+    if (
+        $musicDraws -ne 1 -or
+        $gateDraws -ne @($level.observation_gate_actor_indices).Count
+    ) {
+        throw "First gameplay call family mismatch for $levelId."
+    }
+    $verifiedFirstUpdateDraws += $firstUpdateRecords.Count
 
     $runtimeLevel = $actorCatalog.levels.$levelId
     $runtimeActors = @($runtimeLevel.actors.PSObject.Properties)
@@ -186,5 +285,6 @@ foreach ($levelIndex in 0..11) {
     Levels = @($baseline.levels).Count
     ActiveActorInitializations = $verifiedActors
     ObservationGateActors = $verifiedGateActors
+    FirstGameplayUpdateDraws = $verifiedFirstUpdateDraws
     StartupLcgCheckpoints = 'verified'
 }

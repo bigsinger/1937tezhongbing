@@ -488,6 +488,79 @@ func _apply_original_crt_random_startup_checkpoint(
 	return true
 
 
+func _replay_original_first_gameplay_random_update(
+	level_id: String,
+	apply_actor_effects: bool = true,
+) -> bool:
+	var records: Array[Dictionary] = (
+		ORIGINAL_CRT_RANDOM_STARTUP_CATALOG
+		. first_gameplay_update_records(level_id)
+	)
+	if records.is_empty():
+		push_error(
+			"Missing original first gameplay random update for %s"
+			% level_id
+		)
+		return false
+	var actors_by_runtime_index: Dictionary = {}
+	if apply_actor_effects:
+		for actor: Node2D in _all_active_runtime_actors():
+			var runtime_index := int(actor.get("original_runtime_index"))
+			if runtime_index >= 0:
+				actors_by_runtime_index[runtime_index] = actor
+	for record: Dictionary in records:
+		var call_site_rva := (
+			str(record.get("call_site_rva", "0x0")).hex_to_int()
+		)
+		var draw := next_legacy_crt_random(call_site_rva)
+		if (
+			draw.is_empty()
+			or int(draw.get("value", -1))
+				!= int(record.get("value", -2))
+		):
+			push_error(
+				(
+					"Original first gameplay random update diverged for "
+					+ "%s at 0x%08X"
+				)
+				% [level_id, call_site_rva]
+			)
+			return false
+		if (
+			apply_actor_effects
+			and call_site_rva == 0x0005C81C
+		):
+			var runtime_index := int(record.get("runtime_index", -1))
+			var actor_value: Variant = actors_by_runtime_index.get(
+				runtime_index,
+			)
+			if (
+				actor_value is Node2D
+				and is_instance_valid(actor_value as Node2D)
+				and (actor_value as Node2D).has_method(
+					"apply_original_crt_observation_gate_value"
+				)
+			):
+				(actor_value as Node2D).call(
+					"apply_original_crt_observation_gate_value",
+					int(draw.get("value", 0)),
+				)
+	return true
+
+
+func _all_active_runtime_actors() -> Array[Node2D]:
+	var result: Array[Node2D] = []
+	for unit: SQUAD_UNIT in units:
+		result.append(unit)
+	for escort: ESCORT_UNIT in escorts:
+		result.append(escort)
+	for ambient: AMBIENT_UNIT in ambient_units:
+		result.append(ambient)
+	for enemy: ENEMY_UNIT in enemies:
+		result.append(enemy)
+	return result
+
+
 func _bind_original_crt_random_actor(
 	actor: Node,
 	observation_gate_override: int = -1,
@@ -621,7 +694,8 @@ func switch_level(
 	)
 	level_load_phase_started_usec = Time.get_ticks_usec()
 	spawn_squad()
-	_apply_original_crt_random_startup_checkpoint(level_id)
+	if _apply_original_crt_random_startup_checkpoint(level_id):
+		_replay_original_first_gameplay_random_update(level_id)
 	last_level_load_phase_usec["squad"] = (
 		Time.get_ticks_usec() - level_load_phase_started_usec
 	)

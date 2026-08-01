@@ -123,6 +123,43 @@ $levels = @(
                     'is not an active resolved actor.')
             }
         }
+        $firstGameplayRecords = @(
+            foreach ($record in @(
+                    $summary.first_gameplay_update.records)) {
+                $runtimeIndex = [int]$record.runtime_index
+                $callSite = [string]$record.call_site_rva
+                if (
+                    $runtimeIndex -lt 0 -and
+                    $callSite -ne '0x00006A73'
+                ) {
+                    throw (
+                        "First gameplay update for $levelId has an " +
+                        "unmapped non-music call at $callSite.")
+                }
+                if (
+                    $runtimeIndex -ge 0 -and
+                    -not $knownRuntimeIndices.ContainsKey($runtimeIndex)
+                ) {
+                    throw (
+                        "First gameplay update actor $runtimeIndex in " +
+                        "$levelId is not active.")
+                }
+                [ordered]@{
+                    runtime_index = $runtimeIndex
+                    call_site_rva = $callSite
+                    value = [int]$record.value
+                }
+            }
+        )
+        if (
+            $firstGameplayRecords.Count -ne (
+                [int]$summary.first_gameplay_update.draw_count) -or
+            @($firstGameplayRecords | Where-Object {
+                [string]$_.call_site_rva -eq '0x0005C81C'
+            }).Count -ne $gateActorIndices.Count
+        ) {
+            throw "First gameplay update mismatch for $levelId."
+        }
 
         [ordered]@{
             id = $levelId
@@ -148,13 +185,22 @@ $levels = @(
                 [string]$summary.startup.ordered_value_sha256)
             observation_gate_actor_indices = $gateActorIndices
             actor_initialization = $activeActorInitialization
+            first_gameplay_update = [ordered]@{
+                draw_count = (
+                    [int]$summary.first_gameplay_update.draw_count)
+                ordered_call_site_sha256 = (
+                    [string]$summary.first_gameplay_update.ordered_call_site_sha256)
+                ordered_value_sha256 = (
+                    [string]$summary.first_gameplay_update.ordered_value_sha256)
+                records = $firstGameplayRecords
+            }
         }
     }
 )
 
 $baseline = [ordered]@{
-    schema_version = 1
-    catalog_id = 'original-crt-random-startup-v1'
+    schema_version = 2
+    catalog_id = 'original-crt-random-startup-v2'
     content_profile = 'repository-mod-12-level-20260729'
     executable_sha256 = (
         [string](

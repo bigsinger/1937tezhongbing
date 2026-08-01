@@ -18,6 +18,7 @@ var checks := 0
 func _init() -> void:
 	_test_twelve_level_catalog()
 	_test_exact_startup_checkpoint_and_next_draw()
+	_test_exact_first_gameplay_update_replay()
 	_test_imported_actor_profile_and_gate()
 	_test_dynamic_actor_constructor_sequence()
 	_test_timing_snapshot_round_trip()
@@ -52,8 +53,24 @@ func _test_twelve_level_catalog() -> void:
 		8476,
 		7432,
 	]
+	var expected_first_update_counts := [
+		59,
+		81,
+		30,
+		50,
+		112,
+		108,
+		45,
+		89,
+		30,
+		44,
+		87,
+		34,
+	]
 	var actor_count := 0
 	var gate_actor_count := 0
+	var first_update_count := 0
+	var first_update_music_draw_count := 0
 	for level_index: int in range(12):
 		var level_id := "m%03d" % level_index
 		var profile: Dictionary = (
@@ -64,6 +81,24 @@ func _test_twelve_level_catalog() -> void:
 				== int(expected_draw_counts[level_index]),
 			"%s retains its captured startup draw count" % level_id,
 		)
+		var first_update_records: Array[Dictionary] = (
+			ORIGINAL_STARTUP_CATALOG.first_gameplay_update_records(
+				level_id
+			)
+		)
+		_expect(
+			first_update_records.size()
+				== int(expected_first_update_counts[level_index]),
+			"%s retains its complete first gameplay update" % level_id,
+		)
+		first_update_count += first_update_records.size()
+		for record: Dictionary in first_update_records:
+			if (
+				int(record.get("runtime_index", -2)) == -1
+				and str(record.get("call_site_rva", ""))
+					== "0x00006A73"
+			):
+				first_update_music_draw_count += 1
 		actor_count += (profile.get("actor_initialization", []) as Array).size()
 		gate_actor_count += (
 			profile.get("observation_gate_actor_indices", []) as Array
@@ -75,6 +110,14 @@ func _test_twelve_level_catalog() -> void:
 	_expect(
 		gate_actor_count == 656,
 		"startup catalog preserves all 656 observation-gate actors",
+	)
+	_expect(
+		first_update_count == 769,
+		"startup catalog preserves all 769 first-update draws",
+	)
+	_expect(
+		first_update_music_draw_count == 12,
+		"each captured first update ends with one process-global music draw",
 	)
 
 
@@ -102,6 +145,55 @@ func _test_exact_startup_checkpoint_and_next_draw() -> void:
 		and int(draw.get("value", -1)) == expected_value
 		and int(draw.get("draw_index", 0)) == 8490,
 		"the first gameplay draw continues the captured MSVCRT LCG exactly",
+	)
+	game.free()
+
+
+func _test_exact_first_gameplay_update_replay() -> void:
+	var game = MAIN_SCRIPT.new()
+	game.call("_apply_original_crt_random_startup_checkpoint", "m000")
+	game.legacy_crt_random_trace_enabled = true
+	var records: Array[Dictionary] = (
+		ORIGINAL_STARTUP_CATALOG.first_gameplay_update_records("m000")
+	)
+	var expected := _draw_values(
+		game.legacy_crt_random_state,
+		records.size(),
+	)
+	var replayed := bool(game.call(
+		"_replay_original_first_gameplay_random_update",
+		"m000",
+		false,
+	))
+	_expect(
+		replayed
+		and game.legacy_crt_random_draw_index == 8548
+		and game.legacy_crt_random_state == int(expected.get("state", 0)),
+		"m000 replays all 59 first-update draws from the captured checkpoint",
+	)
+	var exact_trace_match: bool = (
+		game.legacy_crt_random_trace.size() == records.size()
+	)
+	for record_index: int in range(records.size()):
+		if not exact_trace_match:
+			break
+		var record: Dictionary = records[record_index]
+		var trace_record: Dictionary = (
+			game.legacy_crt_random_trace[record_index]
+		)
+		exact_trace_match = (
+			int(trace_record.get("value", -1))
+				== int(record.get("value", -2))
+			and int(trace_record.get("call_site_rva", 0))
+				== str(
+					record.get("call_site_rva", "0x0")
+				).hex_to_int()
+			and int(trace_record.get("draw_index", 0))
+				== 8490 + record_index
+		)
+	_expect(
+		exact_trace_match,
+		"m000 replay preserves every captured value, call site and draw index",
 	)
 	game.free()
 
