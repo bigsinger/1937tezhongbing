@@ -197,13 +197,13 @@
       "confidence": "decompiled",
       "operations": [
         {"purpose": "observation_marker_scan_gate_rand_mod_2", "sites": ["0x0005C81C"]},
-        {"purpose": "tracked_target_face_gate_rand_mod_20", "sites": ["0x0005C998"]},
-        {"purpose": "tracked_target_reaction_limit_rand_mod_20_plus_20", "sites": ["0x0005CB2B"]},
-        {"purpose": "item_investigation_limit_rand_mod_40_plus_20", "sites": ["0x0005CB60"]},
-        {"purpose": "corpse_investigation_animation_gate_rand_mod_3", "sites": ["0x0005CB9C"]},
-        {"purpose": "corpse_reaction_limit_rand_mod_40_plus_40", "sites": ["0x0005CC69"]},
-        {"purpose": "search_continue_limit_rand_mod_40_plus_40", "sites": ["0x0005CCCD"]},
-        {"purpose": "idle_search_limit_rand_mod_40_plus_40", "sites": ["0x0005CD01"]}
+        {"purpose": "idle_no_contact_reaction_limit_rand_mod_40_plus_40", "sites": ["0x0005C998"]},
+        {"purpose": "tracked_target_reaction_limit_rand_mod_40_plus_40", "sites": ["0x0005CB2B"]},
+        {"purpose": "corpse_investigation_animation_gate_rand_mod_3", "sites": ["0x0005CB60"]},
+        {"purpose": "corpse_reaction_limit_rand_mod_40_plus_40", "sites": ["0x0005CB9C"]},
+        {"purpose": "item_investigation_reaction_limit_rand_mod_40_plus_20", "sites": ["0x0005CC69"]},
+        {"purpose": "tracked_target_face_or_continue_gate_rand_mod_20_less_than_10", "sites": ["0x0005CCCD"]},
+        {"purpose": "tracked_target_reaction_limit_rand_mod_20_plus_20", "sites": ["0x0005CD01"]}
       ]
     },
     {

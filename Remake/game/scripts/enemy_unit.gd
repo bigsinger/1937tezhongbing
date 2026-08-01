@@ -360,6 +360,27 @@ func configure_enemy(
 	queue_redraw()
 
 
+func apply_original_crt_enemy_startup_profile() -> bool:
+	if not original_crt_initialization_profile.has(
+		"initial_reaction_limit"
+	):
+		return false
+	# sub_4533F0 stores this constructor draw at RuntimeActorV1 +0x248
+	# (search_delay_limit). It is not the remake's attack cooldown. Keeping
+	# those fields separate prevents later editorial posture refreshes from
+	# restarting an already-active rifle cadence.
+	legacy_search_wait_counter = 0
+	legacy_search_wait_limit = clampi(
+		int(original_crt_initialization_profile.get(
+			"initial_reaction_limit",
+			40,
+		)),
+		40,
+		79,
+	)
+	return true
+
+
 func set_potential_targets(targets: Array[Node2D]) -> void:
 	potential_targets = targets.duplicate()
 
@@ -472,6 +493,7 @@ static func deterministic_aim_sample(enemy_scene_index: int, attack_serial: int)
 
 func _physics_process(delta: float) -> void:
 	var safe_delta := maxf(delta, 0.0)
+	_advance_original_crt_observation_gate(safe_delta)
 	if not is_alive or combat_action != CombatAction.NONE or hurt_remaining > 0.0:
 		super._physics_process(safe_delta)
 		_advance_tactical_range_cache(safe_delta)
@@ -697,7 +719,9 @@ func _update_behavior(delta: float) -> void:
 				return
 			if attack_recheck_elapsed >= attack_recheck_seconds:
 				attack_recheck_elapsed = 0.0
-				attack_recheck_seconds = _deterministic_attack_interval()
+				attack_recheck_seconds = (
+					_sample_original_attack_interval()
+				)
 				if (
 					mission_ai_coordinator != null
 					and is_instance_valid(mission_ai_coordinator)
@@ -1244,14 +1268,33 @@ func _update_legacy_coordinate_search(delta: float) -> void:
 		):
 			_enter_patrol()
 			return
-		var sampled: Dictionary = (
-			LEGACY_ENEMY_AI_RULES.local_search_point_from_state(
-				legacy_search_random_state,
-				position,
-				_legacy_search_world_bounds(),
+		var sampled: Dictionary = {}
+		var original_values := next_original_crt_random_values([
+			0x0005D08F,
+			0x0005D09D,
+			0x0005D0B4,
+			0x0005D0CB,
+			0x0005D15F,
+		])
+		if original_values.size() == 5:
+			sampled = (
+				LEGACY_ENEMY_AI_RULES.local_search_point_from_values(
+					original_values,
+					position,
+					_legacy_search_world_bounds(),
+				)
 			)
-		)
-		legacy_search_random_state = int(sampled.get("state", 1))
+		else:
+			sampled = (
+				LEGACY_ENEMY_AI_RULES.local_search_point_from_state(
+					legacy_search_random_state,
+					position,
+					_legacy_search_world_bounds(),
+				)
+			)
+			legacy_search_random_state = int(
+				sampled.get("state", 1)
+			)
 		legacy_search_wait_counter = 0
 		legacy_search_wait_limit = int(
 			sampled.get(
@@ -1361,18 +1404,28 @@ func _begin_legacy_corpse_discovery(corpse: Node2D) -> bool:
 	corpse.set("legacy_corpse_discovered", true)
 	legacy_corpse_reaction_counter = 0
 	legacy_corpse_reaction_elapsed = 0.0
-	var sampled: Dictionary = (
-		LEGACY_CORPSE_DISCOVERY_RULES.reaction_limit_from_state(
-			legacy_corpse_random_state
-		)
+	var original_random_value := next_original_crt_random_value(
+		0x0005CB9C
 	)
-	legacy_corpse_random_state = int(sampled.get("state", 1))
-	legacy_corpse_reaction_limit = int(
-		sampled.get(
-			"limit",
-			LEGACY_CORPSE_DISCOVERY_RULES.REACTION_MINIMUM_LIMIT,
+	if original_random_value >= 0:
+		legacy_corpse_reaction_limit = (
+			original_random_value
+			% LEGACY_CORPSE_DISCOVERY_RULES.REACTION_RANDOM_SPAN
+			+ LEGACY_CORPSE_DISCOVERY_RULES.REACTION_MINIMUM_LIMIT
 		)
-	)
+	else:
+		var sampled: Dictionary = (
+			LEGACY_CORPSE_DISCOVERY_RULES.reaction_limit_from_state(
+				legacy_corpse_random_state
+			)
+		)
+		legacy_corpse_random_state = int(sampled.get("state", 1))
+		legacy_corpse_reaction_limit = int(
+			sampled.get(
+				"limit",
+				LEGACY_CORPSE_DISCOVERY_RULES.REACTION_MINIMUM_LIMIT,
+			)
+		)
 	current_target = null
 	clear_combat_target()
 	behavior_state = BehaviorState.CORPSE_DISCOVERY
@@ -1498,12 +1551,18 @@ func apply_legacy_world_item_effect(
 			set_selected(true)
 			legacy_hypnosis_changed.emit(self, true)
 		"poison_and_distraction":
-			_start_legacy_distraction(forced_distraction_limit)
+			_start_legacy_distraction(
+				forced_distraction_limit,
+				item_id,
+			)
 			legacy_poison_active = true
 			legacy_poison_counter = 0
 			result["distraction_limit"] = legacy_distraction_limit
 		"distraction":
-			_start_legacy_distraction(forced_distraction_limit)
+			_start_legacy_distraction(
+				forced_distraction_limit,
+				item_id,
+			)
 			result["distraction_limit"] = legacy_distraction_limit
 		"carry":
 			pass
@@ -1872,24 +1931,42 @@ func _update_legacy_world_item_investigation(delta: float) -> void:
 	_issue_path_to(legacy_world_item_target.position)
 
 
-func _start_legacy_distraction(forced_limit: int = -1) -> void:
+func _start_legacy_distraction(
+	forced_limit: int = -1,
+	item_id: int = 0,
+) -> void:
 	legacy_distraction_active = true
 	legacy_distraction_counter = 0
 	if forced_limit >= LEGACY_WORLD_ITEM_RULES.DISTRACTION_MINIMUM_LIMIT:
 		legacy_distraction_limit = forced_limit
 		return
-	var sample: Dictionary = (
-		LEGACY_WORLD_ITEM_RULES.distraction_limit_from_state(
-			legacy_effect_random_state
-		)
+	var call_site_rva := (
+		0x000582BC
+		if item_id == LEGACY_WORLD_ITEM_RULES.POISONED_WINE_ITEM_ID
+		else 0x000582FA
 	)
-	legacy_effect_random_state = int(sample.get("state", 1))
-	legacy_distraction_limit = int(
-		sample.get(
-			"limit",
-			LEGACY_WORLD_ITEM_RULES.DISTRACTION_MINIMUM_LIMIT,
-		)
+	var original_random_value := next_original_crt_random_value(
+		call_site_rva
 	)
+	if original_random_value >= 0:
+		legacy_distraction_limit = (
+			original_random_value
+			% LEGACY_WORLD_ITEM_RULES.DISTRACTION_RANDOM_SPAN
+			+ LEGACY_WORLD_ITEM_RULES.DISTRACTION_MINIMUM_LIMIT
+		)
+	else:
+		var sample: Dictionary = (
+			LEGACY_WORLD_ITEM_RULES.distraction_limit_from_state(
+				legacy_effect_random_state
+			)
+		)
+		legacy_effect_random_state = int(sample.get("state", 1))
+		legacy_distraction_limit = int(
+			sample.get(
+				"limit",
+				LEGACY_WORLD_ITEM_RULES.DISTRACTION_MINIMUM_LIMIT,
+			)
+		)
 
 
 func _clear_legacy_world_item_target() -> void:
@@ -1962,6 +2039,15 @@ func _deterministic_attack_interval() -> float:
 		* editorial_reaction_multiplier
 		* editorial_posture_reaction_multiplier
 	)
+
+
+func _sample_original_attack_interval() -> float:
+	# Consume the recovered call at the exact state transition, but retain the
+	# already MOD-differential-verified timing until every earlier runtime
+	# consumer has migrated to the shared stream. Using a shifted partial-stream
+	# value here can make a visible target leave before its second rifle shot.
+	next_original_crt_random_value(0x0005CD01)
+	return _deterministic_attack_interval()
 
 
 func _resolve_pending_hit() -> void:

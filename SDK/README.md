@@ -158,8 +158,12 @@ DBL 1003/物品 53 仍明确归入可受伤汽油桶生命周期，不会误作�
 语义。相关函数入口和 `SpecialAttentionSource` 全局量均由
 `address-catalog.json` 生成到 C++/C# 常量，补丁和 Remake 不再各自复制魔数。
 原版所有 119 个直接 `rand()` 调用点另由 `crt-rand-call-sites.json`
-统一登记；Remake 的爆炸路径按调用点标签提交到一个可存档、可回放的全局
-MSVCRT LCG 流，未登记地址会拒绝消费，避免各系统私有随机数悄悄破坏顺序。
+统一登记；Remake 按调用点标签提交到一个可存档、可回放的全局 MSVCRT
+LCG 流，未登记地址会拒绝消费，避免各系统私有随机数悄悄破坏顺序。十二关
+原版启动调用序列、结束状态、772 名活动角色构造值和 656 名观察门角色顺序
+另固定在 `Remake/game/data/original_crt_random_startup_catalog.json`；
+完整取证、运行时迁移边界和完成门禁见
+`Remake/docs/ORIGINAL_CRT_RANDOM_STREAM.md`。
 
 `Disguise.hpp` 固化古明 type 10/GFL 270 与 type 91/GFL 272 的双向换装表、
 军服 54/青衫 92/项目 99 的容器变化、严格 101 tick 切换与恢复、手枪/匕首

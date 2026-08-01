@@ -49,6 +49,9 @@ const LEGACY_EXPLOSION_VISUAL_RULES: Script = preload(
 const LEGACY_CRT_RANDOM_CATALOG: Script = preload(
 	"res://scripts/generated/legacy_crt_random_catalog.gd"
 )
+const ORIGINAL_CRT_RANDOM_STARTUP_CATALOG: Script = preload(
+	"res://scripts/original_crt_random_startup_catalog.gd"
+)
 const LEGACY_EXPLOSION_EFFECT_SCRIPT: Script = preload(
 	"res://scripts/legacy_explosion_effect.gd"
 )
@@ -452,6 +455,68 @@ func _record_legacy_crt_random_draw(draw: Dictionary) -> void:
 		legacy_crt_random_trace.pop_front()
 
 
+func _reset_legacy_crt_random_for_level_load() -> void:
+	legacy_crt_random_state = LEGACY_CRT_RANDOM_CATALOG.INITIAL_STATE
+	legacy_crt_random_draw_index = 0
+	legacy_crt_random_trace.clear()
+
+
+func _apply_original_crt_random_startup_checkpoint(
+	level_id: String,
+) -> bool:
+	var startup_state: int = (
+		ORIGINAL_CRT_RANDOM_STARTUP_CATALOG.startup_state(level_id)
+	)
+	var startup_draw_count: int = (
+		ORIGINAL_CRT_RANDOM_STARTUP_CATALOG.startup_draw_count(
+			level_id
+		)
+	)
+	if startup_state <= 0 or startup_draw_count <= 0:
+		push_error(
+			"Missing original CRT random startup checkpoint for %s"
+			% level_id
+		)
+		return false
+	# The original constructs ambient particles and every VWF entity before
+	# the first gameplay actor update. Remake does not instantiate those
+	# legacy-only objects, so it resumes the proven process-global stream at
+	# the exact post-initialization checkpoint instead of inventing draws.
+	legacy_crt_random_state = startup_state
+	legacy_crt_random_draw_index = startup_draw_count
+	legacy_crt_random_trace.clear()
+	return true
+
+
+func _bind_original_crt_random_actor(
+	actor: Node,
+	observation_gate_override: int = -1,
+) -> bool:
+	if (
+		actor == null
+		or not is_instance_valid(actor)
+		or not actor.has_method("bind_original_crt_random_source")
+	):
+		return false
+	var level_id := str(
+		current_mission.get(
+			"id",
+			FORMAL_LEVEL_IDS[current_level_index],
+		)
+	)
+	var bound := bool(actor.call(
+		"bind_original_crt_random_source",
+		self,
+		level_id,
+		observation_gate_override,
+	))
+	if actor.has_method(
+		"apply_original_crt_enemy_startup_profile"
+	):
+		actor.call("apply_original_crt_enemy_startup_profile")
+	return bound
+
+
 func _exit_tree() -> void:
 	if legacy_cursor_presenter != null:
 		legacy_cursor_presenter.reset()
@@ -540,6 +605,7 @@ func switch_level(
 	burial_mode = false
 	current_level_index = posmod(level_index, FORMAL_LEVEL_IDS.size())
 	var level_id := FORMAL_LEVEL_IDS[current_level_index]
+	_reset_legacy_crt_random_for_level_load()
 	last_level_load_phase_usec["state_reset"] = (
 		Time.get_ticks_usec() - level_load_phase_started_usec
 	)
@@ -555,6 +621,7 @@ func switch_level(
 	)
 	level_load_phase_started_usec = Time.get_ticks_usec()
 	spawn_squad()
+	_apply_original_crt_random_startup_checkpoint(level_id)
 	last_level_load_phase_usec["squad"] = (
 		Time.get_ticks_usec() - level_load_phase_started_usec
 	)
@@ -1417,6 +1484,7 @@ func spawn_squad() -> void:
 			)
 		)
 		unit.configure_runtime_actor_type(entity)
+		_bind_original_crt_random_actor(unit)
 		unit.configure_movement_modes(run_groups, walk_groups, crawl_groups)
 		if not entity.is_empty():
 			var authored_direction := clampi(
@@ -1787,6 +1855,7 @@ func _spawn_escorts() -> void:
 			dynamic_occupancy,
 			attack_groups,
 		)
+		_bind_original_crt_random_actor(escort)
 		escort.configure_original_ai_idle_animation(stand_action_groups)
 		_configure_original_weapon_container(
 			escort,
@@ -1839,6 +1908,7 @@ func _spawn_enemies() -> void:
 			attack_groups,
 			death_groups,
 		)
+		_bind_original_crt_random_actor(enemy)
 		enemy.configure_original_ai_idle_animation(stand_action_groups)
 		enemy.original_mission_number = int(
 			current_mission.get("number", current_level_index + 1)
@@ -1884,6 +1954,7 @@ func _spawn_ambient_units() -> void:
 			death_groups,
 			dynamic_occupancy,
 		)
+		_bind_original_crt_random_actor(ambient)
 		ambient.configure_original_ai_idle_animation(stand_action_groups)
 		_configure_original_weapon_container(
 			ambient,
@@ -2998,11 +3069,32 @@ func _place_or_move_sight_beacon(world_point: Vector2) -> Node2D:
 		_load_legacy_special_visual(341),
 		seed,
 	)
+	marker.call("set_external_polling", true)
 	marker.connect("observed", Callable(self, "_on_sight_beacon_observed"))
 	marker.connect("tree_exited", Callable(self, "_on_sight_beacon_exited").bind(marker))
 	add_child(marker)
 	sight_beacon = marker
 	return marker
+
+
+func advance_original_observation_for_actor(
+	actor: Node2D,
+	gate_passed: bool,
+) -> bool:
+	if (
+		not gate_passed
+		or sight_beacon == null
+		or not is_instance_valid(sight_beacon)
+		or actor == null
+		or not is_instance_valid(actor)
+		or not sight_beacon.has_method("advance_for_observer")
+	):
+		return false
+	return bool(sight_beacon.call(
+		"advance_for_observer",
+		actor,
+		true,
+	))
 
 
 func _living_enemy_observers() -> Array[Node2D]:
@@ -4711,6 +4803,10 @@ func _spawn_legacy_reinforcement(
 	entity["patrol_enabled"] = false
 	entity["patrol_waypoints"] = []
 	entity["patrol_current_waypoint_index"] = 0
+	# This actor is appended at runtime. Reusing the source template's stable
+	# startup index would duplicate an existing actor's process order.
+	entity.erase("original_runtime_profile")
+	entity.erase("original_runtime_profile_source")
 	var texture := load_entity_texture(entity)
 	if texture == null:
 		return null
@@ -4743,6 +4839,9 @@ func _spawn_legacy_reinforcement(
 		attack_groups,
 		death_groups,
 	)
+	_bind_original_crt_random_actor(reinforcement, 1)
+	reinforcement.initialize_dynamic_original_crt_random()
+	reinforcement.apply_original_crt_enemy_startup_profile()
 	reinforcement.configure_original_ai_idle_animation(stand_action_groups)
 	reinforcement.original_mission_number = int(
 		current_mission.get("number", current_level_index + 1)

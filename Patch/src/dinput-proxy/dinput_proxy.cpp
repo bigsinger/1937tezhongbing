@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <dinput.h>
 #include <mmsystem.h>
+#include <intrin.h>
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -34,6 +35,7 @@ volatile LONG g_last_message_pump_tick = 0;
 void *g_safe_blit_trampoline = nullptr;
 void *g_menu_poll_trampoline = nullptr;
 void *g_alert_propagation_trampoline = nullptr;
+void *g_crt_rand_trampoline = nullptr;
 volatile LONG g_auto_start_consumed = 0;
 wchar_t g_mod_log[MAX_PATH]{};
 wchar_t g_telemetry_log[MAX_PATH]{};
@@ -194,6 +196,24 @@ INIT_ONCE g_telemetry_writer_once = INIT_ONCE_STATIC_INIT;
 HANDLE g_telemetry_writer_event = nullptr;
 HANDLE g_telemetry_writer_thread = nullptr;
 volatile LONG g_telemetry_lines_dropped = 0;
+
+// Test-only process-local capture of the original executable's shared CRT
+// rand() stream. The hot hook writes fixed-size memory records only; the
+// existing below-normal telemetry writer performs all disk I/O after the
+// message pump drains records into bounded JSON batches.
+bool g_crt_random_trace_enabled = false;
+constexpr LONG kCrtRandomTraceCapacity = 131072;
+struct CrtRandomTraceRecord {
+    volatile LONG sequence = 0;
+    DWORD thread_id = 0;
+    std::uint32_t call_site_rva = 0;
+    std::uint32_t caller_esi = 0;
+    int value = 0;
+};
+CrtRandomTraceRecord *g_crt_random_trace = nullptr;
+volatile LONG g_crt_random_trace_count = 0;
+volatile LONG g_crt_random_trace_flushed = 0;
+volatile LONG g_crt_random_trace_dropped = 0;
 
 struct EnhancedSearchState {
     std::uintptr_t actor = 0;
@@ -480,6 +500,78 @@ LONG TakeCounter(volatile LONG *value) {
     return InterlockedExchange(value, 0);
 }
 
+void WriteCrtRandomTraceRecords(HANDLE file) {
+    if (!g_crt_random_trace_enabled ||
+        !g_crt_random_trace ||
+        file == INVALID_HANDLE_VALUE) {
+        return;
+    }
+    LONG flushed = InterlockedCompareExchange(
+        &g_crt_random_trace_flushed, 0, 0);
+    const LONG recorded = InterlockedCompareExchange(
+        &g_crt_random_trace_count, 0, 0);
+    const LONG available =
+        recorded < kCrtRandomTraceCapacity
+            ? recorded
+            : kCrtRandomTraceCapacity;
+    while (flushed < available) {
+        char line[kTelemetryLineCapacity]{};
+        int length = snprintf(
+            line, sizeof(line),
+            "{\"event\":\"crt_rand_batch\",\"pid\":%lu,"
+            "\"records\":[",
+            GetCurrentProcessId());
+        if (length <= 0 ||
+            length >= static_cast<int>(sizeof(line) - 4)) {
+            return;
+        }
+        int appended = 0;
+        while (flushed < available && appended < 12) {
+            const LONG expected_sequence = flushed + 1;
+            auto &record = g_crt_random_trace[flushed];
+            if (InterlockedCompareExchange(
+                    &record.sequence, 0, 0) !=
+                expected_sequence) {
+                break;
+            }
+            const int written = snprintf(
+                line + length,
+                sizeof(line) - static_cast<size_t>(length),
+                "%s{\"sequence\":%ld,\"thread\":%lu,"
+                "\"call_site_rva\":\"0x%08lX\","
+                "\"caller_esi\":\"0x%08lX\",\"value\":%d}",
+                appended == 0 ? "" : ",",
+                expected_sequence,
+                record.thread_id,
+                static_cast<unsigned long>(
+                    record.call_site_rva),
+                static_cast<unsigned long>(record.caller_esi),
+                record.value);
+            if (written <= 0 ||
+                written >= static_cast<int>(
+                    sizeof(line) - static_cast<size_t>(length) - 3)) {
+                break;
+            }
+            length += written;
+            ++flushed;
+            ++appended;
+        }
+        if (appended == 0) {
+            break;
+        }
+        line[length++] = ']';
+        line[length++] = '}';
+        line[length++] = '\r';
+        line[length++] = '\n';
+        DWORD written = 0;
+        WriteFile(
+            file, line, static_cast<DWORD>(length),
+            &written, nullptr);
+        InterlockedExchange(
+            &g_crt_random_trace_flushed, flushed);
+    }
+}
+
 DWORD WINAPI TelemetryWriterThread(void *) {
     for (;;) {
         if (WaitForSingleObject(
@@ -490,6 +582,7 @@ DWORD WINAPI TelemetryWriterThread(void *) {
             g_telemetry_log, FILE_APPEND_DATA,
             FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
             OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        WriteCrtRandomTraceRecords(file);
         for (;;) {
             TelemetryLine line{};
             bool available = false;
@@ -574,10 +667,24 @@ bool QueueTelemetryLine(const char *text, DWORD length) {
     return true;
 }
 
+void FlushCrtRandomTrace() {
+    if (!g_crt_random_trace_enabled ||
+        !g_crt_random_trace ||
+        !InitOnceExecuteOnce(
+            &g_telemetry_writer_once,
+            &InitializeTelemetryWriter,
+            nullptr, nullptr) ||
+        !g_telemetry_writer_event) {
+        return;
+    }
+    SetEvent(g_telemetry_writer_event);
+}
+
 void FlushTelemetrySnapshot(bool force = false) {
     if (!g_mod_config.telemetry || !g_telemetry_log[0]) {
         return;
     }
+    FlushCrtRandomTrace();
     const DWORD now = GetTickCount();
     const DWORD last = static_cast<DWORD>(
         InterlockedCompareExchange(&g_last_telemetry_tick, 0, 0));
@@ -774,6 +881,33 @@ void LoadModConfig() {
             static_cast<DWORD>(sizeof(telemetry_environment))) > 0) {
         g_mod_config.telemetry =
             strcmp(telemetry_environment, "1") == 0;
+    }
+    char crt_random_trace_environment[8]{};
+    if (GetEnvironmentVariableA(
+            "M1937_RNG_TRACE", crt_random_trace_environment,
+            static_cast<DWORD>(
+                sizeof(crt_random_trace_environment))) > 0) {
+        g_crt_random_trace_enabled =
+            strcmp(crt_random_trace_environment, "1") == 0;
+        if (g_crt_random_trace_enabled &&
+            !g_crt_random_trace) {
+            g_crt_random_trace =
+                static_cast<CrtRandomTraceRecord *>(VirtualAlloc(
+                    nullptr,
+                    sizeof(CrtRandomTraceRecord) *
+                        static_cast<size_t>(
+                            kCrtRandomTraceCapacity),
+                    MEM_COMMIT | MEM_RESERVE,
+                    PAGE_READWRITE));
+            g_crt_random_trace_enabled =
+                g_crt_random_trace != nullptr;
+        }
+        // The trace uses the same asynchronous destination as ordinary
+        // telemetry. Enabling this explicit test seam therefore also enables
+        // that writer even if rungame.ini keeps player telemetry disabled.
+        if (g_crt_random_trace_enabled) {
+            g_mod_config.telemetry = true;
+        }
     }
     g_mod_config.telemetry_interval_ms =
         ClampSetting(read(L"TelemetryIntervalMs", 1000), 250, 10000);
@@ -2001,6 +2135,136 @@ bool PatchExecutableCall(
         address, expected, replacement, sizeof(replacement));
 }
 
+using OriginalCrtRandProc = int(__cdecl *)();
+
+void RecordCrtRandomTrace(
+    void *caller_return_address,
+    std::uintptr_t caller_esi,
+    int value) {
+    if (!g_crt_random_trace_enabled ||
+        !g_crt_random_trace ||
+        !g_executable_base ||
+        !caller_return_address) {
+        return;
+    }
+    const auto caller_return =
+        reinterpret_cast<std::uintptr_t>(caller_return_address);
+    const auto executable_base =
+        reinterpret_cast<std::uintptr_t>(g_executable_base);
+    if (caller_return < executable_base + 5) {
+        return;
+    }
+    const auto call_site = caller_return - executable_base - 5;
+    if (call_site > UINT32_MAX) {
+        return;
+    }
+    const LONG index =
+        InterlockedIncrement(&g_crt_random_trace_count) - 1;
+    if (index < 0 || index >= kCrtRandomTraceCapacity) {
+        InterlockedIncrement(&g_crt_random_trace_dropped);
+        return;
+    }
+    auto &record = g_crt_random_trace[index];
+    record.thread_id = GetCurrentThreadId();
+    record.call_site_rva =
+        static_cast<std::uint32_t>(call_site);
+    record.caller_esi =
+        static_cast<std::uint32_t>(caller_esi);
+    record.value = value;
+    // Publish the record only after every payload field is complete.
+    InterlockedExchange(&record.sequence, index + 1);
+}
+
+int __cdecl TracedCrtRand() {
+    void *caller_return_address = _ReturnAddress();
+    std::uintptr_t caller_esi = 0;
+#if defined(_M_IX86)
+    // Every recovered actor constructor/update keeps its RuntimeActorV1
+    // pointer in ESI across the CRT rand() call. Capture the callee-saved
+    // register before invoking the relocated original body; the test-only
+    // startup summarizer joins it to the process-local actor table without
+    // modifying game state or adding a second gameplay hook.
+    __asm mov caller_esi, esi
+#endif
+    const int value = g_crt_rand_trampoline
+        ? reinterpret_cast<OriginalCrtRandProc>(
+              g_crt_rand_trampoline)()
+        : 0;
+    RecordCrtRandomTrace(
+        caller_return_address, caller_esi, value);
+    return value;
+}
+
+bool InstallCrtRandomTraceHook(unsigned char *base) {
+    if (!g_crt_random_trace_enabled || !base) {
+        return false;
+    }
+    static const unsigned char expected[] = {
+        0xE8, 0xA7, 0x47, 0x00, 0x00};
+    auto *entry = base + m1937::sdk::rva::crt_rand;
+    if (memcmp(entry, expected, sizeof(expected)) != 0) {
+        return false;
+    }
+
+    // The first instruction calls the CRT thread-data accessor. Relocate that
+    // relative CALL before jumping back to entry+5; copying its original
+    // displacement verbatim would target the wrong address from VirtualAlloc.
+    int32_t original_call_displacement = 0;
+    memcpy(
+        &original_call_displacement,
+        expected + 1,
+        sizeof(original_call_displacement));
+    auto *original_call_target =
+        entry + sizeof(expected) + original_call_displacement;
+    constexpr size_t trampoline_size = 10;
+    auto *trampoline = static_cast<unsigned char *>(VirtualAlloc(
+        nullptr, trampoline_size, MEM_COMMIT | MEM_RESERVE,
+        PAGE_EXECUTE_READWRITE));
+    if (!trampoline) {
+        return false;
+    }
+    trampoline[0] = 0xE8;
+    const auto call_relative =
+        reinterpret_cast<intptr_t>(original_call_target) -
+        reinterpret_cast<intptr_t>(trampoline + 5);
+    trampoline[5] = 0xE9;
+    const auto resume_relative =
+        reinterpret_cast<intptr_t>(entry + sizeof(expected)) -
+        reinterpret_cast<intptr_t>(
+            trampoline + trampoline_size);
+    if (call_relative < INT32_MIN ||
+        call_relative > INT32_MAX ||
+        resume_relative < INT32_MIN ||
+        resume_relative > INT32_MAX) {
+        VirtualFree(trampoline, 0, MEM_RELEASE);
+        return false;
+    }
+    const int32_t call_displacement =
+        static_cast<int32_t>(call_relative);
+    const int32_t resume_displacement =
+        static_cast<int32_t>(resume_relative);
+    memcpy(
+        trampoline + 1,
+        &call_displacement,
+        sizeof(call_displacement));
+    memcpy(
+        trampoline + 6,
+        &resume_displacement,
+        sizeof(resume_displacement));
+    FlushInstructionCache(
+        GetCurrentProcess(), trampoline, trampoline_size);
+
+    g_crt_rand_trampoline = trampoline;
+    if (!PatchExecutableJump(
+            entry, expected, sizeof(expected),
+            reinterpret_cast<const void *>(&TracedCrtRand))) {
+        g_crt_rand_trampoline = nullptr;
+        VirtualFree(trampoline, 0, MEM_RELEASE);
+        return false;
+    }
+    return true;
+}
+
 using OriginalBlitProc = int(__thiscall *)(
     void *, int, int, void *, int, int);
 
@@ -3037,6 +3301,14 @@ void ApplyLegacyExecutablePatches() {
     }
     auto *base = reinterpret_cast<unsigned char *>(module.base());
     g_executable_base = base;
+    if (g_crt_random_trace_enabled) {
+        RecordDiagnostic(
+            "crt_random_trace",
+            InstallCrtRandomTraceHook(base)
+                ? "process_local"
+                : "rejected",
+            "memory_ring_async_writer");
+    }
     if (IsWindowReplayEnabled()) {
         RecordDiagnostic(
             "autotest_window_queries",

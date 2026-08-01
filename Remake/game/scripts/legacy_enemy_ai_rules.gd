@@ -99,6 +99,42 @@ static func local_search_point_from_state(
 	}
 
 
+static func local_search_point_from_values(
+	values: Array[int],
+	origin: Vector2,
+	world_bounds: Rect2,
+) -> Dictionary:
+	if values.size() != 5:
+		return {}
+	var x_offset := values[0] % SEARCH_HORIZONTAL_SPAN
+	var y_offset := values[1] % SEARCH_VERTICAL_SPAN
+	if values[2] % 2 > 0:
+		x_offset = -x_offset
+	if values[3] % 2 > 0:
+		y_offset = -y_offset
+	var point := origin + Vector2(x_offset, y_offset)
+	var minimum := (
+		world_bounds.position + Vector2(WORLD_MARGIN, WORLD_MARGIN)
+	)
+	var maximum := (
+		world_bounds.end - Vector2(WORLD_MARGIN, WORLD_MARGIN)
+	)
+	if maximum.x < minimum.x:
+		minimum.x = world_bounds.position.x
+		maximum.x = world_bounds.end.x
+	if maximum.y < minimum.y:
+		minimum.y = world_bounds.position.y
+		maximum.y = world_bounds.end.y
+	point = point.clamp(minimum, maximum)
+	return {
+		"point": point,
+		"next_wait_limit": (
+			values[4] % SEARCH_WAIT_RANDOM_SPAN
+			+ SEARCH_WAIT_MINIMUM_LIMIT
+		),
+	}
+
+
 static func counter_has_completed(counter: int, limit: int) -> bool:
 	return counter > limit
 

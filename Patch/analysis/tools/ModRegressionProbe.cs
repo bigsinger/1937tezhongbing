@@ -429,6 +429,7 @@ internal static class ModRegressionProbe
                 "[SECONDS] [MOVEMENT_CELL_X MOVEMENT_CELL_Y " +
                 "[RETURN_CELL_X RETURN_CELL_Y]] " +
                 "[--briefing-only | --briefing-dismissal-only] " +
+                "[--crt-random-startup-only] " +
                 "[--movement-only] " +
                 "[--movement-player-scene=SCENE_INDEX] " +
                 "[--movement-observation-ms=MS] " +
@@ -461,6 +462,12 @@ internal static class ModRegressionProbe
         {
             return argument.Equals(
                 "--briefing-dismissal-only",
+                StringComparison.OrdinalIgnoreCase);
+        });
+        bool crtRandomStartupOnly = args.Any(delegate(string argument)
+        {
+            return argument.Equals(
+                "--crt-random-startup-only",
                 StringComparison.OrdinalIgnoreCase);
         });
         bool movementOnly = args.Any(delegate(string argument)
@@ -649,6 +656,15 @@ internal static class ModRegressionProbe
             throw new InvalidOperationException(
                 "Briefing-only and briefing-dismissal-only are mutually " +
                 "exclusive.");
+        }
+        if (crtRandomStartupOnly &&
+            (briefingOnly || briefingDismissalOnly ||
+             movementOnly || inventoryOnly ||
+             visualCaptureOnly || parityModeCount > 0))
+        {
+            throw new InvalidOperationException(
+                "CRT-random-startup-only cannot be combined with another " +
+                "specialized probe mode.");
         }
         if (inventoryOnly &&
             (briefingOnly || briefingDismissalOnly ||
@@ -1058,6 +1074,45 @@ internal static class ModRegressionProbe
                         ? "engine mission matched route; world_actors=" +
                           actorCount.ToString(CultureInfo.InvariantCulture)
                         : "world object table was not ready");
+                if (crtRandomStartupOnly)
+                {
+                    // The proxy's test-only rand() hook writes to a memory
+                    // ring and the asynchronous telemetry thread. Give the
+                    // target process a short local pump window after the
+                    // complete actor table becomes visible, then stop before
+                    // player input or long-running AI can make the startup
+                    // sequence timing-dependent.
+                    Thread.Sleep(750);
+                    WriteActorStateSnapshot(
+                        process,
+                        imageBase,
+                        Path.Combine(
+                            outputDirectory,
+                            "actor-states-crt-startup.csv"));
+                    samplerStop = true;
+                    sampler.Join(1500);
+                    bool startupCursorClipSafe;
+                    lock (perf)
+                        startupCursorClipSafe = perf.All(
+                            delegate(PerfSample sample)
+                            {
+                                return !sample.CursorClipRestricted;
+                            });
+                    exitCode =
+                        missionStarted &&
+                        actorCount > 0 &&
+                        startupCursorClipSafe ? 0 : 1;
+                    WriteArtifacts(
+                        outputDirectory,
+                        selectorLevel,
+                        route.EngineMission,
+                        stages,
+                        perf,
+                        transitionsLogged: false,
+                        replayConsumed: true,
+                        passed: exitCode == 0);
+                    return exitCode;
+                }
 
                 // After the original briefing closes, the loaded mission
                 // remains behind the full menu. Resume it through the third

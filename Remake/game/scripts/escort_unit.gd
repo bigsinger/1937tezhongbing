@@ -84,6 +84,7 @@ func set_follow_target(target: Node2D) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	_advance_original_crt_observation_gate(maxf(delta, 0.0))
 	if is_alive and rescued_state and _target_is_alive(follow_target):
 		follow_repath_elapsed += maxf(delta, 0.0)
 		var distance := position.distance_to(follow_target.position)

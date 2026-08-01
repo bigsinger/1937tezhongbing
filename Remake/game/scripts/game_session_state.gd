@@ -192,6 +192,10 @@ static func _capture_actor(actor: Node2D, group_name: String) -> Dictionary:
 			record["original_ai_idle_animation"] = _json_value(
 				idle_animation
 			)
+	if actor.has_method("original_crt_random_timing_snapshot"):
+		record["original_crt_random_timing"] = _json_value(
+			actor.call("original_crt_random_timing_snapshot")
+		)
 	if group_name == "enemies":
 		var current_target: Variant = actor.get("current_target")
 		record["ai"] = {
@@ -742,6 +746,18 @@ static func _restore_actor(game: Node, actor: Node2D, record: Dictionary, group_
 		actor.call(
 			"restore_original_ai_idle_animation",
 			original_ai_idle_animation as Dictionary,
+		)
+	var original_crt_random_timing: Variant = record.get(
+		"original_crt_random_timing",
+		{},
+	)
+	if (
+		original_crt_random_timing is Dictionary
+		and actor.has_method("restore_original_crt_random_timing")
+	):
+		actor.call(
+			"restore_original_crt_random_timing",
+			original_crt_random_timing as Dictionary,
 		)
 	if alive:
 		actor.set("death_emitted", false)

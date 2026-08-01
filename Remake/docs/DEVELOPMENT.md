@@ -175,7 +175,7 @@ Godot 端的责任分工为：
 
 `combat_profiles.json` 当前的普通敌人/军犬感知、11 类攻击距离、普通伤害、直接 actor 命中数、坐标弹道数、弹药物品 ID、每次消耗和末帧提交语义来自 `M1937.exe` 字段级逆向，不能随意当作手感参数改写。`LegacyCombatRules` 固定 `sub_456DF0` 的步枪 attacker runtime type 1（16 点）、匕首 attacker runtime type 56（1 点）、机枪直接 actor 只结算一次，以及 `sub_458700` 的八类低于 32 伤害免疫；不得重新把机枪三条坐标散布弹道解释为同一 actor 三次扣血。每个新战斗字段都必须标记 `recovered`、`recovered_with_unresolved_override` 或 `unresolved_remake_default`。原版已确认不存在弹匣/备弹/装填抽象；正式关卡必须使用 `original_initial_weapon_inventory.json` 的直接数量和模式，profile 中旧字段只供 schema 1 迁移及合成测试兼容。十类场景拾取的 DBL `header[2]` 物品 ID、`sub_45AE10` 容器/mode 和 `sub_453F70` 单件数量已经恢复；type 1/2/3/6/7/9 的 delivery mode、逐 tick 步长、目标格门、机枪散布、actor/GFL、碰撞顺序、伤害、actor 60 火花、手榴弹抛物线/终点爆炸和 SPR 发射锚点也已恢复，不再使用速度、弧高、碰撞半径或落地延时等重制参数。拾取点击与敌军取物的 32×16 邻格、朝向扇区及 L2 遮挡也已恢复；物品 33/48/49/52/82/83 另有六组原版/Remake 零差异轨迹。仍为重制默认的是汽油桶数值；爆炸对地形/遮挡的原规则及 AI 战术层的包抄/让路决策仍待恢复。普通警戒听觉已确认不做障碍遮挡，尸体发现也已进入原版生命周期。
 
-type 8/10/11 已由专用运行时接管：type 8 创建 actor 84 / GFL 470、消费物品 43，并由存活 faction 1 进入 32×16 椭圆触发；type 10 创建 actor 85 / GFL 900、消费物品 45，在第 100 个 world tick 爆炸；二者随后创建 actor 62，主爆炸在 128×64 等距椭圆内造成 128 伤害并传播 800 半径警报，另按运行时 actor type 执行两组已恢复的 128 伤害带。效果 11/15 会按默认状态 1 的 MSVCRT LCG 尝试 1—2 个 64×32 散布粒子，首匹配 GFL 动画完整播放 5 轮并在 90/150 tick 清理；全局随机状态进入 `GameSessionState`。type 11 不直接结算伤害、不消费物品 99；它设置目标 `+656/+0x290` 为注意力保持，暂停普通空闲移动并面向专用来源，来源开始移动或目标进入战斗状态时释放，不存在 180 tick 超时。活跃对象与状态均进入 `GameSessionState`。其他尚未恢复的 `rand()` 调用点仍可能移动特定实机时刻的随机变体。详见 [原版行为取证摘要](ORIGINAL_BEHAVIOR_FORENSICS.md)。
+type 8/10/11 已由专用运行时接管：type 8 创建 actor 84 / GFL 470、消费物品 43，并由存活 faction 1 进入 32×16 椭圆触发；type 10 创建 actor 85 / GFL 900、消费物品 45，在第 100 个 world tick 爆炸；二者随后创建 actor 62，主爆炸在 128×64 等距椭圆内造成 128 伤害并传播 800 半径警报，另按运行时 actor type 执行两组已恢复的 128 伤害带。效果 11/15 会按逐关原版启动检查点继续的 MSVCRT LCG 尝试 1—2 个 64×32 散布粒子，首匹配 GFL 动画完整播放 5 轮并在 90/150 tick 清理；全局随机状态进入 `GameSessionState`。type 11 不直接结算伤害、不消费物品 99；它设置目标 `+656/+0x290` 为注意力保持，暂停普通空闲移动并面向专用来源，来源开始移动或目标进入战斗状态时释放，不存在 180 tick 超时。活跃对象与状态均进入 `GameSessionState`。十二关启动流和首批 AI/物品消费者已恢复，其他尚未迁移的运行期调用点仍可能移动长时实机时刻的随机变体。详见 [原版行为取证摘要](ORIGINAL_BEHAVIOR_FORENSICS.md)和[原版全局随机流恢复](ORIGINAL_CRT_RANDOM_STREAM.md)。
 
 m011 不再编辑性发放项目 99。项目 99 已确认由古明使用军服 54、在严格
 第 101 个角色 tick 变为 type 91/GFL 272 时自动加入；不得把它加入任何
@@ -215,9 +215,9 @@ run 再乘 3。每 tick 最多推进一个路径点并丢弃该 tick 未用余�
 
 AI 待机动作必须遵守 `sub_4587E0/sub_458A80`：角色逻辑计数的首轮上限为
 `rand()%160`，后续为 `rand()%160+40`；整数计数处于上限中间三分之一时
-请求 action 2 `stand_action`，其余区间请求 action 1 `stand`。当前实现使用
-可存档的逐 scene MSVCRT 随机流，以保证测试与回放确定性；在全局 `rand()`
-调用顺序完全恢复后再合并为唯一随机流。真实资源门禁固定 30 套
+请求 action 2 `stand_action`，其余区间请求 action 1 `stand`。当前实现从
+772 名活动角色的原版构造值取得首轮上限，后续重置消费唯一可存档的进程级
+MSVCRT 流；不得重新引入逐 scene 私有流。真实资源门禁固定 30 套
 `stand_action`、240 个方向和 1,912 帧；attack type 8/10 则由已恢复的武器
 映射请求 action 8 `active_action`，唯一一套角色资源共 8 个方向、72 帧。
 

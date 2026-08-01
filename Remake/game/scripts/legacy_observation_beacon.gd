@@ -18,6 +18,7 @@ var age_world_ticks := 0
 var consumed := false
 var poll_state := 1
 var poll_override := -1
+var externally_polled := false
 var original_frames: Array[Texture2D] = []
 var original_frame_hold_ticks := 1
 var original_frame_index := 0
@@ -38,6 +39,7 @@ func configure(
 		poll_state = 1
 	age_world_ticks = 0
 	consumed = false
+	externally_polled = false
 	visible = true
 	_set_visual(visual)
 	z_index = WORLD_DEPTH.normal_z(position.y, 2)
@@ -63,6 +65,20 @@ func set_potential_observers(observers: Array[Node2D]) -> void:
 
 func force_poll_result_for_tests(value: int = -1) -> void:
 	poll_override = clampi(value, -1, 1)
+
+
+func set_external_polling(value: bool) -> void:
+	externally_polled = value
+
+
+func advance_for_observer(
+	observer: Node2D,
+	gate_passed: bool,
+) -> bool:
+	if consumed or not gate_passed or not can_be_observed_by(observer):
+		return false
+	consume(observer)
+	return true
 
 
 func advance_world_ticks(ticks: int = 1) -> Node2D:
@@ -120,7 +136,14 @@ func consume(observer: Node2D) -> void:
 
 
 func _physics_process(_delta: float) -> void:
-	advance_world_ticks(1)
+	if externally_polled:
+		if consumed:
+			return
+		age_world_ticks += 1
+		_advance_original_animation()
+		queue_redraw()
+	else:
+		advance_world_ticks(1)
 
 
 func _poll_passes() -> bool:

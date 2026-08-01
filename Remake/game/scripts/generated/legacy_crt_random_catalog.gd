@@ -277,7 +277,7 @@ const CALL_SITES := {
         "engine_symbol": "sub_45C710",
         "semantic_name": "update_enemy_ai",
         "domain": "enemy_ai",
-        "purpose": "tracked_target_face_gate_rand_mod_20",
+        "purpose": "idle_no_contact_reaction_limit_rand_mod_40_plus_40",
         "formal_missions": true,
     },
     0x0005CB2B: {
@@ -285,7 +285,7 @@ const CALL_SITES := {
         "engine_symbol": "sub_45C710",
         "semantic_name": "update_enemy_ai",
         "domain": "enemy_ai",
-        "purpose": "tracked_target_reaction_limit_rand_mod_20_plus_20",
+        "purpose": "tracked_target_reaction_limit_rand_mod_40_plus_40",
         "formal_missions": true,
     },
     0x0005CB60: {
@@ -293,7 +293,7 @@ const CALL_SITES := {
         "engine_symbol": "sub_45C710",
         "semantic_name": "update_enemy_ai",
         "domain": "enemy_ai",
-        "purpose": "item_investigation_limit_rand_mod_40_plus_20",
+        "purpose": "corpse_investigation_animation_gate_rand_mod_3",
         "formal_missions": true,
     },
     0x0005CB9C: {
@@ -301,7 +301,7 @@ const CALL_SITES := {
         "engine_symbol": "sub_45C710",
         "semantic_name": "update_enemy_ai",
         "domain": "enemy_ai",
-        "purpose": "corpse_investigation_animation_gate_rand_mod_3",
+        "purpose": "corpse_reaction_limit_rand_mod_40_plus_40",
         "formal_missions": true,
     },
     0x0005CC69: {
@@ -309,7 +309,7 @@ const CALL_SITES := {
         "engine_symbol": "sub_45C710",
         "semantic_name": "update_enemy_ai",
         "domain": "enemy_ai",
-        "purpose": "corpse_reaction_limit_rand_mod_40_plus_40",
+        "purpose": "item_investigation_reaction_limit_rand_mod_40_plus_20",
         "formal_missions": true,
     },
     0x0005CCCD: {
@@ -317,7 +317,7 @@ const CALL_SITES := {
         "engine_symbol": "sub_45C710",
         "semantic_name": "update_enemy_ai",
         "domain": "enemy_ai",
-        "purpose": "search_continue_limit_rand_mod_40_plus_40",
+        "purpose": "tracked_target_face_or_continue_gate_rand_mod_20_less_than_10",
         "formal_missions": true,
     },
     0x0005CD01: {
@@ -325,7 +325,7 @@ const CALL_SITES := {
         "engine_symbol": "sub_45C710",
         "semantic_name": "update_enemy_ai",
         "domain": "enemy_ai",
-        "purpose": "idle_search_limit_rand_mod_40_plus_40",
+        "purpose": "tracked_target_reaction_limit_rand_mod_20_plus_20",
         "formal_missions": true,
     },
     0x0005CEA6: {

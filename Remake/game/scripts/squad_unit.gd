@@ -38,6 +38,9 @@ const LEGACY_DISGUISE_RULES: Script = preload(
 const LEGACY_ROW_SLICE_SPRITE_SCRIPT: Script = preload(
 	"res://scripts/legacy_row_slice_sprite.gd"
 )
+const ORIGINAL_CRT_RANDOM_STARTUP_CATALOG: Script = preload(
+	"res://scripts/original_crt_random_startup_catalog.gd"
+)
 const WORLD_DEPTH: Script = preload("res://scripts/world_depth.gd")
 
 enum CombatAction { NONE, ATTACK, RELOAD, DEATH }
@@ -84,6 +87,15 @@ var damage_taken_total := 0
 var last_damage_attacker_scene_index := -1
 var scene_index := -1
 var runtime_actor_type := 0
+var original_runtime_index := -1
+var original_crt_level_id := ""
+var original_crt_random_source: Node
+var original_crt_initialization_profile: Dictionary = {}
+var original_crt_observation_gate_enabled := false
+var original_crt_observation_gate_elapsed := 0.0
+var original_crt_observation_gate_passed := false
+var original_crt_observation_gate_serial := 0
+var original_crt_last_physics_frame := -1
 var dynamic_occupancy: RefCounted
 var dynamic_registered := false
 var active_sprite_footprint_key := ""
@@ -205,6 +217,15 @@ func configure(
 	move_speed = RUN_SPEED
 	scene_index = new_scene_index
 	runtime_actor_type = 0
+	original_runtime_index = -1
+	original_crt_level_id = ""
+	original_crt_random_source = null
+	original_crt_initialization_profile.clear()
+	original_crt_observation_gate_enabled = false
+	original_crt_observation_gate_elapsed = 0.0
+	original_crt_observation_gate_passed = false
+	original_crt_observation_gate_serial = 0
+	original_crt_last_physics_frame = -1
 	dynamic_occupancy = new_dynamic_occupancy
 	use_soft_dynamic_occupancy = false
 	use_recorded_patrol_relocation = false
@@ -277,24 +298,36 @@ func configure_original_ai_idle_animation(
 	original_ai_idle_tick_elapsed = 0.0
 	original_ai_idle_frame_index = 0
 	original_ai_idle_frame_elapsed = 0.0
-	# The executable uses one process-global MSVCRT rand() stream. Until every
-	# call site is recovered, seed a per-scene MSVCRT stream so save/replay is
-	# deterministic while retaining the exact rand()%160 first interval and
-	# rand()%160+40 subsequent interval domains.
+	# Startup construction consumes the process-global stream before gameplay.
+	# The process-local original trace supplies the final active actor's exact
+	# rand()%160 value. Synthetic actors and isolated unit tests retain the
+	# deterministic local fallback.
 	original_ai_idle_random_state = int(
 		(scene_index * 214013 + 2531011) & 0x7fffffff
 	)
 	if original_ai_idle_random_state == 0:
 		original_ai_idle_random_state = 1
-	original_ai_idle_random_state = AI_IDLE_RANDOM_RULES.msvc_rand_step(
-		original_ai_idle_random_state
-	)
-	original_ai_idle_tick_limit = (
-		AI_IDLE_RANDOM_RULES.msvc_rand_value(
-			original_ai_idle_random_state
+	if original_crt_initialization_profile.has("initial_idle_limit"):
+		original_ai_idle_tick_limit = clampi(
+			int(original_crt_initialization_profile.get(
+				"initial_idle_limit",
+				0,
+			)),
+			0,
+			AI_IDLE_RANDOM_RULES.SEARCH_WAIT_RANDOM_SPAN - 1,
 		)
-		% AI_IDLE_RANDOM_RULES.SEARCH_WAIT_RANDOM_SPAN
-	)
+	else:
+		original_ai_idle_random_state = (
+			AI_IDLE_RANDOM_RULES.msvc_rand_step(
+				original_ai_idle_random_state
+			)
+		)
+		original_ai_idle_tick_limit = (
+			AI_IDLE_RANDOM_RULES.msvc_rand_value(
+				original_ai_idle_random_state
+			)
+			% AI_IDLE_RANDOM_RULES.SEARCH_WAIT_RANDOM_SPAN
+		)
 	apply_idle_frame()
 	return original_ai_idle_animation_enabled
 
@@ -369,7 +402,207 @@ func configure_runtime_actor_type(entity: Dictionary) -> int:
 	var header_values: Variant = entity.get("database_header_values", [])
 	if header_values is Array and (header_values as Array).size() > 2:
 		runtime_actor_type = int((header_values as Array)[2])
+	var runtime_profile_value: Variant = entity.get(
+		"original_runtime_profile",
+		{},
+	)
+	if runtime_profile_value is Dictionary:
+		original_runtime_index = int(
+			(runtime_profile_value as Dictionary).get(
+				"runtime_index",
+				-1,
+			)
+		)
+	else:
+		original_runtime_index = -1
 	return runtime_actor_type
+
+
+func bind_original_crt_random_source(
+	source: Node,
+	level_id: String,
+	observation_gate_override: int = -1,
+) -> bool:
+	original_crt_random_source = source
+	original_crt_level_id = level_id
+	original_crt_initialization_profile = (
+		ORIGINAL_CRT_RANDOM_STARTUP_CATALOG.actor_initialization(
+			level_id,
+			original_runtime_index,
+		)
+		if original_runtime_index >= 0
+		else {}
+	)
+	original_crt_observation_gate_enabled = (
+		observation_gate_override > 0
+		if observation_gate_override >= 0
+		else (
+			original_runtime_index >= 0
+			and ORIGINAL_CRT_RANDOM_STARTUP_CATALOG.is_observation_gate_actor(
+				level_id,
+				original_runtime_index,
+			)
+		)
+	)
+	original_crt_observation_gate_elapsed = 0.0
+	original_crt_observation_gate_passed = false
+	original_crt_observation_gate_serial = 0
+	original_crt_last_physics_frame = -1
+	# Main creates actors in their recovered runtime-array order and appends
+	# reinforcements afterward, so normal scene-tree physics order already
+	# preserves the CRT consumer order. Do not override physics priority:
+	# players must keep processing their command before an enemy senses it.
+	return (
+		original_crt_random_source != null
+		and is_instance_valid(original_crt_random_source)
+	)
+
+
+func initialize_dynamic_original_crt_random() -> bool:
+	if (
+		original_crt_random_source == null
+		or not is_instance_valid(original_crt_random_source)
+		or not original_crt_random_source.has_method(
+			"next_legacy_crt_random"
+		)
+	):
+		return false
+	var idle_value := next_original_crt_random_value(0x00050967)
+	var facing_value := next_original_crt_random_value(0x00050980)
+	var phase_value := next_original_crt_random_value(0x0005340B)
+	var reaction_value := next_original_crt_random_value(0x0005358B)
+	if (
+		idle_value < 0
+		or facing_value < 0
+		or phase_value < 0
+		or reaction_value < 0
+	):
+		return false
+	original_crt_initialization_profile = {
+		"runtime_index": original_runtime_index,
+		"scene_index": scene_index,
+		"initial_idle_limit": idle_value % 160,
+		"initial_facing_direction": mini((facing_value % 9) + 1, 8),
+		"initial_ai_phase": phase_value % 60,
+		"initial_reaction_limit": (reaction_value % 40) + 40,
+	}
+	return true
+
+
+func next_original_crt_random_value(call_site_rva: int) -> int:
+	if (
+		original_crt_random_source == null
+		or not is_instance_valid(original_crt_random_source)
+		or not original_crt_random_source.has_method(
+			"next_legacy_crt_random"
+		)
+	):
+		return -1
+	var draw_value: Variant = original_crt_random_source.call(
+		"next_legacy_crt_random",
+		call_site_rva,
+	)
+	if not draw_value is Dictionary or (draw_value as Dictionary).is_empty():
+		return -1
+	return int((draw_value as Dictionary).get("value", -1))
+
+
+func next_original_crt_random_values(
+	call_site_rvas: Array[int],
+) -> Array[int]:
+	var values: Array[int] = []
+	if (
+		original_crt_random_source == null
+		or not is_instance_valid(original_crt_random_source)
+		or not original_crt_random_source.has_method(
+			"next_legacy_crt_random"
+		)
+	):
+		return values
+	for call_site_rva: int in call_site_rvas:
+		var value := next_original_crt_random_value(call_site_rva)
+		if value < 0:
+			return []
+		values.append(value)
+	return values
+
+
+func original_crt_random_timing_snapshot() -> Dictionary:
+	return {
+		"level_id": original_crt_level_id,
+		"runtime_index": original_runtime_index,
+		"observation_gate_enabled": (
+			original_crt_observation_gate_enabled
+		),
+		"observation_gate_elapsed": (
+			original_crt_observation_gate_elapsed
+		),
+		"observation_gate_passed": (
+			original_crt_observation_gate_passed
+		),
+		"observation_gate_serial": (
+			original_crt_observation_gate_serial
+		),
+	}
+
+
+func restore_original_crt_random_timing(state: Dictionary) -> bool:
+	if (
+		state.is_empty()
+		or str(state.get("level_id", original_crt_level_id))
+			!= original_crt_level_id
+		or int(state.get("runtime_index", original_runtime_index))
+			!= original_runtime_index
+	):
+		return false
+	original_crt_observation_gate_elapsed = clampf(
+		float(state.get("observation_gate_elapsed", 0.0)),
+		0.0,
+		ORIGINAL_AI_IDLE_TICK_SECONDS,
+	)
+	original_crt_observation_gate_passed = bool(
+		state.get("observation_gate_passed", false)
+	)
+	original_crt_observation_gate_serial = maxi(
+		int(state.get("observation_gate_serial", 0)),
+		0,
+	)
+	original_crt_last_physics_frame = -1
+	return true
+
+
+func _advance_original_crt_observation_gate(delta: float) -> void:
+	var physics_frame := Engine.get_physics_frames()
+	if original_crt_last_physics_frame == physics_frame:
+		return
+	original_crt_last_physics_frame = physics_frame
+	if (
+		not original_crt_observation_gate_enabled
+		or original_crt_random_source == null
+		or not is_instance_valid(original_crt_random_source)
+	):
+		return
+	original_crt_observation_gate_elapsed += maxf(delta, 0.0)
+	while (
+		original_crt_observation_gate_elapsed
+		>= ORIGINAL_AI_IDLE_TICK_SECONDS
+	):
+		original_crt_observation_gate_elapsed -= (
+			ORIGINAL_AI_IDLE_TICK_SECONDS
+		)
+		var random_value := next_original_crt_random_value(0x0005C81C)
+		if random_value < 0:
+			return
+		original_crt_observation_gate_passed = random_value % 2 > 0
+		original_crt_observation_gate_serial += 1
+		if original_crt_random_source.has_method(
+			"advance_original_observation_for_actor"
+		):
+			original_crt_random_source.call(
+				"advance_original_observation_for_actor",
+				self,
+				original_crt_observation_gate_passed,
+			)
 
 
 func configure_movement_modes(
@@ -1339,6 +1572,7 @@ func contains_parent_point(parent_point: Vector2) -> bool:
 
 func _physics_process(delta: float) -> void:
 	var safe_delta := maxf(delta, 0.0)
+	_advance_original_crt_observation_gate(safe_delta)
 	attack_cooldown_remaining = maxf(attack_cooldown_remaining - safe_delta, 0.0)
 	if combat_action != CombatAction.NONE:
 		_suspend_original_ai_idle_action()
@@ -1871,20 +2105,33 @@ func _advance_original_ai_idle_animation(delta: float) -> void:
 		original_ai_idle_tick_counter += 1
 		if original_ai_idle_tick_counter >= original_ai_idle_tick_limit:
 			original_ai_idle_tick_counter = 0
-			var sampled: Dictionary = (
-				AI_IDLE_RANDOM_RULES.initial_search_wait_from_state(
-					original_ai_idle_random_state
+			var random_value := next_original_crt_random_value(
+				0x00056105
+			)
+			if random_value >= 0:
+				original_ai_idle_tick_limit = (
+					random_value
+					% AI_IDLE_RANDOM_RULES.SEARCH_WAIT_RANDOM_SPAN
+					+ AI_IDLE_RANDOM_RULES.SEARCH_WAIT_MINIMUM_LIMIT
 				)
-			)
-			original_ai_idle_random_state = int(
-				sampled.get("state", original_ai_idle_random_state)
-			)
-			original_ai_idle_tick_limit = int(
-				sampled.get(
-					"limit",
-					AI_IDLE_RANDOM_RULES.SEARCH_WAIT_MINIMUM_LIMIT,
+			else:
+				var sampled: Dictionary = (
+					AI_IDLE_RANDOM_RULES.initial_search_wait_from_state(
+						original_ai_idle_random_state
+					)
 				)
-			)
+				original_ai_idle_random_state = int(
+					sampled.get(
+						"state",
+						original_ai_idle_random_state,
+					)
+				)
+				original_ai_idle_tick_limit = int(
+					sampled.get(
+						"limit",
+						AI_IDLE_RANDOM_RULES.SEARCH_WAIT_MINIMUM_LIMIT,
+					)
+				)
 	var next_action_active := original_ai_idle_uses_stand_action(
 		original_ai_idle_tick_counter,
 		original_ai_idle_tick_limit,

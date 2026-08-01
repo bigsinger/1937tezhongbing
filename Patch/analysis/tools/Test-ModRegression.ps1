@@ -6,6 +6,7 @@ param(
     [string]$OutputRoot = '',
     [switch]$KeepRuntime,
     [switch]$BriefingOnly,
+    [switch]$CrtRandomStartupOnly,
     [switch]$MovementOnly
 )
 
@@ -148,11 +149,26 @@ foreach ($level in $Levels) {
     if ($BriefingOnly) {
         $probeArguments += '--briefing-only'
     }
+    if ($CrtRandomStartupOnly) {
+        $probeArguments += '--crt-random-startup-only'
+    }
     if ($MovementOnly) {
         $probeArguments += '--movement-only'
     }
     & $probe @probeArguments
     $probeExit = $LASTEXITCODE
+    if (
+        $CrtRandomStartupOnly -and
+        $env:M1937_RNG_TRACE -eq '1'
+    ) {
+        $runtimeTelemetry = Join-Path $runtime (
+            'M1937Telemetry.jsonl')
+        if (Test-Path -LiteralPath $runtimeTelemetry -PathType Leaf) {
+            Copy-Item -LiteralPath $runtimeTelemetry `
+                -Destination (Join-Path $levelOutput (
+                    'crt-random-telemetry.jsonl')) -Force
+        }
+    }
     $resultPath = Join-Path $levelOutput 'result.json'
     $result = if (Test-Path -LiteralPath $resultPath -PathType Leaf) {
         Get-Content -LiteralPath $resultPath -Raw -Encoding UTF8 |

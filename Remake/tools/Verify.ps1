@@ -32,6 +32,7 @@ if ($LASTEXITCODE -ne 0) {
 & (Join-Path $PSScriptRoot 'Test-OriginalInitialItemInventory.ps1')
 & (Join-Path $PSScriptRoot 'Test-OriginalWorldPickups.ps1')
 & (Join-Path $PSScriptRoot 'Test-OriginalRuntimeActorCatalog.ps1')
+& (Join-Path $PSScriptRoot 'Test-CrtRandomStartupBaseline.ps1')
 if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
     & (Join-Path $PSScriptRoot 'Test-ModRuntimeIdentityCatalog.ps1') `
         -LevelManifest $realAssetManifest
@@ -157,6 +158,11 @@ if ($LASTEXITCODE -ne 0) {
 & $GodotExecutable --headless --path $game --script 'res://tests/legacy_enemy_ai_test.gd'
 if ($LASTEXITCODE -ne 0) {
     throw "Godot legacy enemy-AI tests failed with exit code $LASTEXITCODE."
+}
+
+& $GodotExecutable --headless --path $game --script 'res://tests/original_crt_random_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot original CRT random-stream tests failed with exit code $LASTEXITCODE."
 }
 
 & $GodotExecutable --headless --path $game --script 'res://tests/legacy_doors_test.gd'
