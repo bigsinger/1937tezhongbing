@@ -4,7 +4,7 @@ extends RefCounted
 const CATALOG_PATH := (
 	"res://data/original_crt_random_startup_catalog.json"
 )
-const CATALOG_ID := "original-crt-random-startup-v2"
+const CATALOG_ID := "original-crt-random-startup-v3"
 const CONTENT_PROFILE := "repository-mod-12-level-20260729"
 
 static var _catalog_cache: Dictionary = {}
@@ -26,7 +26,7 @@ static func load_catalog() -> Dictionary:
 		return {}
 	var catalog := parsed as Dictionary
 	if (
-		int(catalog.get("schema_version", 0)) != 2
+		int(catalog.get("schema_version", 0)) != 3
 		or str(catalog.get("catalog_id", "")) != CATALOG_ID
 		or str(catalog.get("content_profile", "")) != CONTENT_PROFILE
 	):
@@ -84,6 +84,31 @@ static func first_gameplay_update_records(
 				(record_value as Dictionary).duplicate(true)
 			)
 	return records
+
+
+static func first_gameplay_update_outcomes(
+	level_id: String,
+) -> Array[Dictionary]:
+	var profile := level_profile(level_id)
+	var update_value: Variant = profile.get(
+		"first_gameplay_update",
+		{},
+	)
+	if not update_value is Dictionary:
+		return []
+	var outcomes_value: Variant = (update_value as Dictionary).get(
+		"actor_outcomes",
+		[],
+	)
+	if not outcomes_value is Array:
+		return []
+	var outcomes: Array[Dictionary] = []
+	for outcome_value: Variant in outcomes_value as Array:
+		if outcome_value is Dictionary:
+			outcomes.append(
+				(outcome_value as Dictionary).duplicate(true)
+			)
+	return outcomes
 
 
 static func actor_initialization(

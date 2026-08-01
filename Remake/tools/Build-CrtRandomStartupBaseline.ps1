@@ -63,6 +63,22 @@ $levels = @(
         ) {
             throw "Unsupported or failed CRT random summary for $levelId."
         }
+        $actorStatePath = Join-Path $CaptureRoot (
+            'level-{0:D2}\actor-states-crt-startup.csv' -f (
+                $levelIndex + 1))
+        if (-not (Test-Path -LiteralPath $actorStatePath -PathType Leaf)) {
+            throw "CRT startup actor state is missing: $actorStatePath"
+        }
+        $actorStateByRuntimeIndex = @{}
+        foreach ($actorState in @(Import-Csv -LiteralPath $actorStatePath)) {
+            $runtimeIndex = [int]$actorState.index
+            if ($actorStateByRuntimeIndex.ContainsKey($runtimeIndex)) {
+                throw (
+                    "Duplicate CRT startup actor state runtime index " +
+                    "$runtimeIndex in $levelId.")
+            }
+            $actorStateByRuntimeIndex[$runtimeIndex] = $actorState
+        }
 
         $runtimeLevel = $actorCatalog.levels.$levelId
         if ($null -eq $runtimeLevel) {
@@ -160,6 +176,148 @@ $levels = @(
         ) {
             throw "First gameplay update mismatch for $levelId."
         }
+        $firstGameplayRecordsByActor = @{}
+        $firstGameplayActorOrder = @()
+        foreach ($record in $firstGameplayRecords) {
+            $runtimeIndex = [int]$record.runtime_index
+            $callSite = [string]$record.call_site_rva
+            if (
+                $runtimeIndex -lt 0 -or
+                $callSite -eq '0x0005C81C'
+            ) {
+                continue
+            }
+            if (-not $firstGameplayRecordsByActor.ContainsKey(
+                    $runtimeIndex)) {
+                $firstGameplayRecordsByActor[$runtimeIndex] = @()
+                $firstGameplayActorOrder += $runtimeIndex
+            }
+            $firstGameplayRecordsByActor[$runtimeIndex] = @(
+                $firstGameplayRecordsByActor[$runtimeIndex]) + @($record)
+        }
+        $firstGameplayActorOutcomes = @(
+            foreach ($runtimeIndexValue in $firstGameplayActorOrder) {
+                $runtimeIndex = [int]$runtimeIndexValue
+                if (
+                    -not $initializationByRuntimeIndex.ContainsKey(
+                        $runtimeIndex) -or
+                    -not $actorStateByRuntimeIndex.ContainsKey(
+                        $runtimeIndex)
+                ) {
+                    throw (
+                        "First gameplay actor outcome $runtimeIndex in " +
+                        "$levelId has no identity or post-update state.")
+                }
+                $actorRecords = @(
+                    $firstGameplayRecordsByActor[$runtimeIndex])
+                $callSites = @(
+                    $actorRecords |
+                        ForEach-Object {
+                            [string]$_.call_site_rva
+                        })
+                $semanticEffects = @()
+                if ($callSites -contains '0x00058946') {
+                    $semanticEffects += 'route_wait_limit'
+                }
+                if ($callSites -contains '0x00055BFB') {
+                    foreach ($requiredSite in @(
+                            '0x00055BFB',
+                            '0x00055C0F',
+                            '0x00055C23',
+                            '0x00055C3A')) {
+                        if ($callSites -notcontains $requiredSite) {
+                            throw (
+                                "Incomplete blocked retry tuple for " +
+                                "$levelId actor $runtimeIndex.")
+                        }
+                    }
+                    $semanticEffects += 'blocked_retry_destination'
+                }
+                if ($callSites -contains '0x00055216') {
+                    $semanticEffects += 'primary_candidate_scan'
+                }
+                if ($callSites -contains '0x0005CEA6') {
+                    if ($callSites -contains '0x0005CF33') {
+                        foreach ($requiredSite in @(
+                                '0x0005CF33',
+                                '0x0005CF4A',
+                                '0x0005CF61',
+                                '0x0005CF78')) {
+                            if ($callSites -notcontains $requiredSite) {
+                                throw (
+                                    "Incomplete secondary search tuple " +
+                                    "for $levelId actor $runtimeIndex.")
+                            }
+                        }
+                        $semanticEffects += (
+                            'secondary_search_destination')
+                    }
+                    else {
+                        $semanticEffects += 'secondary_candidate_scan'
+                    }
+                }
+                if ($callSites -contains '0x0005D47E') {
+                    $semanticEffects += 'pursuit_command_snapshot'
+                }
+                if ($semanticEffects.Count -eq 0) {
+                    throw (
+                        "First gameplay actor $runtimeIndex in $levelId " +
+                        'has no supported side-effect family.')
+                }
+                $routeWaitLimit = -1
+                if ($callSites -contains '0x00058946') {
+                    $routeRecord = @($actorRecords | Where-Object {
+                        [string]$_.call_site_rva -eq '0x00058946'
+                    })
+                    if ($routeRecord.Count -ne 1) {
+                        throw (
+                            "Invalid route wait record for $levelId " +
+                            "actor $runtimeIndex.")
+                    }
+                    $routeWaitLimit = (
+                        [int]$routeRecord[0].value % 160) + 40
+                }
+                $actorState = $actorStateByRuntimeIndex[$runtimeIndex]
+                $activeActorEntry = @(
+                    $activeActorInitialization | Where-Object {
+                        [int]$_.runtime_index -eq $runtimeIndex
+                    })
+                if ($activeActorEntry.Count -ne 1) {
+                    throw (
+                        "First gameplay actor $runtimeIndex in $levelId " +
+                        'has no unique scene identity.')
+                }
+                [ordered]@{
+                    runtime_index = $runtimeIndex
+                    scene_index = [int]$activeActorEntry[0].scene_index
+                    semantic_effects = $semanticEffects
+                    call_site_rvas = $callSites
+                    route_wait_limit = $routeWaitLimit
+                    post_update_state = [ordered]@{
+                        world_x = [int]$actorState.world_x
+                        world_y = [int]$actorState.world_y
+                        goal_kind = [int]$actorState.goal_kind
+                        goal_x = [int]$actorState.goal_x
+                        goal_y = [int]$actorState.goal_y
+                        command_variant = (
+                            [int]$actorState.command_variant)
+                        command_pending = (
+                            [int]$actorState.command_pending)
+                        movement_active = (
+                            [int]$actorState.movement_active)
+                        movement_path_state = (
+                            [int]$actorState.movement_path_state)
+                        movement_mode = [int]$actorState.movement_mode
+                        resolved_goal_x = (
+                            [int]$actorState.resolved_goal_x)
+                        resolved_goal_y = (
+                            [int]$actorState.resolved_goal_y)
+                        path_override_active = (
+                            [int]$actorState.path_override)
+                    }
+                }
+            }
+        )
 
         [ordered]@{
             id = $levelId
@@ -193,14 +351,15 @@ $levels = @(
                 ordered_value_sha256 = (
                     [string]$summary.first_gameplay_update.ordered_value_sha256)
                 records = $firstGameplayRecords
+                actor_outcomes = $firstGameplayActorOutcomes
             }
         }
     }
 )
 
 $baseline = [ordered]@{
-    schema_version = 2
-    catalog_id = 'original-crt-random-startup-v2'
+    schema_version = 3
+    catalog_id = 'original-crt-random-startup-v3'
     content_profile = 'repository-mod-12-level-20260729'
     executable_sha256 = (
         [string](
@@ -220,6 +379,9 @@ $baseline = [ordered]@{
         call_site_catalog = 'SDK/crt-rand-call-sites.json'
         actor_identity_catalog = (
             'game/data/original_runtime_actor_catalog.json')
+        post_update_actor_state = (
+            'process-local RuntimeActorV1 snapshot after the captured ' +
+            'first complete gameplay update')
     }
     levels = $levels
 }

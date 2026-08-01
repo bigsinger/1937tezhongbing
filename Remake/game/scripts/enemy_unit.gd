@@ -381,6 +381,27 @@ func apply_original_crt_enemy_startup_profile() -> bool:
 	return true
 
 
+func _should_apply_original_first_gameplay_navigation(
+	effect: String,
+) -> bool:
+	if (
+		not stable_mod_patrol_timeline.is_empty()
+		and effect in [
+			"blocked_retry_destination",
+			"pursuit_command_snapshot",
+		]
+	):
+		# These exact first-update commands are already represented by the
+		# stronger process-captured 0/5/6/7/12-second patrol timeline. Reissuing
+		# the transient native goal here would fork the actor away from that
+		# verified trajectory. The native goal/mode still remains available in
+		# the actor's first-gameplay snapshot and save state.
+		return false
+	return super._should_apply_original_first_gameplay_navigation(
+		effect
+	)
+
+
 func set_potential_targets(targets: Array[Node2D]) -> void:
 	potential_targets = targets.duplicate()
 

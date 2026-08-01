@@ -96,6 +96,17 @@ var original_crt_observation_gate_elapsed := 0.0
 var original_crt_observation_gate_passed := false
 var original_crt_observation_gate_serial := 0
 var original_crt_last_physics_frame := -1
+var original_first_gameplay_update_serial := 0
+var original_first_gameplay_semantic_effects: Array[String] = []
+var original_first_gameplay_call_sites := PackedInt32Array()
+var original_first_gameplay_goal_kind := 0
+var original_first_gameplay_command_variant := 0
+var original_first_gameplay_movement_path_state := 0
+var original_first_gameplay_movement_mode := 0
+var original_first_gameplay_goal := Vector2.ZERO
+var original_first_gameplay_resolved_goal := Vector2.ZERO
+var original_first_gameplay_route_wait_limit := -1
+var original_first_gameplay_navigation_applied := false
 var dynamic_occupancy: RefCounted
 var dynamic_registered := false
 var active_sprite_footprint_key := ""
@@ -226,6 +237,17 @@ func configure(
 	original_crt_observation_gate_passed = false
 	original_crt_observation_gate_serial = 0
 	original_crt_last_physics_frame = -1
+	original_first_gameplay_update_serial = 0
+	original_first_gameplay_semantic_effects.clear()
+	original_first_gameplay_call_sites.clear()
+	original_first_gameplay_goal_kind = 0
+	original_first_gameplay_command_variant = 0
+	original_first_gameplay_movement_path_state = 0
+	original_first_gameplay_movement_mode = 0
+	original_first_gameplay_goal = Vector2.ZERO
+	original_first_gameplay_resolved_goal = Vector2.ZERO
+	original_first_gameplay_route_wait_limit = -1
+	original_first_gameplay_navigation_applied = false
 	dynamic_occupancy = new_dynamic_occupancy
 	use_soft_dynamic_occupancy = false
 	use_recorded_patrol_relocation = false
@@ -543,6 +565,41 @@ func original_crt_random_timing_snapshot() -> Dictionary:
 		"observation_gate_serial": (
 			original_crt_observation_gate_serial
 		),
+		"first_gameplay_update_serial": (
+			original_first_gameplay_update_serial
+		),
+		"first_gameplay_semantic_effects": (
+			original_first_gameplay_semantic_effects.duplicate()
+		),
+		"first_gameplay_call_sites": Array(
+			original_first_gameplay_call_sites
+		),
+		"first_gameplay_goal_kind": (
+			original_first_gameplay_goal_kind
+		),
+		"first_gameplay_command_variant": (
+			original_first_gameplay_command_variant
+		),
+		"first_gameplay_movement_path_state": (
+			original_first_gameplay_movement_path_state
+		),
+		"first_gameplay_movement_mode": (
+			original_first_gameplay_movement_mode
+		),
+		"first_gameplay_goal_x": original_first_gameplay_goal.x,
+		"first_gameplay_goal_y": original_first_gameplay_goal.y,
+		"first_gameplay_resolved_goal_x": (
+			original_first_gameplay_resolved_goal.x
+		),
+		"first_gameplay_resolved_goal_y": (
+			original_first_gameplay_resolved_goal.y
+		),
+		"first_gameplay_route_wait_limit": (
+			original_first_gameplay_route_wait_limit
+		),
+		"first_gameplay_navigation_applied": (
+			original_first_gameplay_navigation_applied
+		),
 	}
 
 
@@ -566,6 +623,56 @@ func restore_original_crt_random_timing(state: Dictionary) -> bool:
 	original_crt_observation_gate_serial = maxi(
 		int(state.get("observation_gate_serial", 0)),
 		0,
+	)
+	original_first_gameplay_update_serial = maxi(
+		int(state.get("first_gameplay_update_serial", 0)),
+		0,
+	)
+	original_first_gameplay_semantic_effects.clear()
+	var effects_value: Variant = state.get(
+		"first_gameplay_semantic_effects",
+		[],
+	)
+	if effects_value is Array:
+		for effect_value: Variant in effects_value as Array:
+			var effect := str(effect_value)
+			if not effect.is_empty():
+				original_first_gameplay_semantic_effects.append(effect)
+	original_first_gameplay_call_sites.clear()
+	var call_sites_value: Variant = state.get(
+		"first_gameplay_call_sites",
+		[],
+	)
+	if call_sites_value is Array:
+		for call_site_value: Variant in call_sites_value as Array:
+			original_first_gameplay_call_sites.append(
+				int(call_site_value)
+			)
+	original_first_gameplay_goal_kind = int(
+		state.get("first_gameplay_goal_kind", 0)
+	)
+	original_first_gameplay_command_variant = int(
+		state.get("first_gameplay_command_variant", 0)
+	)
+	original_first_gameplay_movement_path_state = int(
+		state.get("first_gameplay_movement_path_state", 0)
+	)
+	original_first_gameplay_movement_mode = int(
+		state.get("first_gameplay_movement_mode", 0)
+	)
+	original_first_gameplay_goal = Vector2(
+		float(state.get("first_gameplay_goal_x", 0.0)),
+		float(state.get("first_gameplay_goal_y", 0.0)),
+	)
+	original_first_gameplay_resolved_goal = Vector2(
+		float(state.get("first_gameplay_resolved_goal_x", 0.0)),
+		float(state.get("first_gameplay_resolved_goal_y", 0.0)),
+	)
+	original_first_gameplay_route_wait_limit = int(
+		state.get("first_gameplay_route_wait_limit", -1)
+	)
+	original_first_gameplay_navigation_applied = bool(
+		state.get("first_gameplay_navigation_applied", false)
 	)
 	original_crt_last_physics_frame = -1
 	return true
@@ -615,6 +722,154 @@ func apply_original_crt_observation_gate_value(
 			self,
 			original_crt_observation_gate_passed,
 		)
+	return true
+
+
+func apply_original_first_gameplay_update_outcome(
+	outcome: Dictionary,
+	random_records: Array[Dictionary],
+) -> bool:
+	if (
+		outcome.is_empty()
+		or int(outcome.get("runtime_index", -1))
+			!= original_runtime_index
+		or int(outcome.get("scene_index", -1)) != scene_index
+	):
+		return false
+	var state_value: Variant = outcome.get("post_update_state", {})
+	var effects_value: Variant = outcome.get("semantic_effects", [])
+	var expected_sites_value: Variant = outcome.get("call_site_rvas", [])
+	if (
+		not state_value is Dictionary
+		or not effects_value is Array
+		or not expected_sites_value is Array
+		or random_records.size()
+			!= (expected_sites_value as Array).size()
+	):
+		return false
+	var expected_sites := expected_sites_value as Array
+	var call_sites := PackedInt32Array()
+	for record_index: int in range(random_records.size()):
+		var record := random_records[record_index]
+		var actual_site := str(
+			record.get("call_site_rva", "0x0")
+		).hex_to_int()
+		var expected_site := str(expected_sites[record_index]).hex_to_int()
+		if actual_site != expected_site:
+			return false
+		call_sites.append(actual_site)
+	var effects: Array[String] = []
+	for effect_value: Variant in effects_value as Array:
+		var effect := str(effect_value)
+		if effect.is_empty():
+			return false
+		effects.append(effect)
+	var state := state_value as Dictionary
+	original_first_gameplay_update_serial += 1
+	original_first_gameplay_semantic_effects = effects
+	original_first_gameplay_call_sites = call_sites
+	original_first_gameplay_goal_kind = int(
+		state.get("goal_kind", 0)
+	)
+	original_first_gameplay_command_variant = int(
+		state.get("command_variant", 0)
+	)
+	original_first_gameplay_movement_path_state = int(
+		state.get("movement_path_state", 0)
+	)
+	original_first_gameplay_movement_mode = int(
+		state.get("movement_mode", 0)
+	)
+	original_first_gameplay_goal = Vector2(
+		float(state.get("goal_x", 0)),
+		float(state.get("goal_y", 0)),
+	)
+	original_first_gameplay_resolved_goal = Vector2(
+		float(state.get("resolved_goal_x", 0)),
+		float(state.get("resolved_goal_y", 0)),
+	)
+	original_first_gameplay_route_wait_limit = int(
+		outcome.get("route_wait_limit", -1)
+	)
+	if effects.has("route_wait_limit"):
+		if (
+			original_first_gameplay_route_wait_limit < 40
+			or original_first_gameplay_route_wait_limit > 199
+		):
+			return false
+		original_ai_idle_tick_counter = 0
+		original_ai_idle_tick_limit = (
+			original_first_gameplay_route_wait_limit
+		)
+		original_ai_idle_tick_elapsed = 0.0
+		original_ai_idle_action_active = false
+		original_ai_idle_frame_index = 0
+		original_ai_idle_frame_elapsed = 0.0
+	var navigation_effect := ""
+	var destination := Vector2.ZERO
+	if effects.has("secondary_search_destination"):
+		navigation_effect = "secondary_search_destination"
+		destination = original_first_gameplay_goal
+	elif effects.has("blocked_retry_destination"):
+		navigation_effect = "blocked_retry_destination"
+		destination = original_first_gameplay_resolved_goal
+	elif effects.has("pursuit_command_snapshot"):
+		navigation_effect = "pursuit_command_snapshot"
+		destination = original_first_gameplay_goal
+	original_first_gameplay_navigation_applied = false
+	if (
+		not navigation_effect.is_empty()
+		and original_first_gameplay_goal_kind == 1
+		and destination != Vector2.ZERO
+		and _should_apply_original_first_gameplay_navigation(
+			navigation_effect
+		)
+	):
+		_apply_original_first_gameplay_movement_mode(
+			original_first_gameplay_movement_mode
+		)
+		original_first_gameplay_navigation_applied = (
+			_issue_original_first_gameplay_path(destination)
+		)
+	return true
+
+
+func _should_apply_original_first_gameplay_navigation(
+	_effect: String,
+) -> bool:
+	return true
+
+
+func _apply_original_first_gameplay_movement_mode(mode: int) -> void:
+	if mode == 3:
+		set_crawling(true)
+		return
+	set_crawling(false)
+	set_running(mode == 2)
+
+
+func _issue_original_first_gameplay_path(
+	destination: Vector2,
+) -> bool:
+	if (
+		dynamic_occupancy == null
+		or scene_index < 0
+		or not dynamic_registered
+	):
+		return false
+	var path: PackedVector2Array = dynamic_occupancy.find_path_for_scene(
+		scene_index,
+		position,
+		destination,
+	)
+	var has_actionable_point := false
+	for waypoint: Vector2 in path:
+		if position.distance_squared_to(waypoint) > 1.0:
+			has_actionable_point = true
+			break
+	if not has_actionable_point:
+		return false
+	issue_path(path)
 	return true
 
 

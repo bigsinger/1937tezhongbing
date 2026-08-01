@@ -20,9 +20,9 @@ $actorCatalog = (
         ConvertFrom-Json)
 
 if (
-    [int]$baseline.schema_version -ne 2 -or
+    [int]$baseline.schema_version -ne 3 -or
     [string]$baseline.catalog_id -ne (
-        'original-crt-random-startup-v2') -or
+        'original-crt-random-startup-v3') -or
     [string]$baseline.content_profile -ne (
         'repository-mod-12-level-20260729') -or
     [string]$baseline.executable_sha256 -ne (
@@ -138,6 +138,15 @@ if (@($baseline.levels).Count -ne 12) {
 $verifiedActors = 0
 $verifiedGateActors = 0
 $verifiedFirstUpdateDraws = 0
+$verifiedFirstUpdateActorOutcomes = 0
+$verifiedSemanticEffects = @{
+    route_wait_limit = 0
+    pursuit_command_snapshot = 0
+    primary_candidate_scan = 0
+    blocked_retry_destination = 0
+    secondary_candidate_scan = 0
+    secondary_search_destination = 0
+}
 foreach ($levelIndex in 0..11) {
     $levelId = 'm{0:D3}' -f $levelIndex
     $level = @($baseline.levels | Where-Object {
@@ -226,6 +235,97 @@ foreach ($levelIndex in 0..11) {
         throw "First gameplay call family mismatch for $levelId."
     }
     $verifiedFirstUpdateDraws += $firstUpdateRecords.Count
+    $actorRecordsByRuntimeIndex = @{}
+    foreach ($record in $firstUpdateRecords) {
+        $runtimeIndex = [int]$record.runtime_index
+        $site = [string]$record.call_site_rva
+        if ($runtimeIndex -lt 0 -or $site -eq '0x0005C81C') {
+            continue
+        }
+        if (-not $actorRecordsByRuntimeIndex.ContainsKey($runtimeIndex)) {
+            $actorRecordsByRuntimeIndex[$runtimeIndex] = @()
+        }
+        $actorRecordsByRuntimeIndex[$runtimeIndex] = @(
+            $actorRecordsByRuntimeIndex[$runtimeIndex]) + @($record)
+    }
+    $outcomes = @($firstUpdate.actor_outcomes)
+    if ($outcomes.Count -ne $actorRecordsByRuntimeIndex.Count) {
+        throw "First gameplay actor outcome count mismatch for $levelId."
+    }
+    $seenOutcomeActors = @{}
+    foreach ($outcome in $outcomes) {
+        $runtimeIndex = [int]$outcome.runtime_index
+        if (
+            $seenOutcomeActors.ContainsKey($runtimeIndex) -or
+            -not $actorRecordsByRuntimeIndex.ContainsKey($runtimeIndex)
+        ) {
+            throw "Invalid first gameplay actor outcome in $levelId."
+        }
+        $seenOutcomeActors[$runtimeIndex] = $true
+        $actorRecords = @($actorRecordsByRuntimeIndex[$runtimeIndex])
+        $outcomeSites = @($outcome.call_site_rvas)
+        if ($outcomeSites.Count -ne $actorRecords.Count) {
+            throw "First gameplay actor call count mismatch in $levelId."
+        }
+        for ($recordIndex = 0; $recordIndex -lt $actorRecords.Count;
+                $recordIndex++) {
+            if (
+                [string]$outcomeSites[$recordIndex] -ne
+                [string]$actorRecords[$recordIndex].call_site_rva
+            ) {
+                throw "First gameplay actor call order mismatch in $levelId."
+            }
+        }
+        $effects = @($outcome.semantic_effects)
+        if ($effects.Count -eq 0) {
+            throw "First gameplay actor outcome has no effect in $levelId."
+        }
+        foreach ($effect in $effects) {
+            $effectName = [string]$effect
+            if (-not $verifiedSemanticEffects.ContainsKey($effectName)) {
+                throw "Unknown first gameplay effect $effectName."
+            }
+            $verifiedSemanticEffects[$effectName]++
+        }
+        $postUpdateState = $outcome.post_update_state
+        if ($null -eq $postUpdateState) {
+            throw "First gameplay actor outcome has no state in $levelId."
+        }
+        if ($effects -contains 'route_wait_limit') {
+            $routeRecord = @($actorRecords | Where-Object {
+                [string]$_.call_site_rva -eq '0x00058946'
+            })
+            if (
+                $routeRecord.Count -ne 1 -or
+                [int]$outcome.route_wait_limit -ne (
+                    ([int]$routeRecord[0].value % 160) + 40)
+            ) {
+                throw "First gameplay route wait mismatch in $levelId."
+            }
+        }
+        elseif ([int]$outcome.route_wait_limit -ne -1) {
+            throw "Unexpected first gameplay route wait in $levelId."
+        }
+        if ($effects -contains 'secondary_search_destination') {
+            if (
+                [int]$postUpdateState.goal_kind -ne 1 -or
+                [int]$postUpdateState.goal_x -ne (
+                    [int]$postUpdateState.resolved_goal_x) -or
+                [int]$postUpdateState.goal_y -ne (
+                    [int]$postUpdateState.resolved_goal_y) -or
+                [int]$postUpdateState.movement_path_state -ne 2
+            ) {
+                throw "Secondary search outcome mismatch in $levelId."
+            }
+        }
+        if (
+            $effects -contains 'pursuit_command_snapshot' -and
+            [int]$postUpdateState.command_variant -ne 0
+        ) {
+            throw "First-update pursuit command changed in $levelId."
+        }
+        $verifiedFirstUpdateActorOutcomes++
+    }
 
     $runtimeLevel = $actorCatalog.levels.$levelId
     $runtimeActors = @($runtimeLevel.actors.PSObject.Properties)
@@ -279,6 +379,17 @@ foreach ($levelIndex in 0..11) {
     }
     $verifiedActors += $initialization.Count
 }
+if (
+    $verifiedFirstUpdateActorOutcomes -ne 76 -or
+    [int]$verifiedSemanticEffects.route_wait_limit -ne 3 -or
+    [int]$verifiedSemanticEffects.pursuit_command_snapshot -ne 36 -or
+    [int]$verifiedSemanticEffects.primary_candidate_scan -ne 14 -or
+    [int]$verifiedSemanticEffects.blocked_retry_destination -ne 3 -or
+    [int]$verifiedSemanticEffects.secondary_candidate_scan -ne 16 -or
+    [int]$verifiedSemanticEffects.secondary_search_destination -ne 4
+) {
+    throw 'First gameplay actor side-effect family totals mismatch.'
+}
 
 [pscustomobject]@{
     ContentProfile = [string]$baseline.content_profile
@@ -286,5 +397,6 @@ foreach ($levelIndex in 0..11) {
     ActiveActorInitializations = $verifiedActors
     ObservationGateActors = $verifiedGateActors
     FirstGameplayUpdateDraws = $verifiedFirstUpdateDraws
+    FirstGameplayActorOutcomes = $verifiedFirstUpdateActorOutcomes
     StartupLcgCheckpoints = 'verified'
 }

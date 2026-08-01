@@ -503,6 +503,7 @@ func _replay_original_first_gameplay_random_update(
 		)
 		return false
 	var actors_by_runtime_index: Dictionary = {}
+	var outcome_records_by_runtime_index: Dictionary = {}
 	if apply_actor_effects:
 		for actor: Node2D in _all_active_runtime_actors():
 			var runtime_index := int(actor.get("original_runtime_index"))
@@ -545,6 +546,93 @@ func _replay_original_first_gameplay_random_update(
 					"apply_original_crt_observation_gate_value",
 					int(draw.get("value", 0)),
 				)
+		if (
+			apply_actor_effects
+			and call_site_rva != 0x0005C81C
+			and int(record.get("runtime_index", -1)) >= 0
+		):
+			var outcome_runtime_index := int(
+				record.get("runtime_index", -1)
+			)
+			var actor_records_value: Variant = (
+				outcome_records_by_runtime_index.get(
+					outcome_runtime_index,
+					[],
+				)
+			)
+			var actor_records: Array[Dictionary] = []
+			if actor_records_value is Array:
+				for actor_record_value: Variant in (
+					actor_records_value as Array
+				):
+					if actor_record_value is Dictionary:
+						actor_records.append(
+							actor_record_value as Dictionary
+						)
+			actor_records.append(record.duplicate(true))
+			outcome_records_by_runtime_index[
+				outcome_runtime_index
+			] = actor_records
+	if apply_actor_effects:
+		var outcomes: Array[Dictionary] = (
+			ORIGINAL_CRT_RANDOM_STARTUP_CATALOG
+			. first_gameplay_update_outcomes(level_id)
+		)
+		if (
+			outcomes.is_empty()
+			and not outcome_records_by_runtime_index.is_empty()
+		):
+			push_error(
+				"Missing original first gameplay outcomes for %s"
+				% level_id
+			)
+			return false
+		if (
+			outcomes.size()
+			!= outcome_records_by_runtime_index.size()
+		):
+			push_error(
+				(
+					"Original first gameplay outcome count "
+					+ "diverged for %s"
+				)
+				% level_id
+			)
+			return false
+		for outcome: Dictionary in outcomes:
+			var runtime_index := int(
+				outcome.get("runtime_index", -1)
+			)
+			var actor_value: Variant = actors_by_runtime_index.get(
+				runtime_index,
+			)
+			var actor_records_value: Variant = (
+				outcome_records_by_runtime_index.get(
+					runtime_index,
+					[],
+				)
+			)
+			if (
+				not actor_value is Node2D
+				or not is_instance_valid(actor_value as Node2D)
+				or not (actor_value as Node2D).has_method(
+					"apply_original_first_gameplay_update_outcome"
+				)
+				or not actor_records_value is Array
+				or not bool((actor_value as Node2D).call(
+					"apply_original_first_gameplay_update_outcome",
+					outcome,
+					actor_records_value,
+				))
+			):
+				push_error(
+					(
+						"Original first gameplay actor outcome "
+						+ "failed for %s runtime actor %d"
+					)
+					% [level_id, runtime_index]
+				)
+				return false
 	return true
 
 

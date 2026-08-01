@@ -10,6 +10,15 @@ const ORIGINAL_STARTUP_CATALOG: Script = preload(
 const SQUAD_UNIT_SCRIPT: Script = preload(
 	"res://scripts/squad_unit.gd"
 )
+const ENEMY_UNIT_SCRIPT: Script = preload(
+	"res://scripts/enemy_unit.gd"
+)
+const NAVIGATION_GRID_DATA: Script = preload(
+	"res://scripts/navigation_grid_data.gd"
+)
+const DYNAMIC_OCCUPANCY_GRID: Script = preload(
+	"res://scripts/dynamic_occupancy_grid.gd"
+)
 
 var failures: Array[String] = []
 var checks := 0
@@ -19,6 +28,7 @@ func _init() -> void:
 	_test_twelve_level_catalog()
 	_test_exact_startup_checkpoint_and_next_draw()
 	_test_exact_first_gameplay_update_replay()
+	_test_first_gameplay_actor_side_effects()
 	_test_imported_actor_profile_and_gate()
 	_test_dynamic_actor_constructor_sequence()
 	_test_timing_snapshot_round_trip()
@@ -71,6 +81,15 @@ func _test_twelve_level_catalog() -> void:
 	var gate_actor_count := 0
 	var first_update_count := 0
 	var first_update_music_draw_count := 0
+	var first_update_outcome_count := 0
+	var semantic_effect_counts := {
+		"route_wait_limit": 0,
+		"pursuit_command_snapshot": 0,
+		"primary_candidate_scan": 0,
+		"blocked_retry_destination": 0,
+		"secondary_candidate_scan": 0,
+		"secondary_search_destination": 0,
+	}
 	for level_index: int in range(12):
 		var level_id := "m%03d" % level_index
 		var profile: Dictionary = (
@@ -92,6 +111,24 @@ func _test_twelve_level_catalog() -> void:
 			"%s retains its complete first gameplay update" % level_id,
 		)
 		first_update_count += first_update_records.size()
+		var outcomes: Array[Dictionary] = (
+			ORIGINAL_STARTUP_CATALOG
+			. first_gameplay_update_outcomes(level_id)
+		)
+		first_update_outcome_count += outcomes.size()
+		for outcome: Dictionary in outcomes:
+			var effects_value: Variant = outcome.get(
+				"semantic_effects",
+				[],
+			)
+			if not effects_value is Array:
+				continue
+			for effect_value: Variant in effects_value as Array:
+				var effect := str(effect_value)
+				if semantic_effect_counts.has(effect):
+					semantic_effect_counts[effect] = (
+						int(semantic_effect_counts[effect]) + 1
+					)
 		for record: Dictionary in first_update_records:
 			if (
 				int(record.get("runtime_index", -2)) == -1
@@ -118,6 +155,19 @@ func _test_twelve_level_catalog() -> void:
 	_expect(
 		first_update_music_draw_count == 12,
 		"each captured first update ends with one process-global music draw",
+	)
+	_expect(
+		first_update_outcome_count == 76,
+		"startup catalog preserves all 76 actor-bound first-update outcomes",
+	)
+	_expect(
+		int(semantic_effect_counts["route_wait_limit"]) == 3
+		and int(semantic_effect_counts["pursuit_command_snapshot"]) == 36
+		and int(semantic_effect_counts["primary_candidate_scan"]) == 14
+		and int(semantic_effect_counts["blocked_retry_destination"]) == 3
+		and int(semantic_effect_counts["secondary_candidate_scan"]) == 16
+		and int(semantic_effect_counts["secondary_search_destination"]) == 4,
+		"first-update outcomes retain every recovered side-effect family",
 	)
 
 
@@ -196,6 +246,180 @@ func _test_exact_first_gameplay_update_replay() -> void:
 		"m000 replay preserves every captured value, call site and draw index",
 	)
 	game.free()
+
+
+func _test_first_gameplay_actor_side_effects() -> void:
+	var m004_outcomes: Array[Dictionary] = (
+		ORIGINAL_STARTUP_CATALOG.first_gameplay_update_outcomes(
+			"m004"
+		)
+	)
+	var search_outcome: Dictionary = {}
+	var blocked_outcome: Dictionary = {}
+	for outcome: Dictionary in m004_outcomes:
+		match int(outcome.get("runtime_index", -1)):
+			69:
+				blocked_outcome = outcome
+			141:
+				search_outcome = outcome
+	_expect(
+		not search_outcome.is_empty()
+		and (
+			search_outcome.get("semantic_effects", []) as Array
+		).has("secondary_search_destination")
+		and int(
+			(search_outcome.get(
+				"post_update_state",
+				{},
+			) as Dictionary).get("goal_x", 0)
+		) == 3069
+		and int(
+			(search_outcome.get(
+				"post_update_state",
+				{},
+			) as Dictionary).get("goal_y", 0)
+		) == 445,
+		"m004 actor 141 retains the exact secondary-search destination",
+	)
+	_expect(
+		not blocked_outcome.is_empty()
+		and (
+			blocked_outcome.get("semantic_effects", []) as Array
+		).has("blocked_retry_destination")
+		and int(
+			(blocked_outcome.get(
+				"post_update_state",
+				{},
+			) as Dictionary).get("resolved_goal_x", 0)
+		) == 2506
+		and int(
+			(blocked_outcome.get(
+				"post_update_state",
+				{},
+			) as Dictionary).get("resolved_goal_y", 0)
+		) == 1038,
+		"m004 actor 69 retains the exact blocked-retry destination",
+	)
+
+	var movement := PackedInt64Array()
+	movement.resize(12 * 8)
+	var navigation = NAVIGATION_GRID_DATA.create_for_tests(
+		12,
+		8,
+		Vector2i(32, 16),
+		movement,
+	)
+	navigation.prepare_astar()
+	var occupancy = DYNAMIC_OCCUPANCY_GRID.new()
+	occupancy.configure(navigation)
+	var actor = SQUAD_UNIT_SCRIPT.new()
+	var empty_groups: Array[Dictionary] = []
+	actor.configure(
+		"first-update-search",
+		Color.WHITE,
+		navigation.cell_to_world(Vector2i(2, 3)),
+		null,
+		empty_groups,
+		empty_groups,
+		141,
+		occupancy,
+	)
+	actor.configure_runtime_actor_type({
+		"database_header_values": [0, 0, 20],
+		"original_runtime_profile": {"runtime_index": 141},
+	})
+	occupancy.finalize_registration()
+	var synthetic_outcome := search_outcome.duplicate(true)
+	synthetic_outcome["scene_index"] = 141
+	(synthetic_outcome["post_update_state"] as Dictionary)["goal_x"] = 208
+	(synthetic_outcome["post_update_state"] as Dictionary)["goal_y"] = 56
+	(
+		synthetic_outcome["post_update_state"] as Dictionary
+	)["resolved_goal_x"] = 208
+	(
+		synthetic_outcome["post_update_state"] as Dictionary
+	)["resolved_goal_y"] = 56
+	var synthetic_records: Array[Dictionary] = []
+	var synthetic_sites: Array = synthetic_outcome.get(
+		"call_site_rvas",
+		[],
+	)
+	for site_value: Variant in synthetic_sites:
+		synthetic_records.append({
+			"runtime_index": 141,
+			"call_site_rva": str(site_value),
+			"value": 1,
+		})
+	var applied: bool = actor.apply_original_first_gameplay_update_outcome(
+		synthetic_outcome,
+		synthetic_records,
+	)
+	_expect(
+		applied
+		and actor.original_first_gameplay_update_serial == 1
+		and actor.original_first_gameplay_navigation_applied
+		and actor.original_first_gameplay_goal == Vector2(208.0, 56.0)
+		and actor.is_running
+		and actor.movement_path_index < actor.movement_path.size()
+		and actor.target_position == Vector2(208.0, 56.0),
+		"secondary-search outcome applies its exact mode and A* destination",
+	)
+	actor.free()
+
+	var route_actor = SQUAD_UNIT_SCRIPT.new()
+	route_actor.scene_index = 1416
+	route_actor.configure_runtime_actor_type({
+		"database_header_values": [0, 0, 5],
+		"original_runtime_profile": {"runtime_index": 1},
+	})
+	var route_outcome: Dictionary = {}
+	for outcome: Dictionary in (
+		ORIGINAL_STARTUP_CATALOG.first_gameplay_update_outcomes(
+			"m000"
+		)
+	):
+		if int(outcome.get("runtime_index", -1)) == 1:
+			route_outcome = outcome
+			break
+	var route_records: Array[Dictionary] = [{
+		"runtime_index": 1,
+		"call_site_rva": "0x00058946",
+		"value": 20042,
+	}]
+	_expect(
+		route_actor.apply_original_first_gameplay_update_outcome(
+			route_outcome,
+			route_records,
+		)
+		and route_actor.original_ai_idle_tick_counter == 0
+		and route_actor.original_ai_idle_tick_limit == 82
+		and route_actor.original_first_gameplay_route_wait_limit == 82,
+		"route outcome restores rand()%160+40 to the shared native counter",
+	)
+	route_actor.free()
+
+	var timeline_enemy = ENEMY_UNIT_SCRIPT.new()
+	var timeline: Array[Dictionary] = [
+		{"elapsed_seconds": 0.0, "position": Vector2.ZERO},
+		{"elapsed_seconds": 5.0, "position": Vector2.ONE},
+	]
+	timeline_enemy.stable_mod_patrol_timeline = timeline
+	_expect(
+		not timeline_enemy.call(
+			"_should_apply_original_first_gameplay_navigation",
+			"blocked_retry_destination",
+		)
+		and not timeline_enemy.call(
+			"_should_apply_original_first_gameplay_navigation",
+			"pursuit_command_snapshot",
+		)
+		and bool(timeline_enemy.call(
+			"_should_apply_original_first_gameplay_navigation",
+			"secondary_search_destination",
+		)),
+		"stable MOD patrol evidence supersedes only overlapping transient goals",
+	)
+	timeline_enemy.free()
 
 
 func _test_imported_actor_profile_and_gate() -> void:
@@ -344,6 +568,27 @@ func _test_timing_snapshot_round_trip() -> void:
 	source.original_crt_observation_gate_elapsed = 0.0125
 	source.original_crt_observation_gate_passed = true
 	source.original_crt_observation_gate_serial = 7
+	source.original_first_gameplay_update_serial = 1
+	source.original_first_gameplay_semantic_effects.append(
+		"blocked_retry_destination"
+	)
+	source.original_first_gameplay_call_sites = PackedInt32Array([
+		0x00055BFB,
+		0x00055C0F,
+		0x00055C23,
+		0x00055C3A,
+	])
+	source.original_first_gameplay_goal_kind = 1
+	source.original_first_gameplay_command_variant = 0
+	source.original_first_gameplay_movement_path_state = 2
+	source.original_first_gameplay_movement_mode = 1
+	source.original_first_gameplay_goal = Vector2(2736.0, 1144.0)
+	source.original_first_gameplay_resolved_goal = Vector2(
+		2506.0,
+		1038.0,
+	)
+	source.original_first_gameplay_route_wait_limit = -1
+	source.original_first_gameplay_navigation_applied = false
 	var snapshot: Dictionary = source.original_crt_random_timing_snapshot()
 	var restored = SQUAD_UNIT_SCRIPT.new()
 	restored.scene_index = 1415
@@ -364,6 +609,28 @@ func _test_timing_snapshot_round_trip() -> void:
 		and restored.original_crt_observation_gate_passed
 		and restored.original_crt_observation_gate_serial == 7,
 		"save/load restores the per-actor global-stream gate phase",
+	)
+	_expect(
+		restored.original_first_gameplay_update_serial == 1
+		and restored.original_first_gameplay_semantic_effects.size() == 1
+		and restored.original_first_gameplay_semantic_effects[0]
+			== "blocked_retry_destination"
+		and restored.original_first_gameplay_call_sites
+			== PackedInt32Array([
+				0x00055BFB,
+				0x00055C0F,
+				0x00055C23,
+				0x00055C3A,
+			])
+		and restored.original_first_gameplay_goal_kind == 1
+		and restored.original_first_gameplay_movement_path_state == 2
+		and restored.original_first_gameplay_movement_mode == 1
+		and restored.original_first_gameplay_goal
+			== Vector2(2736.0, 1144.0)
+		and restored.original_first_gameplay_resolved_goal
+			== Vector2(2506.0, 1038.0)
+		and not restored.original_first_gameplay_navigation_applied,
+		"save/load retains the exact first-gameplay native outcome snapshot",
 	)
 	source.free()
 	restored.free()
