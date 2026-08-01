@@ -41,6 +41,7 @@ internal static class ModRegressionProbe
     private const int ReplayCompleteGumingDisguise = 13;
     private const int ReplaySelectWeaponInventoryItem = 14;
     private const int ReplayCommitSpecialAttention = 15;
+    private const int ReplayApplyFatalDamage = 16;
     private const uint WmActivate = 0x0006;
     private const uint WmSetFocus = 0x0007;
     private const uint WmActivateApp = 0x001C;
@@ -394,6 +395,20 @@ internal static class ModRegressionProbe
         public int AuthoredAttackType;
     }
 
+    private sealed class NativeMissionObservation
+    {
+        public bool ObserverEnabled;
+        public bool Observed;
+        public int EngineMission;
+        public string Status = "";
+        public int GameFlowState;
+        public int EvaluationActive;
+        public int ResultState;
+        public long EvaluatorCalls;
+        public long TransitionSequence;
+        public long LastEvaluatedTickMilliseconds;
+    }
+
     private sealed class WeaponAttackParityScenario
     {
         public string Id;
@@ -453,6 +468,8 @@ internal static class ModRegressionProbe
                 "[--movement-player-scene=SCENE_INDEX] " +
                 "[--movement-observation-ms=MS] " +
                 "[--inventory-only] " +
+                "[--native-mission-failure-only " +
+                "--native-failure-scene=SCENE_INDEX] " +
                 "[--visual-capture-only " +
                 "--visual-camera-x=X --visual-camera-y=Y] " +
                 "[--identity-catalog=PATH --parity-patrol-only | " +
@@ -522,6 +539,33 @@ internal static class ModRegressionProbe
                 "--inventory-only",
                 StringComparison.OrdinalIgnoreCase);
         });
+        bool nativeMissionFailureOnly = args.Any(delegate(string argument)
+        {
+            return argument.Equals(
+                "--native-mission-failure-only",
+                StringComparison.OrdinalIgnoreCase);
+        });
+        int nativeFailureSceneIndex = -1;
+        string nativeFailureSceneValue = ArgumentValue(
+            args, "--native-failure-scene=");
+        if (!String.IsNullOrWhiteSpace(nativeFailureSceneValue) &&
+            (!int.TryParse(
+                nativeFailureSceneValue,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out nativeFailureSceneIndex) ||
+             nativeFailureSceneIndex <= 0 ||
+             nativeFailureSceneIndex > 0xFFFF))
+        {
+            throw new InvalidOperationException(
+                "Native failure scene index must be between 1 and 65535.");
+        }
+        if (nativeMissionFailureOnly && nativeFailureSceneIndex < 1)
+        {
+            throw new InvalidOperationException(
+                "--native-mission-failure-only requires " +
+                "--native-failure-scene=SCENE_INDEX.");
+        }
         bool visualCaptureOnly = args.Any(delegate(string argument)
         {
             return argument.Equals(
@@ -697,9 +741,20 @@ internal static class ModRegressionProbe
                 "Briefing-only and briefing-dismissal-only are mutually " +
                 "exclusive.");
         }
+        if (nativeMissionFailureOnly &&
+            (briefingOnly || briefingDismissalOnly ||
+             movementOnly || inventoryOnly || visualCaptureOnly ||
+             crtRandomStartupOnly || crtRandomRuntimeOnly ||
+             parityModeCount > 0))
+        {
+            throw new InvalidOperationException(
+                "Native-mission-failure-only cannot be combined with " +
+                "another specialized probe mode.");
+        }
         if ((crtRandomStartupOnly || crtRandomRuntimeOnly) &&
             (briefingOnly || briefingDismissalOnly ||
              movementOnly || inventoryOnly ||
+             nativeMissionFailureOnly ||
              visualCaptureOnly || parityModeCount > 0))
         {
             throw new InvalidOperationException(
@@ -713,7 +768,7 @@ internal static class ModRegressionProbe
         }
         if (inventoryOnly &&
             (briefingOnly || briefingDismissalOnly ||
-             parityModeCount > 0))
+             nativeMissionFailureOnly || parityModeCount > 0))
         {
             throw new InvalidOperationException(
                 "Inventory-only cannot be combined with briefing-only " +
@@ -722,6 +777,7 @@ internal static class ModRegressionProbe
         if (visualCaptureOnly &&
             (briefingOnly || briefingDismissalOnly ||
              movementOnly || inventoryOnly ||
+             nativeMissionFailureOnly ||
              parityModeCount > 0))
         {
             throw new InvalidOperationException(
@@ -785,12 +841,28 @@ internal static class ModRegressionProbe
                 PlayerSelectionDik(
                     movementPlayerIdentity.DisplayName);
         }
-        if (parityModeCount > 0 &&
+        if ((parityModeCount > 0 || nativeMissionFailureOnly) &&
             actorIdentities.Count == 0)
         {
             throw new InvalidOperationException(
-                "Actor parity scenarios require a non-empty " +
+                "Actor parity and native mission scenarios require a non-empty " +
                 "--identity-catalog.");
+        }
+        if (nativeMissionFailureOnly)
+        {
+            RuntimeActorIdentity failureIdentity =
+                actorIdentities.Values.FirstOrDefault(
+                    delegate(RuntimeActorIdentity candidate)
+                    {
+                        return candidate.SceneIndex ==
+                            nativeFailureSceneIndex;
+                    });
+            if (failureIdentity == null ||
+                failureIdentity.VwfFactionId != 3)
+            {
+                throw new InvalidOperationException(
+                    "Native failure scene is not a resolved friendly actor.");
+            }
         }
         if (parityPickupOnly && selectorLevel != 2)
         {
@@ -831,6 +903,8 @@ internal static class ModRegressionProbe
         startInfo.EnvironmentVariables["M1937_AUTOTEST"] = "1";
         startInfo.EnvironmentVariables["M1937_WINDOW_REPLAY"] = "1";
         startInfo.EnvironmentVariables["M1937_TELEMETRY"] = "1";
+        if (nativeMissionFailureOnly)
+            startInfo.EnvironmentVariables["M1937_MISSION_TRACE"] = "1";
         startInfo.EnvironmentVariables["M1937_START_LEVEL"] =
             selectorLevel.ToString(CultureInfo.InvariantCulture);
         if (briefingOnly || briefingDismissalOnly)
@@ -1301,10 +1375,172 @@ internal static class ModRegressionProbe
                           cameraPlayer.RuntimeType +
                           "; viewport=(" +
                           gameplayViewportWidth + "," +
-                          gameplayViewportHeight +
-                          "); render=(" + spawnScreenWidth + "," +
-                          spawnScreenHeight + "); synchronized=" +
-                          cameraStateSynchronized);
+                           gameplayViewportHeight +
+                           "); render=(" + spawnScreenWidth + "," +
+                           spawnScreenHeight + "); synchronized=" +
+                           cameraStateSynchronized);
+
+                if (nativeMissionFailureOnly)
+                {
+                    string nativeTelemetryPath = Path.Combine(
+                        gameDirectory, "M1937Telemetry.jsonl");
+                    NativeMissionObservation beforeMission = null;
+                    bool nativeActiveObserved = WaitUntil(
+                        delegate()
+                        {
+                            NativeMissionObservation candidate;
+                            if (!TryReadLatestNativeMissionObservation(
+                                    nativeTelemetryPath, out candidate) ||
+                                candidate == null ||
+                                !candidate.ObserverEnabled ||
+                                !candidate.Observed ||
+                                candidate.EngineMission !=
+                                    route.EngineMission ||
+                                !String.Equals(
+                                    candidate.Status,
+                                    "active",
+                                    StringComparison.Ordinal) ||
+                                candidate.ResultState != 0)
+                                return false;
+                            beforeMission = candidate;
+                            return true;
+                        },
+                        TimeSpan.FromSeconds(4));
+                    ActorSnapshot beforeActor = ReadResolvedActor(
+                        process,
+                        imageBase,
+                        actorIdentities,
+                        nativeFailureSceneIndex);
+                    bool fatalDamageQueued =
+                        nativeActiveObserved &&
+                        beforeActor != null &&
+                        beforeActor.Faction == 3 &&
+                        beforeActor.Dead == 0 &&
+                        beforeActor.CurrentHitPoints > 0 &&
+                        SendReplay(
+                            window,
+                            ReplayApplyFatalDamage,
+                            nativeFailureSceneIndex);
+
+                    ActorSnapshot afterActor = null;
+                    bool originalDamageObserved = fatalDamageQueued &&
+                        WaitUntil(
+                            delegate()
+                            {
+                                // The original death transition can remove an
+                                // actor from the world array quickly.  Retain
+                                // its process-local address from the pre-hit
+                                // identity and observe the authentic fields
+                                // there without writing process memory.
+                                afterActor = ReadActor(
+                                    process, beforeActor.Address);
+                                if (afterActor != null)
+                                    afterActor.SceneIndex =
+                                        beforeActor.SceneIndex;
+                                return afterActor != null &&
+                                    (afterActor.CurrentHitPoints == 0 ||
+                                     afterActor.Dead != 0);
+                            },
+                            TimeSpan.FromSeconds(3));
+                    NativeMissionObservation afterMission = null;
+                    bool nativeFailureObserved = WaitUntil(
+                        delegate()
+                        {
+                            NativeMissionObservation candidate;
+                            if (!TryReadLatestNativeMissionObservation(
+                                    nativeTelemetryPath, out candidate) ||
+                                candidate == null ||
+                                !candidate.ObserverEnabled ||
+                                !candidate.Observed ||
+                                candidate.EngineMission !=
+                                    route.EngineMission ||
+                                !String.Equals(
+                                    candidate.Status,
+                                    "failed",
+                                    StringComparison.Ordinal) ||
+                                candidate.ResultState != 2)
+                                return false;
+                            afterMission = candidate;
+                            return true;
+                        },
+                        TimeSpan.FromSeconds(5));
+                    AddStage(
+                        stages, game, process, imageBase, clock,
+                        "original_fatal_damage_transition",
+                        fatalDamageQueued && originalDamageObserved,
+                        "scene=" + nativeFailureSceneIndex +
+                        "; replay_process_local=true; entry=sub_458700; " +
+                        "before_hp=" +
+                        (beforeActor == null
+                            ? -1
+                            : beforeActor.CurrentHitPoints) +
+                        "; after_hp=" +
+                        (afterActor == null
+                            ? -1
+                            : afterActor.CurrentHitPoints) +
+                        "; after_dead=" +
+                        (afterActor == null ? -1 : afterActor.Dead));
+                    AddStage(
+                        stages, game, process, imageBase, clock,
+                        "native_mission_failure_evaluated",
+                        nativeFailureObserved,
+                        "observer_read_only=true; evaluator=sub_405410; " +
+                        "before_result=" +
+                        (beforeMission == null
+                            ? -1
+                            : beforeMission.ResultState) +
+                        "; after_result=" +
+                        (afterMission == null
+                            ? -1
+                            : afterMission.ResultState) +
+                        "; evaluator_calls=" +
+                        (afterMission == null
+                            ? -1
+                            : afterMission.EvaluatorCalls) +
+                        "; transition_sequence=" +
+                        (afterMission == null
+                            ? -1
+                            : afterMission.TransitionSequence));
+
+                    WriteNativeMissionFailureTrace(
+                        outputDirectory,
+                        selectorLevel,
+                        route.EngineMission,
+                        nativeFailureSceneIndex,
+                        beforeActor,
+                        afterActor,
+                        beforeMission,
+                        afterMission,
+                        fatalDamageQueued &&
+                        originalDamageObserved &&
+                        nativeFailureObserved);
+                    samplerStop = true;
+                    sampler.Join(1500);
+                    bool nativeCursorClipSafe;
+                    lock (perf)
+                        nativeCursorClipSafe = perf.All(
+                            delegate(PerfSample sample)
+                            {
+                                return !sample.CursorClipRestricted;
+                            });
+                    exitCode =
+                        missionStarted &&
+                        nativeActiveObserved &&
+                        fatalDamageQueued &&
+                        originalDamageObserved &&
+                        nativeFailureObserved &&
+                        nativeCursorClipSafe ? 0 : 1;
+                    WriteArtifacts(
+                        outputDirectory,
+                        selectorLevel,
+                        route.EngineMission,
+                        stages,
+                        perf,
+                        transitionsLogged: nativeFailureObserved,
+                        replayConsumed: fatalDamageQueued,
+                        passed: exitCode == 0);
+                    return exitCode;
+                }
 
                 if (visualCaptureOnly)
                 {
@@ -7062,6 +7298,212 @@ internal static class ModRegressionProbe
                 System.Drawing.Imaging.Encoder.Quality, 55L);
             capture.Bitmap.Save(path, codec, parameters);
         }
+    }
+
+    private static bool TryReadLatestNativeMissionObservation(
+        string telemetryPath,
+        out NativeMissionObservation observation)
+    {
+        observation = null;
+        string telemetry = ReadSharedText(telemetryPath);
+        if (String.IsNullOrWhiteSpace(telemetry))
+            return false;
+        string[] lines = telemetry.Split(
+            new[] { '\r', '\n' },
+            StringSplitOptions.RemoveEmptyEntries);
+        var serializer = new JavaScriptSerializer();
+        serializer.MaxJsonLength = Int32.MaxValue;
+        for (int index = lines.Length - 1; index >= 0; --index)
+        {
+            try
+            {
+                var root = serializer.DeserializeObject(lines[index])
+                    as Dictionary<string, object>;
+                object rawNative;
+                if (root == null ||
+                    !root.TryGetValue(
+                        "native_mission", out rawNative))
+                    continue;
+                var native = rawNative as Dictionary<string, object>;
+                if (native == null)
+                    continue;
+                observation = new NativeMissionObservation
+                {
+                    ObserverEnabled = JsonBoolean(
+                        native, "observer_enabled"),
+                    Observed = JsonBoolean(native, "observed"),
+                    EngineMission = JsonInteger(
+                        native, "engine_mission"),
+                    Status = JsonString(native, "status"),
+                    GameFlowState = JsonInteger(
+                        native, "game_flow_state"),
+                    EvaluationActive = JsonInteger(
+                        native, "evaluation_active"),
+                    ResultState = JsonInteger(
+                        native, "result_state"),
+                    EvaluatorCalls = JsonLong(
+                        native, "evaluator_calls"),
+                    TransitionSequence = JsonLong(
+                        native, "transition_sequence"),
+                    LastEvaluatedTickMilliseconds = JsonLong(
+                        native, "last_evaluated_tick_ms")
+                };
+                return true;
+            }
+            catch (ArgumentException)
+            {
+                // The asynchronous writer may expose one incomplete trailing
+                // line. Continue to the preceding complete JSON record.
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+        return false;
+    }
+
+    private static bool JsonBoolean(
+        IDictionary<string, object> item,
+        string key)
+    {
+        object value;
+        return item != null &&
+            item.TryGetValue(key, out value) &&
+            value != null &&
+            Convert.ToBoolean(value, CultureInfo.InvariantCulture);
+    }
+
+    private static long JsonLong(
+        IDictionary<string, object> item,
+        string key)
+    {
+        object value;
+        if (item == null ||
+            !item.TryGetValue(key, out value) ||
+            value == null)
+            return 0;
+        return Convert.ToInt64(value, CultureInfo.InvariantCulture);
+    }
+
+    private static void WriteNativeMissionFailureTrace(
+        string outputDirectory,
+        int selectorLevel,
+        int engineMission,
+        int authoredSceneIndex,
+        ActorSnapshot beforeActor,
+        ActorSnapshot afterActor,
+        NativeMissionObservation beforeMission,
+        NativeMissionObservation afterMission,
+        bool passed)
+    {
+        string levelId = String.Format(
+            CultureInfo.InvariantCulture,
+            "m{0:D3}",
+            selectorLevel - 1);
+        string scenarioId =
+            levelId + "-native-required-player-failure-v1";
+        var json = new StringBuilder();
+        json.Append("{\n");
+        json.Append("  \"schema_version\": 1,\n");
+        json.Append(
+            "  \"trace_id\": \"mod-" + scenarioId + "\",\n");
+        json.Append("  \"runtime\": \"mod\",\n");
+        json.Append(
+            "  \"content_profile\": " +
+            "\"repository-mod-12-level-20260729\",\n");
+        json.AppendFormat(
+            CultureInfo.InvariantCulture,
+            "  \"level\": {{\"id\":\"{0}\",\"selector_level\":{1}," +
+            "\"engine_mission\":{2}}},\n",
+            levelId,
+            selectorLevel,
+            engineMission);
+        json.Append(
+            "  \"scenario\": {\"id\":\"" + scenarioId + "\"," +
+            "\"description\":\"Invoke original actor damage at a safe " +
+            "process-local replay boundary, then observe the original " +
+            "mission evaluator choose failure; no mission result field is " +
+            "written by the probe.\"},\n");
+        json.Append(
+            "  \"metadata\": {\"producer\":\"ModRegressionProbe\"," +
+            "\"input_isolation\":\"private-window-message\"," +
+            "\"damage_entry\":\"sub_458700\"," +
+            "\"mission_evaluator\":\"sub_405410\"," +
+            "\"mission_observer\":\"read-only-post-evaluation\"},\n");
+        json.Append("  \"checkpoints\": [\n");
+        AppendNativeMissionCheckpoint(
+            json,
+            "gameplay_active",
+            authoredSceneIndex,
+            beforeActor,
+            beforeMission,
+            false);
+        json.Append(",\n");
+        AppendNativeMissionCheckpoint(
+            json,
+            "required_player_lost",
+            authoredSceneIndex,
+            afterActor,
+            afterMission,
+            true);
+        json.Append("\n  ],\n");
+        json.Append(
+            "  \"passed\": " +
+            (passed ? "true" : "false") + "\n");
+        json.Append("}\n");
+        File.WriteAllText(
+            Path.Combine(
+                outputDirectory,
+                "mod-" + scenarioId + ".json"),
+            json.ToString(),
+            new UTF8Encoding(false));
+    }
+
+    private static void AppendNativeMissionCheckpoint(
+        StringBuilder json,
+        string id,
+        int authoredSceneIndex,
+        ActorSnapshot actor,
+        NativeMissionObservation mission,
+        bool afterDamage)
+    {
+        json.Append("    {\n");
+        json.Append(
+            "      \"id\":\"" + Escape(id) + "\",\n");
+        json.AppendFormat(
+            CultureInfo.InvariantCulture,
+            "      \"actor\":{{\"scene_index\":{0}," +
+            "\"runtime_index\":{1},\"faction_id\":{2}," +
+            "\"runtime_type\":{3},\"position\":[{4},{5}]," +
+            "\"current_hit_points\":{6},\"dead_or_disabled\":{7}," +
+            "\"damage_source\":\"{8}\"}},\n",
+            authoredSceneIndex,
+            actor == null ? -1 : actor.SceneIndex,
+            actor == null ? -1 : actor.Faction,
+            actor == null ? -1 : actor.RuntimeType,
+            actor == null ? -1 : actor.WorldX,
+            actor == null ? -1 : actor.WorldY,
+            actor == null ? -1 : actor.CurrentHitPoints,
+            actor == null ? -1 : actor.Dead,
+            afterDamage ? "original_sub_458700" : "none");
+        json.AppendFormat(
+            CultureInfo.InvariantCulture,
+            "      \"mission\":{{\"status\":\"{0}\"," +
+            "\"engine_mission\":{1},\"game_flow_state\":{2}," +
+            "\"evaluation_active\":{3},\"result_state\":{4}," +
+            "\"evaluator_calls\":{5},\"transition_sequence\":{6}," +
+            "\"last_evaluated_tick_ms\":{7}}}\n",
+            mission == null ? "unknown" : Escape(mission.Status),
+            mission == null ? -1 : mission.EngineMission,
+            mission == null ? -1 : mission.GameFlowState,
+            mission == null ? -1 : mission.EvaluationActive,
+            mission == null ? -1 : mission.ResultState,
+            mission == null ? -1 : mission.EvaluatorCalls,
+            mission == null ? -1 : mission.TransitionSequence,
+            mission == null
+                ? -1
+                : mission.LastEvaluatedTickMilliseconds);
+        json.Append("    }");
     }
 
     private static string ReadSharedText(string path)

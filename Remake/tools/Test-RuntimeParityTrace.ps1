@@ -10,6 +10,8 @@ $compareScript = Join-Path $PSScriptRoot `
     'Compare-RuntimeParityTrace.ps1'
 $contactCompareScript = Join-Path $PSScriptRoot `
     'Compare-NaturalContactParity.ps1'
+$nativeFailureCompareScript = Join-Path $PSScriptRoot `
+    'Compare-NativeMissionFailureParity.ps1'
 $inventoryCompareScript = Join-Path $PSScriptRoot `
     'Compare-InventoryParityTrace.ps1'
 $baselinePath = Join-Path $remakeRoot `
@@ -46,6 +48,8 @@ $contactBaselinePath = Join-Path $remakeRoot `
     'validation\baselines\mod\m000-natural-contact-v1.json'
 $nativeAlertBaselinePath = Join-Path $remakeRoot `
     'validation\baselines\mod\m000-native-alert-command-v1.json'
+$nativeFailureBaselinePath = Join-Path $remakeRoot `
+    'validation\baselines\mod\m000-native-required-player-failure-v1.json'
 $minePickupBaselinePath = Join-Path $remakeRoot `
     'validation\baselines\mod\m001-mine-pickup-inventory-v1.json'
 $pistolAttackBaselinePath = Join-Path $remakeRoot `
@@ -267,6 +271,45 @@ if ($nativeAlertBaseline.scenario.id -ne
             [string]$_.target_address -ne '0x00000000'
         }).Count -ne 0) {
     throw 'The checked-in m000 native alert-command evidence is invalid.'
+}
+$nativeFailureBaseline = Get-Content `
+    -LiteralPath $nativeFailureBaselinePath `
+    -Raw -Encoding UTF8 | ConvertFrom-Json
+$nativeFailureActive = @(
+    $nativeFailureBaseline.checkpoints |
+        Where-Object id -CEQ 'gameplay_active'
+)[0]
+$nativeFailureFailed = @(
+    $nativeFailureBaseline.checkpoints |
+        Where-Object id -CEQ 'required_player_lost'
+)[0]
+if (-not (Test-Path -LiteralPath $nativeFailureCompareScript -PathType Leaf) -or
+    $nativeFailureBaseline.runtime -ne 'mod' -or
+    $nativeFailureBaseline.content_profile -ne
+        'repository-mod-12-level-20260729' -or
+    $nativeFailureBaseline.level.id -ne 'm000' -or
+    $nativeFailureBaseline.scenario.id -ne
+        'm000-native-required-player-failure-v1' -or
+    @($nativeFailureBaseline.checkpoints).Count -ne 2 -or
+    (@($nativeFailureBaseline.checkpoints.id) -join ',') -ne
+        'gameplay_active,required_player_lost' -or
+    $null -eq $nativeFailureActive -or
+    $null -eq $nativeFailureFailed -or
+    [int]$nativeFailureActive.actor.scene_index -ne 1436 -or
+    [int]$nativeFailureFailed.actor.scene_index -ne 1436 -or
+    [int]$nativeFailureActive.actor.current_hit_points -ne 8 -or
+    [int]$nativeFailureFailed.actor.current_hit_points -ne 0 -or
+    [int]$nativeFailureActive.actor.dead_or_disabled -ne 0 -or
+    [int]$nativeFailureFailed.actor.dead_or_disabled -ne 1 -or
+    $nativeFailureActive.mission.status -ne 'active' -or
+    $nativeFailureFailed.mission.status -ne 'failed' -or
+    [int]$nativeFailureActive.mission.result_state -ne 0 -or
+    [int]$nativeFailureFailed.mission.result_state -ne 2 -or
+    [int]$nativeFailureActive.mission.transition_sequence -ne 0 -or
+    [int]$nativeFailureFailed.mission.transition_sequence -ne 1 -or
+    $nativeFailureFailed.mission.semantic_failure_id -ne
+        'required_character_lost') {
+    throw 'The checked-in m000 native mission-failure evidence is invalid.'
 }
 
 $inventoryBaselineDefinitions = @(
@@ -560,6 +603,83 @@ $root = Join-Path $temporaryBase (
 [IO.Directory]::CreateDirectory($root) | Out-Null
 
 try {
+    $nativeFailureCandidatePath = Join-Path $root `
+        'native-mission-failure-candidate.json'
+    $nativeFailureCandidate = [ordered]@{
+        schema_version = 1
+        trace_id = 'remake-m000-native-required-player-failure-v1'
+        runtime = 'remake'
+        content_profile = 'repository-mod-12-level-20260729'
+        level = [ordered]@{
+            id = 'm000'
+            selector_level = 1
+            engine_mission = 1
+        }
+        scenario = [ordered]@{
+            id = 'm000-native-required-player-failure-v1'
+        }
+        checkpoints = @(
+            [ordered]@{
+                id = 'gameplay_active'
+                actors = @(
+                    [ordered]@{
+                        scene_index = 1436
+                        faction_id = 3
+                        position = @(241, 51)
+                        alive = $true
+                        hit_points = [ordered]@{ current = 8; maximum = 8 }
+                        native = [ordered]@{
+                            runtime_type = 1
+                            damage_event_count = 0
+                            damage_taken_total = 0
+                        }
+                    }
+                )
+                mission = [ordered]@{
+                    status = 'active'
+                    failure_id = ''
+                }
+                tags = [ordered]@{
+                    original_result_state = 0
+                }
+            },
+            [ordered]@{
+                id = 'required_player_lost'
+                actors = @(
+                    [ordered]@{
+                        scene_index = 1436
+                        faction_id = 3
+                        position = @(241, 51)
+                        alive = $false
+                        hit_points = [ordered]@{ current = 0; maximum = 8 }
+                        native = [ordered]@{
+                            runtime_type = 1
+                            damage_event_count = 1
+                            damage_taken_total = 8
+                        }
+                    }
+                )
+                mission = [ordered]@{
+                    status = 'failed'
+                    failure_id = 'required_character_lost'
+                }
+                tags = [ordered]@{
+                    original_result_state = 2
+                }
+            }
+        )
+    }
+    $nativeFailureCandidate | ConvertTo-Json -Depth 16 |
+        Set-Content -LiteralPath $nativeFailureCandidatePath -Encoding UTF8
+    $nativeFailureSelf = & $nativeFailureCompareScript `
+        -ReferenceTrace $nativeFailureBaselinePath `
+        -CandidateTrace $nativeFailureCandidatePath
+    if (-not [bool]$nativeFailureSelf.passed -or
+        [int]$nativeFailureSelf.check_count -ne 25 -or
+        [int]$nativeFailureSelf.mismatches.Count -ne 0) {
+        throw 'The native mission-failure comparator is not self-consistent.'
+    }
+
     function New-Checkpoint {
         param(
             [string]$Id,

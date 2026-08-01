@@ -143,6 +143,17 @@ int main(int argc, char** argv) {
             0x83, 0xEC, 0x2C, 0x53, 0x55, 0x56};
         static constexpr unsigned char menu_poll[] = {
             0x8B, 0x44, 0x24, 0x04, 0x53, 0x55};
+        static constexpr unsigned char mission_initializer[] = {
+            0xA1, 0x60, 0x70, 0x4E, 0x00, 0x53, 0x48, 0x55,
+            0x56, 0x83, 0xF8, 0x0B, 0x57, 0x8B, 0xF1, 0x0F};
+        static constexpr unsigned char mission_evaluator[] = {
+            0x64, 0xA1, 0x00, 0x00, 0x00, 0x00, 0x6A, 0xFF,
+            0x68, 0x88, 0xE3, 0x4B, 0x00, 0x50, 0xA1, 0x58};
+        static constexpr unsigned char mission_evaluator_thunk[] = {
+            0xE9, 0x9D, 0x43, 0x00, 0x00};
+        static constexpr unsigned char world_update[] = {
+            0x83, 0xEC, 0x10, 0x56, 0x8B, 0xF1, 0x8B, 0x4E,
+            0x40, 0x85, 0xC9, 0x0F, 0x84, 0x7D, 0x02, 0x00};
         static constexpr unsigned char warning[] = {0x74, 0x0C};
         static constexpr unsigned char level[] = {
             0x01, 0x00, 0x00, 0x00};
@@ -152,6 +163,18 @@ int main(int argc, char** argv) {
         require_signature(
             file, m1937::sdk::rva::menu_poll,
             menu_poll, "MenuPoll", checks);
+        require_signature(
+            file, m1937::sdk::rva::initialize_mission_bindings,
+            mission_initializer, "InitializeMissionBindings", checks);
+        require_signature(
+            file, m1937::sdk::rva::evaluate_mission,
+            mission_evaluator, "EvaluateMission", checks);
+        require_signature(
+            file, m1937::sdk::rva::evaluate_mission_thunk,
+            mission_evaluator_thunk, "EvaluateMissionThunk", checks);
+        require_signature(
+            file, m1937::sdk::rva::update_game_world,
+            world_update, "UpdateGameWorld", checks);
         require_signature(
             file, m1937::sdk::rva::false_resource_warning_branch,
             warning, "FalseResourceWarningBranch", checks);
@@ -214,6 +237,31 @@ int main(int argc, char** argv) {
             m1937::sdk::find_mission_route(0) == nullptr &&
                 m1937::sdk::find_mission_route(16) == nullptr,
             "mission route lookup accepted an invalid level", checks);
+        require(
+            sizeof(m1937::sdk::mission::RuntimeControllerStateV1) ==
+                    0x0C4 &&
+                offsetof(
+                    m1937::sdk::mission::RuntimeControllerStateV1,
+                    game_flow_state) == 0x0A4 &&
+                offsetof(
+                    m1937::sdk::mission::RuntimeControllerStateV1,
+                    evaluation_active) == 0x0BC &&
+                offsetof(
+                    m1937::sdk::mission::RuntimeControllerStateV1,
+                    result_state) == 0x0C0,
+            "mission controller state layout mismatch", checks);
+        require(
+            m1937::sdk::mission::outcome_from_raw(2) ==
+                    m1937::sdk::mission::Outcome::failed &&
+                m1937::sdk::mission::outcome_from_raw(3) ==
+                    m1937::sdk::mission::Outcome::victory &&
+                m1937::sdk::mission::outcome_from_raw(1) ==
+                    m1937::sdk::mission::Outcome::unknown &&
+                std::strcmp(
+                    m1937::sdk::mission::outcome_name(
+                        m1937::sdk::mission::Outcome::failed),
+                    "failed") == 0,
+            "mission outcome mapping mismatch", checks);
 
         {
         using namespace m1937::sdk::crt_random;

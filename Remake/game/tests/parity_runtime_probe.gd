@@ -19,6 +19,9 @@ const PATROL_SETTLE_ARGUMENT_PREFIX := "--patrol-settle-seconds="
 const PRIMARY_DATABASE_ENTRY_ID := 924
 const MINE_PICKUP_SCENARIO_ID := "m001-mine-pickup-inventory-v1"
 const PISTOL_ATTACK_SCENARIO_ID := "m000-pistol-attack-inventory-v1"
+const NATIVE_REQUIRED_FAILURE_SCENARIO_ID := (
+	"m000-native-required-player-failure-v1"
+)
 const SIGHT_DIRECT_TARGET_SCENARIO_ID := "m010-sight-direct-target-v1"
 const BURIAL_COMMAND_SCENARIO_ID := "m010-burial-command-v1"
 const M010_CONTEXT_TARGET_SCENE_INDEX := 1126
@@ -357,6 +360,9 @@ func _run_probe() -> void:
 	if scenario_id == MINE_PICKUP_SCENARIO_ID:
 		await _run_mine_pickup_probe(main, trace, started)
 		return
+	if scenario_id == NATIVE_REQUIRED_FAILURE_SCENARIO_ID:
+		await _run_native_required_failure_probe(main, trace, started)
+		return
 	if WEAPON_ATTACK_SCENARIOS.has(scenario_id):
 		await _run_weapon_attack_probe(main, trace, started, scenario_id)
 		return
@@ -551,6 +557,59 @@ func _run_mine_pickup_probe(
 		main,
 		trace,
 		MINE_PICKUP_SCENARIO_ID,
+	)
+
+
+func _run_native_required_failure_probe(
+	main: Node,
+	trace: RefCounted,
+	started: int,
+) -> void:
+	var player := _player_for_scene(main, 1436)
+	_expect(player != null, "m000 required player scene 1436 exists")
+	if player != null:
+		trace.call(
+			"capture_main",
+			"gameplay_active",
+			main,
+			_elapsed_ms(started),
+			{
+				"damage_entry": "SquadUnit.take_damage",
+				"mission_evaluator": "MissionRuntime.record_event",
+			},
+		)
+		var hit_points_before := int(player.get("current_hit_points"))
+		var applied := int(player.call("take_damage", 32, null))
+		_expect(
+			applied == hit_points_before,
+			"Remake accepts the same unconditional 32-damage native probe",
+		)
+		_expect(
+			not bool(player.get("is_alive"))
+			and int(player.get("current_hit_points")) == 0,
+			"scene 1436 reaches the authentic dead/zero-HP state",
+		)
+		_expect(
+			main.current_mission_state.is_failed()
+			and str(main.current_mission_state.failure_id)
+				== "required_character_lost",
+			"real actor death reaches the m000 required-character failure",
+		)
+		trace.call(
+			"capture_main",
+			"required_player_lost",
+			main,
+			_elapsed_ms(started),
+			{
+				"damage_entry": "SquadUnit.take_damage",
+				"mission_evaluator": "MissionRuntime.record_event",
+				"original_result_state": 2,
+			},
+		)
+	await _finish_inventory_probe(
+		main,
+		trace,
+		NATIVE_REQUIRED_FAILURE_SCENARIO_ID,
 	)
 
 
@@ -1505,6 +1564,12 @@ func _scenario_description(scenario_id: String, level_id: String) -> String:
 			"Select controllable scene 2280 and collect the real "
 			+ "scene-2096 mine through the original automatic approach path; "
 			+ "capture both inventory containers before and after."
+		)
+	if scenario_id == NATIVE_REQUIRED_FAILURE_SCENARIO_ID:
+		return (
+			"Apply the original unconditional damage threshold to required "
+			+ "player scene 1436 and verify that the real combatant-death "
+			+ "event closes m000 through required_character_lost."
 		)
 	if WEAPON_ATTACK_SCENARIOS.has(scenario_id):
 		var scenario: Dictionary = WEAPON_ATTACK_SCENARIOS[scenario_id]

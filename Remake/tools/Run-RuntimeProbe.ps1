@@ -128,6 +128,44 @@ if ($LASTEXITCODE -ne 0) {
     throw "Godot natural-contact parity probe failed with exit code $LASTEXITCODE."
 }
 
+$nativeMissionFailureScenario = (
+    'm000-native-required-player-failure-v1')
+& $GodotExecutable `
+    --headless `
+    --path $gameDirectory `
+    --max-fps 60 `
+    --disable-vsync `
+    --log-file (Join-Path $OutputDirectory 'parity-native-failure.log') `
+    --script 'res://tests/parity_runtime_probe.gd' `
+    -- `
+    "--output-dir=$parityOutput" `
+    "--scenario-id=$nativeMissionFailureScenario"
+if ($LASTEXITCODE -ne 0) {
+    throw (
+        'Godot native mission failure parity probe failed with exit code ' +
+        "$LASTEXITCODE.")
+}
+& (Join-Path $PSScriptRoot `
+    'Compare-NativeMissionFailureParity.ps1') `
+    -ReferenceTrace (
+        Join-Path $remakeRoot (
+            'validation\baselines\mod\' +
+            $nativeMissionFailureScenario +
+            '.json')) `
+    -CandidateTrace (
+        Join-Path $parityOutput (
+            'remake-' +
+            $nativeMissionFailureScenario +
+            '.json')) `
+    -OutputJson (
+        Join-Path $parityOutput (
+            $nativeMissionFailureScenario +
+            '-comparison.json')) `
+    -OutputMarkdown (
+        Join-Path $parityOutput (
+            $nativeMissionFailureScenario +
+            '-comparison.md')) | Out-Null
+
 $parityScenarios = @(
     'm000-basic-movement-v1',
     'm000-obstacle-route-v1'

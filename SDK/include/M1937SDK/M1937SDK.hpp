@@ -8,6 +8,7 @@
 #include "EnemyAI.hpp"
 #include "Input.hpp"
 #include "Inventory.hpp"
+#include "Mission.hpp"
 #include "MissionRoutes.hpp"
 #include "Module.hpp"
 #include "OrdinaryCombat.hpp"

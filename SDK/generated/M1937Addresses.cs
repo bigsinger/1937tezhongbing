@@ -41,6 +41,10 @@ namespace Mission1937.SDK.Generated
         public const long EnableBurialMode = 0x0004CD30L;
         public const long WorldHandleClick = 0x0004FED0L;
         public const long FindObservationMarker = 0x000503D0L;
+        public const long InitializeMissionBindings = 0x00004BB0L;
+        public const long EvaluateMission = 0x00005410L;
+        public const long EvaluateMissionThunk = 0x0000106EL;
+        public const long UpdateGameWorld = 0x00006AD0L;
         public const long FalseResourceWarningBranch = 0x0000734AL;
         public const long StartupMovieEnqueue = 0x0000762CL;
         public const long NewGameLevelImmediate = 0x00003B66L;

@@ -36,6 +36,15 @@ void *g_safe_blit_trampoline = nullptr;
 void *g_menu_poll_trampoline = nullptr;
 void *g_alert_propagation_trampoline = nullptr;
 void *g_crt_rand_trampoline = nullptr;
+bool g_native_mission_trace_enabled = false;
+volatile LONG g_native_mission_observed = 0;
+volatile LONG g_native_mission_engine = 0;
+volatile LONG g_native_mission_game_flow_state = 0;
+volatile LONG g_native_mission_evaluation_active = 0;
+volatile LONG g_native_mission_result_state = 0;
+volatile LONG g_native_mission_evaluator_calls = 0;
+volatile LONG g_native_mission_transition_sequence = 0;
+volatile LONG g_native_mission_last_tick = 0;
 volatile LONG g_auto_start_consumed = 0;
 wchar_t g_mod_log[MAX_PATH]{};
 wchar_t g_telemetry_log[MAX_PATH]{};
@@ -54,6 +63,7 @@ volatile LONG g_replay_inventory_seed_pending = 0;
 volatile LONG g_replay_disguise_transition_pending = 0;
 volatile LONG g_replay_weapon_selection_pending = 0;
 volatile LONG g_replay_special_attention_commit_pending = 0;
+volatile LONG g_replay_fatal_damage_scene_pending = 0;
 WNDPROC g_original_replay_window_proc = nullptr;
 HWND g_replay_subclass_window = nullptr;
 volatile LONG g_extension_briefing_pending = 0;
@@ -85,6 +95,7 @@ enum WindowReplayCommand : WPARAM {
     replay_complete_guming_disguise = 13,
     replay_select_weapon_inventory_item = 14,
     replay_commit_special_attention = 15,
+    replay_apply_fatal_damage = 16,
 };
 
 struct DiagnosticEntry {
@@ -997,6 +1008,27 @@ void FlushTelemetrySnapshot(bool force = false) {
     const LONG writer_dropped =
         TakeCounter(&g_telemetry_lines_dropped);
     const char *phase = mission > 0 ? "gameplay" : "menu_or_startup";
+    const LONG mission_observed = InterlockedCompareExchange(
+        &g_native_mission_observed, 0, 0);
+    const LONG native_mission_engine = InterlockedCompareExchange(
+        &g_native_mission_engine, 0, 0);
+    const LONG native_game_flow = InterlockedCompareExchange(
+        &g_native_mission_game_flow_state, 0, 0);
+    const LONG native_evaluation_active = InterlockedCompareExchange(
+        &g_native_mission_evaluation_active, 0, 0);
+    const LONG native_result = InterlockedCompareExchange(
+        &g_native_mission_result_state, 0, 0);
+    const LONG native_evaluator_calls = InterlockedCompareExchange(
+        &g_native_mission_evaluator_calls, 0, 0);
+    const LONG native_transition_sequence = InterlockedCompareExchange(
+        &g_native_mission_transition_sequence, 0, 0);
+    const LONG native_last_tick = InterlockedCompareExchange(
+        &g_native_mission_last_tick, 0, 0);
+    const auto native_outcome =
+        m1937::sdk::mission::outcome_from_raw(native_result);
+    const char *native_status = mission_observed
+        ? m1937::sdk::mission::outcome_name(native_outcome)
+        : "unknown";
     char line[kTelemetryLineCapacity]{};
     const int length = snprintf(
         line, sizeof(line),
@@ -1004,6 +1036,12 @@ void FlushTelemetrySnapshot(bool force = false) {
         "\"phase\":\"%s\",\"mission_changed\":%s,"
         "\"camera_moved\":%s,\"first_load_io\":%s,"
         "\"disk_read_bytes\":%llu,\"writer_queue_dropped\":%ld,"
+        "\"native_mission\":{\"observer_enabled\":%s,"
+        "\"observed\":%s,\"engine_mission\":%ld,"
+        "\"status\":\"%s\",\"game_flow_state\":%ld,"
+        "\"evaluation_active\":%ld,\"result_state\":%ld,"
+        "\"evaluator_calls\":%ld,\"transition_sequence\":%ld,"
+        "\"last_evaluated_tick_ms\":%ld},"
         "\"pump\":{\"calls\":%ld,\"messages\":%ld,"
         "\"total_us\":%ld,\"max_us\":%ld},"
         "\"input\":{\"state_calls\":%ld,\"state_total_us\":%ld,"
@@ -1026,6 +1064,12 @@ void FlushTelemetrySnapshot(bool force = false) {
         read_delta >= 1024ULL * 1024ULL ? "true" : "false",
         static_cast<unsigned long long>(read_delta),
         writer_dropped,
+        g_native_mission_trace_enabled ? "true" : "false",
+        mission_observed ? "true" : "false",
+        native_mission_engine, native_status, native_game_flow,
+        native_evaluation_active, native_result,
+        native_evaluator_calls, native_transition_sequence,
+        native_last_tick,
         pump_calls, pump_messages, pump_us, pump_max,
         state_calls, state_us, state_max,
         data_calls, data_us, data_max,
@@ -1102,6 +1146,19 @@ void LoadModConfig() {
             static_cast<DWORD>(sizeof(telemetry_environment))) > 0) {
         g_mod_config.telemetry =
             strcmp(telemetry_environment, "1") == 0;
+    }
+    char mission_trace_environment[8]{};
+    if (GetEnvironmentVariableA(
+            "M1937_MISSION_TRACE", mission_trace_environment,
+            static_cast<DWORD>(
+                sizeof(mission_trace_environment))) > 0) {
+        g_native_mission_trace_enabled =
+            strcmp(mission_trace_environment, "1") == 0;
+        if (g_native_mission_trace_enabled) {
+            // The observer records fixed-size atomics from the original
+            // evaluator. Existing asynchronous telemetry performs all I/O.
+            g_mod_config.telemetry = true;
+        }
     }
     char crt_random_trace_environment[8]{};
     if (GetEnvironmentVariableA(
@@ -3015,6 +3072,65 @@ bool RuntimeActors(
     return true;
 }
 
+using OriginalMissionEvaluatorProc = char(__thiscall *)(
+    m1937::sdk::mission::RuntimeControllerStateV1 *);
+
+char __fastcall TraceNativeMissionEvaluation(
+    m1937::sdk::mission::RuntimeControllerStateV1 *controller,
+    void *) {
+    const auto evaluate =
+        reinterpret_cast<OriginalMissionEvaluatorProc>(
+            g_executable_base +
+            m1937::sdk::rva::evaluate_mission);
+    const char result = evaluate(controller);
+    if (!controller ||
+        !IsReadableRange(controller, sizeof(*controller))) {
+        return result;
+    }
+
+    const LONG game_flow = controller->game_flow_state;
+    const LONG evaluation_active = controller->evaluation_active;
+    const LONG result_state = controller->result_state;
+    const LONG previous_result = InterlockedExchange(
+        &g_native_mission_result_state, result_state);
+    InterlockedExchange(
+        &g_native_mission_game_flow_state, game_flow);
+    InterlockedExchange(
+        &g_native_mission_evaluation_active, evaluation_active);
+    if (g_executable_base) {
+        InterlockedExchange(
+            &g_native_mission_engine,
+            *reinterpret_cast<int *>(
+                g_executable_base +
+                m1937::sdk::rva::current_mission));
+    }
+    InterlockedExchange(
+        &g_native_mission_last_tick,
+        static_cast<LONG>(GetTickCount()));
+    InterlockedIncrement(&g_native_mission_evaluator_calls);
+    if (InterlockedExchange(
+            &g_native_mission_observed, 1) != 0 &&
+        previous_result != result_state) {
+        InterlockedIncrement(
+            &g_native_mission_transition_sequence);
+    }
+    return result;
+}
+
+bool InstallNativeMissionTraceHook(unsigned char *base) {
+    if (!g_native_mission_trace_enabled || !base) {
+        return false;
+    }
+    static const unsigned char expected[] = {
+        0xE9, 0x9D, 0x43, 0x00, 0x00};
+    return PatchExecutableJump(
+        base + m1937::sdk::rva::evaluate_mission_thunk,
+        expected,
+        sizeof(expected),
+        reinterpret_cast<const void *>(
+            &TraceNativeMissionEvaluation));
+}
+
 void DirectionVector(int direction, int *x, int *y) {
     static const int dx[] = {0, 0, 1, 1, 1, 0, -1, -1, -1};
     static const int dy[] = {0, -1, -1, 0, 1, 1, 1, 0, -1};
@@ -3696,6 +3812,14 @@ void ApplyLegacyExecutablePatches() {
     }
     auto *base = reinterpret_cast<unsigned char *>(module.base());
     g_executable_base = base;
+    if (g_native_mission_trace_enabled) {
+        RecordDiagnostic(
+            "native_mission_trace",
+            InstallNativeMissionTraceHook(base)
+                ? "process_local"
+                : "rejected",
+            "sub_405410_post_state_only");
+    }
     if (g_crt_random_trace_enabled) {
         RecordDiagnostic(
             "crt_random_trace",
@@ -3976,6 +4100,8 @@ void HandleWindowReplayMessage(const MSG &message) {
             &g_replay_weapon_selection_pending, 0);
         InterlockedExchange(
             &g_replay_special_attention_commit_pending, 0);
+        InterlockedExchange(
+            &g_replay_fatal_damage_scene_pending, 0);
         break;
     case replay_ai_alert: {
         m1937::sdk::RuntimeActorV1 **actors = nullptr;
@@ -4201,6 +4327,23 @@ void HandleWindowReplayMessage(const MSG &message) {
                 : 0);
         RecordDiagnostic(
             "replay_attention",
+            supported ? "queued" : "rejected",
+            "isolated_probe_only");
+        break;
+    }
+    case replay_apply_fatal_damage: {
+        // This diagnostic command is available only through the opt-in
+        // process-local replay channel.  It names an authored scene actor;
+        // the safe input-poll handler below resolves that actor and invokes
+        // the original sub_458700 damage entry point.  It never writes the
+        // mission result fields directly, so failure remains a decision made
+        // by the original sub_405410 evaluator.
+        const bool supported = argument > 0 && argument <= 0xFFFF;
+        InterlockedExchange(
+            &g_replay_fatal_damage_scene_pending,
+            supported ? static_cast<LONG>(argument) : 0);
+        RecordDiagnostic(
+            "replay_fatal_damage",
             supported ? "queued" : "rejected",
             "isolated_probe_only");
         break;
@@ -4533,6 +4676,53 @@ void ProcessPendingReplayWorldItem() {
         "safe_input_poll_boundary");
 }
 
+void ProcessPendingReplayFatalDamage() {
+    const int target_scene = static_cast<int>(
+        InterlockedExchange(
+            &g_replay_fatal_damage_scene_pending, 0));
+    if (target_scene == 0 || !g_executable_base) {
+        return;
+    }
+
+    m1937::sdk::RuntimeActorV1 *target = nullptr;
+    m1937::sdk::RuntimeActorV1 **actors = nullptr;
+    int actor_count = 0;
+    if (RuntimeActors(&actors, &actor_count)) {
+        for (int index = 0; index < actor_count; ++index) {
+            auto *candidate = actors[index];
+            if (candidate &&
+                IsReadableRange(candidate, sizeof(*candidate)) &&
+                candidate->world_scene_index == target_scene) {
+                target = candidate;
+                break;
+            }
+        }
+    }
+
+    bool applied = false;
+    if (target &&
+        target->faction_id == 3 &&
+        target->dead_or_disabled == 0 &&
+        target->current_hit_points > 0) {
+        using ApplyActorDamageFn =
+            int(__thiscall *)(m1937::sdk::RuntimeActorV1 *, int);
+        auto apply_actor_damage =
+            reinterpret_cast<ApplyActorDamageFn>(
+                g_executable_base +
+                m1937::sdk::rva::apply_actor_damage);
+        // Damage 32 is the original unconditional threshold and therefore
+        // also covers the special actor-type immunity branch.
+        apply_actor_damage(target, 32);
+        applied =
+            target->current_hit_points == 0 ||
+            target->dead_or_disabled != 0;
+    }
+    RecordDiagnostic(
+        "replay_fatal_damage",
+        applied ? "applied" : "unavailable",
+        "original_sub_458700_at_safe_input_poll_boundary");
+}
+
 LRESULT CALLBACK ReplayWindowProcedure(
     HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     if (message == kWindowReplayMessage &&
@@ -4633,6 +4823,7 @@ void PumpWindowMessages() {
     g_pumping_messages = false;
     ProcessPendingReplayInventoryMutations();
     ProcessPendingReplayWorldItem();
+    ProcessPendingReplayFatalDamage();
     InterlockedExchangeAdd(
         &g_telemetry.pump_messages, dispatched);
     AddTiming(

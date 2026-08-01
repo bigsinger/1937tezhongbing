@@ -39,6 +39,10 @@ PE 指纹和原始指令字节。
   步枪/匕首 attacker runtime type 例外、32×16 目标格门、机枪活动目标
   ±1°/纯坐标 ±2° 三路散布，以及八类 target runtime type 的低于 32
   伤害免疫；
+- `Mission.hpp` 固定任务控制器 `game_flow_state +0xA4`、
+  `evaluation_active +0xBC`、`result_state +0xC0` 布局，以及原 evaluator
+  的失败值 2、胜利值 3；`address-catalog.json` 同时固定初始化、求值、
+  thunk 和世界更新四个签名地址，供只读任务结果观察与跨实现差分；
 - `address-catalog.json` 是地址的唯一机器源；生成器同时产出 C++ 头文件
   和 C# 探针常量；
 - `crt-rand-call-sites.json` 固定受支持 EXE 中 119 个直接 MSVCRT
