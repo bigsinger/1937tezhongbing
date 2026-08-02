@@ -27,6 +27,7 @@ const GAME_INPUT_BINDINGS: Script = preload("res://scripts/game_input_bindings.g
 const ORIGINAL_INVENTORY_POPUP_SIZE := Vector2(276.0, 421.0)
 const ORIGINAL_BOTTOM_HUD_HEIGHT := 62.0
 const TACTICAL_MAP_PANEL_CHROME := Vector2(44.0, 77.0)
+const DISPLAY_MODES: Array[String] = ["windowed", "fullscreen", "borderless"]
 const DIFFICULTY_MODES: Array[String] = ["original", "easy", "normal", "hard"]
 const MISSION_RULE_MODES: Array[String] = ["stable_mod", "repaired"]
 
@@ -58,12 +59,14 @@ var _save_button: Button
 var _load_button: Button
 var _restart_button: Button
 var _level_select_button: Button
+var _display_mode_option: OptionButton
 var _difficulty_option: OptionButton
 var _mission_rule_option: OptionButton
-var _fullscreen_toggle: CheckButton
 var _subtitles_toggle: CheckButton
 var _briefings_toggle: CheckButton
 var _edge_scroll_toggle: CheckButton
+var _reduce_camera_motion_toggle: CheckButton
+var _large_cursor_toggle: CheckButton
 var _muted_toggle: CheckButton
 var _master_volume_slider: HSlider
 var _volume_value_label: Label
@@ -111,7 +114,7 @@ func set_settings(new_settings: Dictionary) -> void:
 		"display_mode",
 		"fullscreen" if bool(new_settings.get("fullscreen", false)) else "windowed",
 	))
-	if display_mode not in ["windowed", "fullscreen", "borderless"]:
+	if display_mode not in DISPLAY_MODES:
 		display_mode = "windowed"
 	var resolution_policy := str(new_settings.get("resolution_policy", "desktop"))
 	if resolution_policy not in ["desktop", "custom"]:
@@ -133,6 +136,8 @@ func set_settings(new_settings: Dictionary) -> void:
 		"subtitles": bool(new_settings.get("subtitles", true)),
 		"show_briefings": bool(new_settings.get("show_briefings", true)),
 		"edge_scroll": bool(new_settings.get("edge_scroll", true)),
+		"reduce_camera_motion": bool(new_settings.get("reduce_camera_motion", false)),
+		"large_cursor": bool(new_settings.get("large_cursor", false)),
 		"difficulty_mode": difficulty_mode,
 		"mission_rule_mode": mission_rule_mode,
 		"master_volume": clampf(float(new_settings.get("master_volume", 0.8)), 0.0, 1.0),
@@ -144,10 +149,14 @@ func set_settings(new_settings: Dictionary) -> void:
 	if _root == null:
 		return
 	_updating_settings_controls = true
-	_fullscreen_toggle.button_pressed = bool(settings["fullscreen"])
+	_select_display_mode(str(settings["display_mode"]))
 	_subtitles_toggle.button_pressed = bool(settings["subtitles"])
 	_briefings_toggle.button_pressed = bool(settings["show_briefings"])
 	_edge_scroll_toggle.button_pressed = bool(settings["edge_scroll"])
+	_reduce_camera_motion_toggle.button_pressed = bool(
+		settings["reduce_camera_motion"]
+	)
+	_large_cursor_toggle.button_pressed = bool(settings["large_cursor"])
 	_select_difficulty_mode(str(settings["difficulty_mode"]))
 	_select_mission_rule_mode(str(settings["mission_rule_mode"]))
 	_muted_toggle.button_pressed = bool(settings["muted"])
@@ -665,13 +674,9 @@ func _update_control_buttons() -> void:
 func _on_setting_changed(_value: Variant = null) -> void:
 	if _updating_settings_controls:
 		return
-	var display_mode := str(settings.get("display_mode", "windowed"))
-	if not _fullscreen_toggle.button_pressed:
-		display_mode = "windowed"
-	elif display_mode == "windowed":
-		display_mode = "fullscreen"
+	var display_mode := _selected_display_mode()
 	settings = {
-		"fullscreen": _fullscreen_toggle.button_pressed,
+		"fullscreen": display_mode != "windowed",
 		"display_mode": display_mode,
 		"muted": _muted_toggle.button_pressed,
 		"resolution_policy": str(settings.get("resolution_policy", "desktop")),
@@ -681,6 +686,8 @@ func _on_setting_changed(_value: Variant = null) -> void:
 		"subtitles": _subtitles_toggle.button_pressed,
 		"show_briefings": _briefings_toggle.button_pressed,
 		"edge_scroll": _edge_scroll_toggle.button_pressed,
+		"reduce_camera_motion": _reduce_camera_motion_toggle.button_pressed,
+		"large_cursor": _large_cursor_toggle.button_pressed,
 		"difficulty_mode": _selected_difficulty_mode(),
 		"mission_rule_mode": _selected_mission_rule_mode(),
 		"master_volume": _audio_slider_value("master", 0.8),
@@ -691,6 +698,26 @@ func _on_setting_changed(_value: Variant = null) -> void:
 	}
 	_update_volume_labels()
 	settings_changed.emit(settings_snapshot())
+
+
+func _selected_display_mode() -> String:
+	if _display_mode_option == null or _display_mode_option.selected < 0:
+		return str(settings.get("display_mode", "windowed"))
+	var mode := str(
+		_display_mode_option.get_item_metadata(_display_mode_option.selected)
+	)
+	return mode if mode in DISPLAY_MODES else "windowed"
+
+
+func _select_display_mode(mode: String) -> void:
+	if _display_mode_option == null:
+		return
+	var normalized := mode if mode in DISPLAY_MODES else "windowed"
+	for index: int in range(_display_mode_option.item_count):
+		if str(_display_mode_option.get_item_metadata(index)) == normalized:
+			_display_mode_option.select(index)
+			return
+	_display_mode_option.select(0)
 
 
 func _audio_slider_value(channel: String, fallback: float) -> float:
@@ -889,10 +916,28 @@ func _build_menu_panel() -> void:
 	mission_rule_hint.add_theme_color_override("font_color", Color(0.75, 0.77, 0.66))
 	content.add_child(mission_rule_hint)
 
-	_fullscreen_toggle = CheckButton.new()
-	_fullscreen_toggle.text = "全屏（使用当前桌面分辨率）"
-	_fullscreen_toggle.toggled.connect(_on_setting_changed)
-	content.add_child(_fullscreen_toggle)
+	var display_row := HBoxContainer.new()
+	var display_label := Label.new()
+	display_label.text = "显示模式"
+	display_label.custom_minimum_size.x = 115.0
+	display_row.add_child(display_label)
+	_display_mode_option = OptionButton.new()
+	_display_mode_option.name = "DisplayMode"
+	_display_mode_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var display_labels := {
+		"windowed": "窗口（默认 1280×720）",
+		"fullscreen": "全屏（当前桌面分辨率）",
+		"borderless": "无边框最大化（推荐多任务）",
+	}
+	for mode: String in DISPLAY_MODES:
+		_display_mode_option.add_item(str(display_labels[mode]))
+		_display_mode_option.set_item_metadata(
+			_display_mode_option.item_count - 1,
+			mode,
+		)
+	_display_mode_option.item_selected.connect(_on_setting_changed)
+	display_row.add_child(_display_mode_option)
+	content.add_child(display_row)
 
 	_subtitles_toggle = CheckButton.new()
 	_subtitles_toggle.text = "显示语音字幕"
@@ -908,6 +953,16 @@ func _build_menu_panel() -> void:
 	_edge_scroll_toggle.text = "鼠标移动到屏幕边缘时卷屏"
 	_edge_scroll_toggle.toggled.connect(_on_setting_changed)
 	content.add_child(_edge_scroll_toggle)
+
+	_reduce_camera_motion_toggle = CheckButton.new()
+	_reduce_camera_motion_toggle.text = "减少自动镜头运动（剧情聚焦改为立即定位）"
+	_reduce_camera_motion_toggle.toggled.connect(_on_setting_changed)
+	content.add_child(_reduce_camera_motion_toggle)
+
+	_large_cursor_toggle = CheckButton.new()
+	_large_cursor_toggle.text = "大号原版光标（2 倍，像素锐化）"
+	_large_cursor_toggle.toggled.connect(_on_setting_changed)
+	content.add_child(_large_cursor_toggle)
 
 	_add_button(content, "声音与按键设置", _show_settings)
 	_add_button(content, "退出游戏", _on_quit_pressed)

@@ -30,6 +30,8 @@ func _run() -> void:
 		"subtitles": false,
 		"show_briefings": false,
 		"edge_scroll": false,
+		"reduce_camera_motion": true,
+		"large_cursor": true,
 		"difficulty_mode": "hard",
 		"mission_rule_mode": "repaired",
 		"master_volume": 0.35,
@@ -50,6 +52,8 @@ func _run() -> void:
 		and not bool(settings["subtitles"])
 		and not bool(settings["show_briefings"])
 		and not bool(settings["edge_scroll"])
+		and bool(settings["reduce_camera_motion"])
+		and bool(settings["large_cursor"])
 		and str(settings["difficulty_mode"]) == "hard"
 		and str(settings["mission_rule_mode"]) == "repaired"
 		and is_equal_approx(float(settings["master_volume"]), 0.35)
@@ -68,6 +72,8 @@ func _run() -> void:
 		and int(updated_settings["window_width"]) == 1600
 		and int(updated_settings["window_height"]) == 900
 		and not bool(updated_settings["vsync"])
+		and bool(updated_settings["reduce_camera_motion"])
+		and bool(updated_settings["large_cursor"])
 		and str(updated_settings["difficulty_mode"]) == "hard"
 		and str(updated_settings["mission_rule_mode"]) == "repaired"
 		and is_equal_approx(float(updated_settings["music_volume"]), 0.30),
@@ -90,10 +96,14 @@ func _run() -> void:
 		shell.overlay_mode == GAME_SHELL_SCRIPT.OverlayMode.SETTINGS
 		and shell._audio_sliders.size() == 4
 		and shell._muted_toggle.button_pressed
+		and shell._display_mode_option != null
+		and shell._selected_display_mode() == "borderless"
 		and shell._difficulty_option != null
 		and shell._selected_difficulty_mode() == "hard"
 		and shell._mission_rule_option != null
 		and shell._selected_mission_rule_mode() == "repaired"
+		and shell._reduce_camera_motion_toggle.button_pressed
+		and shell._large_cursor_toggle.button_pressed
 		and shell._control_buttons.size() == GAME_INPUT_BINDINGS.action_ids().size(),
 		"settings expose difficulty, mission rules, mute, four audio channels, and every remappable command",
 		failures,
@@ -593,6 +603,8 @@ func _run() -> void:
 		"sfx_volume": 0.9,
 		"voice_volume": 1.0,
 		"difficulty_mode": "original",
+		"reduce_camera_motion": true,
+		"large_cursor": true,
 		"controls": GAME_INPUT_BINDINGS.default_bindings(),
 	}
 	main._on_shell_settings_changed({"music_volume": 0.55})
@@ -607,9 +619,25 @@ func _run() -> void:
 		and not bool(main_settings["vsync"])
 		and is_equal_approx(float(main_settings["music_volume"]), 0.55)
 		and str(main_settings["difficulty_mode"]) == "original"
+		and bool(main_settings["reduce_camera_motion"])
+		and bool(main_settings["large_cursor"])
+		and bool(main.legacy_cursor_presenter.large_cursor_enabled)
 		and master_bus >= 0
 		and AudioServer.is_bus_mute(master_bus),
 		"Main applies mute while preserving hidden display settings during unrelated edits",
+		failures,
+	)
+	var cursor_image := Image.create(3, 5, false, Image.FORMAT_RGBA8)
+	cursor_image.fill(Color.WHITE)
+	var cursor_source := ImageTexture.create_from_image(cursor_image)
+	var cursor_scaled: Texture2D = main.legacy_cursor_presenter._cursor_texture(
+		cursor_source
+	)
+	expect(
+		cursor_scaled.get_size() == Vector2(6.0, 10.0)
+		and main.legacy_cursor_presenter._cursor_texture(cursor_source)
+			== cursor_scaled,
+		"large cursor doubles original pixels once and reuses the cached texture",
 		failures,
 	)
 	main._apply_runtime_settings({
@@ -626,6 +654,34 @@ func _run() -> void:
 	expect(
 		main.direction_camera_tween == null and not obsolete_camera_tween.is_valid(),
 		"a new director camera request or level switch cancels the previous camera tween",
+		failures,
+	)
+	main.level_camera = Camera2D.new()
+	main.add_child(main.level_camera)
+	main.world_size = Vector2(2048.0, 2048.0)
+	main.current_mission = {
+		"scene_bindings": {"camera_target": [99]},
+		"objectives": [],
+	}
+	main.world_entities_by_scene[99] = {
+		"scene_index": 99,
+		"x": 1024.0,
+		"y": 1024.0,
+	}
+	main._on_direction_camera_requested(
+		"accessibility_camera",
+		{
+			"mode": "focus_binding",
+			"binding": "camera_target",
+			"duration_seconds": 4.0,
+			"zoom": 1.2,
+		},
+	)
+	expect(
+		main.direction_camera_tween == null
+		and main.level_camera.position.is_equal_approx(Vector2(1024.0, 1024.0))
+		and main.level_camera.zoom.is_equal_approx(Vector2.ONE * 1.2),
+		"reduced camera motion snaps an authored focus without creating a tween",
 		failures,
 	)
 	main.current_mission = {

@@ -4,13 +4,19 @@ extends RefCounted
 const ATOMIC_JSON_STORE: Script = preload("res://scripts/atomic_json_store.gd")
 const GAME_INPUT_BINDINGS: Script = preload("res://scripts/game_input_bindings.gd")
 
-const SCHEMA_VERSION := 4
+const SCHEMA_VERSION := 5
 const DEFAULT_PATH := "user://settings.json"
 const DISPLAY_MODES: Array[String] = ["windowed", "fullscreen", "borderless"]
 const RESOLUTION_POLICIES: Array[String] = ["desktop", "custom"]
 const AUDIO_CHANNELS: Array[String] = ["master", "music", "sfx", "voice"]
 const HINT_KEYS: Array[String] = ["controls", "objectives", "interactions"]
-const INTERFACE_KEYS: Array[String] = ["subtitles", "show_briefings", "edge_scroll"]
+const INTERFACE_KEYS: Array[String] = [
+	"subtitles",
+	"show_briefings",
+	"edge_scroll",
+	"reduce_camera_motion",
+	"large_cursor",
+]
 const DIFFICULTY_MODES: Array[String] = ["original", "easy", "normal", "hard"]
 const MISSION_RULE_MODES: Array[String] = ["stable_mod", "repaired"]
 
@@ -46,6 +52,8 @@ static func default_document() -> Dictionary:
 			"subtitles": true,
 			"show_briefings": true,
 			"edge_scroll": true,
+			"reduce_camera_motion": false,
+			"large_cursor": false,
 		},
 		"gameplay": {
 			# "original" is the auditable MOD/reference contract.  The other
@@ -288,7 +296,7 @@ func _is_loadable_document(value: Variant) -> bool:
 		)
 	if not _is_number(document["schema_version"]):
 		return false
-	return int(document["schema_version"]) in [0, 1, 2, 3, SCHEMA_VERSION]
+	return int(document["schema_version"]) in [0, 1, 2, 3, 4, SCHEMA_VERSION]
 
 
 func _normalize_document(document: Dictionary) -> Dictionary:

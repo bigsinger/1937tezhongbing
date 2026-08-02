@@ -200,6 +200,12 @@ func _test_settings_defaults_and_round_trip(failures: Array[String]) -> void:
 	_expect(settings.display_settings()["mode"] == "fullscreen", "default display is fullscreen", failures)
 	_expect(settings.display_settings()["resolution_policy"] == "desktop", "fullscreen follows desktop resolution", failures)
 	_expect(settings.hint_enabled("controls"), "control hints default on", failures)
+	_expect(
+		not settings.interface_enabled("reduce_camera_motion")
+		and not settings.interface_enabled("large_cursor"),
+		"camera-motion reduction and large cursor default off",
+		failures,
+	)
 	_expect(settings.difficulty_mode() == "original", "MOD parity is the default difficulty", failures)
 	_expect(
 		settings.mission_rule_mode() == "stable_mod",
@@ -215,6 +221,8 @@ func _test_settings_defaults_and_round_trip(failures: Array[String]) -> void:
 	settings.set_hint_enabled("interactions", false)
 	settings.set_interface_enabled("subtitles", false)
 	settings.set_interface_enabled("edge_scroll", false)
+	settings.set_interface_enabled("reduce_camera_motion", true)
+	settings.set_interface_enabled("large_cursor", true)
 	settings.set_difficulty_mode("hard")
 	settings.set_mission_rule_mode("repaired")
 	_expect(bool(settings.save_to_disk(path)["ok"]), "first settings write succeeds", failures)
@@ -230,6 +238,12 @@ func _test_settings_defaults_and_round_trip(failures: Array[String]) -> void:
 	_expect(not loaded.hint_enabled("interactions"), "hint choice persists", failures)
 	_expect(not loaded.interface_enabled("subtitles"), "subtitle choice persists", failures)
 	_expect(not loaded.interface_enabled("edge_scroll"), "edge-scroll choice persists", failures)
+	_expect(
+		loaded.interface_enabled("reduce_camera_motion")
+		and loaded.interface_enabled("large_cursor"),
+		"accessibility choices persist",
+		failures,
+	)
 	_expect(loaded.difficulty_mode() == "hard", "difficulty choice persists", failures)
 	_expect(
 		loaded.mission_rule_mode() == "repaired",
@@ -252,7 +266,7 @@ func _test_settings_migration_and_validation(failures: Array[String]) -> void:
 	var migrated = GAME_SETTINGS.new()
 	var result: Dictionary = migrated.load_from_disk(legacy_path)
 	_expect(bool(result["ok"]), "legacy settings shape is loadable", failures)
-	_expect(int(migrated.values["schema_version"]) == 4, "legacy settings migrate to current schema", failures)
+	_expect(int(migrated.values["schema_version"]) == 5, "legacy settings migrate to current schema", failures)
 	_expect(is_equal_approx(migrated.audio_volume("master"), 0.42), "legacy volume migrates", failures)
 	_expect(migrated.display_settings()["mode"] == "windowed", "legacy fullscreen flag migrates", failures)
 	_expect(not migrated.hint_enabled("objectives"), "legacy hint flag migrates", failures)
@@ -283,6 +297,12 @@ func _test_settings_migration_and_validation(failures: Array[String]) -> void:
 	_expect(int(normalized.display_settings()["window_height"]) == 4320, "window height is bounded", failures)
 	_expect(normalized.hint_enabled("controls"), "wrong hint type falls back", failures)
 	_expect(normalized.interface_enabled("subtitles"), "wrong interface section type falls back", failures)
+	_expect(
+		not normalized.interface_enabled("reduce_camera_motion")
+		and not normalized.interface_enabled("large_cursor"),
+		"missing accessibility values use safe defaults",
+		failures,
+	)
 	_expect(normalized.difficulty_mode() == "original", "missing gameplay settings use original parity", failures)
 	_expect(
 		normalized.mission_rule_mode() == "stable_mod",
@@ -306,6 +326,12 @@ func _test_settings_migration_and_validation(failures: Array[String]) -> void:
 	_expect(bool(schema_two.load_from_disk(schema_two_path)["ok"]), "schema-2 settings remain loadable", failures)
 	_expect(schema_two.difficulty_mode() == "original", "schema-2 settings gain original difficulty", failures)
 	_expect(
+		not schema_two.interface_enabled("reduce_camera_motion")
+		and not schema_two.interface_enabled("large_cursor"),
+		"schema-2 settings gain accessibility defaults",
+		failures,
+	)
+	_expect(
 		schema_two.mission_rule_mode() == "stable_mod",
 		"schema-2 settings gain stable MOD mission rules",
 		failures,
@@ -314,6 +340,28 @@ func _test_settings_migration_and_validation(failures: Array[String]) -> void:
 	_expect(
 		not schema_two.set_mission_rule_mode("impossible"),
 		"unknown mission rule mode is rejected",
+		failures,
+	)
+	var schema_four_path := test_root + "/schema-four-settings.json"
+	_write_json(
+		schema_four_path,
+		{
+			"schema_version": 4,
+			"audio": {},
+			"display": {"mode": "borderless"},
+			"hints": {},
+			"interface": {"edge_scroll": false},
+			"gameplay": {},
+			"controls": {},
+		},
+	)
+	var schema_four = GAME_SETTINGS.new()
+	_expect(
+		bool(schema_four.load_from_disk(schema_four_path)["ok"])
+		and schema_four.display_settings()["mode"] == "borderless"
+		and not schema_four.interface_enabled("edge_scroll")
+		and not schema_four.interface_enabled("large_cursor"),
+		"schema-4 settings migrate without losing display or interface choices",
 		failures,
 	)
 

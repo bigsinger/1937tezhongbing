@@ -11,6 +11,7 @@ const ORIGINAL_CURSOR_RUNTIME_TYPE := 55
 const ORIGINAL_CURSOR_STEM := "0016"
 const ORIGINAL_CURSOR_RESOURCE_NAME := "mouse.spr"
 const ORIGINAL_CURSOR_TICKS_PER_SECOND := 60.0
+const LARGE_CURSOR_SCALE := 2.0
 
 var groups_by_serial: Dictionary = {}
 var source_manifest_path := ""
@@ -18,6 +19,8 @@ var current_serial := -1
 var current_frame := -1
 var frame_elapsed := 0.0
 var applied_custom_cursor := false
+var large_cursor_enabled := false
+var _scaled_cursor_textures: Dictionary = {}
 
 
 func load_from_converted_root(converted_root: String) -> bool:
@@ -117,6 +120,14 @@ func available_serial_ids() -> Array[int]:
 	return result
 
 
+func set_large_cursor(enabled: bool) -> void:
+	if large_cursor_enabled == enabled:
+		return
+	reset()
+	large_cursor_enabled = enabled
+	_scaled_cursor_textures.clear()
+
+
 func apply(serial_id: int, delta: float = 0.0) -> bool:
 	if DisplayServer.get_name() == "headless":
 		return false
@@ -153,16 +164,46 @@ func apply(serial_id: int, delta: float = 0.0) -> bool:
 	if applied_custom_cursor and not cursor_changed:
 		return true
 	var safe_frame := clampi(current_frame, 0, frames.size() - 1)
-	var texture := frames[safe_frame]
+	var source_texture: Texture2D = frames[safe_frame]
+	var texture := _cursor_texture(source_texture)
+	var cursor_scale := LARGE_CURSOR_SCALE if large_cursor_enabled else 1.0
 	var raw_anchor := group.get("anchor", Vector2.ZERO) as Vector2
 	var hotspot := Vector2(
-		clampf(raw_anchor.x, 0.0, float(maxi(texture.get_width() - 1, 0))),
-		clampf(raw_anchor.y, 0.0, float(maxi(texture.get_height() - 1, 0))),
+		clampf(
+			raw_anchor.x * cursor_scale,
+			0.0,
+			float(maxi(texture.get_width() - 1, 0)),
+		),
+		clampf(
+			raw_anchor.y * cursor_scale,
+			0.0,
+			float(maxi(texture.get_height() - 1, 0)),
+		),
 	)
 	Input.set_default_cursor_shape(Input.CURSOR_ARROW)
 	Input.set_custom_mouse_cursor(texture, Input.CURSOR_ARROW, hotspot)
 	applied_custom_cursor = true
 	return true
+
+
+func _cursor_texture(source_texture: Texture2D) -> Texture2D:
+	if not large_cursor_enabled:
+		return source_texture
+	var cache_key := int(source_texture.get_instance_id())
+	var cached: Variant = _scaled_cursor_textures.get(cache_key)
+	if cached is Texture2D:
+		return cached as Texture2D
+	var image := source_texture.get_image()
+	if image == null or image.is_empty():
+		return source_texture
+	image.resize(
+		maxi(roundi(float(image.get_width()) * LARGE_CURSOR_SCALE), 1),
+		maxi(roundi(float(image.get_height()) * LARGE_CURSOR_SCALE), 1),
+		Image.INTERPOLATE_NEAREST,
+	)
+	var scaled := ImageTexture.create_from_image(image)
+	_scaled_cursor_textures[cache_key] = scaled
+	return scaled
 
 
 func reset() -> void:

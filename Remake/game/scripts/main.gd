@@ -375,6 +375,8 @@ var runtime_settings: Dictionary = {
 	"subtitles": true,
 	"show_briefings": true,
 	"edge_scroll": true,
+	"reduce_camera_motion": false,
+	"large_cursor": false,
 	"master_volume": 0.8,
 	"music_volume": 0.8,
 	"sfx_volume": 0.9,
@@ -6143,10 +6145,19 @@ func _on_direction_camera_requested(_beat_id: String, camera: Dictionary) -> voi
 	var target_zoom := clampf(
 		float(camera.get("zoom", level_camera.zoom.x)), LEVEL_VIEW.MIN_ZOOM, LEVEL_VIEW.MAX_ZOOM
 	)
+	var viewport_size := (
+		get_viewport_rect().size if is_inside_tree() else Vector2.ONE
+	)
 	target_position = LEVEL_VIEW.clamp_camera_center(
-		target_position, get_viewport_rect().size, target_zoom, world_size
+		target_position, viewport_size, target_zoom, world_size
 	)
 	_cancel_direction_camera_tween()
+	if bool(runtime_settings.get("reduce_camera_motion", false)):
+		level_camera.position = target_position
+		level_camera.zoom = Vector2.ONE * target_zoom
+		if is_inside_tree():
+			clamp_level_camera()
+		return
 	direction_camera_tween = create_tween()
 	direction_camera_tween.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
 	direction_camera_tween.set_trans(Tween.TRANS_SINE)
@@ -6278,6 +6289,10 @@ func _initialize_persistence() -> void:
 		"subtitles": bool(game_settings.interface_enabled("subtitles")),
 		"show_briefings": bool(game_settings.interface_enabled("show_briefings")),
 		"edge_scroll": bool(game_settings.interface_enabled("edge_scroll")),
+		"reduce_camera_motion": bool(
+			game_settings.interface_enabled("reduce_camera_motion")
+		),
+		"large_cursor": bool(game_settings.interface_enabled("large_cursor")),
 		"difficulty_mode": str(game_settings.difficulty_mode()),
 		"mission_rule_mode": str(game_settings.mission_rule_mode()),
 		"master_volume": float(game_settings.audio_volume("master")),
@@ -6445,6 +6460,13 @@ func _on_shell_settings_changed(new_settings: Dictionary) -> void:
 		game_settings.set_interface_enabled(
 			"edge_scroll", bool(runtime_settings.get("edge_scroll", true))
 		)
+		game_settings.set_interface_enabled(
+			"reduce_camera_motion",
+			bool(runtime_settings.get("reduce_camera_motion", false)),
+		)
+		game_settings.set_interface_enabled(
+			"large_cursor", bool(runtime_settings.get("large_cursor", false))
+		)
 		game_settings.set_difficulty_mode(
 			str(runtime_settings.get("difficulty_mode", "original"))
 		)
@@ -6489,6 +6511,12 @@ func _apply_runtime_settings(new_settings: Dictionary) -> void:
 		media_director.set_subtitles_enabled(bool(new_settings.get("subtitles", true)))
 	if media_director != null and media_director.has_method("set_input_bindings"):
 		media_director.set_input_bindings(new_settings.get("controls", {}) as Dictionary)
+	if legacy_cursor_presenter != null and legacy_cursor_presenter.has_method(
+		"set_large_cursor"
+	):
+		legacy_cursor_presenter.set_large_cursor(
+			bool(new_settings.get("large_cursor", false))
+		)
 	if DisplayServer.get_name() == "headless" or command_line_controls_display:
 		return
 	var display_mode := str(new_settings.get(
