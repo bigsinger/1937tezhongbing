@@ -91,6 +91,7 @@ function New-PendingRound {
         ActorDrawCount = 0
         GateActors = [Collections.Generic.List[int]]::new()
         SiteCounts = @{}
+        ActorSiteCounts = @{}
         OrderStream = $orderStream
         ValueStream = $valueStream
         ActorOrderStream = $actorOrderStream
@@ -153,6 +154,7 @@ function Complete-PendingRound {
         ActorOrderBytes = $actorOrderBytes
         ActorValueBytes = $actorValueBytes
         SiteCounts = $Round.SiteCounts
+        ActorSiteCounts = $Round.ActorSiteCounts
     }
 }
 
@@ -230,6 +232,7 @@ for ($levelIndex = 0; $levelIndex -lt 12; $levelIndex++) {
     $globalActorOrder = New-IncrementalSha256
     $globalActorValue = New-IncrementalSha256
     $globalSiteCounts = @{}
+    $globalActorSiteCounts = @{}
     $globalDrawCount = 0
     $globalActorDrawCount = 0
     $state = [uint64]1
@@ -311,6 +314,17 @@ for ($levelIndex = 0; $levelIndex -lt 12; $levelIndex++) {
                                 $completed.SiteCounts[$countSite])
                         }
                     }
+                    foreach ($actorSite in $completed.ActorSiteCounts.Keys) {
+                        if ($globalActorSiteCounts.ContainsKey($actorSite)) {
+                            $globalActorSiteCounts[$actorSite] = (
+                                [int]$globalActorSiteCounts[$actorSite] +
+                                [int]$completed.ActorSiteCounts[$actorSite])
+                        }
+                        else {
+                            $globalActorSiteCounts[$actorSite] = [int](
+                                $completed.ActorSiteCounts[$actorSite])
+                        }
+                    }
                 }
                 if ($firstAcceptedTick -lt 0) {
                     if ($sequence -ne $firstGameplaySequence) {
@@ -354,6 +368,14 @@ for ($levelIndex = 0; $levelIndex -lt 12; $levelIndex++) {
                 $pendingRound.ActorValueWriter.Write([uint32]$expectedValue)
                 $pendingRound.ActorDrawCount = (
                     [int]$pendingRound.ActorDrawCount + 1)
+                $actorSiteKey = "${runtimeIndex}|${site}"
+                if ($pendingRound.ActorSiteCounts.ContainsKey($actorSiteKey)) {
+                    $pendingRound.ActorSiteCounts[$actorSiteKey] = (
+                        [int]$pendingRound.ActorSiteCounts[$actorSiteKey] + 1)
+                }
+                else {
+                    $pendingRound.ActorSiteCounts[$actorSiteKey] = 1
+                }
             }
             if ($site -eq '0x0005C81C') {
                 if ($runtimeIndex -lt 0) {
@@ -418,6 +440,29 @@ for ($levelIndex = 0; $levelIndex -lt 12; $levelIndex++) {
                 count = [int]$globalSiteCounts[$site]
             }
         })
+    $actorCounts = @(
+        $globalActorSiteCounts.GetEnumerator() |
+            ForEach-Object {
+                $parts = ([string]$_.Key).Split('|', 2)
+                [pscustomobject][ordered]@{
+                    runtime_index = [int]$parts[0]
+                    call_site_rva = [string]$parts[1]
+                    count = [int]$_.Value
+                }
+            } |
+            Sort-Object `
+                @{ Expression = { [int]$_.runtime_index } }, `
+                @{ Expression = { [string]$_.call_site_rva } })
+    $actorCountText = [string]::Join(
+        "`n",
+        @($actorCounts | ForEach-Object {
+            '{0}|{1}|{2}' -f `
+                [int]$_.runtime_index,
+                [string]$_.call_site_rva,
+                [int]$_.count
+        })) + "`n"
+    $actorCountHash = Get-Sha256Bytes (
+        [Text.UTF8Encoding]::new($false).GetBytes($actorCountText))
     $levelResults.Add([ordered]@{
         id = $levelId
         evidence = [ordered]@{
@@ -453,6 +498,8 @@ for ($levelIndex = 0; $levelIndex -lt 12; $levelIndex++) {
         actor_order_sha256 = $globalActorOrderHash
         actor_value_sha256 = $globalActorValueHash
         call_site_counts = $counts
+        actor_call_site_counts_sha256 = $actorCountHash
+        actor_call_site_counts = $actorCounts
         rounds = @($rounds)
     })
     Write-Host (

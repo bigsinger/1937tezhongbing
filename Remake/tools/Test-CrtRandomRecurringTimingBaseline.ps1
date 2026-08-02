@@ -47,6 +47,12 @@ function Get-Sha256Bytes {
     }
 }
 
+function Get-Sha256Text {
+    param([string]$Text)
+    return Get-Sha256Bytes (
+        [Text.UTF8Encoding]::new($false).GetBytes($Text))
+}
+
 function Get-FirstRoundHashes {
     param([object[]]$Records)
     $orderStream = [IO.MemoryStream]::new()
@@ -145,6 +151,29 @@ foreach ($line in $expectedText.Trim().Split("`n")) {
         throw 'Invalid embedded recurring baseline expectation.'
     }
     $expectedRows[$parts[0]] = $parts
+}
+
+$expectedActorCountHashes = @{}
+$expectedActorCountHashText = @'
+m000|0B9C196C179B2FB465488EA36F0947E4150BA0E2F3C3C7CF7311B0400BCB7A8A
+m001|EFC6476AFE46BF74D357DC782BBB50501E5AB187E73BE8388FBA1E64ED646818
+m002|D3404195C5C09FD20FDB5963A59DAF2B71BE078F9274DB0D8ACDB3ECFC4FC7A0
+m003|817D1CEE2DFC818F47582897D415EAA92A2F20B25E4BBF00B584C18B09B85F4F
+m004|A46A398EE47103AD96C30E40C7191149DC227E3F4715320341433112B48047BD
+m005|AD019519466B9CB3F0D22C9F86C27F81D92BE8A5FC0126B07AAEFF24CC66EEFD
+m006|9E724E2031FFD568F555C41936965A0C950A5AC3689515AAB98F3255644954DC
+m007|DB1C0F9574B88DC83DB7B0ACF34E683B8DF1096DE1F67C308FC993D59302A464
+m008|6EA68A7049E737679A0DF84ECA5AF9155AB49FF3657056356132269454E528A1
+m009|E4CCAC208B94A174EE8A0FC07CB04F6D319610E6E36CFFE055575231F5E95D2C
+m010|69091AD42914667B5CA7D4F5938AA7946091623143F62BEAB955EBA002CB639F
+m011|1E8B342606B7083E32E79F92B585C68487E31E5A67C950B2A4E48964C6BABBD1
+'@
+foreach ($line in $expectedActorCountHashText.Trim().Split("`n")) {
+    $parts = $line.Trim().Split('|')
+    if ($parts.Count -ne 2) {
+        throw 'Invalid embedded actor call-site count expectation.'
+    }
+    $expectedActorCountHashes[$parts[0]] = $parts[1]
 }
 
 $levels = @($baseline.levels)
@@ -259,6 +288,62 @@ for ($levelIndex = 0; $levelIndex -lt 12; $levelIndex++) {
         @($level.call_site_counts | Measure-Object -Property count -Sum).Sum)
     if ($siteCountSum -ne $drawSum) {
         throw "Recurring CRT random call-site totals failed for $levelId."
+    }
+
+    $actorCountRows = @($level.actor_call_site_counts)
+    if ($actorCountRows.Count -eq 0) {
+        throw "Actor call-site counts are missing for $levelId."
+    }
+    $actorCountSum = 0
+    $previousRuntimeIndex = -1
+    $previousActorSite = ''
+    $actorSiteTotals = @{}
+    $actorCountLines = [Collections.Generic.List[string]]::new()
+    foreach ($row in $actorCountRows) {
+        $runtimeIndex = [int]$row.runtime_index
+        $site = [string]$row.call_site_rva
+        $count = [int]$row.count
+        if (
+            $runtimeIndex -lt 0 -or
+            $site -notmatch '^0x[0-9A-F]{8}$' -or
+            $count -le 0 -or
+            $runtimeIndex -lt $previousRuntimeIndex -or
+            ($runtimeIndex -eq $previousRuntimeIndex -and
+                [string]::CompareOrdinal($site, $previousActorSite) -le 0)
+        ) {
+            throw "Actor call-site ordering is invalid for $levelId."
+        }
+        $previousRuntimeIndex = $runtimeIndex
+        $previousActorSite = $site
+        $actorCountSum += $count
+        $actorSiteTotals[$site] = [int]$actorSiteTotals.Get_Item($site) + $count
+        $actorCountLines.Add(
+            ('{0}|{1}|{2}' -f $runtimeIndex, $site, $count))
+    }
+    if ($actorCountSum -ne $actorDrawSum) {
+        throw "Actor call-site totals failed for $levelId."
+    }
+    $levelSiteTotals = @{}
+    foreach ($row in @($level.call_site_counts)) {
+        $levelSiteTotals[[string]$row.call_site_rva] = [int]$row.count
+    }
+    foreach ($site in $actorSiteTotals.Keys) {
+        if (
+            -not $levelSiteTotals.ContainsKey($site) -or
+            [int]$actorSiteTotals[$site] -gt [int]$levelSiteTotals[$site]
+        ) {
+            throw "Actor call-site count exceeds the global count in $levelId."
+        }
+    }
+    $actorCountText = [string]::Join("`n", $actorCountLines) + "`n"
+    $actualActorCountHash = Get-Sha256Text $actorCountText
+    if (
+        [string]$level.actor_call_site_counts_sha256 -ne
+            $actualActorCountHash -or
+        $actualActorCountHash -ne
+            [string]$expectedActorCountHashes[$levelId]
+    ) {
+        throw "Actor call-site count hash drifted for $levelId."
     }
 
     $firstRecords = @($startupLevel.first_gameplay_update.records)

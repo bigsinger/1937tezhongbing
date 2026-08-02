@@ -163,25 +163,30 @@ runtime-index 物理优先级执行这条循环并保存完整相位。
 
 - 5,845 个完整 60 Hz 更新轮、571,275 次连续 `rand()` 调用；
 - 343,445 次可映射到 runtime actor 的调用；
-- 每关起止序号、最终 LCG state、逐调用点计数和原始证据 SHA-256；
+- 每关起止序号、最终 LCG state、逐调用点计数、逐 runtime actor × 调用点计数
+  及其独立 SHA-256，并保留原始证据 SHA-256；
 - 每一轮以及整段的“调用点 + runtime index”和“调用点 + runtime index + 值”
   SHA-256；非角色调用统一编码为 `runtime_index = -1`；
 - m000—m011 各自 187—567 个完整轮次，最短证据仍超过 3.5 秒。
 
 `Build-CrtRandomRecurringTimingBaseline.ps1` 会流式重算完整 LCG、验证 SDK 调用点
 目录、角色地址映射和每轮观察门顺序；`Test-CrtRandomRecurringTimingBaseline.ps1`
-不读取原游戏文件，固定十二关摘要并逐轮检查序号连续性、计数、首轮哈希和首轮
-最终 state，已经进入 `Verify.ps1`。
+不读取原游戏文件，固定十二关摘要并逐轮检查序号连续性、计数、首轮哈希、首轮
+最终 state，以及每关全部“角色 × 调用点”计数的排序、合计与独立哈希，已经进入
+`Verify.ps1`。
 
 Remake 的 parity 跟踪只有显式设置 `M1937_REMAKE_RNG_PARITY_TRACE=1` 或命令行
 `--trace-legacy-rng-parity` 才启用。普通游玩继续对环境粒子批次作 O(1) 提交，
 没有逐调用哈希开销。无界面诊断脚本
-`tests/recurring_crt_random_parity_probe.gd` 可让十二关各运行到基线轮数并比较四组
-哈希，全程不打开原版、不发送键鼠消息，也不尝试通关。
+`tests/recurring_crt_random_parity_probe.gd` 可让十二关各运行到基线轮数，比较四组
+全局哈希、逐调用点计数和逐角色调用点计数；任一差异会直接报告
+`runtime_index:call_site=actual/expected`。全程不打开原版、不发送键鼠消息，也不
+尝试通关。
 
-该诊断当前已经证明 m000 的观察门、主候选扫描、actor 顺序和环境调用节拍一致；
-剩余差异被精确收敛到路线/静止共用计数、追击重取样和三名角色触发的五点搜索。
-因此这份基线是后续实现门禁，不是“十二关运行期已经逐调用相等”的声明。
+十二关无界面批量诊断已经把首轮以后的差异逐关、逐角色定位到路线/静止共用
+计数、追击路径状态、五点搜索，以及少量尚未迁移的条件调用点；不再需要打开
+第一关或尝试人工通关来定位。该基线是后续实现门禁，不是“十二关运行期已经
+逐调用相等”的声明。
 
 ## 当前运行时接线
 

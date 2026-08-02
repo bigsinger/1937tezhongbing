@@ -169,6 +169,23 @@ func _exercise_level(level_index: int, level: Dictionary) -> void:
 			_site_count_difference(expected_site_counts, actual_site_counts),
 		],
 	)
+	var expected_actor_site_counts := _actor_site_count_dictionary(
+		level.get("actor_call_site_counts", []) as Array
+	)
+	var actual_actor_site_counts: Dictionary = snapshot.get(
+		"actor_call_site_counts",
+		{},
+	) as Dictionary
+	_expect(
+		actual_actor_site_counts == expected_actor_site_counts,
+		"%s per-actor call-site counts match%s" % [
+			level_id,
+			_site_count_difference(
+				expected_actor_site_counts,
+				actual_actor_site_counts,
+			),
+		],
+	)
 	_dispose_main(main)
 	await process_frame
 
@@ -178,6 +195,18 @@ func _site_count_dictionary(rows: Array) -> Dictionary:
 	for row_value: Variant in rows:
 		var row := row_value as Dictionary
 		result[str(row.get("call_site_rva", ""))] = int(row.get("count", 0))
+	return result
+
+
+func _actor_site_count_dictionary(rows: Array) -> Dictionary:
+	var result: Dictionary = {}
+	for row_value: Variant in rows:
+		var row := row_value as Dictionary
+		var key := "%d:%s" % [
+			int(row.get("runtime_index", -1)),
+			str(row.get("call_site_rva", "")),
+		]
+		result[key] = int(row.get("count", 0))
 	return result
 
 
