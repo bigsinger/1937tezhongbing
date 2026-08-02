@@ -332,6 +332,26 @@ static func _capture_world(game: Node) -> Dictionary:
 			if _has_property(game, "legacy_crt_recurring_round_index")
 			else 0
 		),
+		"legacy_crt_recurring_evidence_replay_active": (
+			bool(game.get(
+				"legacy_crt_recurring_evidence_replay_active"
+			))
+			if _has_property(
+				game,
+				"legacy_crt_recurring_evidence_replay_active",
+			)
+			else false
+		),
+		"legacy_crt_recurring_evidence_invalidation_reason": (
+			str(game.get(
+				"legacy_crt_recurring_evidence_invalidation_reason"
+			))
+			if _has_property(
+				game,
+				"legacy_crt_recurring_evidence_invalidation_reason",
+			)
+			else ""
+		),
 		"legacy_ambient_particle": (
 			_json_value(game.call("legacy_ambient_particle_snapshot"))
 			if game.has_method("legacy_ambient_particle_snapshot")
@@ -1107,6 +1127,38 @@ static func _restore_world(game: Node, world: Dictionary, warnings: Array[String
 				int(world.get("legacy_crt_recurring_round_index", 0)),
 				0,
 			),
+		)
+	if _has_property(
+		game,
+		"legacy_crt_recurring_evidence_replay_active",
+	):
+		var evidence_active := bool(world.get(
+			"legacy_crt_recurring_evidence_replay_active",
+			false,
+		))
+		if _has_property(game, "legacy_crt_recurring_evidence_max_round"):
+			evidence_active = (
+				evidence_active
+				and int(game.get(
+					"legacy_crt_recurring_round_index"
+				)) <= int(game.get(
+					"legacy_crt_recurring_evidence_max_round"
+				))
+			)
+		game.set(
+			"legacy_crt_recurring_evidence_replay_active",
+			evidence_active,
+		)
+	if _has_property(
+		game,
+		"legacy_crt_recurring_evidence_invalidation_reason",
+	):
+		game.set(
+			"legacy_crt_recurring_evidence_invalidation_reason",
+			str(world.get(
+				"legacy_crt_recurring_evidence_invalidation_reason",
+				"",
+			)),
 		)
 	var ambient_particle_state: Variant = world.get(
 		"legacy_ambient_particle",

@@ -119,9 +119,20 @@ SDK 现固定下列 `RuntimeActorV1` 字段：
 
 初始约五秒运行态中的 58 组完整搜索均通过顺序和结果校验；覆盖 5,845 个完整
 更新轮的较长证据又固定了 107 组。后者另存为小型时间目录，并逐组验证同一
-actor、五个调用点的精确顺序、调用前共享计数/路径状态和返回值。Remake 只有
-在 runtime actor、轮次、位置、共享计数及路径相位仍与证据一致时才消费这五次
-调用；玩家输入令状态分叉时不会强制套用静态轨迹。
+actor、五个调用点的精确顺序、调用前共享计数/路径状态和返回值。它与另外
+17,190 条共享计数/路线等待/追击条件事件共用“无玩家输入启动前缀”边界：按
+runtime actor/round 消费当前全局流，一旦出现玩家按键或左右键点击便立即停用，
+不会强制套用静态位置或路线。
+
+### 条件 actor 事件目录
+
+`original_crt_random_actor_event_timing.json` 覆盖十二关 5,845 个完整轮次中的
+1,464 次静止重置、11 次 path-state-3 上限、1,024 次路线等待重置和 14,691 次
+追击重采样。每关单独固定事件数量、完整轮数和事件流 SHA-256；事件与完整
+recurring 基线的调用点计数必须相等。运行时只把目录用于确定“本轮是否应消费”
+及恢复共享 counter/limit 相位，随机结果始终来自当前可存档 MSVCRT 流。
+玩家首次输入、目录轮次结束或存档记录已退出时关闭证据通道，之后继续使用正常
+语义 AI。
 
 ## 环境粒子与全局流
 
@@ -151,11 +162,14 @@ node .\Remake\tools\Analyze-AmbientParticleRuntime.mjs `
 
 - `original_crt_random_runtime_state.gd` 只读加载并校验逐关证据；
 - `original_crt_random_local_search_timing.gd` 索引十二关 107 组连续轮次五点搜索；
+- `original_crt_random_actor_event_timing.gd` 按关卡/轮次/actor 索引 17,190 条
+  条件事件；
 - `main.gd` 按 60 Hz、runtime actor 优先级执行已恢复消费者；
 - `squad_unit.gd` 接入共用计数、追击、局部搜索和稳定 MOD 路线时间线；
 - `legacy_ambient_particle_field.gd` 恢复环境粒子并支持存读档；
 - `GameSessionState` 保存全局流、角色相位、追击和粒子状态；
-- `Test-CrtRandomRuntimeStateBaseline.ps1`、`original_crt_random_test.gd`、
+- `Test-CrtRandomRuntimeStateBaseline.ps1`、
+  `Test-CrtRandomActorEventTimingBaseline.ps1`、`original_crt_random_test.gd`、
   `save_settings_test.gd` 与 `ambient_particle_performance_test.gd` 共同进入
   `Verify.ps1`。
 
@@ -173,7 +187,8 @@ node .\Remake\tools\Analyze-AmbientParticleRuntime.mjs `
 
 ## 仍未关闭的边界
 
-- 首轮以后所有条件随机消费者尚未全部迁移；
+- 已入目录的共享计数/追击/五点搜索只覆盖无输入启动前缀；玩家操作后的长期
+  条件随机消费者和尚未入表的调用点尚未全部迁移；
 - 攻击间隔仍保留已通过稳定 MOD 差分的过渡保护，防止部分迁移导致流错位；
 - 各关仍需要更长的稳定 MOD/Remake 成对真人战斗、任务和媒体轨迹；
 - 同 tick 多系统仲裁、特殊警报覆盖及部分导演时序仍需地址/录像证据；

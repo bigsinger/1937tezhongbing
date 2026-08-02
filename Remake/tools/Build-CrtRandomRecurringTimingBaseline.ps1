@@ -4,6 +4,7 @@ param(
     [string]$EvidenceRoot,
     [string]$OutputPath = '',
     [string]$LocalSearchOutputPath = '',
+    [string]$ActorEventOutputPath = '',
     [string]$RepositoryRoot = '',
     [ValidateRange(120, 100000)]
     [int]$MinimumRounds = 120
@@ -31,6 +32,11 @@ if ([string]::IsNullOrWhiteSpace($LocalSearchOutputPath)) {
         'game\data\original_crt_random_local_search_timing.json')
 }
 $LocalSearchOutputPath = [IO.Path]::GetFullPath($LocalSearchOutputPath)
+if ([string]::IsNullOrWhiteSpace($ActorEventOutputPath)) {
+    $ActorEventOutputPath = Join-Path $remakeRoot (
+        'game\data\original_crt_random_actor_event_timing.json')
+}
+$ActorEventOutputPath = [IO.Path]::GetFullPath($ActorEventOutputPath)
 $startupPath = Join-Path $remakeRoot (
     'game\data\original_crt_random_startup_catalog.json')
 $callSitePath = Join-Path $RepositoryRoot (
@@ -99,6 +105,7 @@ function New-PendingRound {
         SiteCounts = @{}
         ActorSiteCounts = @{}
         LocalSearchCalls = [Collections.Generic.List[object]]::new()
+        ActorEvents = [Collections.Generic.List[object]]::new()
         OrderStream = $orderStream
         ValueStream = $valueStream
         ActorOrderStream = $actorOrderStream
@@ -163,6 +170,7 @@ function Complete-PendingRound {
         SiteCounts = $Round.SiteCounts
         ActorSiteCounts = $Round.ActorSiteCounts
         LocalSearchCalls = @($Round.LocalSearchCalls)
+        ActorEvents = @($Round.ActorEvents)
     }
 }
 
@@ -192,12 +200,19 @@ foreach ($caller in $callSiteCatalog.callers) {
 
 $levelResults = [Collections.Generic.List[object]]::new()
 $localSearchLevelResults = [Collections.Generic.List[object]]::new()
+$actorEventLevelResults = [Collections.Generic.List[object]]::new()
 $localSearchCallSites = @(
     '0x0005D08F',
     '0x0005D09D',
     '0x0005D0B4',
     '0x0005D0CB',
     '0x0005D15F')
+$actorEventCallSites = @(
+    '0x00056105',
+    '0x0005614F',
+    '0x00058946',
+    '0x0005D394',
+    '0x0005D47E')
 for ($levelIndex = 0; $levelIndex -lt 12; $levelIndex++) {
     $levelId = 'm{0:D3}' -f $levelIndex
     $levelFolder = Join-Path $EvidenceRoot (
@@ -249,6 +264,7 @@ for ($levelIndex = 0; $levelIndex -lt 12; $levelIndex++) {
     $globalSiteCounts = @{}
     $globalActorSiteCounts = @{}
     $localSearchEvents = [Collections.Generic.List[object]]::new()
+    $actorEvents = [Collections.Generic.List[object]]::new()
     $globalDrawCount = 0
     $globalActorDrawCount = 0
     $state = [uint64]1
@@ -340,6 +356,9 @@ for ($levelIndex = 0; $levelIndex -lt 12; $levelIndex++) {
                             $globalActorSiteCounts[$actorSite] = [int](
                                 $completed.ActorSiteCounts[$actorSite])
                         }
+                    }
+                    foreach ($actorEvent in @($completed.ActorEvents)) {
+                        $actorEvents.Add($actorEvent)
                     }
                     $localCalls = @($completed.LocalSearchCalls)
                     if ($localCalls.Count % $localSearchCallSites.Count -ne 0) {
@@ -458,6 +477,99 @@ for ($levelIndex = 0; $levelIndex -lt 12; $levelIndex++) {
                             actor_snapshot = $record.actor_snapshot
                         })
                 }
+                if ($site -in $actorEventCallSites) {
+                    $snapshotProperty = (
+                        $record.PSObject.Properties['actor_snapshot'])
+                    if (
+                        $null -eq $snapshotProperty -and
+                        $site -ne '0x0005614F'
+                    ) {
+                        throw (
+                            "Actor-event snapshot is missing in " +
+                            "${levelId} sequence $sequence.")
+                    }
+                    $worldX = -1
+                    $worldY = -1
+                    $previousWorldX = -1
+                    $previousWorldY = -1
+                    $sharedCounter = -1
+                    $sharedLimit = -1
+                    $routeUpdateActive = -1
+                    $movementPathState = -1
+                    $movementActive = -1
+                    $goalKind = -1
+                    $goalX = -1
+                    $goalY = -1
+                    $commandVariant = -1
+                    $pursuitRuntimeIndex = -1
+                    $pursuitDelayCounter = -1
+                    $targetRuntimeIndex = -1
+                    if ($null -ne $snapshotProperty) {
+                        $snapshot = $snapshotProperty.Value
+                        $worldX = [int]$snapshot.world_x
+                        $worldY = [int]$snapshot.world_y
+                        $previousWorldX = [int]$snapshot.previous_world_x
+                        $previousWorldY = [int]$snapshot.previous_world_y
+                        $sharedCounter = [int](
+                            $snapshot.stationary_tick_counter)
+                        $sharedLimit = [int]$snapshot.stationary_tick_limit
+                        $routeUpdateActive = [int]$snapshot.route_update_active
+                        $movementPathState = [int]$snapshot.movement_path_state
+                        $movementActive = [int]$snapshot.movement_active
+                        $goalKind = [int]$snapshot.goal_kind
+                        $goalX = [int]$snapshot.goal_x
+                        $goalY = [int]$snapshot.goal_y
+                        $commandVariant = [int]$snapshot.command_variant
+                        $pursuitDelayCounter = [int](
+                            $snapshot.pursuit_delay_counter)
+                        $pursuitAddressProperty = (
+                            $snapshot.PSObject.Properties['pursuit_address'])
+                        if ($null -ne $pursuitAddressProperty) {
+                            $pursuitAddress = (
+                                [string]$pursuitAddressProperty.Value
+                            ).Trim().ToUpperInvariant()
+                            if ($actorIndexByAddress.ContainsKey(
+                                    $pursuitAddress)) {
+                                $pursuitRuntimeIndex = [int](
+                                    $actorIndexByAddress[$pursuitAddress])
+                            }
+                        }
+                        $targetAddressProperty = (
+                            $snapshot.PSObject.Properties['target_address'])
+                        if ($null -ne $targetAddressProperty) {
+                            $targetAddress = (
+                                [string]$targetAddressProperty.Value
+                            ).Trim().ToUpperInvariant()
+                            if ($actorIndexByAddress.ContainsKey(
+                                    $targetAddress)) {
+                                $targetRuntimeIndex = [int](
+                                    $actorIndexByAddress[$targetAddress])
+                            }
+                        }
+                    }
+                    [object]$actorEvent = @(
+                        [int]$pendingRound.Index,
+                        [int]$runtimeIndex,
+                        [uint32]$siteValue,
+                        [int]$expectedValue,
+                        [int]$worldX,
+                        [int]$worldY,
+                        [int]$previousWorldX,
+                        [int]$previousWorldY,
+                        [int]$sharedCounter,
+                        [int]$sharedLimit,
+                        [int]$routeUpdateActive,
+                        [int]$movementPathState,
+                        [int]$movementActive,
+                        [int]$goalKind,
+                        [int]$goalX,
+                        [int]$goalY,
+                        [int]$commandVariant,
+                        [int]$pursuitRuntimeIndex,
+                        [int]$pursuitDelayCounter,
+                        [int]$targetRuntimeIndex)
+                    $pendingRound.ActorEvents.Add($actorEvent)
+                }
             }
             if ($site -eq '0x0005C81C') {
                 if ($runtimeIndex -lt 0) {
@@ -573,6 +685,21 @@ for ($levelIndex = 0; $levelIndex -lt 12; $levelIndex++) {
         events_sha256 = $localSearchEventHash
         events = @($localSearchEvents)
     })
+    $actorEventText = [string]::Join(
+        "`n",
+        @($actorEvents | ForEach-Object { @($_) -join '|' }))
+    if ($actorEvents.Count -gt 0) {
+        $actorEventText += "`n"
+    }
+    $actorEventHash = Get-Sha256Bytes (
+        [Text.UTF8Encoding]::new($false).GetBytes($actorEventText))
+    $actorEventLevelResults.Add([ordered]@{
+        id = $levelId
+        complete_round_count = $rounds.Count
+        event_count = $actorEvents.Count
+        events_sha256 = $actorEventHash
+        events = @($actorEvents)
+    })
     $levelResults.Add([ordered]@{
         id = $levelId
         evidence = [ordered]@{
@@ -671,3 +798,48 @@ $localSearchJson = $localSearchResult | ConvertTo-Json -Depth 10 -Compress
 Write-Host (
     "Local-search timing catalog wrote twelve levels: " +
     $LocalSearchOutputPath)
+
+$actorEventResult = [ordered]@{
+    schema_version = 1
+    catalog_id = 'original-crt-random-actor-event-timing-v1'
+    content_profile = [string]$startup.content_profile
+    executable_sha256 = [string]$startup.executable_sha256
+    event_fields = @(
+        'round_index',
+        'runtime_index',
+        'call_site_rva',
+        'value',
+        'world_x',
+        'world_y',
+        'previous_world_x',
+        'previous_world_y',
+        'shared_counter_before',
+        'shared_limit_before',
+        'route_update_active',
+        'movement_path_state',
+        'movement_active',
+        'goal_kind',
+        'goal_x',
+        'goal_y',
+        'command_variant',
+        'pursuit_runtime_index',
+        'pursuit_delay_counter',
+        'target_runtime_index')
+    call_site_rvas = $actorEventCallSites
+    evidence = [ordered]@{
+        source = 'complete rounds in original CRT recurring timing evidence'
+        final_incomplete_rounds_omitted = $true
+        input_scope = 'target-window-only'
+    }
+    levels = @($actorEventLevelResults)
+}
+$actorEventParent = Split-Path -Parent $ActorEventOutputPath
+[IO.Directory]::CreateDirectory($actorEventParent) | Out-Null
+$actorEventJson = $actorEventResult | ConvertTo-Json -Depth 10 -Compress
+[IO.File]::WriteAllText(
+    $ActorEventOutputPath,
+    $actorEventJson + [Environment]::NewLine,
+    [Text.UTF8Encoding]::new($false))
+Write-Host (
+    "Actor-event timing catalog wrote twelve levels: " +
+    $ActorEventOutputPath)

@@ -13,6 +13,9 @@ const ORIGINAL_RUNTIME_STATE: Script = preload(
 const ORIGINAL_LOCAL_SEARCH_TIMING: Script = preload(
 	"res://scripts/original_crt_random_local_search_timing.gd"
 )
+const ORIGINAL_ACTOR_EVENT_TIMING: Script = preload(
+	"res://scripts/original_crt_random_actor_event_timing.gd"
+)
 const AI_IDLE_RANDOM_RULES: Script = preload(
 	"res://scripts/legacy_enemy_ai_rules.gd"
 )
@@ -45,6 +48,7 @@ func _init() -> void:
 	_test_twelve_level_runtime_state_and_pursuit()
 	_test_recurring_secondary_search_runtime()
 	_test_original_local_search_timing()
+	_test_original_actor_event_timing()
 	_test_recovered_shared_counter_cadence()
 	_test_original_ambient_particle_stream()
 	_test_imported_actor_profile_and_gate()
@@ -766,17 +770,21 @@ func _test_original_local_search_timing() -> void:
 		"local-search catalog preserves levels with and without events",
 	)
 
-	var game = MAIN_SCRIPT.new()
-	game.call("_apply_original_crt_random_startup_checkpoint", "m000")
-	game.legacy_crt_recurring_round_index = 24
-	game.legacy_crt_random_trace_enabled = true
+	var diverged_game = MAIN_SCRIPT.new()
+	diverged_game.call(
+		"_apply_original_crt_random_startup_checkpoint",
+		"m000",
+	)
+	diverged_game.legacy_crt_recurring_round_index = 24
+	diverged_game.legacy_crt_random_trace_enabled = true
+	diverged_game.invalidate_original_recurring_evidence("player_input")
 	var diverged_actor = SQUAD_UNIT_SCRIPT.new()
 	diverged_actor.scene_index = 1622
 	diverged_actor.configure_runtime_actor_type({
 		"database_header_values": [0, 0, 33],
 		"original_runtime_profile": {"runtime_index": 126},
 	})
-	diverged_actor.bind_original_crt_random_source(game, "m000")
+	diverged_actor.bind_original_crt_random_source(diverged_game, "m000")
 	diverged_actor.position = Vector2(260.0, 933.0)
 	diverged_actor.original_ai_idle_tick_counter = 61
 	diverged_actor.original_ai_idle_tick_limit = 61
@@ -784,10 +792,15 @@ func _test_original_local_search_timing() -> void:
 		not bool(diverged_actor.call(
 			"_advance_original_recurring_local_search"
 		))
-		and game.legacy_crt_random_trace.is_empty(),
-		"recorded quiet-state timing never overrides a diverged gameplay state",
+		and diverged_game.legacy_crt_random_trace.is_empty(),
+		"player input disables quiet-state replay before gameplay can diverge",
 	)
 	diverged_actor.free()
+	diverged_game.free()
+	var game = MAIN_SCRIPT.new()
+	game.call("_apply_original_crt_random_startup_checkpoint", "m000")
+	game.legacy_crt_recurring_round_index = 24
+	game.legacy_crt_random_trace_enabled = true
 	var actor = SQUAD_UNIT_SCRIPT.new()
 	actor.scene_index = 1622
 	actor.configure_runtime_actor_type({
@@ -873,6 +886,217 @@ func _test_original_local_search_timing() -> void:
 	restored.free()
 	actor.free()
 	game.free()
+
+
+func _test_original_actor_event_timing() -> void:
+	var catalog: Dictionary = ORIGINAL_ACTOR_EVENT_TIMING.load_catalog()
+	var levels_value: Variant = catalog.get("levels", [])
+	var route_call_sites: Array[int] = [0x00058946]
+	var pursuit_call_sites: Array[int] = [0x0005D47E]
+	var event_total := 0
+	if levels_value is Array:
+		for level_value: Variant in levels_value as Array:
+			if level_value is Dictionary:
+				event_total += int(
+					(level_value as Dictionary).get("event_count", 0)
+				)
+	var route_events: Array[Dictionary] = (
+		ORIGINAL_ACTOR_EVENT_TIMING.events_for_actor_round(
+		"m000",
+		1,
+		1,
+		route_call_sites,
+		)
+	)
+	var pursuit_events: Array[Dictionary] = (
+		ORIGINAL_ACTOR_EVENT_TIMING.events_for_actor_round(
+			"m000",
+			1,
+			119,
+			pursuit_call_sites,
+		)
+	)
+	_expect(
+		levels_value is Array
+		and (levels_value as Array).size() == 12
+		and event_total == 17190
+		and ORIGINAL_ACTOR_EVENT_TIMING.level_complete_round_count(
+			"m000"
+		) == 563
+		and ORIGINAL_ACTOR_EVENT_TIMING.level_event_count("m000")
+			== 1947,
+		"actor-event catalog covers all 17,190 conditional calls in 12 levels",
+	)
+	_expect(
+		route_events.size() == 1
+		and int(route_events[0].get("value", -1)) == 20042
+		and int(route_events[0].get("shared_counter_before", -1))
+			== 76
+		and pursuit_events.size() == 1
+		and int(pursuit_events[0].get("value", -1)) == 6990
+		and int(pursuit_events[0].get("pursuit_runtime_index", -1))
+			== 118,
+		"catalog lookup retains exact route and pursuit actor identity",
+	)
+
+	var lifecycle_game = MAIN_SCRIPT.new()
+	lifecycle_game.call(
+		"_apply_original_crt_random_startup_checkpoint",
+		"m000",
+	)
+	_expect(
+		lifecycle_game.legacy_crt_recurring_evidence_replay_active
+		and lifecycle_game.legacy_crt_recurring_evidence_max_round == 563
+		and lifecycle_game.original_recurring_evidence_round_index() == 0,
+		"quiet evidence lane starts bounded by the complete native catalog",
+	)
+	lifecycle_game.legacy_crt_recurring_round_index = 1
+	_expect(
+		lifecycle_game.original_recurring_evidence_round_index() == 1
+		and lifecycle_game.original_recurring_actor_events(
+			1,
+			route_call_sites,
+		).size() == 1,
+		"active evidence lane exposes only the current actor and round",
+	)
+	var passive_motion := InputEventMouseMotion.new()
+	passive_motion.relative = Vector2(4.0, -2.0)
+	lifecycle_game.call("_input", passive_motion)
+	_expect(
+		lifecycle_game.legacy_crt_recurring_evidence_replay_active,
+		"pointer motion remains untouched and does not alter the evidence lane",
+	)
+	var player_key := InputEventKey.new()
+	player_key.keycode = KEY_M
+	player_key.pressed = true
+	lifecycle_game.call("_input", player_key)
+	_expect(
+		not lifecycle_game.legacy_crt_recurring_evidence_replay_active
+		and lifecycle_game.original_recurring_evidence_round_index() == 0
+		and lifecycle_game.original_recurring_actor_events(
+			1,
+			route_call_sites,
+		).is_empty()
+		and lifecycle_game
+			.legacy_crt_recurring_evidence_invalidation_reason
+			== "player_input",
+		"the first player input permanently exits the evidence lane",
+	)
+	lifecycle_game.free()
+
+	var route_game = MAIN_SCRIPT.new()
+	route_game.call("_apply_original_crt_random_startup_checkpoint", "m000")
+	route_game.legacy_crt_recurring_round_index = 1
+	route_game.legacy_crt_random_trace_enabled = true
+	var predicted_route := _draw_values(
+		route_game.legacy_crt_random_state,
+		1,
+	)
+	var route_actor = SQUAD_UNIT_SCRIPT.new()
+	route_actor.scene_index = 1416
+	route_actor.configure_runtime_actor_type({
+		"database_header_values": [0, 0, 5],
+		"original_runtime_profile": {"runtime_index": 1},
+	})
+	route_actor.bind_original_crt_random_source(route_game, "m000")
+	route_actor.original_ai_previous_world_position = route_actor.position
+	route_actor.call(
+		"_advance_original_ai_shared_counter",
+		1.0 / 60.0,
+	)
+	var predicted_route_values: Array = predicted_route.get("values", [])
+	_expect(
+		route_game.legacy_crt_random_trace.size() == 1
+		and int(route_game.legacy_crt_random_trace[0].get(
+			"call_site_rva",
+			0,
+		)) == 0x00058946
+		and route_actor.original_recurring_shared_last_round_index == 1
+		and route_actor.original_recurring_actor_event_serial == 1
+		and route_actor.original_ai_idle_tick_limit
+			== int(predicted_route_values[0]) % 160 + 40
+		and not route_actor.original_route_update_active,
+		"scheduled route event consumes the live stream once and applies its result",
+	)
+	route_actor.free()
+	route_game.free()
+
+	var pursuit_game = MAIN_SCRIPT.new()
+	pursuit_game.call(
+		"_apply_original_crt_random_startup_checkpoint",
+		"m000",
+	)
+	pursuit_game.legacy_crt_recurring_round_index = 1
+	pursuit_game.legacy_crt_random_trace_enabled = true
+	var pursuit_target = SQUAD_UNIT_SCRIPT.new()
+	pursuit_target.scene_index = 1614
+	pursuit_target.configure_runtime_actor_type({
+		"database_header_values": [0, 0, 56],
+		"original_runtime_profile": {"runtime_index": 118},
+	})
+	pursuit_target.bind_original_crt_random_source(pursuit_game, "m000")
+	pursuit_target.position = Vector2(300.0, 0.0)
+	var pursuit_actor = SQUAD_UNIT_SCRIPT.new()
+	pursuit_actor.scene_index = 1615
+	pursuit_actor.configure_runtime_actor_type({
+		"database_header_values": [0, 0, 12],
+		"original_runtime_profile": {"runtime_index": 119},
+	})
+	pursuit_actor.bind_original_crt_random_source(pursuit_game, "m000")
+	pursuit_actor.bind_original_pursuit_target(pursuit_target)
+	var pursuit_applied := bool(pursuit_actor.call(
+		"_advance_original_recurring_pursuit_events"
+	))
+	_expect(
+		pursuit_applied
+		and pursuit_game.legacy_crt_random_trace.size() == 1
+		and int(pursuit_game.legacy_crt_random_trace[0].get(
+			"call_site_rva",
+			0,
+		)) == 0x0005D47E
+		and pursuit_actor.original_recurring_pursuit_last_round_index
+			== 1
+		and pursuit_actor.original_recurring_actor_event_serial == 1
+		and pursuit_actor.original_pursuit_serial == 1,
+		"scheduled pursuit event preserves actor order and conditional call site",
+	)
+	var pursuit_snapshot: Dictionary = (
+		pursuit_actor.original_crt_random_timing_snapshot()
+	)
+	var recurring_snapshot := pursuit_snapshot.get(
+		"recurring_actor_events",
+		{},
+	) as Dictionary
+	_expect(
+		int(recurring_snapshot.get("pursuit_last_round_index", 0)) == 1
+		and int(recurring_snapshot.get("serial", 0)) == 1,
+		"save snapshot records recurring actor-event phase",
+	)
+	var restored_pursuit_actor = SQUAD_UNIT_SCRIPT.new()
+	restored_pursuit_actor.scene_index = 1615
+	restored_pursuit_actor.configure_runtime_actor_type({
+		"database_header_values": [0, 0, 12],
+		"original_runtime_profile": {"runtime_index": 119},
+	})
+	restored_pursuit_actor.bind_original_crt_random_source(
+		pursuit_game,
+		"m000",
+	)
+	restored_pursuit_actor.bind_original_pursuit_target(pursuit_target)
+	_expect(
+		restored_pursuit_actor.restore_original_crt_random_timing(
+			pursuit_snapshot
+		)
+		and restored_pursuit_actor
+			.original_recurring_pursuit_last_round_index == 1
+		and restored_pursuit_actor.original_recurring_actor_event_serial
+			== 1,
+		"save restore resumes recurring actor events without duplicate draws",
+	)
+	restored_pursuit_actor.free()
+	pursuit_actor.free()
+	pursuit_target.free()
+	pursuit_game.free()
 
 
 func _test_recovered_shared_counter_cadence() -> void:

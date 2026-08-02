@@ -103,6 +103,8 @@ class MockGame:
 	var legacy_crt_random_state := 1
 	var legacy_crt_random_draw_index := 0
 	var legacy_crt_recurring_round_index := 0
+	var legacy_crt_recurring_evidence_replay_active := false
+	var legacy_crt_recurring_evidence_invalidation_reason := ""
 	var legacy_global_alarm_active := false
 	var legacy_global_alarm_counter := 0
 	var legacy_ambient_particle_state: Dictionary = {}
@@ -1092,6 +1094,14 @@ func _test_mid_mission_capture_and_apply(failures: Array[String]) -> void:
 				"legacy_crt_recurring_round_index",
 				-1,
 			)) == 83
+			and bool((session["world"] as Dictionary).get(
+				"legacy_crt_recurring_evidence_replay_active",
+				false,
+			))
+			and str((session["world"] as Dictionary).get(
+				"legacy_crt_recurring_evidence_invalidation_reason",
+				"missing",
+			)) == ""
 			and int(
 				(
 					(session["world"] as Dictionary).get(
@@ -1198,6 +1208,10 @@ func _test_mid_mission_capture_and_apply(failures: Array[String]) -> void:
 			int(target_game.legacy_crt_random_state) == 0x12345678
 			and int(target_game.legacy_crt_random_draw_index) == 4321
 			and int(target_game.legacy_crt_recurring_round_index) == 83
+			and bool(target_game
+				.legacy_crt_recurring_evidence_replay_active)
+			and target_game
+				.legacy_crt_recurring_evidence_invalidation_reason.is_empty()
 			and int(
 				target_game.legacy_ambient_particle_state.get(
 					"update_serial",
@@ -1538,6 +1552,8 @@ func _make_mock_game(populated: bool) -> MockGame:
 		game.legacy_crt_random_state = 0x12345678
 		game.legacy_crt_random_draw_index = 4321
 		game.legacy_crt_recurring_round_index = 83
+		game.legacy_crt_recurring_evidence_replay_active = true
+		game.legacy_crt_recurring_evidence_invalidation_reason = ""
 		game.legacy_ambient_particle_state = {
 			"level_id": "m002",
 			"update_serial": 37,

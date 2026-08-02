@@ -102,6 +102,9 @@ const ORIGINAL_CRT_RANDOM_STARTUP_CATALOG: Script = preload(
 const ORIGINAL_CRT_RANDOM_LOCAL_SEARCH_TIMING: Script = preload(
 	"res://scripts/original_crt_random_local_search_timing.gd"
 )
+const ORIGINAL_CRT_RANDOM_ACTOR_EVENT_TIMING: Script = preload(
+	"res://scripts/original_crt_random_actor_event_timing.gd"
+)
 const LEGACY_AMBIENT_PARTICLE_FIELD_SCRIPT: Script = preload(
 	"res://scripts/legacy_ambient_particle_field.gd"
 )
@@ -402,6 +405,9 @@ var legacy_crt_random_draw_index := 0
 var legacy_crt_recurring_level_id := ""
 var legacy_crt_recurring_round_index := 0
 var legacy_crt_recurring_first_gate_runtime_index := -1
+var legacy_crt_recurring_evidence_replay_active := false
+var legacy_crt_recurring_evidence_max_round := 0
+var legacy_crt_recurring_evidence_invalidation_reason := ""
 var legacy_crt_random_trace_enabled := false
 var legacy_crt_random_trace: Array[Dictionary] = []
 var legacy_crt_random_parity_trace_enabled := false
@@ -506,6 +512,12 @@ func next_legacy_crt_random(
 			== legacy_crt_recurring_first_gate_runtime_index
 	):
 		legacy_crt_recurring_round_index += 1
+		if (
+			legacy_crt_recurring_evidence_replay_active
+			and legacy_crt_recurring_round_index
+				> legacy_crt_recurring_evidence_max_round
+		):
+			invalidate_original_recurring_evidence("catalog_complete")
 	var state_before := legacy_crt_random_state
 	var state_after: int = LEGACY_CRT_RANDOM_CATALOG.next_state(
 		state_before
@@ -533,6 +545,8 @@ func original_recurring_local_search_event(
 	runtime_index: int,
 ) -> Dictionary:
 	if (
+		not legacy_crt_recurring_evidence_replay_active
+		or
 		legacy_crt_recurring_level_id.is_empty()
 		or legacy_crt_recurring_round_index <= 0
 		or runtime_index < 0
@@ -546,6 +560,46 @@ func original_recurring_local_search_event(
 			runtime_index,
 		)
 	)
+
+
+func original_recurring_actor_events(
+	runtime_index: int,
+	accepted_call_sites: Array[int] = [],
+) -> Array[Dictionary]:
+	if (
+		not legacy_crt_recurring_evidence_replay_active
+		or legacy_crt_recurring_level_id.is_empty()
+		or legacy_crt_recurring_round_index <= 0
+		or runtime_index < 0
+	):
+		return []
+	return (
+		ORIGINAL_CRT_RANDOM_ACTOR_EVENT_TIMING.events_for_actor_round(
+			legacy_crt_recurring_level_id,
+			legacy_crt_recurring_round_index,
+			runtime_index,
+			accepted_call_sites,
+		)
+	)
+
+
+func is_original_recurring_evidence_replay_active() -> bool:
+	return legacy_crt_recurring_evidence_replay_active
+
+
+func original_recurring_evidence_round_index() -> int:
+	return (
+		legacy_crt_recurring_round_index
+		if legacy_crt_recurring_evidence_replay_active
+		else 0
+	)
+
+
+func invalidate_original_recurring_evidence(reason: String) -> void:
+	if not legacy_crt_recurring_evidence_replay_active:
+		return
+	legacy_crt_recurring_evidence_replay_active = false
+	legacy_crt_recurring_evidence_invalidation_reason = reason
 
 
 func commit_legacy_crt_random_draws(draws: Array) -> bool:
@@ -831,6 +885,9 @@ func _reset_legacy_crt_random_for_level_load() -> void:
 	legacy_crt_recurring_level_id = ""
 	legacy_crt_recurring_round_index = 0
 	legacy_crt_recurring_first_gate_runtime_index = -1
+	legacy_crt_recurring_evidence_replay_active = false
+	legacy_crt_recurring_evidence_max_round = 0
+	legacy_crt_recurring_evidence_invalidation_reason = ""
 	legacy_crt_random_trace.clear()
 	if legacy_crt_random_parity_trace_enabled:
 		_restart_legacy_crt_random_parity_trace()
@@ -931,6 +988,14 @@ func _apply_original_crt_random_startup_checkpoint(
 	legacy_crt_recurring_level_id = level_id
 	legacy_crt_recurring_round_index = 0
 	legacy_crt_recurring_first_gate_runtime_index = -1
+	legacy_crt_recurring_evidence_max_round = (
+		ORIGINAL_CRT_RANDOM_ACTOR_EVENT_TIMING
+		. level_complete_round_count(level_id)
+	)
+	legacy_crt_recurring_evidence_replay_active = (
+		legacy_crt_recurring_evidence_max_round > 0
+	)
+	legacy_crt_recurring_evidence_invalidation_reason = ""
 	var startup_profile: Dictionary = (
 		ORIGINAL_CRT_RANDOM_STARTUP_CATALOG.level_profile(level_id)
 	)
@@ -3421,6 +3486,26 @@ static func edge_scroll_direction_for_position(
 		viewport_size,
 		margin,
 	)
+
+
+func _input(event: InputEvent) -> void:
+	if not legacy_crt_recurring_evidence_replay_active:
+		return
+	var affects_evidence := (
+		event is InputEventKey
+		and (event as InputEventKey).pressed
+	) or (
+		event is InputEventMouseButton
+		and (event as InputEventMouseButton).pressed
+		and (event as InputEventMouseButton).button_index in [
+			MOUSE_BUTTON_LEFT,
+			MOUSE_BUTTON_RIGHT,
+		]
+	)
+	if affects_evidence:
+		# This observer does not handle, warp, capture or resend the event. The
+		# normal GUI/world input path receives it unchanged.
+		invalidate_original_recurring_evidence("player_input")
 
 
 func _unhandled_input(event: InputEvent) -> void:

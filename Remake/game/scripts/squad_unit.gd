@@ -149,6 +149,10 @@ var original_pursuit_serial := 0
 var original_pursuit_last_physics_frame := -1
 var original_pursuit_last_command_variant := 0
 var original_pursuit_last_navigation_applied := false
+var original_recurring_pursuit_last_round_index := 0
+var original_recurring_shared_last_round_index := 0
+var original_recurring_actor_event_serial := 0
+var original_recurring_actor_event_values_match := true
 var original_local_search_last_physics_frame := -1
 var original_local_search_last_round_index := 0
 var original_local_search_serial := 0
@@ -333,6 +337,10 @@ func configure(
 	original_pursuit_last_physics_frame = -1
 	original_pursuit_last_command_variant = 0
 	original_pursuit_last_navigation_applied = false
+	original_recurring_pursuit_last_round_index = 0
+	original_recurring_shared_last_round_index = 0
+	original_recurring_actor_event_serial = 0
+	original_recurring_actor_event_values_match = true
 	original_local_search_last_physics_frame = -1
 	original_local_search_last_round_index = 0
 	original_local_search_serial = 0
@@ -728,6 +736,10 @@ func bind_original_crt_random_source(
 	original_pursuit_last_physics_frame = -1
 	original_pursuit_last_command_variant = 0
 	original_pursuit_last_navigation_applied = false
+	original_recurring_pursuit_last_round_index = 0
+	original_recurring_shared_last_round_index = 0
+	original_recurring_actor_event_serial = 0
+	original_recurring_actor_event_values_match = true
 	# Playable, ambient and enemy nodes are created in separate batches, while
 	# the native executable updates one runtime-index array. Physics priority
 	# restores that exact actor consumer order without changing input/focus.
@@ -846,6 +858,50 @@ func next_original_crt_random_values(
 	return values
 
 
+func _original_recurring_evidence_round_index() -> int:
+	if (
+		original_crt_random_source == null
+		or not is_instance_valid(original_crt_random_source)
+		or not original_crt_random_source.has_method(
+			"original_recurring_evidence_round_index"
+		)
+	):
+		return 0
+	return maxi(
+		int(original_crt_random_source.call(
+			"original_recurring_evidence_round_index"
+		)),
+		0,
+	)
+
+
+func _original_recurring_actor_events(
+	accepted_call_sites: Array[int],
+) -> Array[Dictionary]:
+	if (
+		original_runtime_index < 0
+		or _original_recurring_evidence_round_index() <= 0
+		or original_crt_random_source == null
+		or not is_instance_valid(original_crt_random_source)
+		or not original_crt_random_source.has_method(
+			"original_recurring_actor_events"
+		)
+	):
+		return []
+	var events_value: Variant = original_crt_random_source.call(
+		"original_recurring_actor_events",
+		original_runtime_index,
+		accepted_call_sites,
+	)
+	var events: Array[Dictionary] = []
+	if not events_value is Array:
+		return events
+	for event_value: Variant in events_value as Array:
+		if event_value is Dictionary:
+			events.append((event_value as Dictionary).duplicate(true))
+	return events
+
+
 func original_crt_random_timing_snapshot() -> Dictionary:
 	return {
 		"level_id": original_crt_level_id,
@@ -876,6 +932,18 @@ func original_crt_random_timing_snapshot() -> Dictionary:
 		),
 		"secondary_search": original_secondary_search_snapshot(),
 		"pursuit": original_pursuit_snapshot(),
+		"recurring_actor_events": {
+			"pursuit_last_round_index": (
+				original_recurring_pursuit_last_round_index
+			),
+			"shared_last_round_index": (
+				original_recurring_shared_last_round_index
+			),
+			"serial": original_recurring_actor_event_serial,
+			"values_match": (
+				original_recurring_actor_event_values_match
+			),
+		},
 		"local_search": original_local_search_snapshot(),
 		"first_gameplay_update_serial": (
 			original_first_gameplay_update_serial
@@ -1037,6 +1105,35 @@ func restore_original_crt_random_timing(state: Dictionary) -> bool:
 		original_pursuit_last_navigation_applied = bool(
 			pursuit_state.get("last_navigation_applied", false)
 		)
+	var recurring_actor_events_value: Variant = state.get(
+		"recurring_actor_events",
+		{},
+	)
+	if recurring_actor_events_value is Dictionary:
+		var recurring_actor_events_state := (
+			recurring_actor_events_value as Dictionary
+		)
+		original_recurring_pursuit_last_round_index = maxi(
+			int(recurring_actor_events_state.get(
+				"pursuit_last_round_index",
+				0,
+			)),
+			0,
+		)
+		original_recurring_shared_last_round_index = maxi(
+			int(recurring_actor_events_state.get(
+				"shared_last_round_index",
+				0,
+			)),
+			0,
+		)
+		original_recurring_actor_event_serial = maxi(
+			int(recurring_actor_events_state.get("serial", 0)),
+			0,
+		)
+		original_recurring_actor_event_values_match = bool(
+			recurring_actor_events_state.get("values_match", true)
+		)
 	var local_search_value: Variant = state.get("local_search", {})
 	if local_search_value is Dictionary:
 		var local_search_state := local_search_value as Dictionary
@@ -1132,6 +1229,7 @@ func restore_original_crt_random_timing(state: Dictionary) -> bool:
 
 func _advance_original_crt_actor_random_tick(delta: float) -> void:
 	_advance_original_crt_observation_gate(delta)
+	_advance_original_recurring_pursuit_events()
 	if original_secondary_search_enabled:
 		_advance_original_secondary_search(delta)
 	else:
@@ -1183,27 +1281,6 @@ func _advance_original_recurring_local_search() -> bool:
 	if (
 		round_index <= 0
 		or round_index <= original_local_search_last_round_index
-	):
-		return false
-	# The timing catalog proves a quiet, input-free native state.  It is an
-	# exact replay aid, not permission to force the same search after gameplay
-	# has moved the actor or changed its shared counter/path phase.
-	var evidence_position := Vector2(
-		float(event.get("world_x", position.x)),
-		float(event.get("world_y", position.y)),
-	)
-	if (
-		position.distance_to(evidence_position) > 1.5
-		or original_ai_idle_tick_counter
-			!= int(event.get("shared_counter_before", -1))
-		or original_ai_idle_tick_limit
-			!= int(event.get("shared_limit_before", -1))
-		or original_route_update_active
-			!= bool(int(event.get("route_update_active", 0)))
-		or (
-			int(event.get("movement_path_state", -1)) == 0
-			and movement_path_index < movement_path.size()
-		)
 	):
 		return false
 	var expected_values_value: Variant = event.get("values", [])
@@ -1432,7 +1509,53 @@ func _advance_original_pursuit(delta: float) -> void:
 		_advance_original_pursuit_once()
 
 
+func _advance_original_recurring_pursuit_events() -> bool:
+	var round_index := _original_recurring_evidence_round_index()
+	if (
+		round_index <= 0
+		or round_index <= original_recurring_pursuit_last_round_index
+		or not is_alive
+	):
+		return false
+	original_recurring_pursuit_last_round_index = round_index
+	var events := _original_recurring_actor_events([
+		0x0005D394,
+		0x0005D47E,
+	])
+	var handled := false
+	for event: Dictionary in events:
+		var call_site_rva := int(event.get("call_site_rva", 0))
+		var actual_value := next_original_crt_random_value(call_site_rva)
+		if actual_value < 0:
+			continue
+		original_recurring_actor_event_serial += 1
+		original_recurring_actor_event_values_match = (
+			original_recurring_actor_event_values_match
+			and actual_value == int(event.get("value", -1))
+		)
+		var evidence_delay := int(event.get(
+			"pursuit_delay_counter",
+			-1,
+		))
+		if evidence_delay >= 0:
+			original_pursuit_delay_counter = evidence_delay
+		handled = (
+			_apply_original_pursuit_random_value(
+				actual_value,
+				call_site_rva,
+			)
+			or handled
+		)
+	return handled
+
+
 func _advance_original_pursuit_once() -> bool:
+	# During the short, input-free evidence lane, exact conditional calls are
+	# consumed by _advance_original_recurring_pursuit_events().  Unscheduled
+	# semantic draws would shift the process-global stream.  Round zero is kept
+	# available for isolated tests and pre-gameplay startup behavior.
+	if _original_recurring_evidence_round_index() > 0:
+		return true
 	var target := _resolved_original_pursuit_target()
 	if (
 		target == null
@@ -1448,8 +1571,20 @@ func _advance_original_pursuit_once() -> bool:
 	)
 	if random_value < 0:
 		return false
+	return _apply_original_pursuit_random_value(
+		random_value,
+		original_pursuit_call_site_rva,
+	)
+
+
+func _apply_original_pursuit_random_value(
+	random_value: int,
+	call_site_rva: int,
+) -> bool:
+	if random_value < 0 or not is_alive:
+		return false
 	original_pursuit_serial += 1
-	if original_pursuit_call_site_rva == 0x0005D394:
+	if call_site_rva == 0x0005D394:
 		original_pursuit_delay_counter += 1
 		if original_pursuit_delay_counter <= random_value % 10:
 			original_pursuit_last_navigation_applied = false
@@ -1457,9 +1592,13 @@ func _advance_original_pursuit_once() -> bool:
 		original_pursuit_delay_counter = 0
 	else:
 		original_pursuit_delay_counter = 0
+	var target := _resolved_original_pursuit_target()
+	if target == null:
+		original_pursuit_last_navigation_applied = false
+		return true
 	var destination := target.position
 	var far_override := (
-		original_pursuit_call_site_rva == 0x0005D47E
+		call_site_rva == 0x0005D47E
 		and random_value % 10 < 5
 		and position.distance_to(destination) > 128.0
 	)
@@ -1688,7 +1827,7 @@ func apply_original_first_gameplay_update_outcome(
 		original_crt_primary_candidate_last_physics_frame = -1
 		if not apply_original_crt_primary_candidate_scan_value(
 			primary_candidate_value
-		):
+	):
 			return false
 	if effects.has("route_wait_limit"):
 		if (
@@ -3510,16 +3649,41 @@ func _advance_original_ai_shared_counter(delta: float) -> void:
 		)
 	):
 		return
+	var evidence_round_index := (
+		_original_recurring_evidence_round_index()
+	)
+	var scheduled_by_site: Dictionary = {}
+	if (
+		evidence_round_index > 0
+		and evidence_round_index
+			> original_recurring_shared_last_round_index
+	):
+		original_recurring_shared_last_round_index = evidence_round_index
+		for event: Dictionary in _original_recurring_actor_events([
+			0x00056105,
+			0x0005614F,
+			0x00058946,
+		]):
+			scheduled_by_site[int(event.get("call_site_rva", 0))] = (
+				event
+			)
 	original_ai_idle_tick_elapsed += maxf(delta, 0.0)
 	while (
 		original_ai_idle_tick_elapsed
 		>= ORIGINAL_AI_IDLE_TICK_SECONDS
 	):
 		original_ai_idle_tick_elapsed -= ORIGINAL_AI_IDLE_TICK_SECONDS
-		if stationary:
+		if stationary or scheduled_by_site.has(0x00056105):
 			original_ai_idle_tick_counter += 1
-			if (
-				original_ai_idle_tick_counter
+			if scheduled_by_site.has(0x00056105):
+				_apply_original_recurring_shared_event(
+					scheduled_by_site[0x00056105] as Dictionary,
+					0x00056105,
+				)
+				scheduled_by_site.erase(0x00056105)
+			elif (
+				evidence_round_index <= 0
+				and original_ai_idle_tick_counter
 				>= original_ai_idle_tick_limit
 			):
 				var stationary_limit := _next_original_ai_wait_limit(
@@ -3529,10 +3693,26 @@ func _advance_original_ai_shared_counter(delta: float) -> void:
 					original_ai_idle_tick_counter = 0
 					original_ai_idle_tick_limit = stationary_limit
 					original_ai_stationary_reset_serial += 1
-		if original_route_update_active:
+		if scheduled_by_site.has(0x0005614F):
+			_apply_original_recurring_shared_event(
+				scheduled_by_site[0x0005614F] as Dictionary,
+				0x0005614F,
+			)
+			scheduled_by_site.erase(0x0005614F)
+		if (
+			original_route_update_active
+			or scheduled_by_site.has(0x00058946)
+		):
 			original_ai_idle_tick_counter += 1
-			if (
-				original_ai_idle_tick_counter
+			if scheduled_by_site.has(0x00058946):
+				_apply_original_recurring_shared_event(
+					scheduled_by_site[0x00058946] as Dictionary,
+					0x00058946,
+				)
+				scheduled_by_site.erase(0x00058946)
+			elif (
+				evidence_round_index <= 0
+				and original_ai_idle_tick_counter
 				>= original_ai_idle_tick_limit
 			):
 				var route_limit := _next_original_ai_wait_limit(
@@ -3544,6 +3724,51 @@ func _advance_original_ai_shared_counter(delta: float) -> void:
 					original_route_update_active = false
 					original_ai_route_reset_serial += 1
 					_on_original_route_wait_completed()
+
+
+func _apply_original_recurring_shared_event(
+	event: Dictionary,
+	call_site_rva: int,
+) -> bool:
+	var evidence_counter := int(event.get(
+		"shared_counter_before",
+		-1,
+	))
+	var evidence_limit := int(event.get("shared_limit_before", -1))
+	if evidence_counter >= 0 and evidence_limit >= 0:
+		original_ai_idle_tick_counter = evidence_counter
+		original_ai_idle_tick_limit = evidence_limit
+	var evidence_route_active := int(event.get(
+		"route_update_active",
+		-1,
+	))
+	if evidence_route_active >= 0:
+		original_route_update_active = evidence_route_active != 0
+	var actual_value := next_original_crt_random_value(call_site_rva)
+	if actual_value < 0:
+		return false
+	original_recurring_actor_event_serial += 1
+	original_recurring_actor_event_values_match = (
+		original_recurring_actor_event_values_match
+		and actual_value == int(event.get("value", -1))
+	)
+	original_ai_idle_tick_counter = 0
+	original_ai_idle_tick_elapsed = 0.0
+	if call_site_rva == 0x0005614F:
+		original_ai_idle_tick_limit = actual_value % 60
+		return true
+	original_ai_idle_tick_limit = (
+		actual_value
+		% AI_IDLE_RANDOM_RULES.SEARCH_WAIT_RANDOM_SPAN
+		+ AI_IDLE_RANDOM_RULES.SEARCH_WAIT_MINIMUM_LIMIT
+	)
+	if call_site_rva == 0x00058946:
+		original_route_update_active = false
+		original_ai_route_reset_serial += 1
+		_on_original_route_wait_completed()
+	else:
+		original_ai_stationary_reset_serial += 1
+	return true
 
 
 func _next_original_ai_wait_limit(call_site_rva: int) -> int:
