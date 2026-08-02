@@ -30,6 +30,13 @@ func _run() -> void:
 		"normal product startup opens the native twelve-mission selector",
 	)
 	_expect(await _wait_for_render_frame(), "startup level-selector frame renders")
+	_expect(
+		_original_selector_layout_matches_viewport(
+			main.game_shell.original_overlay_layout_snapshot(),
+			Vector2(root.size),
+		),
+		"startup selector uses all twelve matching original mission labels",
+	)
 	_capture("startup-level-selector.jpg")
 	(main.game_shell._level_selector.level_buttons["m000"] as Button).pressed.emit()
 	_expect(
@@ -151,6 +158,13 @@ func _run() -> void:
 		and main.game_shell._level_selector.level_buttons.size() == 12,
 		"native free selector exposes exactly the twelve formal missions",
 	)
+	_expect(
+		_original_selector_layout_matches_viewport(
+			main.game_shell.original_overlay_layout_snapshot(),
+			Vector2(root.size),
+		),
+		"pause-menu selector retains its original-label geometry",
+	)
 	_capture("level-selector.jpg")
 	main.game_shell.close_for_state_change()
 
@@ -267,6 +281,35 @@ func _original_pause_layout_matches_viewport(
 		and is_equal_approx(float(layout.get("desaturate_average_mix", 0.0)), 1.0)
 		and not bool(layout.get("dim_visible", true))
 	)
+
+
+func _original_selector_layout_matches_viewport(
+	layout: Dictionary,
+	viewport_size: Vector2,
+) -> bool:
+	var panel_size := Vector2(820.0, 600.0)
+	if (
+		(layout.get("level_selector_panel_rect", Rect2()) as Rect2)
+		!= Rect2((viewport_size - panel_size) * 0.5, panel_size)
+	):
+		return false
+	var selector := layout.get("level_selector_layout", {}) as Dictionary
+	var buttons := selector.get("buttons", {}) as Dictionary
+	if (
+		not bool(selector.get("assets_ready", false))
+		or int(selector.get("grid_columns", 0)) != 3
+		or buttons.size() != 12
+	):
+		return false
+	for level_index: int in range(12):
+		var button := buttons.get("m%03d" % level_index, {}) as Dictionary
+		if (
+			not bool(button.get("uses_original_asset", false))
+			or (button.get("icon_size", Vector2.ZERO) as Vector2)
+			!= Vector2(114.0, 33.0)
+		):
+			return false
+	return true
 
 
 func _original_failure_layout_matches_viewport(

@@ -6,7 +6,12 @@ const OVERLAY_BASELINE_PATH := "res://data/original_overlay_asset_baseline.json"
 const HUD_HEIGHT := 62.0
 const PORTRAIT_NAMES: Array[String] = ["老赵", "铁蛋", "强子", "古明", "大牛"]
 const PSD_TEXTURE_IDS: Array[int] = [
+	1063, 1064, 1065, 1066, 1067, 1068, 1069, 1070,
+	1071, 1072, 1073, 1074,
+	1079, 1080, 1081, 1082, 1083, 1084, 1085, 1086,
+	1087, 1088, 1089, 1090,
 	1093,
+	1094,
 	1095,
 	1097, 1098,
 	1101, 1102, 1103, 1104, 1105, 1106,
@@ -413,6 +418,56 @@ func _check_overlay_layout(shell: GameShell, viewport_size: Vector2i) -> void:
 	)
 	shell.close_for_state_change()
 
+	var level_entries: Array[Dictionary] = []
+	for level_index: int in range(12):
+		level_entries.append({
+			"id": "m%03d" % level_index,
+			"number": level_index + 1,
+			"title": "Fixture mission %02d" % (level_index + 1),
+			"unlocked": true,
+		})
+	shell.set_level_selection(level_entries, {
+		"highest_unlocked_level_id": "m011",
+		"completed_level_ids": ["m000", "m001"],
+	}, "m001")
+	shell.show_level_selector(true)
+	paused = false
+	await process_frame
+	await process_frame
+	layout = shell.original_overlay_layout_snapshot()
+	_expect(
+		(layout.get("level_selector_panel_rect", Rect2()) as Rect2)
+		== Rect2(
+			(Vector2(viewport_size) - Vector2(820.0, 600.0)) * 0.5,
+			Vector2(820.0, 600.0),
+		),
+		"free selector keeps its centered 820x600 product surface at %s"
+		% viewport_size,
+	)
+	var selector_layout := layout.get("level_selector_layout", {}) as Dictionary
+	var selector_buttons := selector_layout.get("buttons", {}) as Dictionary
+	_expect(
+		bool(selector_layout.get("assets_ready", false))
+		and int(selector_layout.get("grid_columns", 0)) == 3
+		and selector_buttons.size() == 12,
+		"free selector maps exactly twelve formal missions into a three-column grid",
+	)
+	for level_index: int in range(12):
+		var level_id := "m%03d" % level_index
+		var button_record := selector_buttons.get(level_id, {}) as Dictionary
+		var button_rect := button_record.get("rect", Rect2()) as Rect2
+		_expect(
+			bool(button_record.get("enabled", false))
+			and bool(button_record.get("uses_original_asset", false))
+			and (button_record.get("icon_size", Vector2.ZERO) as Vector2)
+			== Vector2(114.0, 33.0)
+			and button_rect.size.x >= 245.0
+			and button_rect.size.y >= 82.0,
+			"%s uses its original normal/bright mission label within a usable hit target"
+			% level_id,
+		)
+	shell.close_for_state_change()
+
 
 func _fixture_texture(dimensions: Vector2i, color: Color) -> Texture2D:
 	var image := Image.create(dimensions.x, dimensions.y, false, Image.FORMAT_RGBA8)
@@ -519,8 +574,34 @@ func _write_fixture_assets(fixture_root: String) -> bool:
 
 func _fixture_psd_size(index: int) -> Vector2i:
 	match index:
+		1063, 1064:
+			return Vector2i(106, 25)
+		1065, 1066:
+			return Vector2i(50, 25)
+		1067, 1068:
+			return Vector2i(108, 25)
+		1069, 1070:
+			return Vector2i(108, 25)
+		1071, 1072:
+			return Vector2i(107, 26)
+		1073, 1074:
+			return Vector2i(53, 25)
+		1079, 1080:
+			return Vector2i(106, 26)
+		1081, 1082:
+			return Vector2i(107, 26)
+		1083, 1084:
+			return Vector2i(79, 26)
+		1085, 1086:
+			return Vector2i(51, 25)
+		1087, 1088:
+			return Vector2i(107, 25)
+		1089, 1090:
+			return Vector2i(106, 25)
 		1093:
 			return Vector2i(172, 50)
+		1094:
+			return Vector2i(114, 33)
 		1095:
 			return Vector2i(132, 38)
 		1097, 1098, 1109, 1110, 1114, 1115:

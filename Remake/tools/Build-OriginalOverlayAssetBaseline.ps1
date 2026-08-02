@@ -59,6 +59,14 @@ $pauseMenuPairs = [ordered]@{
     credits = @(1112, 1113)
     quit = @(1105, 1106)
 }
+$levelSelectorPairs = [ordered]@{
+    m000 = @(1089, 1090); m001 = @(1081, 1082)
+    m002 = @(1073, 1074); m003 = @(1083, 1084)
+    m004 = @(1071, 1072); m005 = @(1067, 1068)
+    m006 = @(1065, 1066); m007 = @(1085, 1086)
+    m008 = @(1063, 1064); m009 = @(1069, 1070)
+    m010 = @(1087, 1088); m011 = @(1079, 1080)
+}
 $minimapIds = [ordered]@{
     m000 = 1036; m001 = 1026; m002 = 1027; m003 = 1028
     m004 = 1029; m005 = 1030; m006 = 1031; m007 = 1032
@@ -81,6 +89,7 @@ $assetKeys = [Collections.Generic.HashSet[string]]::new(
 [void]$assetKeys.Add('psd/1260')
 [void]$assetKeys.Add('psd/1261')
 [void]$assetKeys.Add('psd/1254')
+[void]$assetKeys.Add('psd/1094')
 [void]$assetKeys.Add('iblock/1047')
 foreach ($id in $minimapIds.Values) {
     [void]$assetKeys.Add("iblock/$id")
@@ -91,6 +100,11 @@ foreach ($pair in $inventoryPairs.Values + $missionItemPairs.Values) {
     }
 }
 foreach ($pair in $pauseMenuPairs.Values) {
+    foreach ($id in $pair) {
+        [void]$assetKeys.Add("psd/$id")
+    }
+}
+foreach ($pair in $levelSelectorPairs.Values) {
     foreach ($id in $pair) {
         [void]$assetKeys.Add("psd/$id")
     }
@@ -225,6 +239,11 @@ $viewports = foreach ($viewport in @(
             (($viewport.height / 2) - 59),
             282,
             94)
+        level_selector_panel_rect = @(
+            (($viewport.width - 820) / 2),
+            (($viewport.height - 600) / 2),
+            820,
+            600)
         credits_rect = @(
             (($viewport.width - 640) / 2),
             (($viewport.height - 480) / 2),
@@ -288,6 +307,21 @@ $baseline = [ordered]@{
         }
         background_transform = 'equal_rgb_average_no_dimming'
     }
+    level_selector = [ordered]@{
+        source_status = 'stable_mod_free_selector_enhancement_using_original_level_labels'
+        original_new_game_behavior = 'starts_selector_level_1_without_an_in_game_free_selector'
+        formal_levels = 12
+        grid_columns = 3
+        hit_size = @(245, 82)
+        panel_size = @(820, 600)
+        button_background = @{ kind = 'psd'; gfl_index = 1094 }
+        button_size = @(114, 33)
+        label_pairs = $levelSelectorPairs
+        excluded_unused_label_pairs = @(
+            @{ normal = 1075; hover = 1076; resource = 'SL-unused-minefield' },
+            @{ normal = 1077; hover = 1078; resource = 'SL-unused-infighting' },
+            @{ normal = 1091; hover = 1092; resource = 'SL-unused-final-mission' })
+    }
     credits = [ordered]@{
         asset = @{ kind = 'psd'; gfl_index = 1254 }
         size = @(640, 480)
@@ -321,6 +355,8 @@ $baseline = [ordered]@{
             '1024x768 primary surface: PSD1095 x=207, y=266+40*row; label +5,+4'
         original_failure_geometry = `
             '1024x768 primary surface: title 413,325; restart 354,381; main 504,381; restart label +8,+8'
+        level_selector_provenance = `
+            'stable MOD free selection is external; Remake maps exactly twelve formal routes to matching original SL normal/bright labels'
         runtime_loading = `
             'Remake loads these exact converted PNG files without filtering'
         cursor_runtime = `

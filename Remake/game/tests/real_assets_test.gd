@@ -1108,7 +1108,7 @@ func validate_original_overlay_asset_baseline() -> void:
 		"res://../LocalAssets/converted"
 	).simplify_path()
 	var assets := baseline.get("assets", []) as Array
-	expect(assets.size() == 83, "all 83 original overlay PNG identities are catalogued")
+	expect(assets.size() == 108, "all 108 original overlay PNG identities are catalogued")
 	var verified := 0
 	for raw_asset: Variant in assets:
 		if not raw_asset is Dictionary:
@@ -1135,7 +1135,7 @@ func validate_original_overlay_asset_baseline() -> void:
 			"overlay %s/%d preserves exact converted pixels" % [kind, gfl_index],
 		)
 		verified += 1
-	expect(verified == 83, "all original overlay pixel hashes verify")
+	expect(verified == 108, "all original overlay pixel hashes verify")
 
 
 func validate_special_action_assets() -> void:

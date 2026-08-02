@@ -11,6 +11,57 @@ var level_buttons: Dictionary = {}
 
 var _summary: Label
 var _grid: GridContainer
+var _original_texture_pairs: Dictionary = {}
+var _original_assets_ready := false
+
+
+func configure_original_assets(texture_pairs: Dictionary) -> bool:
+	_original_texture_pairs.clear()
+	_original_assets_ready = texture_pairs.size() == 12
+	for level_id: String in texture_pairs:
+		var pair := texture_pairs[level_id] as Dictionary
+		var normal := pair.get("normal") as Texture2D
+		var hover := pair.get("hover") as Texture2D
+		if (
+			normal == null
+			or hover == null
+			or normal.get_size() != Vector2(114.0, 33.0)
+			or hover.get_size() != Vector2(114.0, 33.0)
+		):
+			_original_assets_ready = false
+			break
+		_original_texture_pairs[level_id] = {
+			"normal": normal,
+			"hover": hover,
+		}
+	if not _original_assets_ready:
+		_original_texture_pairs.clear()
+	if _grid != null:
+		_rebuild_buttons()
+	return _original_assets_ready
+
+
+func layout_snapshot() -> Dictionary:
+	var buttons: Dictionary = {}
+	for level_id: String in level_buttons:
+		var button := level_buttons[level_id] as Button
+		buttons[level_id] = {
+			"rect": button.get_global_rect(),
+			"enabled": not button.disabled,
+			"text": button.text,
+			"icon_size": (
+				button.icon.get_size()
+				if button.icon != null
+				else Vector2.ZERO
+			),
+			"uses_original_asset": _original_texture_pairs.has(level_id),
+		}
+	return {
+		"assets_ready": _original_assets_ready,
+		"grid_columns": _grid.columns if _grid != null else 0,
+		"grid_rect": _grid.get_global_rect() if _grid != null else Rect2(),
+		"buttons": buttons,
+	}
 
 
 func _ready() -> void:
@@ -109,13 +160,56 @@ func _rebuild_buttons() -> void:
 			state += "　◆ 顺序可玩"
 		var button := Button.new()
 		button.name = "Level_%s" % level_id
-		button.text = "第 %02d 关　%s\n%s" % [number, title, state]
+		button.text = "第 %02d 关\n%s" % [number, state]
 		button.custom_minimum_size = Vector2(245.0, 82.0)
 		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		button.tooltip_text = "%s：%s" % [level_id.to_upper(), title]
+		button.add_theme_font_size_override("font_size", 14)
+		if _original_texture_pairs.has(level_id):
+			var textures := _original_texture_pairs[level_id] as Dictionary
+			button.icon = textures.get("normal") as Texture2D
+			button.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
+			button.expand_icon = false
+			button.alignment = HORIZONTAL_ALIGNMENT_RIGHT
+			var empty_style := StyleBoxEmpty.new()
+			for style_name: String in [
+				"normal", "hover", "pressed", "focus", "disabled"
+			]:
+				button.add_theme_stylebox_override(style_name, empty_style)
+			button.mouse_entered.connect(
+				_refresh_original_button_texture.bind(level_id)
+			)
+			button.mouse_exited.connect(
+				_refresh_original_button_texture.bind(level_id)
+			)
+			button.focus_entered.connect(
+				_refresh_original_button_texture.bind(level_id)
+			)
+			button.focus_exited.connect(
+				_refresh_original_button_texture.bind(level_id)
+			)
+			button.button_down.connect(
+				_refresh_original_button_texture.bind(level_id)
+			)
+			button.button_up.connect(
+				_refresh_original_button_texture.bind(level_id)
+			)
 		button.pressed.connect(
 			func() -> void:
 				level_chosen.emit(level_id)
 		)
 		_grid.add_child(button)
 		level_buttons[level_id] = button
+
+
+func _refresh_original_button_texture(level_id: String) -> void:
+	call_deferred("_apply_original_button_texture", level_id)
+
+
+func _apply_original_button_texture(level_id: String) -> void:
+	var button := level_buttons.get(level_id) as Button
+	if button == null or not _original_texture_pairs.has(level_id):
+		return
+	var textures := _original_texture_pairs[level_id] as Dictionary
+	var highlighted := button.is_hovered() or button.has_focus() or button.button_pressed
+	button.icon = textures.get("hover" if highlighted else "normal") as Texture2D

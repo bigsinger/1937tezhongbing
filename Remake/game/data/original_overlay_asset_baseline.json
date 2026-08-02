@@ -258,6 +258,95 @@
                                   },
                          "background_transform":  "equal_rgb_average_no_dimming"
                      },
+    "level_selector":  {
+                           "source_status":  "stable_mod_free_selector_enhancement_using_original_level_labels",
+                           "original_new_game_behavior":  "starts_selector_level_1_without_an_in_game_free_selector",
+                           "formal_levels":  12,
+                           "grid_columns":  3,
+                           "hit_size":  [
+                                            245,
+                                            82
+                                        ],
+                           "panel_size":  [
+                                              820,
+                                              600
+                                          ],
+                           "button_background":  {
+                                                     "kind":  "psd",
+                                                     "gfl_index":  1094
+                                                 },
+                           "button_size":  [
+                                               114,
+                                               33
+                                           ],
+                           "label_pairs":  {
+                                               "m000":  [
+                                                            1089,
+                                                            1090
+                                                        ],
+                                               "m001":  [
+                                                            1081,
+                                                            1082
+                                                        ],
+                                               "m002":  [
+                                                            1073,
+                                                            1074
+                                                        ],
+                                               "m003":  [
+                                                            1083,
+                                                            1084
+                                                        ],
+                                               "m004":  [
+                                                            1071,
+                                                            1072
+                                                        ],
+                                               "m005":  [
+                                                            1067,
+                                                            1068
+                                                        ],
+                                               "m006":  [
+                                                            1065,
+                                                            1066
+                                                        ],
+                                               "m007":  [
+                                                            1085,
+                                                            1086
+                                                        ],
+                                               "m008":  [
+                                                            1063,
+                                                            1064
+                                                        ],
+                                               "m009":  [
+                                                            1069,
+                                                            1070
+                                                        ],
+                                               "m010":  [
+                                                            1087,
+                                                            1088
+                                                        ],
+                                               "m011":  [
+                                                            1079,
+                                                            1080
+                                                        ]
+                                           },
+                           "excluded_unused_label_pairs":  [
+                                                               {
+                                                                   "hover":  1076,
+                                                                   "resource":  "SL-unused-minefield",
+                                                                   "normal":  1075
+                                                               },
+                                                               {
+                                                                   "hover":  1078,
+                                                                   "resource":  "SL-unused-infighting",
+                                                                   "normal":  1077
+                                                               },
+                                                               {
+                                                                   "hover":  1092,
+                                                                   "resource":  "SL-unused-final-mission",
+                                                                   "normal":  1091
+                                                               }
+                                                           ]
+                       },
     "credits":  {
                     "asset":  {
                                   "kind":  "psd",
@@ -606,6 +695,12 @@
                                                     282,
                                                     94
                                                 ],
+                          "level_selector_panel_rect":  [
+                                                            102,
+                                                            84,
+                                                            820,
+                                                            600
+                                                        ],
                           "credits_rect":  [
                                                192,
                                                144,
@@ -658,6 +753,12 @@
                                                     282,
                                                     94
                                                 ],
+                          "level_selector_panel_rect":  [
+                                                            550,
+                                                            240,
+                                                            820,
+                                                            600
+                                                        ],
                           "credits_rect":  [
                                                640,
                                                300,
@@ -773,11 +874,211 @@
                    },
                    {
                        "kind":  "psd",
+                       "gfl_index":  1063,
+                       "resource_name":  "SL-暗战矿坑.psd",
+                       "width":  106,
+                       "height":  25,
+                       "converted_png_sha256":  "92111f4dac595b7243f760578672654bbb16100a8b2b05cf7817e9e55e0835ef"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1064,
+                       "resource_name":  "SL-暗战矿坑-亮.psd",
+                       "width":  106,
+                       "height":  25,
+                       "converted_png_sha256":  "ee5962c7cc57269499fbb4fee69f9f72f6a3dbcab581b982346a3dd180ce1579"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1065,
+                       "resource_name":  "SL-惩罚.psd",
+                       "width":  50,
+                       "height":  25,
+                       "converted_png_sha256":  "3f0702d5f25edd343b235a5651832303ea694efd56566ffbca1c66d5503b45c5"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1066,
+                       "resource_name":  "SL-惩罚-亮.psd",
+                       "width":  50,
+                       "height":  25,
+                       "converted_png_sha256":  "9f664829b22f5386f09bcb48d8168f824a6e6680becea44aa27d494182746f0c"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1067,
+                       "resource_name":  "SL-大闹寒江镇.psd",
+                       "width":  108,
+                       "height":  25,
+                       "converted_png_sha256":  "60db81d05a14ffb9a9141cc1911b578039eee6c2a358a4897b730d223881ea5b"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1068,
+                       "resource_name":  "SL-大闹寒江镇-亮.psd",
+                       "width":  108,
+                       "height":  25,
+                       "converted_png_sha256":  "575c7c5aefc4472afa67382ad975753c61fe2f05556518058414a46bd7e97402"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1069,
+                       "resource_name":  "SL-夺宝奇兵.psd",
+                       "width":  108,
+                       "height":  25,
+                       "converted_png_sha256":  "3f7e03656f34dff1c7e0828ddd8d4ee78c7be02db4962da1884dc50b7fa12716"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1070,
+                       "resource_name":  "SL-夺宝奇兵-亮.psd",
+                       "width":  108,
+                       "height":  25,
+                       "converted_png_sha256":  "8699643d4754c70d1439f6540752036fcf05c4cb6cab3e9019045e3f45a60324"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1071,
+                       "resource_name":  "SL-火烧粮仓.psd",
+                       "width":  107,
+                       "height":  26,
+                       "converted_png_sha256":  "74c0b8d0c5d1be9b0fc061a9b10682cce44599953365cc491e38739030717c23"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1072,
+                       "resource_name":  "SL-火烧粮仓-亮.psd",
+                       "width":  107,
+                       "height":  26,
+                       "converted_png_sha256":  "dc1f6ab09e9da6937c7ec5fe873d7231cb3d1d73f2433310dea19e5dcb86e9c0"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1073,
+                       "resource_name":  "SL-劫狱.psd",
+                       "width":  53,
+                       "height":  25,
+                       "converted_png_sha256":  "27fa8d5e666ba4ece11aba96c0a8c3726814f011a865e9bb80550478e31e3df6"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1074,
+                       "resource_name":  "SL-劫狱-亮.psd",
+                       "width":  53,
+                       "height":  25,
+                       "converted_png_sha256":  "cc3c7494df4ff70691fbeea9b2bee3d5e44ea91e8a3a108c17edd0eb435e371c"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1079,
+                       "resource_name":  "SL-破袭机场.psd",
+                       "width":  106,
+                       "height":  26,
+                       "converted_png_sha256":  "ab1a54b41dbfd05cbcc1cf8e8af7a19cf9d8d6822a436190d45b7e303e0ac2ac"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1080,
+                       "resource_name":  "SL-破袭机场-亮.psd",
+                       "width":  106,
+                       "height":  26,
+                       "converted_png_sha256":  "745716b3244c8e22bef91e26665cce3bf33a6f3481d32d270e625ab1f59c7e4c"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1081,
+                       "resource_name":  "SL-奇袭车站.psd",
+                       "width":  107,
+                       "height":  26,
+                       "converted_png_sha256":  "c88d92548e4d7f82957d95c2e7f08ff1acb781241b3c3878accac3b9831807f4"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1082,
+                       "resource_name":  "SL-奇袭车站-亮.psd",
+                       "width":  107,
+                       "height":  26,
+                       "converted_png_sha256":  "833126456f52528a71b9f2940a38e6e30a6c684623ab21f0fbd1d8d5cbbc83ef"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1083,
+                       "resource_name":  "SL-铁路桥.psd",
+                       "width":  79,
+                       "height":  26,
+                       "converted_png_sha256":  "692e6259b157b01e123d6f03e6931d18e6c392a4ebfdaf4fa0992e10e398dc9d"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1084,
+                       "resource_name":  "SL-铁路桥-亮.psd",
+                       "width":  79,
+                       "height":  26,
+                       "converted_png_sha256":  "d26c6bf7948439dca19cb0c627442481f796fb700b7669e6b49706ba664641bb"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1085,
+                       "resource_name":  "SL-脱困.psd",
+                       "width":  51,
+                       "height":  25,
+                       "converted_png_sha256":  "a13ddaa1ba2cfe00a5dd3da36af2865b5aa25b6fe01b063c8c0a38e48fcb4eab"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1086,
+                       "resource_name":  "SL-脱困-亮.psd",
+                       "width":  51,
+                       "height":  25,
+                       "converted_png_sha256":  "3c1a7c3db74cbcee71e515afc3cb4b0fcc6ec6f195c4cf7a5ed7833d3da74dd3"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1087,
+                       "resource_name":  "SL-血色渡口.psd",
+                       "width":  107,
+                       "height":  25,
+                       "converted_png_sha256":  "7f92952c075337b7a9aa4b0ef8e53930d01dff63e8cbe30c193b20ae7de45351"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1088,
+                       "resource_name":  "SL-血色渡口-亮.psd",
+                       "width":  107,
+                       "height":  25,
+                       "converted_png_sha256":  "a018c924cba1a0dc791c77d8b2870ce58eaa1281668c987fa13ad1ce91153be9"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1089,
+                       "resource_name":  "SL-营救行动.psd",
+                       "width":  106,
+                       "height":  25,
+                       "converted_png_sha256":  "d3d9938e5dedc1c379c14726ab03e8b6e7cc2b0311c41d4dc3d1e337b7a46f67"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1090,
+                       "resource_name":  "SL-营救行动-亮.psd",
+                       "width":  106,
+                       "height":  25,
+                       "converted_png_sha256":  "0d1e8932fccbbc897cb3908559b22010d09532abd217f064c177cc90883962fa"
+                   },
+                   {
+                       "kind":  "psd",
                        "gfl_index":  1093,
                        "resource_name":  "按钮衬底-大.psd",
                        "width":  172,
                        "height":  50,
                        "converted_png_sha256":  "632e12edc7d93af0dc562b270d737916ef1ff1bd833accd4852214dcb85b3d28"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1094,
+                       "resource_name":  "按钮衬底-小.psd",
+                       "width":  114,
+                       "height":  33,
+                       "converted_png_sha256":  "187ad56e39f1976151c84ea3d50f704d87f85a90bba21456c42b016a44289ee9"
                    },
                    {
                        "kind":  "psd",
@@ -1336,6 +1637,7 @@
                      "original_click_formula":  "screen-276+13+50*column, screen-62-421+40+84*row",
                      "original_pause_geometry":  "1024x768 primary surface: PSD1095 x=207, y=266+40*row; label +5,+4",
                      "original_failure_geometry":  "1024x768 primary surface: title 413,325; restart 354,381; main 504,381; restart label +8,+8",
+                     "level_selector_provenance":  "stable MOD free selection is external; Remake maps exactly twelve formal routes to matching original SL normal/bright labels",
                      "runtime_loading":  "Remake loads these exact converted PNG files without filtering",
                      "cursor_runtime":  "mouse.spr primary.x/z are the hotspot and frame_hold_ticks drive a 60 Hz loop",
                      "original_bytes_committed":  false

@@ -47,6 +47,21 @@ const ORIGINAL_FAILURE_RESTART_HOVER_PSD := 1261
 const ORIGINAL_FAILURE_RESTART_LABEL_OFFSET := Vector2i(8, 8)
 const ORIGINAL_FAILURE_TEXT_COLOR := Color(0.69, 0.70, 0.53, 1.0)
 const ORIGINAL_FAILURE_TEXT_HOVER_COLOR := Color(0.94, 0.94, 0.86, 1.0)
+const ORIGINAL_LEVEL_SELECTOR_BACKGROUND_PSD := 1094
+const ORIGINAL_LEVEL_SELECTOR_LABELS := {
+	"m000": {"normal": 1089, "hover": 1090},
+	"m001": {"normal": 1081, "hover": 1082},
+	"m002": {"normal": 1073, "hover": 1074},
+	"m003": {"normal": 1083, "hover": 1084},
+	"m004": {"normal": 1071, "hover": 1072},
+	"m005": {"normal": 1067, "hover": 1068},
+	"m006": {"normal": 1065, "hover": 1066},
+	"m007": {"normal": 1085, "hover": 1086},
+	"m008": {"normal": 1063, "hover": 1064},
+	"m009": {"normal": 1069, "hover": 1070},
+	"m010": {"normal": 1087, "hover": 1088},
+	"m011": {"normal": 1079, "hover": 1080},
+}
 const ORIGINAL_CREDITS_PSD := 1254
 const OVERLAY_DIM_COLOR := Color(0.018, 0.024, 0.020, 0.78)
 const ORIGINAL_HELP_BACKDROP_COLOR := Color(0.0, 0.0, 0.0, 1.0)
@@ -330,6 +345,7 @@ func configure_original_hud_assets(converted_root: String) -> bool:
 		_inventory_background.texture = inventory_background
 	var classic_menu_ready := _configure_original_pause_menu_assets()
 	var classic_failure_ready := _configure_original_failure_assets()
+	var level_selector_ready := _configure_original_level_selector_assets()
 	var credits := _load_original_hud_texture("psd", ORIGINAL_CREDITS_PSD)
 	var credits_ready := _credits_texture != null and credits != null
 	if credits_ready:
@@ -338,6 +354,7 @@ func configure_original_hud_assets(converted_root: String) -> bool:
 		inventory_ready
 		and classic_menu_ready
 		and classic_failure_ready
+		and level_selector_ready
 		and credits_ready
 	)
 
@@ -430,6 +447,44 @@ func _configure_original_failure_assets() -> bool:
 	_failure_main_button.texture_focused = button_background
 	_failure_main_button.size = button_background.get_size()
 	return true
+
+
+func _configure_original_level_selector_assets() -> bool:
+	if _level_selector == null:
+		return false
+	var background := _load_original_hud_texture(
+		"psd", ORIGINAL_LEVEL_SELECTOR_BACKGROUND_PSD
+	)
+	if background == null or background.get_size() != Vector2(114.0, 33.0):
+		return false
+	var texture_pairs: Dictionary = {}
+	for level_id: String in ORIGINAL_LEVEL_SELECTOR_LABELS:
+		var descriptor := ORIGINAL_LEVEL_SELECTOR_LABELS[level_id] as Dictionary
+		var normal := _load_original_hud_texture("psd", int(descriptor["normal"]))
+		var hover := _load_original_hud_texture("psd", int(descriptor["hover"]))
+		if normal == null or hover == null:
+			return false
+		var normal_offset := Vector2i(
+			maxi(0, int((background.get_width() - normal.get_width()) * 0.5)),
+			maxi(0, int((background.get_height() - normal.get_height()) * 0.5)),
+		)
+		var hover_offset := Vector2i(
+			maxi(0, int((background.get_width() - hover.get_width()) * 0.5)),
+			maxi(0, int((background.get_height() - hover.get_height()) * 0.5)),
+		)
+		var normal_composite := _compose_original_pause_menu_texture(
+			background, normal, normal_offset
+		)
+		var hover_composite := _compose_original_pause_menu_texture(
+			background, hover, hover_offset
+		)
+		if normal_composite == null or hover_composite == null:
+			return false
+		texture_pairs[level_id] = {
+			"normal": normal_composite,
+			"hover": hover_composite,
+		}
+	return _level_selector.configure_original_assets(texture_pairs)
 
 
 func _compose_original_pause_menu_texture(
@@ -577,6 +632,11 @@ func original_overlay_layout_snapshot() -> Dictionary:
 			),
 		},
 	}
+	var level_selector_layout := (
+		_level_selector.layout_snapshot()
+		if _level_selector != null
+		else {}
+	)
 	return {
 		"assets_ready": _original_overlay_assets_ready,
 		"inventory_rect": (
@@ -614,6 +674,12 @@ func original_overlay_layout_snapshot() -> Dictionary:
 			else Vector2.ZERO
 		),
 		"failure_buttons": failure_buttons,
+		"level_selector_panel_rect": (
+			_level_selector_panel.get_global_rect()
+			if _level_selector_panel != null
+			else Rect2()
+		),
+		"level_selector_layout": level_selector_layout,
 		"desaturate_visible": (
 			_failure_desaturate != null and _failure_desaturate.visible
 		),

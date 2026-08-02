@@ -71,6 +71,35 @@ if ([int]$failureMenu.title.background.gfl_index -ne 1093 -or
         'equal_rgb_average_no_dimming') {
     throw 'Recovered original failure-menu geometry is invalid.'
 }
+$levelSelector = $baseline.level_selector
+if ([string]$levelSelector.source_status -cne
+        'stable_mod_free_selector_enhancement_using_original_level_labels' -or
+    [string]$levelSelector.original_new_game_behavior -cne
+        'starts_selector_level_1_without_an_in_game_free_selector' -or
+    [int]$levelSelector.formal_levels -ne 12 -or
+    [int]$levelSelector.grid_columns -ne 3 -or
+    @($levelSelector.hit_size) -join ',' -ne '245,82' -or
+    @($levelSelector.panel_size) -join ',' -ne '820,600' -or
+    [int]$levelSelector.button_background.gfl_index -ne 1094 -or
+    @($levelSelector.button_size) -join ',' -ne '114,33' -or
+    @($levelSelector.label_pairs.PSObject.Properties).Count -ne 12 -or
+    @($levelSelector.excluded_unused_label_pairs).Count -ne 3) {
+    throw 'Original-resource free-selector contract is invalid.'
+}
+$expectedSelectorPairs = [ordered]@{
+    m000 = '1089,1090'; m001 = '1081,1082'
+    m002 = '1073,1074'; m003 = '1083,1084'
+    m004 = '1071,1072'; m005 = '1067,1068'
+    m006 = '1065,1066'; m007 = '1085,1086'
+    m008 = '1063,1064'; m009 = '1069,1070'
+    m010 = '1087,1088'; m011 = '1079,1080'
+}
+foreach ($levelId in $expectedSelectorPairs.Keys) {
+    if (@($levelSelector.label_pairs.$levelId) -join ',' -cne
+        $expectedSelectorPairs[$levelId]) {
+        throw "Original selector label mapping drifted for $levelId."
+    }
+}
 $expectedLevels = 0..11 | ForEach-Object { 'm{0:D3}' -f $_ }
 $minimapLevels = @($baseline.minimaps.level_id)
 if (@($baseline.minimaps).Count -ne 12 -or
@@ -106,8 +135,8 @@ if ($cursorFrameCount -ne 16) {
     throw "Original cursor must retain all 16 frames; found $cursorFrameCount."
 }
 $assets = @($baseline.assets)
-if ($assets.Count -lt 50) {
-    throw 'Original overlay asset catalog is unexpectedly small.'
+if ($assets.Count -ne 108) {
+    throw "Original overlay baseline must contain exactly 108 assets; found $($assets.Count)."
 }
 $keys = @{}
 foreach ($asset in $assets) {
@@ -127,6 +156,9 @@ foreach ($requiredKey in @(
         'psd/1260',
         'psd/1261',
         'psd/1254',
+        'psd/1094',
+        'psd/1063',
+        'psd/1090',
         'psd/1097',
         'psd/1115',
         'iblock/1047')) {
@@ -173,6 +205,11 @@ foreach ($viewport in @($baseline.viewports)) {
         (([int]$viewport.height / 2) - 59),
         282,
         94) -join ','
+    $expectedLevelSelector = @(
+        (([int]$viewport.width - 820) / 2),
+        (([int]$viewport.height - 600) / 2),
+        820,
+        600) -join ','
     if (@($viewport.inventory_rect) -join ',' -ne $expectedInventory -or
         @($viewport.help_rect) -join ',' -ne $expectedHelp -or
         @($viewport.credits_rect) -join ',' -ne $expectedHelp -or
@@ -180,7 +217,8 @@ foreach ($viewport in @($baseline.viewports)) {
         @($viewport.failure_title_rect) -join ',' -ne $expectedFailureTitle -or
         @($viewport.failure_restart_rect) -join ',' -ne $expectedFailureRestart -or
         @($viewport.failure_main_rect) -join ',' -ne $expectedFailureMain -or
-        @($viewport.failure_menu_rect) -join ',' -ne $expectedFailureMenu) {
+        @($viewport.failure_menu_rect) -join ',' -ne $expectedFailureMenu -or
+        @($viewport.level_selector_panel_rect) -join ',' -ne $expectedLevelSelector) {
         throw "Overlay anchoring is invalid at $($viewport.width)x$($viewport.height)."
     }
 }
@@ -193,5 +231,5 @@ if ($serialized -match 'LocalAssets|[A-Z]:\\|/converted/') {
 }
 
 Write-Host (
-    "Original overlay baseline passed: {0} assets, 12 maps, 8 pause buttons, exact failure menu, 16 cursor frames, two viewports." -f
+    "Original overlay baseline passed: {0} assets, 12 maps, 12 original-label selector buttons, 8 pause buttons, exact failure menu, 16 cursor frames, two viewports." -f
     $assets.Count)
