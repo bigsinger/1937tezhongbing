@@ -1056,7 +1056,7 @@ func switch_level(
 		Time.get_ticks_usec() - level_load_phase_started_usec
 	)
 	level_load_phase_started_usec = Time.get_ticks_usec()
-	_prewarm_squad_actor_voices()
+	_prewarm_original_actor_voices()
 	last_level_load_phase_usec["squad_audio"] = (
 		Time.get_ticks_usec() - level_load_phase_started_usec
 	)
@@ -1095,7 +1095,7 @@ func switch_level(
 	)
 
 
-func _prewarm_squad_actor_voices() -> void:
+func _prewarm_original_actor_voices() -> void:
 	if media_director == null:
 		return
 	var warmed_gfl_indices: Dictionary = {}
@@ -1107,6 +1107,19 @@ func _prewarm_squad_actor_voices() -> void:
 			for gfl_index: int in LEGACY_ACTOR_AUDIO_RULES.gfl_indices_for(
 				family,
 				unit.runtime_actor_type,
+			):
+				if warmed_gfl_indices.has(gfl_index):
+					continue
+				warmed_gfl_indices[gfl_index] = true
+				media_director.prewarm_audio_index(gfl_index)
+	for enemy: ENEMY_UNIT in enemies:
+		for family: String in [
+			LEGACY_ACTOR_AUDIO_RULES.FAMILY_HOSTILE_INITIAL,
+			LEGACY_ACTOR_AUDIO_RULES.FAMILY_HOSTILE_FOLLOWUP,
+		]:
+			for gfl_index: int in LEGACY_ACTOR_AUDIO_RULES.gfl_indices_for(
+				family,
+				enemy.runtime_actor_type,
 			):
 				if warmed_gfl_indices.has(gfl_index):
 					continue
@@ -4201,6 +4214,16 @@ func _connect_combatant(combatant: Node2D) -> void:
 		enemy.legacy_corpse_discovery_triggered.connect(
 			_on_enemy_legacy_corpse_discovered
 		)
+		enemy.original_actor_audio_requested.connect(
+			_on_enemy_original_actor_audio_requested
+		)
+
+
+func _on_enemy_original_actor_audio_requested(
+	enemy: ENEMY_UNIT,
+	family: String,
+) -> void:
+	_play_original_actor_audio(family, enemy)
 
 
 func _on_projectile_requested(

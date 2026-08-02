@@ -13,6 +13,9 @@ const LEGACY_CORPSE_DISCOVERY_RULES: Script = preload(
 const LEGACY_ENEMY_AI_RULES: Script = preload(
 	"res://scripts/legacy_enemy_ai_rules.gd"
 )
+const LEGACY_ACTOR_AUDIO_RULES: Script = preload(
+	"res://scripts/legacy_actor_audio_rules.gd"
+)
 const SENSE_INTERVAL_SECONDS := 0.20
 const CHASE_REPLAN_SECONDS := 0.50
 const SEARCH_TIMEOUT_SECONDS := 2.50
@@ -78,6 +81,7 @@ signal legacy_corpse_discovery_triggered(
 	observer: EnemyUnit,
 	corpse: EnemyUnit,
 )
+signal original_actor_audio_requested(enemy: EnemyUnit, family: String)
 
 var behavior_state := BehaviorState.PATROL
 var patrol_waypoints := PackedVector2Array()
@@ -174,6 +178,10 @@ var editorial_ai_tags: Array[String] = []
 var regroup_remaining := 0.0
 var last_editorial_aim_miss := false
 var _pending_editorial_aim_miss := false
+## sub_45C710 returns immediately after its first-live-target branch.  This
+## one-tick marker prevents the same Remake physics pass from also entering
+## the later reaction-expiry/follow-up-voice branch.
+var legacy_contact_acquired_this_tick := false
 
 
 func set_tactical_ranges_visible(value: bool) -> void:
@@ -552,6 +560,7 @@ static func deterministic_aim_sample(enemy_scene_index: int, attack_serial: int)
 
 func _physics_process(delta: float) -> void:
 	var safe_delta := maxf(delta, 0.0)
+	legacy_contact_acquired_this_tick = false
 	var command_serial_at_update_start := original_actor_command_serial
 	_advance_original_crt_actor_random_tick(safe_delta)
 	if not is_alive or combat_action != CombatAction.NONE or hurt_remaining > 0.0:
@@ -697,24 +706,7 @@ func _update_detection() -> void:
 			nearest_distance_squared = distance_squared
 			nearest_visible = target
 	if nearest_visible != null:
-		_clear_legacy_world_item_target()
-		_clear_legacy_corpse_attention()
-		_release_special_control_for_combat()
-		var already_tracking := (
-			current_target == nearest_visible
-			and behavior_state in [BehaviorState.CHASE, BehaviorState.ATTACK]
-		)
-		current_target = nearest_visible
-		last_known_target_position = nearest_visible.position
-		search_elapsed = 0.0
-		if not already_tracking:
-			# The original actor's reaction counter runs while the guard patrols.
-			# Do not discard that accumulated time at first visual contact: a
-			# ready guard can commit the first shot immediately, as observed in
-			# the stable m000 natural-contact trace.
-			behavior_state = (
-				BehaviorState.ATTACK if _can_attack_current_target() else BehaviorState.CHASE
-			)
+		_acquire_visible_live_target(nearest_visible)
 	elif current_target != null and behavior_state in [BehaviorState.CHASE, BehaviorState.ATTACK]:
 		_release_special_control_for_combat()
 		if mission_ai_coordinator == null:
@@ -744,6 +736,36 @@ func _update_detection() -> void:
 				_begin_legacy_world_item_investigation(visible_world_item)
 
 
+func _acquire_visible_live_target(target: Node2D) -> bool:
+	if target == null or not is_instance_valid(target):
+		return false
+	_clear_legacy_world_item_target()
+	_clear_legacy_corpse_attention()
+	_release_special_control_for_combat()
+	var already_tracking := (
+		current_target == target
+		and behavior_state in [BehaviorState.CHASE, BehaviorState.ATTACK]
+	)
+	current_target = target
+	last_known_target_position = target.position
+	search_elapsed = 0.0
+	if already_tracking:
+		return false
+	# The original actor's reaction counter runs while the guard patrols.  Do
+	# not discard that accumulated time at first visual contact: a ready guard
+	# can commit the first shot immediately, as observed in the stable m000
+	# natural-contact trace.
+	behavior_state = (
+		BehaviorState.ATTACK if _can_attack_current_target() else BehaviorState.CHASE
+	)
+	legacy_contact_acquired_this_tick = true
+	original_actor_audio_requested.emit(
+		self,
+		LEGACY_ACTOR_AUDIO_RULES.FAMILY_HOSTILE_INITIAL,
+	)
+	return true
+
+
 func _update_behavior(delta: float) -> void:
 	if (
 		behavior_state != BehaviorState.PATROL
@@ -766,6 +788,21 @@ func _update_behavior(delta: float) -> void:
 				behavior_state = BehaviorState.ATTACK
 				cancel_path()
 				return
+			# sub_45C710 state 1 first samples the next 20..39 reaction
+			# deadline (0x45CD01), then attempts sub_4569A0.  A failed
+			# attack emits sub_45DA60 before the target-coordinate chase is
+			# continued.  The audio handler is synchronous, so its optional
+			# variant draw follows the deadline draw on the shared CRT stream.
+			if (
+				not legacy_contact_acquired_this_tick
+				and attack_recheck_elapsed >= attack_recheck_seconds
+			):
+				attack_recheck_elapsed = 0.0
+				attack_recheck_seconds = _sample_original_attack_interval()
+				original_actor_audio_requested.emit(
+					self,
+					LEGACY_ACTOR_AUDIO_RULES.FAMILY_HOSTILE_FOLLOWUP,
+				)
 			if chase_replan_elapsed >= CHASE_REPLAN_SECONDS:
 				chase_replan_elapsed = 0.0
 				last_known_target_position = current_target.position

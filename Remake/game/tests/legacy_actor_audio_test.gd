@@ -58,6 +58,29 @@ class ActorFixture extends Node:
 	var runtime_actor_type := 0
 
 
+class TargetFixture extends Node2D:
+	var faction_id := 3
+	var scene_index := 9001
+	var is_crawling := false
+	var alive := true
+
+	func is_combat_alive() -> bool:
+		return alive
+
+
+class EnemyAudioFixture extends EnemyUnit:
+	var can_attack_fixture := false
+
+	func _can_attack_current_target() -> bool:
+		return can_attack_fixture
+
+	func _disguise_detection_mode(_target: Node2D) -> String:
+		return "close_without_los"
+
+	func _issue_path_to(_destination: Vector2) -> bool:
+		return true
+
+
 class RecordingMediaDirector extends CanvasLayer:
 	var requests: Array[Dictionary] = []
 
@@ -79,6 +102,7 @@ class RecordingMediaDirector extends CanvasLayer:
 func _init() -> void:
 	_test_exact_selector_tables()
 	_test_shared_random_stream_wiring()
+	_test_enemy_challenge_trigger_wiring()
 	if failures.is_empty():
 		print(
 			"Legacy actor-audio selector tests passed (%d checks). No original media was used."
@@ -248,6 +272,102 @@ func _test_shared_random_stream_wiring() -> void:
 		"an original unmapped runtime type remains silent without a draw",
 	)
 	actor.free()
+	director.free()
+	game.free()
+
+
+func _test_enemy_challenge_trigger_wiring() -> void:
+	var game = MAIN_SCRIPT.new()
+	var director := RecordingMediaDirector.new()
+	var enemy := EnemyAudioFixture.new()
+	var target := TargetFixture.new()
+	root.add_child(enemy)
+	root.add_child(target)
+	game.media_director = director
+	enemy.runtime_actor_type = 4
+	enemy.faction_id = 1
+	enemy.scene_index = 7001
+	enemy.position = Vector2.ZERO
+	enemy.original_crt_random_source = game
+	enemy.original_crt_level_id = "m000"
+	target.position = Vector2(192.0, 0.0)
+	game.call("_connect_combatant", enemy)
+
+	var initial_state: int = CRT_CATALOG.next_state(
+		game.legacy_crt_random_state
+	)
+	var initial_value: int = CRT_CATALOG.random_value(initial_state)
+	enemy.call("_acquire_visible_live_target", target)
+	_expect(
+		enemy.current_target == target
+		and enemy.behavior_state == EnemyUnit.BehaviorState.CHASE
+		and enemy.legacy_contact_acquired_this_tick,
+		"first visible live target enters original contact state before follow-up",
+	)
+	_expect(
+		game.legacy_crt_random_state == initial_state
+		and game.legacy_crt_random_draw_index == 1
+		and director.requests.size() == 1
+		and int(director.requests[-1].get("gfl_index", -1))
+		== (1361 if initial_value % 2 == 0 else 1362),
+		"first live-target acquisition emits sub_45D900 on the shared stream",
+	)
+
+	enemy.call("_acquire_visible_live_target", target)
+	_expect(
+		game.legacy_crt_random_draw_index == 1
+		and director.requests.size() == 1,
+		"continued tracking does not replay the first-contact voice",
+	)
+
+	# Simulate the next actor update. sub_45C710 cannot run its state-1
+	# reaction-expiry branch in the same update that acquired the target.
+	enemy.legacy_contact_acquired_this_tick = false
+	enemy.attack_recheck_elapsed = enemy.attack_recheck_seconds
+	enemy.chase_replan_elapsed = 0.0
+	var deadline_state: int = CRT_CATALOG.next_state(initial_state)
+	var followup_state: int = CRT_CATALOG.next_state(deadline_state)
+	var followup_value: int = CRT_CATALOG.random_value(followup_state)
+	enemy.call("_update_behavior", 0.0)
+	_expect(
+		game.legacy_crt_random_state == followup_state
+		and game.legacy_crt_random_draw_index == 3
+		and director.requests.size() == 2
+		and int(director.requests[-1].get("gfl_index", -1))
+		== (1359 if followup_value % 2 == 0 else 1360),
+		(
+			"failed attack readiness draws 0x45CD01 before sub_45DA60 follow-up voice "
+			+ "[draws=%d requests=%d state=%d behavior=%d acquired=%s elapsed=%.4f limit=%.4f]"
+			% [
+				game.legacy_crt_random_draw_index,
+				director.requests.size(),
+				game.legacy_crt_random_state,
+				enemy.behavior_state,
+				str(enemy.legacy_contact_acquired_this_tick),
+				enemy.attack_recheck_elapsed,
+				enemy.attack_recheck_seconds,
+			]
+		),
+	)
+
+	enemy.call("_update_behavior", 0.0)
+	_expect(
+		game.legacy_crt_random_draw_index == 3
+		and director.requests.size() == 2,
+		"follow-up challenge waits for the next recovered reaction deadline",
+	)
+	enemy.can_attack_fixture = true
+	enemy.attack_recheck_elapsed = enemy.attack_recheck_seconds
+	enemy.call("_update_behavior", 0.0)
+	_expect(
+		enemy.behavior_state == EnemyUnit.BehaviorState.ATTACK
+		and game.legacy_crt_random_draw_index == 3
+		and director.requests.size() == 2,
+		"an attackable target enters attack state without a false chase voice",
+	)
+
+	target.free()
+	enemy.free()
 	director.free()
 	game.free()
 
