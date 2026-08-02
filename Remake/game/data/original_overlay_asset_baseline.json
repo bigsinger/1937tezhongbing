@@ -1,0 +1,975 @@
+﻿{
+    "schema_version":  1,
+    "baseline_id":  "stable-mod-original-overlay-assets-v1",
+    "content_profile":  "repository-mod-12-level-20260729",
+    "source_status":  "recovered_original_resources_and_runtime_hit_geometry",
+    "inventory":  {
+                      "background":  {
+                                         "kind":  "psd",
+                                         "gfl_index":  1129
+                                     },
+                      "panel_size":  [
+                                         276,
+                                         421
+                                     ],
+                      "bottom_hud_height":  62,
+                      "grid_origin":  [
+                                          13,
+                                          40
+                                      ],
+                      "columns":  5,
+                      "cell_size":  [
+                                        50,
+                                        74
+                                    ],
+                      "row_pitch":  84,
+                      "item_icon_pairs":  {
+                                              "33":  [
+                                                         1166,
+                                                         1167
+                                                     ],
+                                              "36":  [
+                                                         1212,
+                                                         1213
+                                                     ],
+                                              "37":  [
+                                                         1120,
+                                                         1121
+                                                     ],
+                                              "38":  [
+                                                         1164,
+                                                         1165
+                                                     ],
+                                              "39":  [
+                                                         1117,
+                                                         1118
+                                                     ],
+                                              "40":  [
+                                                         1123,
+                                                         1124
+                                                     ],
+                                              "41":  [
+                                                         1149,
+                                                         1150
+                                                     ],
+                                              "42":  [
+                                                         1133,
+                                                         1134
+                                                     ],
+                                              "43":  [
+                                                         1141,
+                                                         1142
+                                                     ],
+                                              "44":  [
+                                                         1210,
+                                                         1211
+                                                     ],
+                                              "45":  [
+                                                         1248,
+                                                         1249
+                                                     ],
+                                              "46":  [
+                                                         1135,
+                                                         1136
+                                                     ],
+                                              "47":  [
+                                                         1240,
+                                                         1241
+                                                     ],
+                                              "48":  [
+                                                         1162,
+                                                         1163
+                                                     ],
+                                              "49":  [
+                                                         1175,
+                                                         1176
+                                                     ],
+                                              "50":  [
+                                                         1230,
+                                                         1231
+                                                     ],
+                                              "51":  [
+                                                         1258,
+                                                         1259
+                                                     ],
+                                              "52":  [
+                                                         1145,
+                                                         1146
+                                                     ],
+                                              "53":  [
+                                                         1195,
+                                                         1196
+                                                     ],
+                                              "54":  [
+                                                         1178,
+                                                         1179
+                                                     ],
+                                              "82":  [
+                                                         1151,
+                                                         1152
+                                                     ],
+                                              "83":  [
+                                                         1234,
+                                                         1235
+                                                     ],
+                                              "92":  [
+                                                         1201,
+                                                         1202
+                                                     ],
+                                              "101":  [
+                                                          1221,
+                                                          1222
+                                                      ]
+                                          },
+                      "mission_item_icon_pairs":  {
+                                                      "uniform":  [
+                                                                      1178,
+                                                                      1179
+                                                                  ],
+                                                      "explosives":  [
+                                                                         1248,
+                                                                         1249
+                                                                     ]
+                                                  }
+                  },
+    "help":  {
+                 "asset":  {
+                               "kind":  "iblock",
+                               "gfl_index":  1047
+                           },
+                 "size":  [
+                              640,
+                              480
+                          ],
+                 "anchor":  "viewport_center"
+             },
+    "minimaps":  [
+                     {
+                         "level_id":  "m000",
+                         "gfl_index":  1036,
+                         "width":  336,
+                         "height":  166,
+                         "anchor":  "bottom_right_above_62px_hud"
+                     },
+                     {
+                         "level_id":  "m001",
+                         "gfl_index":  1026,
+                         "width":  282,
+                         "height":  282,
+                         "anchor":  "bottom_right_above_62px_hud"
+                     },
+                     {
+                         "level_id":  "m002",
+                         "gfl_index":  1027,
+                         "width":  226,
+                         "height":  146,
+                         "anchor":  "bottom_right_above_62px_hud"
+                     },
+                     {
+                         "level_id":  "m003",
+                         "gfl_index":  1028,
+                         "width":  282,
+                         "height":  226,
+                         "anchor":  "bottom_right_above_62px_hud"
+                     },
+                     {
+                         "level_id":  "m004",
+                         "gfl_index":  1029,
+                         "width":  346,
+                         "height":  214,
+                         "anchor":  "bottom_right_above_62px_hud"
+                     },
+                     {
+                         "level_id":  "m005",
+                         "gfl_index":  1030,
+                         "width":  266,
+                         "height":  226,
+                         "anchor":  "bottom_right_above_62px_hud"
+                     },
+                     {
+                         "level_id":  "m006",
+                         "gfl_index":  1031,
+                         "width":  266,
+                         "height":  226,
+                         "anchor":  "bottom_right_above_62px_hud"
+                     },
+                     {
+                         "level_id":  "m007",
+                         "gfl_index":  1032,
+                         "width":  326,
+                         "height":  226,
+                         "anchor":  "bottom_right_above_62px_hud"
+                     },
+                     {
+                         "level_id":  "m008",
+                         "gfl_index":  1033,
+                         "width":  206,
+                         "height":  146,
+                         "anchor":  "bottom_right_above_62px_hud"
+                     },
+                     {
+                         "level_id":  "m009",
+                         "gfl_index":  1034,
+                         "width":  226,
+                         "height":  226,
+                         "anchor":  "bottom_right_above_62px_hud"
+                     },
+                     {
+                         "level_id":  "m010",
+                         "gfl_index":  1035,
+                         "width":  326,
+                         "height":  236,
+                         "anchor":  "bottom_right_above_62px_hud"
+                     },
+                     {
+                         "level_id":  "m011",
+                         "gfl_index":  1025,
+                         "width":  226,
+                         "height":  226,
+                         "anchor":  "bottom_right_above_62px_hud"
+                     }
+                 ],
+    "cursor":  {
+                   "gfl_index":  16,
+                   "resource_name":  "mouse.spr",
+                   "runtime_type":  55,
+                   "ticks_per_second":  60,
+                   "context_serials":  {
+                                           "normal":  0,
+                                           "move":  1,
+                                           "force_target":  2,
+                                           "interaction_hand":  3,
+                                           "burial":  4,
+                                           "door_hand":  6,
+                                           "sight":  8,
+                                           "outside_world":  9,
+                                           "blocked":  10
+                                       },
+                   "groups":  [
+                                  {
+                                      "serial_id":  0,
+                                      "hotspot":  [
+                                                      2,
+                                                      2
+                                                  ],
+                                      "frame_hold_ticks":  2,
+                                      "frames":  [
+                                                     {
+                                                         "frame_index":  0,
+                                                         "width":  32,
+                                                         "height":  32,
+                                                         "converted_png_sha256":  "3df75fb153569474aa7a6f8c6cc65ed220f748e1e78efa9fd51d4312b40b1d48"
+                                                     }
+                                                 ]
+                                  },
+                                  {
+                                      "serial_id":  1,
+                                      "hotspot":  [
+                                                      14,
+                                                      14
+                                                  ],
+                                      "frame_hold_ticks":  2,
+                                      "frames":  [
+                                                     {
+                                                         "frame_index":  0,
+                                                         "width":  32,
+                                                         "height":  32,
+                                                         "converted_png_sha256":  "63fd8e9ab6965d3ac6e3c8ac01be7eb0b71a34a14a57a6b462f7ae5b255ccbe7"
+                                                     }
+                                                 ]
+                                  },
+                                  {
+                                      "serial_id":  2,
+                                      "hotspot":  [
+                                                      15,
+                                                      15
+                                                  ],
+                                      "frame_hold_ticks":  2,
+                                      "frames":  [
+                                                     {
+                                                         "frame_index":  0,
+                                                         "width":  32,
+                                                         "height":  32,
+                                                         "converted_png_sha256":  "f89366042dcbf0431586884d4e77b4cac191f0ede3e331217c9a2473da85d992"
+                                                     },
+                                                     {
+                                                         "frame_index":  1,
+                                                         "width":  32,
+                                                         "height":  32,
+                                                         "converted_png_sha256":  "b16cf05052a924fc0e1ad0b2a94a63a98dd7e56d24a3edbe52e5fe7b809b5801"
+                                                     },
+                                                     {
+                                                         "frame_index":  2,
+                                                         "width":  32,
+                                                         "height":  32,
+                                                         "converted_png_sha256":  "7f9cc6de4427ebe52dba193fee0a1f71ef68ef3ddd960be71cee262fff8f61da"
+                                                     }
+                                                 ]
+                                  },
+                                  {
+                                      "serial_id":  3,
+                                      "hotspot":  [
+                                                      14,
+                                                      14
+                                                  ],
+                                      "frame_hold_ticks":  2,
+                                      "frames":  [
+                                                     {
+                                                         "frame_index":  0,
+                                                         "width":  32,
+                                                         "height":  32,
+                                                         "converted_png_sha256":  "5c3ab07bd3253bffffcd72f4b6b495d837843dd29e49b8c4bdf725c1c49b44fc"
+                                                     },
+                                                     {
+                                                         "frame_index":  1,
+                                                         "width":  32,
+                                                         "height":  32,
+                                                         "converted_png_sha256":  "08a0acce7dbc09f25d89171050f1de44b980e6bc538ec9f0c0f0f7c0831cb131"
+                                                     },
+                                                     {
+                                                         "frame_index":  2,
+                                                         "width":  32,
+                                                         "height":  32,
+                                                         "converted_png_sha256":  "0dce5db566b0411851668270479ab3bc8532273d20a1c888b6f3a9e206f0383e"
+                                                     }
+                                                 ]
+                                  },
+                                  {
+                                      "serial_id":  4,
+                                      "hotspot":  [
+                                                      16,
+                                                      7
+                                                  ],
+                                      "frame_hold_ticks":  2,
+                                      "frames":  [
+                                                     {
+                                                         "frame_index":  0,
+                                                         "width":  32,
+                                                         "height":  32,
+                                                         "converted_png_sha256":  "2ea0e7de9b0b0d29a21a5eb5da584d3d5085ccaae7f3c1aac3965275b50535b4"
+                                                     }
+                                                 ]
+                                  },
+                                  {
+                                      "serial_id":  6,
+                                      "hotspot":  [
+                                                      16,
+                                                      16
+                                                  ],
+                                      "frame_hold_ticks":  2,
+                                      "frames":  [
+                                                     {
+                                                         "frame_index":  0,
+                                                         "width":  32,
+                                                         "height":  32,
+                                                         "converted_png_sha256":  "255f9391443fe7df720a0d63a9a05122c6bb3b74697021be101ac15281db27da"
+                                                     },
+                                                     {
+                                                         "frame_index":  1,
+                                                         "width":  32,
+                                                         "height":  32,
+                                                         "converted_png_sha256":  "9ca2918bc98c3cc9715b8357c198c6d49bf1a996df3d9fd54857bfbb80ed49c8"
+                                                     }
+                                                 ]
+                                  },
+                                  {
+                                      "serial_id":  8,
+                                      "hotspot":  [
+                                                      2,
+                                                      26
+                                                  ],
+                                      "frame_hold_ticks":  2,
+                                      "frames":  [
+                                                     {
+                                                         "frame_index":  0,
+                                                         "width":  32,
+                                                         "height":  32,
+                                                         "converted_png_sha256":  "b006d4fbe9daeb5077c2296a82ef0e4a20ec914bfd742515d7962aad1c8ee365"
+                                                     }
+                                                 ]
+                                  },
+                                  {
+                                      "serial_id":  9,
+                                      "hotspot":  [
+                                                      3,
+                                                      10
+                                                  ],
+                                      "frame_hold_ticks":  2,
+                                      "frames":  [
+                                                     {
+                                                         "frame_index":  0,
+                                                         "width":  32,
+                                                         "height":  32,
+                                                         "converted_png_sha256":  "bcbcbababd8461d189f0c3065707675b5a41690b091df47aea3cce548b089880"
+                                                     },
+                                                     {
+                                                         "frame_index":  1,
+                                                         "width":  32,
+                                                         "height":  32,
+                                                         "converted_png_sha256":  "9620455839527a3a1059a17bf0570c9707b5c95b334ff84602fc7ab413388a9c"
+                                                     },
+                                                     {
+                                                         "frame_index":  2,
+                                                         "width":  32,
+                                                         "height":  32,
+                                                         "converted_png_sha256":  "6b3a9318e09e117f9a04c405dfcad81d62e8b2e9188157110e01b9bfa41dfbeb"
+                                                     }
+                                                 ]
+                                  },
+                                  {
+                                      "serial_id":  10,
+                                      "hotspot":  [
+                                                      15,
+                                                      15
+                                                  ],
+                                      "frame_hold_ticks":  2,
+                                      "frames":  [
+                                                     {
+                                                         "frame_index":  0,
+                                                         "width":  30,
+                                                         "height":  30,
+                                                         "converted_png_sha256":  "49de6ff864dbdd91c0a61d96140017dd94788219344fd138124a281f2a57f2bb"
+                                                     }
+                                                 ]
+                                  }
+                              ]
+               },
+    "viewports":  [
+                      {
+                          "width":  1024,
+                          "height":  768,
+                          "inventory_rect":  [
+                                                 748,
+                                                 285,
+                                                 276,
+                                                 421
+                                             ],
+                          "help_rect":  [
+                                            192,
+                                            144,
+                                            640,
+                                            480
+                                        ]
+                      },
+                      {
+                          "width":  1920,
+                          "height":  1080,
+                          "inventory_rect":  [
+                                                 1644,
+                                                 597,
+                                                 276,
+                                                 421
+                                             ],
+                          "help_rect":  [
+                                            640,
+                                            300,
+                                            640,
+                                            480
+                                        ]
+                      }
+                  ],
+    "assets":  [
+                   {
+                       "kind":  "iblock",
+                       "gfl_index":  1025,
+                       "resource_name":  "m1937.m12",
+                       "width":  226,
+                       "height":  226,
+                       "converted_png_sha256":  "aa5dcc3ef2210798747da3068f89422e85f87ed5ce737bb6d5b3d227f8dbe31b"
+                   },
+                   {
+                       "kind":  "iblock",
+                       "gfl_index":  1026,
+                       "resource_name":  "m1937.m02",
+                       "width":  282,
+                       "height":  282,
+                       "converted_png_sha256":  "301f174a4eb42165c8fd98690fb0ab88507151f38480185f200069b241b4a235"
+                   },
+                   {
+                       "kind":  "iblock",
+                       "gfl_index":  1027,
+                       "resource_name":  "m1937.m03",
+                       "width":  226,
+                       "height":  146,
+                       "converted_png_sha256":  "22256b30cdf61d45f8e08e26a8927443ddd599a1fec694f80c8b54983b59399d"
+                   },
+                   {
+                       "kind":  "iblock",
+                       "gfl_index":  1028,
+                       "resource_name":  "m1937.m04",
+                       "width":  282,
+                       "height":  226,
+                       "converted_png_sha256":  "42d0edc958ae729a917675cbcdb935bc2f4070ae540a7e63150965586a97f84d"
+                   },
+                   {
+                       "kind":  "iblock",
+                       "gfl_index":  1029,
+                       "resource_name":  "m1937.m05",
+                       "width":  346,
+                       "height":  214,
+                       "converted_png_sha256":  "0ee35616ab760ab7b90dd89ffe0dc3633277664e73f3244227227b93db398bc3"
+                   },
+                   {
+                       "kind":  "iblock",
+                       "gfl_index":  1030,
+                       "resource_name":  "m1937.m06",
+                       "width":  266,
+                       "height":  226,
+                       "converted_png_sha256":  "c1886084582e6c6cff034df0818a9694e0a7e47a1a155433a0fc853cddd733b7"
+                   },
+                   {
+                       "kind":  "iblock",
+                       "gfl_index":  1031,
+                       "resource_name":  "m1937.m07",
+                       "width":  266,
+                       "height":  226,
+                       "converted_png_sha256":  "dc1f524fcc1c84817610bdece3170af29dac366ece7a682a5b05ab996565f387"
+                   },
+                   {
+                       "kind":  "iblock",
+                       "gfl_index":  1032,
+                       "resource_name":  "m1937.m08",
+                       "width":  326,
+                       "height":  226,
+                       "converted_png_sha256":  "41370bd0dbc04ca691846d3a73c7208e7405ca05c8510a4731608823f083dd03"
+                   },
+                   {
+                       "kind":  "iblock",
+                       "gfl_index":  1033,
+                       "resource_name":  "m1937.m09",
+                       "width":  206,
+                       "height":  146,
+                       "converted_png_sha256":  "314c66efa3187aab2f7db932d79cba6d32a09ba3d86a13caab2484e48179c8fc"
+                   },
+                   {
+                       "kind":  "iblock",
+                       "gfl_index":  1034,
+                       "resource_name":  "m1937.m10",
+                       "width":  226,
+                       "height":  226,
+                       "converted_png_sha256":  "14bc7071112864c8d9f1a372a24cab8d63b06a84c4333edbfb49ca1c52c0078e"
+                   },
+                   {
+                       "kind":  "iblock",
+                       "gfl_index":  1035,
+                       "resource_name":  "m1937.m11",
+                       "width":  326,
+                       "height":  236,
+                       "converted_png_sha256":  "11082771571402cefb37233df4ea20c1be593e48410d433c86c99d062b60312b"
+                   },
+                   {
+                       "kind":  "iblock",
+                       "gfl_index":  1036,
+                       "resource_name":  "m1937.m01",
+                       "width":  336,
+                       "height":  166,
+                       "converted_png_sha256":  "92f398997ea00f1878ba385c8bdc495fa69d552b316e1f628b154e0ab7245cbb"
+                   },
+                   {
+                       "kind":  "iblock",
+                       "gfl_index":  1047,
+                       "resource_name":  "help.psd",
+                       "width":  640,
+                       "height":  480,
+                       "converted_png_sha256":  "315046736a753a0124cc370c6fee4e4115a939f1a6361e8dcc84b48c8d66b046"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1117,
+                       "resource_name":  "匕首.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "31610a31ec1cb9f657b786bce3640d7829dd5fbe5cef06c83d5d6ec33a4cbb3f"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1118,
+                       "resource_name":  "匕首-选中.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "c4ebc883b7fad0a590dd0165dbad13040f98edc9adab4528c13f5f6fbc3f34fb"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1120,
+                       "resource_name":  "步枪.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "b8c2e036f83abc4bf161d7991ccda5a441f9a2538820bb423c8f9c34e65344b8"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1121,
+                       "resource_name":  "步枪-选中.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "3e997f7ef49c76078ce7a43c6f0f6bf8c8c509c36d26e98612d95f8042875af0"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1123,
+                       "resource_name":  "大刀.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "2c6a22c676c695f255a30c83ba057e4bffff55dc3cbccc19d75be429ab83eee8"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1124,
+                       "resource_name":  "大刀-选中.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "b8af1e143318700fd251645d378ad6f07514e8d3decb48d7f7e5c5db581d0fcb"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1129,
+                       "resource_name":  "弹出式菜单-大底图.psd",
+                       "width":  276,
+                       "height":  421,
+                       "converted_png_sha256":  "4324fe74f4dcf90e07741e4ed1cd4c5c3b783dceb953ff11d1d5889b6fe1b1eb"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1133,
+                       "resource_name":  "弹弓.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "bbb92c1ac7c4e4daf6f25497fc808e9ff4dabf4e5f26f19d0aa0cc34e317f2c5"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1134,
+                       "resource_name":  "弹弓-选中.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "2ebed04ed7b8c36cb9aa3bce838318752a5a435d5ccb27aa64ad7b33ac2842c2"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1135,
+                       "resource_name":  "弹药箱.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "fd537a3a976c5e27e930c24b484744c7ed44330ef1b580c84683031ab54eb789"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1136,
+                       "resource_name":  "弹药箱-选中.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "491ad289c8e2cf391269f771ed60d58eacca829df3badf7e231aad13acd44988"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1141,
+                       "resource_name":  "地雷.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "386ea744a73f52e07f55f907e4cd7c22cc681541dc3db463903c6f40c53b21bc"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1142,
+                       "resource_name":  "地雷-选中.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "eb54d59bbaa6789f46305730eca761dc738ffb7a1447fa4b756e688e2f166ffa"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1145,
+                       "resource_name":  "毒酒.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "a044c70876fcf53cb9510dd8c2759d3b31a96094275c1e53e3867b6eefccf1d6"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1146,
+                       "resource_name":  "毒酒-选中.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "8483b9e12e82a32337580fd7d383079ccc0e7df6217404624d7a18c829ccf240"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1149,
+                       "resource_name":  "飞刀.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "60ff50f9d763cd7d1bf3de62f5741eb8d6fa90706913e7ae3121e4370932485d"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1150,
+                       "resource_name":  "飞刀-选中.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "ef6ac6e2a24c1b92f94a7b5fd93899a48e8fbf9b974ea9da60ed7909def1028f"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1151,
+                       "resource_name":  "狗骨头.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "e3b9a78833995eeef85715e0d9dc8c510b2a80140872223fd294a1efc0c2981f"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1152,
+                       "resource_name":  "狗骨头-选中.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "1c09843c3a2abb3c81b0335c2bc000de637f3ec3ec510824f642cf8d0686118c"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1162,
+                       "resource_name":  "罐头.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "7db34076badc03ca5103b1607c859dd7b591b97f2e603246c5fccd574c9ceb73"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1163,
+                       "resource_name":  "罐头-选中.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "131a85b0ca56c49ec8a7448a0570e67fcf89d726c63d2e3d933f764f6423b8ff"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1164,
+                       "resource_name":  "机枪.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "3408807243a65da316e108877ee42cb4ea736310e9b027bb1b791600943750f7"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1165,
+                       "resource_name":  "机枪-选中.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "d05e27e7fa65379926935ab6946708949393503a05bb114634c0bfa71f294bc3"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1166,
+                       "resource_name":  "鸡.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "e0fc60116e246944fbed1880c6f7785d60cd8d245fddb34f9864bedde20f4afc"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1167,
+                       "resource_name":  "鸡-选中.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "596cb50f48cf466b0b2348dceff6d45f167905b16fdcbdb22deb72aed3e52c7c"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1175,
+                       "resource_name":  "降头木偶.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "0b695a341f2ad048e8564bf973982857a80eddd8b65fbeceabb739ee96533884"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1176,
+                       "resource_name":  "降头木偶-选中.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "73c57fb56dd4598a0b7239e00b0a2f4d8df6c418aeee664f92850de2b80fa51c"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1178,
+                       "resource_name":  "军服.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "43e5b89e3c5c024b857099a8b4d09ca807fb5312c8342750f5b97db12683c736"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1179,
+                       "resource_name":  "军服-选中.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "0626e1ebb93756ab0dd220bd90ce3ccab48f6155667ea745e159e9dcfdc30612"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1195,
+                       "resource_name":  "汽油桶.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "9ff917207c88b37a607afab6d9086ceb9d250cd29e134d3454af39d50476a8ec"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1196,
+                       "resource_name":  "汽油桶-选中.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "60ace5802b1896268398c18fda06147d287d3caa12ba3734a66ca4ce45e5d00c"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1201,
+                       "resource_name":  "青衫.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "9156664731d46f8bce82818b4efb39fbd415238c84ea230d2b39ef353890f861"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1202,
+                       "resource_name":  "青衫-选中.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "17a645266e90616056c698eb5edc73fea1a6bcfd09acfc0451eace7996ee15ae"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1210,
+                       "resource_name":  "手榴弹.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "d8ebd730ffb3d99339ee205668a7c044ee36fbf7680c88cbcc5963279492dd56"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1211,
+                       "resource_name":  "手榴弹-选中.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "1a6ffa17fc7030d2ee66d7429c8aeb8b3e625c07a3fa338b646f48e4d45ac787"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1212,
+                       "resource_name":  "手枪.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "c2ebf3d7b8c232ccc6f96d758f37417930d311fa1df87cbc0907806e7da0f057"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1213,
+                       "resource_name":  "手枪-选中.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "72facc5a035444658651a38890e6caf9c47d432d942f0ce5c1352d831e790741"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1221,
+                       "resource_name":  "文件袋.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "dcef6e5a24c7dccb974fcec2f691bd38bdd5565be06a63c15ee3ab75bb9f4a3d"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1222,
+                       "resource_name":  "文件袋-选中.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "8402f7fbdbff36cdd6e00299e76dc90235db7fea6368a2a0b85bd87b13a39388"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1230,
+                       "resource_name":  "西瓜.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "db7c7757823309021d1f77467278f3126084fb9634c30f9a76cd3b1f71e13143"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1231,
+                       "resource_name":  "西瓜-选中.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "2c3e24bd421b90592b832d077d2b6e179a93c198e5b3922686bc7ac3a7fa1ee6"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1234,
+                       "resource_name":  "香烟.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "48a525729d7dff3f1147ed5e5cd7fc0c0e4a59a7fee8c55099ac30d353373895"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1235,
+                       "resource_name":  "香烟-选中.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "336059c702136058b00d6ff97e33d1a747b497f1dd4112d2682ba2af954a09dd"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1240,
+                       "resource_name":  "医药箱.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "e29498e70030a4298befe3f3436bee2738e42f0bdbada94987c14f0305cc572c"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1241,
+                       "resource_name":  "医药箱-选中.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "6525762e9912959cdfe331b08a9cbb639e10924b25303b64548e2ff5512f60e4"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1248,
+                       "resource_name":  "炸药.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "5e59379082522754dc861559467980af9a25bc50d91880891955dd6c833caf9f"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1249,
+                       "resource_name":  "炸药-选中.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "d0645e2cd0d9b9cb9032b0c0a28e53319b5f4d3583264ef80bba8e1faf59c5da"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1258,
+                       "resource_name":  "中药.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "8a69d43bba65f47ed6ecc984294609f2dedfa4ab0d7202da32b58f2729e834ac"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1259,
+                       "resource_name":  "中药-选中.psd",
+                       "width":  50,
+                       "height":  50,
+                       "converted_png_sha256":  "e28afa37f48cf676b238d8323f16958d768f7f93dc921ba532e3e49776da09b6"
+                   }
+               ],
+    "evidence":  {
+                     "original_click_formula":  "screen-276+13+50*column, screen-62-421+40+84*row",
+                     "runtime_loading":  "Remake loads these exact converted PNG files without filtering",
+                     "cursor_runtime":  "mouse.spr primary.x/z are the hotspot and frame_hold_ticks drive a 60 Hz loop",
+                     "original_bytes_committed":  false
+                 }
+}

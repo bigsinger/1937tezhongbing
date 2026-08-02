@@ -10,6 +10,8 @@ param(
     [switch]$ExpandedViewport,
     [switch]$TiledModernViewport,
     [switch]$IncludeUi,
+    [ValidateSet('none', 'weapons', 'items', 'minimap', 'help', 'pause')]
+    [string]$Overlay = 'none',
     [switch]$AllowMismatch,
     [switch]$KeepRuntime
 )
@@ -24,12 +26,78 @@ $modRoot = Join-Path $repositoryRoot 'Mod'
 $probeBuildRoot = 'E:\1937\probe-build'
 $temporaryRoot = [IO.Path]::GetFullPath('E:\1937\')
 $runtimePrefix = 'mod-visual-parity-runtime-'
+$overlayBaselinePath = Join-Path $gameRoot (
+    'data\original_overlay_asset_baseline.json')
+$Overlay = $Overlay.ToLowerInvariant()
+if ($Overlay -ne 'none') {
+    $IncludeUi = $true
+}
 $worldRegionTop = if ($IncludeUi) { 0 } else { 48 }
 $thresholds = [pscustomobject][ordered]@{
     maximum_mean_absolute_error = 6.0
     minimum_near_match_ratio = 0.92
     minimum_edge_correlation = 0.94
     maximum_black_hole_ratio = 0.003
+}
+$thresholdProfile = 'world_or_full_overlay'
+if ($Overlay -in @('weapons', 'items')) {
+    # The original surface is RGB565 and its DirectDraw text rasterizer is
+    # unavailable to Godot. Keep the chassis/content crop strict on colour,
+    # near-match and missing pixels while allowing the measured glyph-edge
+    # rasterization difference.
+    $thresholds.maximum_mean_absolute_error = 6.0
+    $thresholds.minimum_near_match_ratio = 0.94
+    $thresholds.minimum_edge_correlation = 0.85
+    $thresholds.maximum_black_hole_ratio = 0.001
+    $thresholdProfile = 'rgb565_original_inventory_overlay'
+}
+$overlayBaseline = $null
+if ($Overlay -eq 'minimap') {
+    if (-not (Test-Path -LiteralPath $overlayBaselinePath -PathType Leaf)) {
+        throw "Original overlay baseline is missing: $overlayBaselinePath"
+    }
+    $overlayBaseline = Get-Content -LiteralPath $overlayBaselinePath `
+        -Raw -Encoding UTF8 | ConvertFrom-Json
+}
+
+if (-not ('Mission1937VisualCropV1' -as [type])) {
+    Add-Type -ReferencedAssemblies @(
+        'System.dll',
+        'System.Drawing.dll'
+    ) -TypeDefinition @'
+using System;
+using System.Drawing;
+using System.Drawing.Imaging;
+
+public static class Mission1937VisualCropV1
+{
+    public static void Save(
+        string sourcePath,
+        string outputPath,
+        int left,
+        int top,
+        int width,
+        int height)
+    {
+        using (var source = new Bitmap(sourcePath))
+        {
+            if (left < 0 || top < 0 || width < 3 || height < 3 ||
+                left + width > source.Width ||
+                top + height > source.Height)
+            {
+                throw new InvalidOperationException(
+                    "Overlay crop is outside the captured surface.");
+            }
+            using (var crop = source.Clone(
+                new Rectangle(left, top, width, height),
+                PixelFormat.Format24bppRgb))
+            {
+                crop.Save(outputPath, ImageFormat.Png);
+            }
+        }
+    }
+}
+'@
 }
 
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
@@ -195,6 +263,9 @@ function Invoke-StableModVisualCapture {
             $SelectorLevel,
             30,
             '--visual-capture-only')
+        if ($Overlay -ne 'none') {
+            $arguments += "--visual-overlay=$Overlay"
+        }
         if ($CameraWorldX -ge 0 -and $CameraWorldY -ge 0) {
             $arguments += "--visual-camera-x=$CameraWorldX"
             $arguments += "--visual-camera-y=$CameraWorldY"
@@ -356,6 +427,9 @@ try {
         if ($IncludeUi) {
             $godotArguments += '--include-ui'
         }
+        if ($Overlay -ne 'none') {
+            $godotArguments += "--overlay=$Overlay"
+        }
         & $GodotExecutable $godotArguments
         if ($LASTEXITCODE -ne 0) {
             throw "Remake visual probe failed for $levelId."
@@ -514,7 +588,64 @@ try {
             continue
         }
 
-        $comparisonBottom = if ($IncludeUi) {
+        $comparisonReference = $modImage
+        $comparisonCandidate = $remakeImage
+        $comparisonScope = 'full_surface'
+        $overlayRegion = $null
+        if ($Overlay -in @('weapons', 'items', 'minimap')) {
+            $overlayWidth = 276
+            $overlayHeight = 421
+            if ($Overlay -eq 'minimap') {
+                $mapRecord = @($overlayBaseline.minimaps | Where-Object {
+                    [string]$_.level_id -ceq $levelId
+                })
+                if ($mapRecord.Count -ne 1) {
+                    throw "No unique minimap baseline exists for $levelId."
+                }
+                $overlayWidth = [int]$mapRecord[0].width
+                $overlayHeight = [int]$mapRecord[0].height
+            }
+            $referenceLeft = $surfaceWidth - $overlayWidth
+            $referenceTop = $surfaceHeight - 62 - $overlayHeight
+            $candidateLeft = $candidateWidth - $overlayWidth
+            $candidateTop = $candidateHeight - 62 - $overlayHeight
+            $comparisonReference = Join-Path $comparisonOutput (
+                'stable-mod-overlay.png')
+            $comparisonCandidate = Join-Path $comparisonOutput (
+                'remake-overlay.png')
+            [Mission1937VisualCropV1]::Save(
+                $modImage,
+                $comparisonReference,
+                $referenceLeft,
+                $referenceTop,
+                $overlayWidth,
+                $overlayHeight)
+            [Mission1937VisualCropV1]::Save(
+                $remakeImage,
+                $comparisonCandidate,
+                $candidateLeft,
+                $candidateTop,
+                $overlayWidth,
+                $overlayHeight)
+            $comparisonScope = 'native_overlay_crop'
+            $overlayRegion = [pscustomobject][ordered]@{
+                width = $overlayWidth
+                height = $overlayHeight
+                stable_mod_origin = @($referenceLeft, $referenceTop)
+                remake_origin = @($candidateLeft, $candidateTop)
+            }
+        }
+
+        $comparisonTop = if ($comparisonScope -eq 'native_overlay_crop') {
+            0
+        }
+        else {
+            $worldRegionTop
+        }
+        $comparisonBottom = if ($comparisonScope -eq 'native_overlay_crop') {
+            [int]$overlayRegion.height
+        }
+        elseif ($IncludeUi) {
             $surfaceHeight
         }
         else {
@@ -522,10 +653,10 @@ try {
         }
         $comparison = & (
             Join-Path $PSScriptRoot 'Compare-VisualParity.ps1') `
-            -ReferenceImage $modImage `
-            -CandidateImage $remakeImage `
+            -ReferenceImage $comparisonReference `
+            -CandidateImage $comparisonCandidate `
             -OutputDirectory $comparisonOutput `
-            -RegionTop $worldRegionTop `
+            -RegionTop $comparisonTop `
             -RegionBottom $comparisonBottom `
             -MaximumMeanAbsoluteError (
                 $thresholds.maximum_mean_absolute_error) `
@@ -544,6 +675,8 @@ try {
                 [int]$modMetadata.map_viewport[0],
                 $mapHeight)
             metrics = $comparison.metrics
+            comparison_scope = $comparisonScope
+            overlay_region = $overlayRegion
             mod_image = $modImage
             remake_image = $remakeImage
             comparison = Join-Path $comparisonOutput 'visual-parity.json'
@@ -602,6 +735,8 @@ $summary = [pscustomobject][ordered]@{
     expanded_viewport = [bool]$ExpandedViewport
     tiled_mod_reference = [bool]$TiledModernViewport
     includes_ui = [bool]$IncludeUi
+    overlay = $Overlay
+    threshold_profile = $thresholdProfile
     input_isolation = (
         'stable-mod-read-only-RGB565-surface; ' +
         'remake-offscreen-window; no global input')
@@ -630,7 +765,8 @@ $markdown.Add('')
 $markdown.Add(
     "Requested profile: $($Width)x$($Height); expanded viewport: " +
     "$([bool]$ExpandedViewport); tiled MOD reference: " +
-    "$([bool]$TiledModernViewport); UI included: $([bool]$IncludeUi).")
+    "$([bool]$TiledModernViewport); UI included: $([bool]$IncludeUi); " +
+    "overlay: $Overlay.")
 $markdown.Add('')
 $markdown.Add(
     'The stable MOD reference comes directly from cnc-ddraw RGB565 primary ' +

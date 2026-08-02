@@ -241,6 +241,40 @@ const INVENTORY_ICON_SPRITES_BY_MISSION_ITEM := {
 	"uniform": "0243",
 	"explosives": "0250",
 }
+# Exact 50x50 popup icons recovered from the original PSD resource table.
+# Vector2i.x is the normal GFL index and Vector2i.y is the selected/hovered
+# index.  These take precedence over world-pickup sprites in the UI; the
+# latter remain a fallback for incomplete external asset sets.
+const ORIGINAL_INVENTORY_PSD_BY_ITEM_ID := {
+	33: Vector2i(1166, 1167),
+	36: Vector2i(1212, 1213),
+	37: Vector2i(1120, 1121),
+	38: Vector2i(1164, 1165),
+	39: Vector2i(1117, 1118),
+	40: Vector2i(1123, 1124),
+	41: Vector2i(1149, 1150),
+	42: Vector2i(1133, 1134),
+	43: Vector2i(1141, 1142),
+	44: Vector2i(1210, 1211),
+	45: Vector2i(1248, 1249),
+	46: Vector2i(1135, 1136),
+	47: Vector2i(1240, 1241),
+	48: Vector2i(1162, 1163),
+	49: Vector2i(1175, 1176),
+	50: Vector2i(1230, 1231),
+	51: Vector2i(1258, 1259),
+	52: Vector2i(1145, 1146),
+	53: Vector2i(1195, 1196),
+	54: Vector2i(1178, 1179),
+	82: Vector2i(1151, 1152),
+	83: Vector2i(1234, 1235),
+	92: Vector2i(1201, 1202),
+	101: Vector2i(1221, 1222),
+}
+const ORIGINAL_INVENTORY_PSD_BY_MISSION_ITEM := {
+	"uniform": Vector2i(1178, 1179),
+	"explosives": Vector2i(1248, 1249),
+}
 
 
 class LegacyDeploymentTarget:
@@ -7299,6 +7333,7 @@ func _inventory_grid_model() -> Dictionary:
 				"active": action_key == active_key,
 				"enabled": actor.is_alive,
 				"icon": _inventory_icon_for(action_key, 0, ""),
+				"icon_selected": _inventory_icon_for(action_key, 0, "", true),
 				"description": description,
 			})
 	if actor != null and actor.backpack_inventory != null:
@@ -7337,6 +7372,7 @@ func _inventory_grid_model() -> Dictionary:
 				"active": item_id == selected_backpack_item_id,
 				"enabled": actor.is_alive and quantity > 0,
 				"icon": _inventory_icon_for("", item_id, ""),
+				"icon_selected": _inventory_icon_for("", item_id, "", true),
 				"description": description,
 			})
 	for raw_key: Variant in field_inventory.keys():
@@ -7353,6 +7389,7 @@ func _inventory_grid_model() -> Dictionary:
 			"quantity": quantity,
 			"enabled": true,
 			"icon": _inventory_icon_for("", 0, item_key),
+			"icon_selected": _inventory_icon_for("", 0, item_key, true),
 			"description": "%s × %d；在任务交互点使用" % [label, quantity],
 		})
 	return {
@@ -7369,6 +7406,7 @@ func _inventory_icon_for(
 	action_key: String,
 	item_id: int,
 	item_key: String,
+	selected: bool = false,
 ) -> Texture2D:
 	var resolved_item_id := item_id
 	if not action_key.is_empty():
@@ -7379,16 +7417,40 @@ func _inventory_icon_for(
 		if not item_key.is_empty()
 		else "item:%d" % resolved_item_id
 	)
+	logical_key += ":selected" if selected else ":normal"
 	var cache_key := "%s|%s" % [converted_root, logical_key]
 	if inventory_icon_cache.has(cache_key):
 		return inventory_icon_cache[cache_key] as Texture2D
+
+	var original_pair := Vector2i.ZERO
+	if not item_key.is_empty():
+		original_pair = ORIGINAL_INVENTORY_PSD_BY_MISSION_ITEM.get(
+			item_key,
+			Vector2i.ZERO,
+		)
+	else:
+		original_pair = ORIGINAL_INVENTORY_PSD_BY_ITEM_ID.get(
+			resolved_item_id,
+			Vector2i.ZERO,
+		)
+	var original_psd_index := original_pair.y if selected else original_pair.x
+	var icon: Texture2D
+	if original_psd_index > 0 and not converted_root.is_empty():
+		var original_icon_path := _contained_converted_path(
+			converted_root,
+			"psd/%04d.png" % original_psd_index,
+		)
+		if not original_icon_path.is_empty():
+			icon = _load_external_texture(original_icon_path)
+	if icon != null:
+		inventory_icon_cache[cache_key] = icon
+		return icon
 
 	var sprite_stem := ""
 	if not item_key.is_empty():
 		sprite_stem = str(INVENTORY_ICON_SPRITES_BY_MISSION_ITEM.get(item_key, ""))
 	else:
 		sprite_stem = str(INVENTORY_ICON_SPRITES_BY_ITEM_ID.get(resolved_item_id, ""))
-	var icon: Texture2D
 	if not sprite_stem.is_empty() and not converted_root.is_empty():
 		var sprite_path := _contained_converted_path(
 			converted_root,

@@ -359,7 +359,9 @@ func _run() -> void:
 	)
 	var pointer_press := InputEventMouseButton.new()
 	pointer_press.button_index = MOUSE_BUTTON_LEFT
-	pointer_press.position = Vector2(320.0, 240.0)
+	# Headless Godot 4.7 can expose a 64x64 root viewport. Keep the synthetic
+	# click inside the actual target viewport instead of assuming 640x480.
+	pointer_press.position = Vector2(root.size) * 0.5
 	pointer_press.global_position = pointer_press.position
 	pointer_press.pressed = true
 	root.push_input(pointer_press, true)

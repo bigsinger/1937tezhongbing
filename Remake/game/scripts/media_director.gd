@@ -759,12 +759,14 @@ func _ensure_nodes() -> void:
 	image_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 24)
 	image_view.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	image_view.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	image_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	overlay.add_child(image_view)
 
 	video_player = VideoStreamPlayer.new()
 	video_player.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 24)
 	video_player.expand = true
 	video_player.bus = "Music"
+	video_player.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	video_player.finished.connect(_on_video_finished)
 	video_player.visible = false
 	overlay.add_child(video_player)
@@ -775,6 +777,7 @@ func _ensure_nodes() -> void:
 	fallback_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	fallback_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	fallback_label.add_theme_font_size_override("font_size", 26)
+	fallback_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	overlay.add_child(fallback_label)
 
 	help_label = Label.new()
@@ -783,6 +786,7 @@ func _ensure_nodes() -> void:
 	help_label.offset_bottom = -12.0
 	help_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	help_label.add_theme_color_override("font_color", Color(0.86, 0.82, 0.68))
+	help_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	overlay.add_child(help_label)
 
 	subtitle_panel = ColorRect.new()

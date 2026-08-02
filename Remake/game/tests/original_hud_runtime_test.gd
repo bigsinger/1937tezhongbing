@@ -2,10 +2,12 @@ extends SceneTree
 
 const GAME_SHELL_SCRIPT: Script = preload("res://scripts/game_shell.gd")
 const HUD_BASELINE_PATH := "res://data/original_hud_layout_baseline.json"
+const OVERLAY_BASELINE_PATH := "res://data/original_overlay_asset_baseline.json"
 const HUD_HEIGHT := 62.0
 const PORTRAIT_NAMES: Array[String] = ["老赵", "铁蛋", "强子", "古明", "大牛"]
 const PSD_TEXTURE_IDS: Array[int] = [
 	1126, 1127, 1128,
+	1129,
 	1138,
 	1143, 1144,
 	1154, 1155, 1156,
@@ -19,6 +21,7 @@ const PSD_TEXTURE_IDS: Array[int] = [
 var failures: Array[String] = []
 var checks := 0
 var baseline: Dictionary = {}
+var overlay_baseline: Dictionary = {}
 
 
 func _init() -> void:
@@ -28,6 +31,8 @@ func _init() -> void:
 func _run() -> void:
 	baseline = _load_baseline()
 	_expect(not baseline.is_empty(), "original HUD layout baseline loads")
+	overlay_baseline = _load_json_baseline(OVERLAY_BASELINE_PATH)
+	_expect(not overlay_baseline.is_empty(), "original overlay asset baseline loads")
 	var fixture_root := ProjectSettings.globalize_path(
 		"user://original-hud-runtime-test"
 	).simplify_path()
@@ -52,10 +57,12 @@ func _run() -> void:
 	])
 	await process_frame
 	await _check_layout(shell, Vector2i(1024, 768))
+	await _check_overlay_layout(shell, Vector2i(1024, 768))
 	viewport.size = Vector2i(1920, 1080)
 	await process_frame
 	await process_frame
 	await _check_layout(shell, Vector2i(1920, 1080))
+	await _check_overlay_layout(shell, Vector2i(1920, 1080))
 	_check_action_and_actor_signals(shell)
 	_check_mode_state(shell)
 	_check_health_bars(shell)
@@ -149,11 +156,137 @@ func _check_layout(shell: GameShell, viewport_size: Vector2i) -> void:
 
 
 func _load_baseline() -> Dictionary:
-	var source := FileAccess.get_file_as_string(HUD_BASELINE_PATH)
+	return _load_json_baseline(HUD_BASELINE_PATH)
+
+
+func _load_json_baseline(path: String) -> Dictionary:
+	var source := FileAccess.get_file_as_string(path)
 	var parsed: Variant = JSON.parse_string(source)
 	if parsed is Dictionary and int((parsed as Dictionary).get("schema_version", 0)) == 1:
 		return parsed as Dictionary
 	return {}
+
+
+func _check_overlay_layout(shell: GameShell, viewport_size: Vector2i) -> void:
+	var slot_texture := _fixture_texture(Vector2i(50, 50), Color(0.55, 0.3, 0.1, 1.0))
+	var slots: Array[Dictionary] = []
+	for index: int in range(7):
+		slots.append({
+			"kind": "fixture",
+			"label": "格%d" % index,
+			"quantity": index + 1,
+			"enabled": true,
+			"active": index == 0,
+			"icon": slot_texture,
+			"icon_selected": slot_texture,
+		})
+	shell.show_inventory({
+		"actor_name": "强子",
+		"groups": [{"title": "物品", "mode": "items", "slots": slots}],
+	}, "items")
+	paused = false
+	await process_frame
+	await process_frame
+	var layout := shell.original_overlay_layout_snapshot()
+	var inventory_rect := layout.get("inventory_rect", Rect2()) as Rect2
+	_expect(
+		bool(layout.get("assets_ready", false)),
+		"original overlay background assets remain ready",
+	)
+	_expect(
+		inventory_rect == Rect2(
+			float(viewport_size.x - 276),
+			float(viewport_size.y - 483),
+			276.0,
+			421.0,
+		),
+		"inventory stays bottom-right at %s" % viewport_size,
+	)
+	var inventory_layout := layout.get("inventory_layout", {}) as Dictionary
+	var rendered_slots := inventory_layout.get("slots", []) as Array
+	_expect(rendered_slots.size() == 7, "inventory retains every fixture slot")
+	_expect(
+		rendered_slots.all(func(slot: Dictionary) -> bool: return not bool(slot.get("focused", false))),
+		"opening the original inventory does not invent a focused first slot",
+	)
+	if rendered_slots.size() == 7:
+		_expect(
+			((rendered_slots[0] as Dictionary).get("rect", Rect2()) as Rect2)
+			== Rect2(13.0, 40.0, 50.0, 74.0),
+			"inventory first cell matches the original hit-test origin",
+		)
+		_expect(
+			((rendered_slots[5] as Dictionary).get("rect", Rect2()) as Rect2)
+			== Rect2(13.0, 124.0, 50.0, 74.0),
+			"inventory sixth cell starts the second 84-pixel row",
+		)
+	var first_button := shell._inventory_view.first_slot_button()
+	var quantity_label := (
+		first_button.get_node_or_null("OriginalQuantityFrame/OriginalQuantity") as Label
+		if first_button != null
+		else null
+	)
+	_expect(
+		quantity_label != null and quantity_label.text == "X1",
+		"inventory quantity retains the original compact Xn spelling",
+	)
+	shell.close_for_state_change()
+
+	for raw_map: Variant in overlay_baseline.get("minimaps", []) as Array:
+		var map_record := raw_map as Dictionary
+		var map_size := Vector2i(
+			int(map_record.get("width", 0)),
+			int(map_record.get("height", 0)),
+		)
+		var map_texture := _fixture_texture(map_size, Color(0.25, 0.32, 0.22, 1.0))
+		shell.show_tactical_map(
+			map_texture,
+			Vector2(float(map_size.x * 16), float(map_size.y * 16)),
+			[],
+			[],
+			Rect2(),
+		)
+		await process_frame
+		layout = shell.original_overlay_layout_snapshot()
+		_expect(
+			(layout.get("map_rect", Rect2()) as Rect2) == Rect2(
+				float(viewport_size.x - map_size.x),
+				float(viewport_size.y - 62 - map_size.y),
+				float(map_size.x),
+				float(map_size.y),
+			),
+			"%s minimap keeps native size at %s"
+			% [str(map_record.get("level_id", "")), viewport_size],
+		)
+		shell.hide_tactical_map()
+
+	var help_texture := _fixture_texture(Vector2i(640, 480), Color(0.02, 0.02, 0.02, 1.0))
+	shell.show_control_guide(help_texture)
+	paused = false
+	await process_frame
+	layout = shell.original_overlay_layout_snapshot()
+	_expect(
+		(layout.get("help_rect", Rect2()) as Rect2) == Rect2(
+			(float(viewport_size.x) - 640.0) * 0.5,
+			(float(viewport_size.y) - 480.0) * 0.5,
+			640.0,
+			480.0,
+		),
+		"F1 guide remains centered at native 640x480 in %s" % viewport_size,
+	)
+	_expect(
+		(layout.get("backdrop_color", Color.TRANSPARENT) as Color).is_equal_approx(
+			Color.BLACK
+		),
+		"F1 guide reproduces the original opaque black primary-surface backdrop",
+	)
+	shell.close_for_state_change()
+
+
+func _fixture_texture(dimensions: Vector2i, color: Color) -> Texture2D:
+	var image := Image.create(dimensions.x, dimensions.y, false, Image.FORMAT_RGBA8)
+	image.fill(color)
+	return ImageTexture.create_from_image(image)
 
 
 func _rect_from_record(record: Dictionary) -> Rect2:
@@ -242,8 +375,8 @@ func _write_fixture_assets(fixture_root: String) -> bool:
 		):
 			return false
 	for index: int in PSD_TEXTURE_IDS:
-		var width := 1024 if index == 1138 else 50
-		var height := 62 if index == 1138 else 50
+		var width := 1024 if index == 1138 else 276 if index == 1129 else 50
+		var height := 62 if index == 1138 else 421 if index == 1129 else 50
 		if not _save_fixture_png(
 			psd_root.path_join("%04d.png" % index),
 			width,

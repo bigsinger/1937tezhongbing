@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "baseline_id": "stable-mod-original-overlay-visual-parity-v1",
+  "content_profile": "repository-mod-12-level-20260729",
+  "captured_utc": "2026-08-02T17:07:07.3778643Z",
+  "method": "stable MOD cnc-ddraw RGB565 primary-surface memory versus Remake target viewport; target-process DirectInput replay only; native overlay crops where applicable",
+  "input_isolation": "no desktop capture; no global mouse, keyboard or focus input",
+  "original_binary_images_committed": false,
+  "representative_level": "m000",
+  "coverage_note": "The compositor is exercised on m000; exact source hashes and native dimensions for all 12 minimaps, all inventory icons, the inventory chassis, F1 guide and cursor frames are covered by original_overlay_asset_baseline.json and real_assets_test.gd.",
+  "samples": [
+    {
+      "overlay": "help",
+      "comparison_scope": "full_surface",
+      "dimensions": [1024, 768],
+      "threshold_profile": "world_or_full_overlay",
+      "metrics": {
+        "mean_absolute_error": 0.042052,
+        "near_match_ratio": 0.999748,
+        "edge_correlation": 0.99635,
+        "black_hole_ratio": 0.00024796
+      },
+      "thresholds": {
+        "maximum_mean_absolute_error": 6.0,
+        "minimum_near_match_ratio": 0.92,
+        "minimum_edge_correlation": 0.94,
+        "maximum_black_hole_ratio": 0.003
+      },
+      "stable_mod_sha256": "0C0F3FC9BE9084FC2A9663EECF299716A103021883AE8E1CAA8786455906F128",
+      "remake_sha256": "9506C09871599C2488DAF95DEC45EF13C71E3A2D816A07308954CF34BB00306F",
+      "passed": true
+    },
+    {
+      "overlay": "items",
+      "comparison_scope": "native_overlay_crop",
+      "dimensions": [276, 421],
+      "threshold_profile": "rgb565_original_inventory_overlay",
+      "metrics": {
+        "mean_absolute_error": 4.129924,
+        "near_match_ratio": 0.963605,
+        "edge_correlation": 0.869103,
+        "black_hole_ratio": 0.00018073
+      },
+      "thresholds": {
+        "maximum_mean_absolute_error": 6.0,
+        "minimum_near_match_ratio": 0.94,
+        "minimum_edge_correlation": 0.85,
+        "maximum_black_hole_ratio": 0.001
+      },
+      "stable_mod_sha256": "8EEB849A3B1CD6B0A911FA47ECCAFEB31D12AE185345B6B8EA7480D682F7BCCF",
+      "remake_sha256": "693298A176C0202449C33BD0C0BBFFF113BFAF56CF7C389B13CE7074608C90F3",
+      "passed": true
+    },
+    {
+      "overlay": "weapons",
+      "comparison_scope": "native_overlay_crop",
+      "dimensions": [276, 421],
+      "threshold_profile": "rgb565_original_inventory_overlay",
+      "metrics": {
+        "mean_absolute_error": 4.134394,
+        "near_match_ratio": 0.963148,
+        "edge_correlation": 0.858759,
+        "black_hole_ratio": 0.0004131
+      },
+      "thresholds": {
+        "maximum_mean_absolute_error": 6.0,
+        "minimum_near_match_ratio": 0.94,
+        "minimum_edge_correlation": 0.85,
+        "maximum_black_hole_ratio": 0.001
+      },
+      "stable_mod_sha256": "377161DAD43C43B92EECF7DFA4902723159F4723885ECC9504511F4AE3F6B08B",
+      "remake_sha256": "1D2A758EAAEB4899A325C5AAF343868902B1E4C8808EBD098ED4684E2B51F96F",
+      "passed": true
+    },
+    {
+      "overlay": "minimap",
+      "comparison_scope": "native_overlay_crop",
+      "dimensions": [336, 166],
+      "threshold_profile": "world_or_full_overlay",
+      "metrics": {
+        "mean_absolute_error": 2.159411,
+        "near_match_ratio": 0.980081,
+        "edge_correlation": 0.941773,
+        "black_hole_ratio": 0.00007172
+      },
+      "thresholds": {
+        "maximum_mean_absolute_error": 6.0,
+        "minimum_near_match_ratio": 0.92,
+        "minimum_edge_correlation": 0.94,
+        "maximum_black_hole_ratio": 0.003
+      },
+      "stable_mod_sha256": "74F21FEC80F80BAE618174048FDC14CB4BF941223E2223AA1A408B7D84F302F6",
+      "remake_sha256": "67211BC716767E1C52D86FB00F64585B4C9D07D4D518D8933F0241B5E17E31AA",
+      "passed": true
+    }
+  ],
+  "passed": true
+}

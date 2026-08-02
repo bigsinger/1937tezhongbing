@@ -15,6 +15,20 @@ const FORMAL_LEVEL_IDS: Array[String] = [
 	"m010",
 	"m011",
 ]
+const ORIGINAL_INVENTORY_ACTOR_BY_LEVEL := {
+	"m000": "强子",
+	"m001": "强子",
+	"m002": "老赵",
+	"m003": "古明",
+	"m004": "大牛",
+	"m005": "强子",
+	"m006": "强子",
+	"m007": "老赵",
+	"m008": "大牛",
+	"m009": "强子",
+	"m010": "强子",
+	"m011": "强子",
+}
 
 var output_path := ""
 var metadata_path := ""
@@ -24,6 +38,7 @@ var camera_top := 0
 var expected_width := 1024
 var expected_height := 768
 var world_only := true
+var overlay := "none"
 
 
 func _init() -> void:
@@ -37,6 +52,8 @@ func _run_probe() -> void:
 		failures.append("--output=PATH is required")
 	if not level_id in FORMAL_LEVEL_IDS:
 		failures.append("unsupported level id: %s" % level_id)
+	if overlay not in ["none", "weapons", "items", "minimap", "help", "pause"]:
+		failures.append("unsupported overlay: %s" % overlay)
 	if not failures.is_empty():
 		_finish(failures, Vector2.ZERO, Vector2i.ZERO, 0, 0)
 		return
@@ -69,6 +86,24 @@ func _run_probe() -> void:
 		main.game_shell.close_for_state_change()
 	if main.media_director != null:
 		main.media_director.close_for_state_change()
+	if overlay != "none":
+		world_only = false
+		if overlay in ["weapons", "items"]:
+			main._on_original_hud_actor_requested(
+				str(ORIGINAL_INVENTORY_ACTOR_BY_LEVEL[level_id])
+			)
+		match overlay:
+			"weapons":
+				main._open_inventory("weapons")
+			"items":
+				main._open_inventory("items")
+			"minimap":
+				main._open_tactical_map()
+			"help":
+				main._open_control_guide()
+			"pause":
+				main._open_pause_menu()
+		paused = false
 	# Stop the product controller's per-frame camera clamp. It uses the full
 	# 768-pixel modern viewport, while the original clamps against its
 	# 708-pixel map viewport above the toolbar.
@@ -151,6 +186,7 @@ func _finish(
 			"playable_entity_count": playable_entity_count,
 			"output": output_path,
 			"world_only": world_only,
+			"overlay": overlay,
 			"failures": failures,
 			"passed": failures.is_empty(),
 		}
@@ -191,3 +227,5 @@ func _parse_arguments(arguments: PackedStringArray) -> void:
 			expected_height = int(argument.trim_prefix("--viewport-height="))
 		elif argument == "--include-ui":
 			world_only = false
+		elif argument.begins_with("--overlay="):
+			overlay = argument.trim_prefix("--overlay=").to_lower()

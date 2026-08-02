@@ -120,6 +120,23 @@ func available_serial_ids() -> Array[int]:
 	return result
 
 
+func visual_group_snapshot(serial_id: int) -> Dictionary:
+	var group_value: Variant = groups_by_serial.get(serial_id)
+	if not group_value is Dictionary:
+		return {}
+	var group := group_value as Dictionary
+	var sizes: Array[Vector2i] = []
+	for frame: Texture2D in group.get("frames", []) as Array[Texture2D]:
+		sizes.append(Vector2i(frame.get_width(), frame.get_height()))
+	return {
+		"serial_id": serial_id,
+		"hotspot": group.get("anchor", Vector2.ZERO) as Vector2,
+		"frame_hold_ticks": int(group.get("frame_hold_ticks", 0)),
+		"frame_count": sizes.size(),
+		"frame_sizes": sizes,
+	}
+
+
 func set_large_cursor(enabled: bool) -> void:
 	if large_cursor_enabled == enabled:
 		return

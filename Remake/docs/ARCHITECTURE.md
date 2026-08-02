@@ -171,6 +171,16 @@ Godot 从 `res://../LocalAssets/converted/` 读取本地数据：
 
 `ImportedLevelData` 保留并校验转换结果中的 `database_header_values`；`WorldDepth` 据 DBL `header[0]` 把地面/固定背景、正常深度、固定前景和顶层映射到四个互不重叠的 z 区间。正常队列再由 `LegacyRowSliceSprite` 复现原版 32 像素列：非均匀 RowLookup 才拆成缓存的 AtlasTexture，均匀表保留单 draw item，并以 `reference_y - primary.z + row_lookup[column]` 计算绝对深度。它覆盖静态场景、移动 actor、门两态、拾取物、爆炸物和特殊世界对象；动态 actor 每次动作、朝向或帧变化都会原子刷新锚点、足印与列基线。m000 真实资源回归已确认 22 个 DBL 336/337 庄稼底图在 queue 1，70 个 DBL 335 稻谷在 queue 0；因此前者固定在人物后，后者才参与人物基线排序。玩家身份不再只按姓名猜测，而由 `original_initial_weapon_inventory.json` 的 level + scene ID 确定；`original_runtime_actor_catalog.json` 还固化 772 个已解析运行时角色、5 个 VWF/运行时阵营差异和 656 条稳定 MOD 巡逻时间线。十二关 660 个精确动态角色都持有原版直接数量语义的 `CombatInventory`，共恢复 761 个 `+0x22C` 有序武器条目和 67 个空容器，其中 27 名玩家占 83 条；敌军的“不消耗”只改变扣除规则，不删除其精确容器。另由 `original_initial_item_inventory.json` 和独立 `BackpackInventory` 固化同一批 660 个角色、539 条 actor `+0x228` 物品记录，绝不再与武器或全队公共物资混用。`InventoryGridView` 以右侧 276×421 五列方格分别呈现 W 武器/A 物品；`ProjectileWorld` 负责 type 1/2/3/6/7/9 的原版坐标弹路、命中火花与爆炸，`LegacySpecialWorldObject` 和 `LegacyAiControlEffect` 负责 type 8/10/11。`FieldPickup` 读取 DBL `header[2]` 的真实 item ID，并按原程序 `sub_45AE10` 路由到拾取角色自己的武器或物品容器；DBL 1003 则保留为可受伤汽油桶，绝不按名称猜成普通物品。`LandMine` 和 `ExplosiveProp` 通过统一椭圆爆炸请求支持地雷、油桶和连锁伤害。世界命令不绘制黄色目标线。
 
+界面层进一步把“右侧五列方格”收紧为原版资源与原版坐标：PSD 1129 是
+`276×421` 背景，格原点为 `(13,40)`，横向步距 50、纵向步距 84，普通和
+选中图标均直接读取 50×50 PSD；数量框恢复原版黑色色键、绿色折线框和
+`Xn`/`n发` 文案；十二张 IBLOCK 小地图不再包现代标题框，F1 直接显示
+IBLOCK 1047。62 张界面 PNG、十二张地图、九个光标热点和 16 个光标帧由
+`original_overlay_asset_baseline.json` 固定哈希与尺寸；另一个不含原图的
+`original_overlay_visual_parity_baselines.json` 固定稳定 MOD 与 Remake 的
+F1 整屏、物品/武器面板及小地图裁剪像素指标。采集只使用目标进程自己的
+DirectInput 回放队列和 DirectDraw 主表面，不操作桌面输入。
+
 增强难度下的 `MissionAiCoordinator` 只分发警报产生时冻结的坐标快照，按稳定
 顺序建立前压/左右侧翼搜索槽位；`EnemyUnit` 再通过共享
 `DynamicOccupancyGrid` 选择可达候选，拒绝被墙截断的远端 partial route。

@@ -1,43 +1,46 @@
 class_name InventoryGridView
-extends VBoxContainer
+extends Control
 
 signal slot_activated(slot: Dictionary)
 
+# Recovered from the original popup hit test used by sub_45ACE0 callers:
+#   x = screen_width - 276 + 13 + 50 * column
+#   y = screen_height - 62 - 421 + 40 + 84 * row
+# The visible icon is 50x50; the remaining 24 pixels hold the quantity.
 const COLUMN_COUNT := 5
 const CELL_SIZE := Vector2(50.0, 74.0)
+const GRID_ORIGIN := Vector2(13.0, 40.0)
 const ROW_GAP := 10
 const ORIGINAL_ROW_PITCH := int(CELL_SIZE.y) + ROW_GAP
 
 var mode := "items"
 var model: Dictionary = {}
-var _heading: Label
-var _mode_hint: Label
-var _groups: VBoxContainer
+var _groups: GridContainer
 var _slot_buttons: Array[Button] = []
+var _slot_visuals: Dictionary = {}
+var _empty_label: Label
 
 
 func _ready() -> void:
-	add_theme_constant_override("separation", 8)
-	_heading = Label.new()
-	_heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_heading.add_theme_font_size_override("font_size", 23)
-	_heading.add_theme_color_override("font_color", Color(0.96, 0.88, 0.63))
-	add_child(_heading)
-	_mode_hint = Label.new()
-	_mode_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_mode_hint.add_theme_font_size_override("font_size", 14)
-	_mode_hint.add_theme_color_override("font_color", Color(0.75, 0.79, 0.68))
-	add_child(_mode_hint)
-	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(254.0, 292.0)
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	add_child(scroll)
-	_groups = VBoxContainer.new()
-	_groups.custom_minimum_size.x = 254.0
-	_groups.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_groups.add_theme_constant_override("separation", 4)
-	scroll.add_child(_groups)
+	custom_minimum_size = Vector2(276.0, 421.0)
+	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_groups = GridContainer.new()
+	_groups.name = "OriginalInventoryGrid"
+	_groups.position = GRID_ORIGIN
+	_groups.columns = COLUMN_COUNT
+	_groups.add_theme_constant_override("h_separation", 0)
+	_groups.add_theme_constant_override("v_separation", ROW_GAP)
+	add_child(_groups)
+	_empty_label = Label.new()
+	_empty_label.position = GRID_ORIGIN
+	_empty_label.size = Vector2(250.0, 74.0)
+	_empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_empty_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_empty_label.add_theme_font_size_override("font_size", 14)
+	_empty_label.add_theme_color_override("font_color", Color(0.83, 0.83, 0.76))
+	_empty_label.add_theme_color_override("font_outline_color", Color.BLACK)
+	_empty_label.add_theme_constant_override("outline_size", 2)
+	add_child(_empty_label)
 	_rebuild()
 
 
@@ -77,34 +80,57 @@ func first_slot_button() -> Button:
 	return null
 
 
+func slot_icon_texture(button: Button) -> Texture2D:
+	var state_value: Variant = _slot_visuals.get(button)
+	if not state_value is Dictionary:
+		return null
+	var icon_rect := (state_value as Dictionary).get("icon_rect") as TextureRect
+	return icon_rect.texture if icon_rect != null else null
+
+
+func layout_snapshot() -> Dictionary:
+	var slots: Array[Dictionary] = []
+	for index: int in range(_slot_buttons.size()):
+		var button := _slot_buttons[index]
+		if not is_instance_valid(button):
+			continue
+		slots.append({
+			"index": index,
+			"rect": Rect2(GRID_ORIGIN + button.position, button.size),
+			"disabled": button.disabled,
+			"focused": button.has_focus(),
+		})
+	return {
+		"panel_size": custom_minimum_size,
+		"grid_origin": GRID_ORIGIN,
+		"column_count": COLUMN_COUNT,
+		"cell_size": CELL_SIZE,
+		"row_pitch": ORIGINAL_ROW_PITCH,
+		"slots": slots,
+	}
+
+
 func _rebuild() -> void:
 	if _groups == null:
 		return
 	_slot_buttons.clear()
+	_slot_visuals.clear()
 	for child: Node in _groups.get_children():
 		child.queue_free()
-	var actor_name := str(model.get("actor_name", "当前队员"))
-	_heading.text = "%s · %s" % [actor_name, "武器" if mode == "weapons" else "物品"]
-	_mode_hint.text = (
-		"点击方格装备武器；数字键 1–0 对应原版武器"
-		if mode == "weapons"
-		else "点击方格使用或装备物品；数量显示在格内"
-	)
-	var visible_groups := 0
+	var visible_slots: Array[Dictionary] = []
 	for raw_group: Variant in model.get("groups", []):
 		if not raw_group is Dictionary:
 			continue
 		var group := raw_group as Dictionary
 		if not _group_is_visible(group):
 			continue
-		visible_groups += 1
-		_add_group(group)
-	if visible_groups == 0:
-		var empty := Label.new()
-		empty.text = "（该栏目前为空）"
-		empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		empty.custom_minimum_size.y = 80.0
-		_groups.add_child(empty)
+		for raw_slot: Variant in group.get("slots", []):
+			if raw_slot is Dictionary:
+				visible_slots.append((raw_slot as Dictionary).duplicate(true))
+	for slot: Dictionary in visible_slots:
+		_groups.add_child(_make_slot(slot))
+	_empty_label.visible = visible_slots.is_empty()
+	_empty_label.text = "（该栏目前为空）"
 
 
 func _group_is_visible(group: Dictionary) -> bool:
@@ -112,82 +138,140 @@ func _group_is_visible(group: Dictionary) -> bool:
 	return group_mode == mode or group_mode == "both"
 
 
-func _add_group(group: Dictionary) -> void:
-	var band := Label.new()
-	band.text = "  %s" % str(group.get("title", "物品"))
-	band.custom_minimum_size.y = 24.0
-	band.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	band.add_theme_font_size_override("font_size", 15)
-	band.add_theme_color_override("font_color", Color(0.93, 0.85, 0.61))
-	band.add_theme_stylebox_override("normal", _band_style())
-	_groups.add_child(band)
-
-	var grid := GridContainer.new()
-	grid.columns = COLUMN_COUNT
-	grid.add_theme_constant_override("h_separation", 1)
-	grid.add_theme_constant_override("v_separation", ROW_GAP)
-	_groups.add_child(grid)
-	var slots: Array = group.get("slots", []) as Array
-	for raw_slot: Variant in slots:
-		if raw_slot is Dictionary:
-			grid.add_child(_make_slot(raw_slot as Dictionary))
-	# Preserve the five-column silhouette of the original popup even for a
-	# partially populated group.
-	var fillers := (COLUMN_COUNT - (slots.size() % COLUMN_COUNT)) % COLUMN_COUNT
-	for unused_index in range(fillers):
-		var filler := Panel.new()
-		filler.custom_minimum_size = CELL_SIZE
-		filler.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		filler.add_theme_stylebox_override("panel", _cell_style(false, true))
-		grid.add_child(filler)
-
-
 func _make_slot(slot: Dictionary) -> Button:
 	var button := Button.new()
 	button.custom_minimum_size = CELL_SIZE
 	button.focus_mode = Control.FOCUS_ALL
-	button.clip_text = true
 	button.disabled = not bool(slot.get("enabled", true))
 	button.tooltip_text = str(slot.get("description", slot.get("label", "")))
-	var label := str(slot.get("short_label", slot.get("label", "")))
+	button.text = ""
+	button.add_theme_stylebox_override("normal", _transparent_cell_style(false))
+	button.add_theme_stylebox_override("hover", _transparent_cell_style(true))
+	button.add_theme_stylebox_override("pressed", _transparent_cell_style(true))
+	button.add_theme_stylebox_override("focus", _transparent_cell_style(true))
+	button.add_theme_stylebox_override("disabled", _transparent_cell_style(false))
+
+	var icon_rect := TextureRect.new()
+	icon_rect.name = "OriginalItemIcon"
+	icon_rect.position = Vector2.ZERO
+	icon_rect.size = Vector2(50.0, 50.0)
+	icon_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon_rect.stretch_mode = TextureRect.STRETCH_KEEP
+	icon_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icon_rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	button.add_child(icon_rect)
+
+	var quantity_frame := Panel.new()
+	quantity_frame.name = "OriginalQuantityFrame"
+	quantity_frame.position = Vector2(2.0, 53.0)
+	quantity_frame.size = Vector2(50.0, 24.0)
+	quantity_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var quantity_style := StyleBoxFlat.new()
+	quantity_style.bg_color = Color.BLACK
+	var quantity_green := Color8(0, 157, 8, 255)
+	quantity_style.border_color = quantity_green
+	quantity_style.border_width_left = 1
+	quantity_style.border_width_top = 1
+	quantity_style.border_width_right = 1
+	quantity_style.border_width_bottom = 1
+	quantity_frame.add_theme_stylebox_override("panel", quantity_style)
+	button.add_child(quantity_frame)
+	for segment: Rect2 in [
+		Rect2(6.0, 1.0, 1.0, 6.0),
+		Rect2(6.0, 6.0, 38.0, 1.0),
+		Rect2(43.0, 6.0, 1.0, 6.0),
+	]:
+		var accent := ColorRect.new()
+		accent.position = segment.position
+		accent.size = segment.size
+		accent.color = quantity_green
+		accent.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		quantity_frame.add_child(accent)
+
+	var quantity_label := Label.new()
+	quantity_label.name = "OriginalQuantity"
+	quantity_label.position = Vector2(3.0, 3.0)
+	quantity_label.size = Vector2(46.0, 21.0)
+	quantity_label.scale = Vector2(1.25, 1.0)
+	quantity_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	quantity_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	quantity_label.add_theme_font_size_override("font_size", 14)
+	quantity_label.add_theme_color_override("font_color", Color.RED)
+	quantity_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var quantity := int(slot.get("quantity", 0))
-	button.text = label + ("\n×%d" % quantity if quantity > 0 else "")
-	button.add_theme_font_size_override("font_size", 11)
-	button.add_theme_stylebox_override(
-		"normal", _cell_style(bool(slot.get("active", false)), false)
+	var is_weapon := str(slot.get("kind", "")) == "weapon"
+	quantity_label.text = (
+		"%d发" % quantity
+		if is_weapon and quantity > 0
+		else ""
+		if is_weapon
+		else "X%d" % quantity
 	)
-	button.add_theme_stylebox_override("hover", _cell_style(true, false))
-	button.add_theme_stylebox_override("pressed", _cell_style(true, false))
-	var icon_value: Variant = slot.get("icon")
-	if icon_value is Texture2D:
-		button.icon = icon_value as Texture2D
-		button.expand_icon = true
-		button.add_theme_constant_override("icon_max_width", 32)
+	quantity_frame.visible = is_weapon or quantity > 0
+	quantity_frame.add_child(quantity_label)
+
+	_slot_visuals[button] = {
+		"active": bool(slot.get("active", false)),
+		"hovered": false,
+		"focused": false,
+		"normal": slot.get("icon") as Texture2D,
+		"selected": slot.get("icon_selected") as Texture2D,
+		"icon_rect": icon_rect,
+	}
+	button.mouse_entered.connect(_set_slot_hovered.bind(button, true))
+	button.mouse_exited.connect(_set_slot_hovered.bind(button, false))
+	button.focus_entered.connect(_set_slot_focused.bind(button, true))
+	button.focus_exited.connect(_set_slot_focused.bind(button, false))
 	button.pressed.connect(func() -> void: slot_activated.emit(slot.duplicate(true)))
 	_slot_buttons.append(button)
+	_refresh_slot_visual(button)
 	return button
 
 
-func _cell_style(active: bool, empty: bool) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = (
-		Color(0.34, 0.31, 0.19, 0.96)
-		if active
-		else Color(0.105, 0.115, 0.09, 0.86 if not empty else 0.48)
+func _set_slot_hovered(button: Button, hovered: bool) -> void:
+	var state_value: Variant = _slot_visuals.get(button)
+	if not state_value is Dictionary:
+		return
+	(state_value as Dictionary)["hovered"] = hovered
+	_refresh_slot_visual(button)
+
+
+func _set_slot_focused(button: Button, focused: bool) -> void:
+	var state_value: Variant = _slot_visuals.get(button)
+	if not state_value is Dictionary:
+		return
+	(state_value as Dictionary)["focused"] = focused
+	_refresh_slot_visual(button)
+
+
+func _refresh_slot_visual(button: Button) -> void:
+	var state_value: Variant = _slot_visuals.get(button)
+	if not state_value is Dictionary:
+		return
+	var state := state_value as Dictionary
+	var icon_rect := state.get("icon_rect") as TextureRect
+	if icon_rect == null:
+		return
+	var highlighted := (
+		bool(state.get("hovered", false))
+		or bool(state.get("focused", false))
 	)
-	style.border_color = Color(0.90, 0.73, 0.34, 0.92) if active else Color(0.42, 0.44, 0.35, 0.82)
-	style.set_border_width_all(2 if active else 1)
-	style.set_corner_radius_all(2)
-	style.content_margin_left = 2.0
-	style.content_margin_right = 2.0
-	style.content_margin_top = 2.0
-	style.content_margin_bottom = 2.0
-	return style
+	var selected := state.get("selected") as Texture2D
+	var normal := state.get("normal") as Texture2D
+	icon_rect.texture = selected if highlighted and selected != null else normal
+	icon_rect.modulate = Color(0.55, 0.55, 0.55, 0.88) if button.disabled else Color.WHITE
 
 
-func _band_style() -> StyleBoxFlat:
+func _transparent_cell_style(highlighted: bool) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.15, 0.16, 0.115, 0.96)
-	style.border_color = Color(0.39, 0.40, 0.30, 0.85)
-	style.border_width_bottom = 1
+	style.bg_color = Color(0.0, 0.0, 0.0, 0.0)
+	style.border_color = Color(0.76, 0.92, 0.53, 0.9) if highlighted else Color.TRANSPARENT
+	style.border_width_left = 1 if highlighted else 0
+	style.border_width_top = 1 if highlighted else 0
+	style.border_width_right = 1 if highlighted else 0
+	style.border_width_bottom = 1 if highlighted else 0
+	style.content_margin_left = 0.0
+	style.content_margin_right = 0.0
+	style.content_margin_top = 0.0
+	style.content_margin_bottom = 0.0
 	return style

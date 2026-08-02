@@ -437,10 +437,17 @@ func _run() -> void:
 	var item_buttons: Array[Button] = shell._inventory_view._slot_buttons
 	expect(
 		item_buttons.size() == 3
-		and item_buttons[0].icon == slot_icon
-		and item_buttons[1].icon == slot_icon
+		and shell._inventory_view.slot_icon_texture(item_buttons[0]) == slot_icon
+		and shell._inventory_view.slot_icon_texture(item_buttons[1]) == slot_icon
+		and not item_buttons[0].has_focus()
+		and not item_buttons[1].has_focus(),
+		"inventory renders exact-position icons without inventing an opening selection",
+		failures,
+	)
+	expect(
+		shell._inventory_view.focus_first_slot()
 		and root.gui_get_focus_owner() == item_buttons[1],
-		"inventory renders optional icons and keyboard focus skips disabled cells",
+		"explicit keyboard navigation still skips disabled inventory cells",
 		failures,
 	)
 	var undocumented_i := InputEventKey.new()

@@ -75,6 +75,11 @@ func _run() -> void:
 		),
 		"map HUD button mirrors the M-key map state",
 	)
+	var map_layout: Dictionary = main.game_shell.original_overlay_layout_snapshot()
+	_expect(
+		_original_map_rect_matches_viewport(map_layout, Vector2(root.size)),
+		"original minimap uses its native IBLOCK size and touches the HUD/right edge",
+	)
 	_capture("tactical-map.jpg")
 	main.game_shell.close_for_state_change()
 
@@ -85,7 +90,27 @@ func _run() -> void:
 		main.game_shell.overlay_mode == GAME_SHELL_SCRIPT.OverlayMode.INVENTORY,
 		"A/W inventory opens",
 	)
+	var inventory_layout: Dictionary = main.game_shell.original_overlay_layout_snapshot()
+	_expect(
+		_original_inventory_layout_matches_viewport(inventory_layout, Vector2(root.size)),
+		"inventory uses the recovered 276x421 popup and 13/40/50/84 hit geometry",
+	)
 	_capture("inventory.jpg")
+	main.game_shell.close_for_state_change()
+
+	main._open_control_guide()
+	paused = false
+	_expect(await _wait_for_render_frame(), "F1 guide frame renders")
+	_expect(
+		main.game_shell.overlay_mode == GAME_SHELL_SCRIPT.OverlayMode.HELP,
+		"F1 guide opens through the product shell",
+	)
+	var help_layout: Dictionary = main.game_shell.original_overlay_layout_snapshot()
+	_expect(
+		_original_help_layout_matches_viewport(help_layout, Vector2(root.size)),
+		"F1 guide preserves the original centered 640x480 pixels",
+	)
+	_capture("control-guide.jpg")
 	main.game_shell.close_for_state_change()
 
 	main._open_pause_menu()
@@ -194,6 +219,61 @@ func _visible_hud_portrait_count(layout: Dictionary) -> int:
 		if bool((raw_portrait as Dictionary).get("visible", false)):
 			count += 1
 	return count
+
+
+func _original_inventory_layout_matches_viewport(
+	layout: Dictionary,
+	viewport_size: Vector2,
+) -> bool:
+	if not bool(layout.get("assets_ready", false)):
+		return false
+	var panel_rect := layout.get("inventory_rect", Rect2()) as Rect2
+	if panel_rect != Rect2(
+		Vector2(viewport_size.x - 276.0, viewport_size.y - 483.0),
+		Vector2(276.0, 421.0),
+	):
+		return false
+	var grid := layout.get("inventory_layout", {}) as Dictionary
+	if (
+		grid.get("grid_origin", Vector2.ZERO) != Vector2(13.0, 40.0)
+		or int(grid.get("column_count", 0)) != 5
+		or grid.get("cell_size", Vector2.ZERO) != Vector2(50.0, 74.0)
+		or int(grid.get("row_pitch", 0)) != 84
+	):
+		return false
+	var slots := grid.get("slots", []) as Array
+	if slots.is_empty():
+		return true
+	var first_rect := (slots[0] as Dictionary).get("rect", Rect2()) as Rect2
+	return first_rect == Rect2(13.0, 40.0, 50.0, 74.0)
+
+
+func _original_map_rect_matches_viewport(
+	layout: Dictionary,
+	viewport_size: Vector2,
+) -> bool:
+	var texture_size := layout.get("map_texture_size", Vector2.ZERO) as Vector2
+	if texture_size.x <= 0.0 or texture_size.y <= 0.0:
+		return false
+	return (layout.get("map_rect", Rect2()) as Rect2) == Rect2(
+		Vector2(
+			viewport_size.x - texture_size.x,
+			viewport_size.y - 62.0 - texture_size.y,
+		),
+		texture_size,
+	)
+
+
+func _original_help_layout_matches_viewport(
+	layout: Dictionary,
+	viewport_size: Vector2,
+) -> bool:
+	var expected_size := Vector2(640.0, 480.0)
+	return (
+		(layout.get("help_texture_size", Vector2.ZERO) as Vector2) == expected_size
+		and (layout.get("help_rect", Rect2()) as Rect2)
+		== Rect2((viewport_size - expected_size) * 0.5, expected_size)
+	)
 
 
 func _write_hud_layout(file_name: String, layout: Dictionary) -> void:

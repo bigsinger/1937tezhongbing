@@ -3,7 +3,7 @@ extends Control
 
 signal world_position_requested(world_position: Vector2)
 
-const MAP_MARGIN := 2.0
+const MAP_MARGIN := 0.0
 const CAMERA_COLOR := Color(0.95, 0.89, 0.53, 0.92)
 const ORIGINAL_WORLD_UNITS_PER_MAP_PIXEL := 16.0
 const ORIGINAL_MAP_BORDER_PIXELS := 13.0
@@ -60,36 +60,30 @@ func _gui_input(event: InputEvent) -> void:
 
 
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, size), Color(0.025, 0.031, 0.027, 0.98), true)
 	var texture_rect := _texture_rect()
 	var map_rect := _map_rect()
 	if terrain_texture != null:
 		draw_texture_rect(terrain_texture, texture_rect, false)
 	else:
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0.025, 0.031, 0.027, 0.98), true)
 		draw_rect(map_rect, Color(0.12, 0.16, 0.12), true)
 		_draw_fallback_grid(map_rect)
-	draw_rect(texture_rect, Color(0.70, 0.72, 0.58, 0.82), false, 2.0)
 
 	for marker: Dictionary in mission_markers:
 		var point := _world_to_map(marker.get("position", Vector2.ZERO) as Vector2, map_rect)
 		var color: Color = marker.get("color", Color(0.95, 0.70, 0.20)) as Color
-		var radius := maxf(float(marker.get("radius", 6.0)), 3.0)
-		var diamond := PackedVector2Array([
-			point + Vector2(0.0, -radius),
-			point + Vector2(radius, 0.0),
-			point + Vector2(0.0, radius),
-			point + Vector2(-radius, 0.0),
-		])
-		draw_colored_polygon(diamond, color)
-		draw_polyline(PackedVector2Array([diamond[0], diamond[1], diamond[2], diamond[3], diamond[0]]), Color.WHITE, 1.0)
+		# A filled rectangle is one canvas primitive; the former circles and
+		# diamonds were tessellated every refresh.  At minimap scale 3x3/4x4
+		# markers are also clearer and cheaper than round points.
+		draw_rect(Rect2(point - Vector2(2.0, 2.0), Vector2(4.0, 4.0)), color, true)
 
 	for marker: Dictionary in actor_markers:
 		var point := _world_to_map(marker.get("position", Vector2.ZERO) as Vector2, map_rect)
 		var color: Color = marker.get("color", Color.WHITE) as Color
-		var radius := maxf(float(marker.get("radius", 4.0)), 2.0)
-		draw_circle(point, radius, color)
+		var marker_rect := Rect2(point - Vector2.ONE, Vector2(3.0, 3.0))
+		draw_rect(marker_rect, color, true)
 		if bool(marker.get("selected", false)):
-			draw_arc(point, radius + 3.0, 0.0, TAU, 18, Color.WHITE, 1.5)
+			draw_rect(marker_rect.grow(2.0), Color.WHITE, false, 1.0)
 
 	if camera_world_rect.size.x > 0.0 and camera_world_rect.size.y > 0.0:
 		var top_left := _world_to_map(camera_world_rect.position, map_rect)

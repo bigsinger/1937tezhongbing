@@ -28,7 +28,10 @@ const INVENTORY_GRID_VIEW_SCRIPT: Script = preload("res://scripts/inventory_grid
 const GAME_INPUT_BINDINGS: Script = preload("res://scripts/game_input_bindings.gd")
 const ORIGINAL_INVENTORY_POPUP_SIZE := Vector2(276.0, 421.0)
 const ORIGINAL_BOTTOM_HUD_HEIGHT := 62.0
-const TACTICAL_MAP_PANEL_CHROME := Vector2(44.0, 77.0)
+const ORIGINAL_INVENTORY_BACKGROUND_PSD := 1129
+const ORIGINAL_HELP_SIZE := Vector2(640.0, 480.0)
+const OVERLAY_DIM_COLOR := Color(0.018, 0.024, 0.020, 0.78)
+const ORIGINAL_HELP_BACKDROP_COLOR := Color(0.0, 0.0, 0.0, 1.0)
 const ORIGINAL_HUD_PORTRAITS := {
 	"老赵": {"dead": 1187, "idle": 1188, "selected": 1189},
 	"铁蛋": {"dead": 1215, "idle": 1216, "selected": 1217},
@@ -90,6 +93,7 @@ var _original_hud_action_buttons: Dictionary = {}
 var _original_hud_texture_cache: Dictionary = {}
 var _original_hud_converted_root := ""
 var _original_hud_assets_ready := false
+var _original_overlay_assets_ready := false
 var _original_hud_requested_visible := false
 var _dim: ColorRect
 var _failure_desaturate: ColorRect
@@ -124,6 +128,7 @@ var _map_panel: PanelContainer
 var _map_view: TacticalMapView
 var _map_requested_visible := false
 var _inventory_panel: PanelContainer
+var _inventory_background: TextureRect
 var _inventory_view: InventoryGridView
 var _inventory_mode := "items"
 var _help_panel: PanelContainer
@@ -221,6 +226,7 @@ func configure_original_hud_assets(converted_root: String) -> bool:
 	_original_hud_converted_root = normalized_root
 	_original_hud_texture_cache.clear()
 	_original_hud_assets_ready = false
+	_original_overlay_assets_ready = false
 	if _original_bottom_hud == null or normalized_root.is_empty():
 		_update_original_hud_visibility()
 		return false
@@ -261,6 +267,14 @@ func configure_original_hud_assets(converted_root: String) -> bool:
 		button.texture_hover = active
 		button.texture_pressed = active
 		button.texture_focused = active
+
+	var inventory_background := _load_original_color_keyed_hud_texture(
+		"psd",
+		ORIGINAL_INVENTORY_BACKGROUND_PSD,
+	)
+	if _inventory_background != null and inventory_background != null:
+		_inventory_background.texture = inventory_background
+		_original_overlay_assets_ready = true
 
 	_original_hud_assets_ready = true
 	_update_original_hud_portrait_textures()
@@ -342,6 +356,34 @@ func original_hud_layout_snapshot() -> Dictionary:
 		),
 		"portraits": portraits,
 		"actions": actions,
+	}
+
+
+func original_overlay_layout_snapshot() -> Dictionary:
+	var map_texture_size := Vector2.ZERO
+	if _map_view != null and _map_view.terrain_texture != null:
+		map_texture_size = _map_view.terrain_texture.get_size()
+	return {
+		"assets_ready": _original_overlay_assets_ready,
+		"inventory_rect": (
+			_inventory_panel.get_global_rect()
+			if _inventory_panel != null
+			else Rect2()
+		),
+		"inventory_layout": (
+			_inventory_view.layout_snapshot()
+			if _inventory_view != null
+			else {}
+		),
+		"map_rect": _map_panel.get_global_rect() if _map_panel != null else Rect2(),
+		"map_texture_size": map_texture_size,
+		"help_rect": _help_panel.get_global_rect() if _help_panel != null else Rect2(),
+		"help_texture_size": (
+			_help_texture.texture.get_size()
+			if _help_texture != null and _help_texture.texture != null
+			else Vector2.ZERO
+		),
+		"backdrop_color": _dim.color if _dim != null else Color.TRANSPARENT,
 	}
 
 
@@ -504,7 +546,6 @@ func show_inventory(inventory_data: Variant, requested_mode: String = "items") -
 	_enter_mode(OverlayMode.INVENTORY)
 	_inventory_mode = requested_mode if requested_mode in ["weapons", "items"] else "items"
 	_inventory_view.configure(_normalized_inventory_model(inventory_data), _inventory_mode)
-	_inventory_view.focus_first_slot()
 
 
 func update_inventory(inventory_data: Variant, requested_mode: String = "") -> void:
@@ -513,7 +554,6 @@ func update_inventory(inventory_data: Variant, requested_mode: String = "") -> v
 	if requested_mode in ["weapons", "items"]:
 		_inventory_mode = requested_mode
 	_inventory_view.configure(_normalized_inventory_model(inventory_data), _inventory_mode)
-	_inventory_view.focus_first_slot()
 
 
 func show_control_guide(original_help_texture: Texture2D = null) -> void:
@@ -641,7 +681,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		else:
 			_inventory_mode = requested_mode
 			_inventory_view.configure(_inventory_view.model, _inventory_mode)
-			_inventory_view.focus_first_slot()
 		get_viewport().set_input_as_handled()
 		return
 	var should_close := (
@@ -668,7 +707,16 @@ func _enter_mode(mode: int) -> void:
 		mode == OverlayMode.FAILURE
 		or (mode == OverlayMode.SLOT_SELECTOR and _slot_return_mode == OverlayMode.FAILURE)
 	)
-	_dim.visible = not failure_background
+	# The original W/A popup is a right-side panel over the live scene.  It
+	# blocks commands while open, but it does not tint the map underneath.
+	# F1 replaces the whole primary surface with black before blitting the
+	# native 640x480 guide; other modal screens retain the modern dimmer.
+	_dim.color = (
+		ORIGINAL_HELP_BACKDROP_COLOR
+		if mode == OverlayMode.HELP
+		else OVERLAY_DIM_COLOR
+	)
+	_dim.visible = not failure_background and mode != OverlayMode.INVENTORY
 	_failure_desaturate.visible = failure_background
 	_menu_panel.visible = mode in [OverlayMode.PAUSE_MENU, OverlayMode.FAILURE]
 	_map_panel.visible = mode == OverlayMode.TACTICAL_MAP
@@ -979,7 +1027,7 @@ func _build_interface() -> void:
 	_root.add_child(_failure_desaturate)
 
 	_dim = ColorRect.new()
-	_dim.color = Color(0.018, 0.024, 0.020, 0.78)
+	_dim.color = OVERLAY_DIM_COLOR
 	_dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_dim.mouse_filter = Control.MOUSE_FILTER_STOP
 	_root.add_child(_dim)
@@ -1180,6 +1228,45 @@ func _load_original_hud_texture(asset_kind: String, gfl_index: int) -> Texture2D
 	if image.load(path) != OK or image.is_empty():
 		return null
 	var texture := ImageTexture.create_from_image(image)
+	_original_hud_texture_cache[cache_key] = texture
+	return texture
+
+
+func _load_original_color_keyed_hud_texture(
+	asset_kind: String,
+	gfl_index: int,
+) -> Texture2D:
+	var cache_key := "%s-color-key/%04d" % [asset_kind, gfl_index]
+	if _original_hud_texture_cache.has(cache_key):
+		return _original_hud_texture_cache[cache_key] as Texture2D
+	if _original_hud_converted_root.is_empty() or gfl_index <= 0:
+		return null
+	var path := _original_hud_converted_root.path_join(
+		"%s/%04d.png" % [asset_kind, gfl_index]
+	).simplify_path()
+	var root_prefix := _original_hud_converted_root.trim_suffix("/").trim_suffix("\\")
+	if not path.begins_with(root_prefix + "/") and not path.begins_with(root_prefix + "\\"):
+		return null
+	if not FileAccess.file_exists(path):
+		return null
+	var image := Image.new()
+	if image.load(path) != OK or image.is_empty():
+		return null
+	image.convert(Image.FORMAT_RGBA8)
+	var pixels := image.get_data()
+	for offset: int in range(0, pixels.size(), 4):
+		# The original DirectDraw popup treats exact RGB black as its source
+		# colour key even when the archived PSD composite marks it opaque.
+		if pixels[offset] == 0 and pixels[offset + 1] == 0 and pixels[offset + 2] == 0:
+			pixels[offset + 3] = 0
+	var keyed_image := Image.create_from_data(
+		image.get_width(),
+		image.get_height(),
+		false,
+		Image.FORMAT_RGBA8,
+		pixels,
+	)
+	var texture := ImageTexture.create_from_image(keyed_image)
 	_original_hud_texture_cache[cache_key] = texture
 	return texture
 
@@ -1451,33 +1538,19 @@ func _build_map_panel() -> void:
 	_map_panel = PanelContainer.new()
 	_map_panel.name = "RealtimeMinimapPanel"
 	_map_panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	_map_panel.offset_left = -320.0
-	_map_panel.offset_top = -(ORIGINAL_BOTTOM_HUD_HEIGHT + 235.0)
+	_map_panel.offset_left = -276.0
+	_map_panel.offset_top = -(ORIGINAL_BOTTOM_HUD_HEIGHT + 158.0)
 	_map_panel.offset_right = 0.0
 	_map_panel.offset_bottom = -ORIGINAL_BOTTOM_HUD_HEIGHT
 	_map_panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	_map_panel.add_theme_stylebox_override("panel", _panel_style(Color(0.05, 0.065, 0.052, 0.99)))
+	_map_panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	_hud_root.add_child(_map_panel)
-
-	var content := VBoxContainer.new()
-	content.add_theme_constant_override("separation", 3)
-	_map_panel.add_child(content)
-	var title := Label.new()
-	title.text = "地图（M）"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 15)
-	content.add_child(title)
 	_map_view = TACTICAL_MAP_VIEW_SCRIPT.new()
 	_map_view.custom_minimum_size = Vector2(276.0, 158.0)
 	_map_view.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_map_view.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_map_view.world_position_requested.connect(_on_map_position_requested)
-	content.add_child(_map_view)
-	var help := Label.new()
-	help.text = "蓝：我方　红：敌军　黄：任务　点击可卷屏"
-	help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	help.add_theme_font_size_override("font_size", 11)
-	content.add_child(help)
+	_map_panel.add_child(_map_view)
 	_map_panel.visible = false
 
 
@@ -1488,9 +1561,8 @@ func _resize_tactical_map(texture: Texture2D) -> void:
 	if texture != null:
 		map_size = texture.get_size()
 	_map_view.custom_minimum_size = map_size
-	var panel_size := map_size + TACTICAL_MAP_PANEL_CHROME
-	_map_panel.offset_left = -panel_size.x
-	_map_panel.offset_top = -(ORIGINAL_BOTTOM_HUD_HEIGHT + panel_size.y)
+	_map_panel.offset_left = -map_size.x
+	_map_panel.offset_top = -(ORIGINAL_BOTTOM_HUD_HEIGHT + map_size.y)
 	_map_panel.offset_right = 0.0
 	_map_panel.offset_bottom = -ORIGINAL_BOTTOM_HUD_HEIGHT
 
@@ -1506,23 +1578,21 @@ func _build_inventory_panel() -> void:
 	_inventory_panel.offset_right = 0.0
 	_inventory_panel.offset_bottom = -ORIGINAL_BOTTOM_HUD_HEIGHT
 	_inventory_panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	_inventory_panel.add_theme_stylebox_override(
-		"panel", _inventory_panel_style(Color(0.07, 0.085, 0.065, 0.99))
-	)
+	_inventory_panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	_root.add_child(_inventory_panel)
-
-	var content := VBoxContainer.new()
-	content.add_theme_constant_override("separation", 4)
-	_inventory_panel.add_child(content)
+	_inventory_background = TextureRect.new()
+	_inventory_background.name = "OriginalInventoryBackground"
+	_inventory_background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_inventory_background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_inventory_background.stretch_mode = TextureRect.STRETCH_KEEP
+	_inventory_background.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_inventory_background.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_inventory_panel.add_child(_inventory_background)
 	_inventory_view = INVENTORY_GRID_VIEW_SCRIPT.new()
+	_inventory_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_inventory_view.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_inventory_view.slot_activated.connect(_on_inventory_slot_activated)
-	content.add_child(_inventory_view)
-	var help := Label.new()
-	help.text = "点击方格选择；W / A / Esc 关闭"
-	help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	help.add_theme_font_size_override("font_size", 12)
-	content.add_child(help)
+	_inventory_panel.add_child(_inventory_view)
 
 
 func _on_inventory_slot_activated(slot: Dictionary) -> void:
@@ -1564,24 +1634,15 @@ func _build_level_selector_panel() -> void:
 func _build_help_panel() -> void:
 	_help_panel = PanelContainer.new()
 	_help_panel.name = "OriginalControlGuidePanel"
-	_center_control(_help_panel, Vector2(700.0, 570.0))
-	_help_panel.add_theme_stylebox_override(
-		"panel", _panel_style(Color(0.015, 0.02, 0.015, 0.99))
-	)
+	_center_control(_help_panel, ORIGINAL_HELP_SIZE)
+	_help_panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	_root.add_child(_help_panel)
-	var content := VBoxContainer.new()
-	content.add_theme_constant_override("separation", 8)
-	_help_panel.add_child(content)
-	var title := Label.new()
-	title.text = "原版操作指南"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 24)
-	content.add_child(title)
 	_help_texture = TextureRect.new()
-	_help_texture.custom_minimum_size = Vector2(640.0, 480.0)
+	_help_texture.custom_minimum_size = ORIGINAL_HELP_SIZE
 	_help_texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_help_texture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	content.add_child(_help_texture)
+	_help_texture.stretch_mode = TextureRect.STRETCH_KEEP
+	_help_texture.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_help_panel.add_child(_help_texture)
 	_help_fallback = Label.new()
 	_help_fallback.text = (
 		"F2–F6 选择队员　R 跑/走　C 匍匐/站立\n"
@@ -1591,10 +1652,12 @@ func _build_help_panel() -> void:
 	)
 	_help_fallback.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_help_fallback.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_help_fallback.custom_minimum_size = Vector2(640.0, 440.0)
+	_help_fallback.custom_minimum_size = ORIGINAL_HELP_SIZE
 	_help_fallback.add_theme_font_size_override("font_size", 19)
-	content.add_child(_help_fallback)
-	_add_button(content, "关闭（F1 / Esc）", _on_resume_pressed)
+	_help_fallback.add_theme_color_override("font_color", Color(0.92, 0.90, 0.78))
+	_help_fallback.add_theme_color_override("font_outline_color", Color.BLACK)
+	_help_fallback.add_theme_constant_override("outline_size", 2)
+	_help_panel.add_child(_help_fallback)
 
 
 func _add_button(parent: Control, text_value: String, callback: Callable) -> Button:

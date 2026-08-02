@@ -224,6 +224,7 @@ func _init() -> void:
 	validate_all_entity_sprite_anchors()
 	validate_runtime_actor_sprite_actions()
 	validate_original_cursor_asset()
+	validate_original_overlay_asset_baseline()
 	validate_special_action_assets()
 	validate_m000_farmland_depth()
 	validate_all_level_fidelity_baselines()
@@ -1039,6 +1040,102 @@ func validate_original_cursor_asset() -> void:
 		str(presenter.source_manifest_path).simplify_path() == manifest_path,
 		"cursor runtime records the contained original manifest path",
 	)
+	var overlay_baseline := load_json_dictionary(
+		ProjectSettings.globalize_path(
+			"res://data/original_overlay_asset_baseline.json"
+		).simplify_path()
+	)
+	var cursor_baseline := overlay_baseline.get("cursor", {}) as Dictionary
+	var manifest_groups: Dictionary = {}
+	for raw_group: Variant in manifest.get("groups", []) as Array:
+		if raw_group is Dictionary:
+			manifest_groups[int((raw_group as Dictionary).get("serial_id", -1))] = raw_group
+	var verified_frames := 0
+	for raw_group: Variant in cursor_baseline.get("groups", []) as Array:
+		if not raw_group is Dictionary:
+			continue
+		var expected_group := raw_group as Dictionary
+		var serial_id := int(expected_group.get("serial_id", -1))
+		var source_group := manifest_groups.get(serial_id, {}) as Dictionary
+		var snapshot: Dictionary = presenter.visual_group_snapshot(serial_id)
+		var hotspot_values := expected_group.get("hotspot", []) as Array
+		var expected_hotspot := Vector2(
+			float(hotspot_values[0]),
+			float(hotspot_values[1]),
+		) if hotspot_values.size() == 2 else Vector2(-1.0, -1.0)
+		expect(
+			not source_group.is_empty()
+			and (snapshot.get("hotspot", Vector2.ZERO) as Vector2) == expected_hotspot
+			and int(snapshot.get("frame_hold_ticks", 0))
+			== int(expected_group.get("frame_hold_ticks", -1))
+			and int(snapshot.get("frame_count", 0))
+			== (expected_group.get("frames", []) as Array).size(),
+			"cursor serial %d binds its exact hotspot and animation loop" % serial_id,
+		)
+		var source_frames := source_group.get("frames", []) as Array
+		var expected_frames := expected_group.get("frames", []) as Array
+		for frame_index: int in range(mini(source_frames.size(), expected_frames.size())):
+			var source_frame := source_frames[frame_index] as Dictionary
+			var expected_frame := expected_frames[frame_index] as Dictionary
+			var frame_path := manifest_path.get_base_dir().path_join(
+				str(source_frame.get("relative_path", ""))
+			).simplify_path()
+			expect(
+				FileAccess.get_sha256(frame_path).to_lower()
+				== str(expected_frame.get("converted_png_sha256", "")).to_lower(),
+				"cursor serial %d frame %d preserves exact original pixels"
+				% [serial_id, frame_index],
+			)
+			verified_frames += 1
+	expect(verified_frames == 16, "all 16 original cursor frames verify")
+
+
+func validate_original_overlay_asset_baseline() -> void:
+	var baseline := load_json_dictionary(
+		ProjectSettings.globalize_path(
+			"res://data/original_overlay_asset_baseline.json"
+		).simplify_path()
+	)
+	expect(
+		int(baseline.get("schema_version", 0)) == 1
+		and str(baseline.get("baseline_id", ""))
+		== "stable-mod-original-overlay-assets-v1",
+		"original overlay pixel baseline loads",
+	)
+	if baseline.is_empty():
+		return
+	var converted_root := ProjectSettings.globalize_path(
+		"res://../LocalAssets/converted"
+	).simplify_path()
+	var assets := baseline.get("assets", []) as Array
+	expect(assets.size() == 62, "all 62 original overlay PNG identities are catalogued")
+	var verified := 0
+	for raw_asset: Variant in assets:
+		if not raw_asset is Dictionary:
+			continue
+		var asset := raw_asset as Dictionary
+		var kind := str(asset.get("kind", ""))
+		var gfl_index := int(asset.get("gfl_index", 0))
+		var path := converted_root.path_join(
+			"%s/%04d.png" % [kind, gfl_index]
+		).simplify_path()
+		var image := Image.new()
+		var loaded := image.load(path) == OK and not image.is_empty()
+		expect(loaded, "overlay %s/%d decodes" % [kind, gfl_index])
+		if not loaded:
+			continue
+		expect(
+			image.get_width() == int(asset.get("width", -1))
+			and image.get_height() == int(asset.get("height", -1)),
+			"overlay %s/%d preserves native dimensions" % [kind, gfl_index],
+		)
+		expect(
+			FileAccess.get_sha256(path).to_lower()
+			== str(asset.get("converted_png_sha256", "")).to_lower(),
+			"overlay %s/%d preserves exact converted pixels" % [kind, gfl_index],
+		)
+		verified += 1
+	expect(verified == 62, "all original overlay pixel hashes verify")
 
 
 func validate_special_action_assets() -> void:
@@ -1118,14 +1215,30 @@ func validate_level_independent_inventory_icons() -> void:
 			"m000/m010 inventory weapon %s has a level-independent original or labelled fallback icon" % action_key,
 		)
 	for item_id: int in [36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 99]:
+		var normal_icon: Texture2D = game._inventory_icon_for("", item_id, "")
 		expect(
-			game._inventory_icon_for("", item_id, "") != null,
+			normal_icon != null,
 			"m000/m010 inventory item %d has a stable grid icon" % item_id,
 		)
+		if item_id != 99:
+			var selected_icon: Texture2D = game._inventory_icon_for(
+				"",
+				item_id,
+				"",
+				true,
+			)
+			expect(
+				normal_icon != null
+				and selected_icon != null
+				and normal_icon.get_size() == Vector2(50.0, 50.0)
+				and selected_icon.get_size() == Vector2(50.0, 50.0),
+				"inventory item %d binds both exact 50x50 original PSD states" % item_id,
+			)
 	for item_key: String in ["uniform", "explosives"]:
 		expect(
-			game._inventory_icon_for("", 0, item_key) != null,
-			"m000/m010 mission item %s has a stable grid icon" % item_key,
+			game._inventory_icon_for("", 0, item_key) != null
+			and game._inventory_icon_for("", 0, item_key, true) != null,
+			"m000/m010 mission item %s has both original popup states" % item_key,
 		)
 	game.free()
 

@@ -51,6 +51,8 @@ internal static class ModRegressionProbe
     private const int DikF4 = 0x3E;
     private const int DikF5 = 0x3F;
     private const int DikF6 = 0x40;
+    private const int DikEscape = 0x01;
+    private const int DikA = 0x1E;
     private const int DikM = 0x32;
     private const int DikDigit1 = 0x02;
     private const int DikDigit2 = 0x03;
@@ -479,7 +481,8 @@ internal static class ModRegressionProbe
                 "--native-natural-failure-ms=MS] " +
                 "[--native-mission-cheat-victory-only] " +
                 "[--visual-capture-only " +
-                "--visual-camera-x=X --visual-camera-y=Y] " +
+                "--visual-camera-x=X --visual-camera-y=Y " +
+                "--visual-overlay=none|weapons|items|minimap|help|pause] " +
                 "[--identity-catalog=PATH --parity-patrol-only | " +
                 "--parity-contact-only | --parity-pickup-only | " +
                 "--parity-attack-only | --parity-world-item-only | " +
@@ -645,6 +648,24 @@ internal static class ModRegressionProbe
                 "--visual-capture-only",
                 StringComparison.OrdinalIgnoreCase);
         });
+        string visualOverlay = ArgumentValue(args, "--visual-overlay=");
+        if (String.IsNullOrWhiteSpace(visualOverlay))
+            visualOverlay = "none";
+        visualOverlay = visualOverlay.Trim().ToLowerInvariant();
+        string[] supportedVisualOverlays =
+        {
+            "none", "weapons", "items", "minimap", "help", "pause"
+        };
+        if (!supportedVisualOverlays.Contains(visualOverlay))
+        {
+            throw new InvalidOperationException(
+                "Unsupported visual overlay: " + visualOverlay);
+        }
+        if (!visualCaptureOnly && visualOverlay != "none")
+        {
+            throw new InvalidOperationException(
+                "--visual-overlay requires --visual-capture-only.");
+        }
         int visualCameraX = -1;
         int visualCameraY = -1;
         string visualCameraXValue = ArgumentValue(
@@ -1802,6 +1823,43 @@ internal static class ModRegressionProbe
                                 out visualCameraLeft,
                                 out visualCameraTop);
                     }
+                    CaptureResult overlayBaseline = null;
+                    bool overlayInputSent = true;
+                    bool overlayVisualChanged = visualOverlay == "none";
+                    if (visualOverlay != "none")
+                    {
+                        // W/A are scoped to the current friendly actor in the
+                        // original input dispatcher. Establish the first
+                        // audited controllable actor for this formal level
+                        // before taking the
+                        // baseline; this is still process-local replay and
+                        // never touches the desktop keyboard or focus.
+                        if (visualOverlay == "weapons" ||
+                            visualOverlay == "items")
+                        {
+                            overlayInputSent = PulseKey(
+                                window,
+                                VisualInventorySelectionDik(selectorLevel));
+                            Thread.Sleep(320);
+                        }
+                        string baselineEvidence;
+                        overlayBaseline = CaptureCncDdrawPrimarySurface(
+                            game,
+                            process,
+                            spawnScreenWidth,
+                            spawnScreenHeight,
+                            out baselineEvidence);
+                        int overlayDik =
+                            visualOverlay == "weapons" ? DikW :
+                            visualOverlay == "items" ? DikA :
+                            visualOverlay == "minimap" ? DikM :
+                            visualOverlay == "help" ? DikF1 :
+                            DikEscape;
+                        overlayInputSent =
+                            PulseKey(window, overlayDik) &&
+                            overlayInputSent;
+                        Thread.Sleep(600);
+                    }
                     // The RGB565 primary surface can briefly contain a
                     // strip-scroll intermediate frame (HUD rows copied into
                     // the world) after a camera jump. A rare startup race can
@@ -1833,14 +1891,33 @@ internal static class ModRegressionProbe
                             if (candidate != null &&
                                 candidate.Bitmap != null)
                             {
+                                double overlayDifference =
+                                    overlayBaseline == null
+                                        ? 0.0
+                                        : CompareCaptures(
+                                            overlayBaseline,
+                                            candidate);
+                                overlayVisualChanged =
+                                    visualOverlay == "none" ||
+                                    (overlayBaseline != null &&
+                                     overlayBaseline.Sha256 !=
+                                        candidate.Sha256 &&
+                                     overlayDifference > 0.001);
                                 bool completeGameplaySurface =
                                     candidate.NonBlank &&
-                                    candidate
-                                        .LargestDarkComponentPixels <
-                                        50000 &&
-                                    candidate.DarkPixelRatio < 0.22;
+                                    (visualOverlay != "none"
+                                        ? overlayVisualChanged
+                                        : candidate
+                                            .LargestDarkComponentPixels <
+                                            50000 &&
+                                          candidate.DarkPixelRatio < 0.22);
                                 surfaceEvidence =
                                     candidateEvidence +
+                                    "; overlay=" + visualOverlay +
+                                    "; overlay_difference=" +
+                                    overlayDifference.ToString(
+                                        "F6",
+                                        CultureInfo.InvariantCulture) +
                                     "; largest_dark_component=" +
                                     candidate
                                         .LargestDarkComponentPixels
@@ -1871,6 +1948,23 @@ internal static class ModRegressionProbe
                     while (
                         !game.HasExited &&
                         DateTime.UtcNow < visualDeadline);
+                    if (overlayBaseline != null)
+                        overlayBaseline.Dispose();
+                    if (visualOverlay != "none")
+                    {
+                        AddStage(
+                            stages,
+                            game,
+                            process,
+                            imageBase,
+                            clock,
+                            "visual_overlay_opened",
+                            overlayInputSent && overlayVisualChanged,
+                            "process_local_replay=true; overlay=" +
+                            visualOverlay +
+                            "; visual_changed=" +
+                            overlayVisualChanged);
+                    }
                     AddStage(
                         stages,
                         game,
@@ -1896,6 +1990,7 @@ internal static class ModRegressionProbe
                         spawnScreenHeight,
                         gameplayViewportWidth,
                         gameplayViewportHeight,
+                        visualOverlay,
                         copiedScreenshot,
                         surfaceCaptured,
                         surfaceEvidence);
@@ -1920,7 +2015,9 @@ internal static class ModRegressionProbe
                         .Where(delegate(Stage stage)
                         {
                             return requiredVisualStages.Contains(
-                                stage.Name);
+                                stage.Name) ||
+                                (visualOverlay != "none" &&
+                                 stage.Name == "visual_overlay_opened");
                         })
                         .All(delegate(Stage stage)
                         {
@@ -3370,6 +3467,22 @@ internal static class ModRegressionProbe
         }
     }
 
+    private static int VisualInventorySelectionDik(int selectorLevel)
+    {
+        // First is_player_at_capture entry in the exact twelve-level initial
+        // inventory catalog: 强子, 强子, 老赵, 古明, 大牛, 强子, 强子,
+        // 老赵, 大牛, 强子, 强子, 强子.
+        int[] bindings =
+        {
+            DikF4, DikF4, DikF2, DikF5, DikF6, DikF4,
+            DikF4, DikF2, DikF6, DikF4, DikF4, DikF4
+        };
+        if (selectorLevel < 1 || selectorLevel > bindings.Length)
+            throw new InvalidDataException(
+                "Visual inventory selector is outside 1..12.");
+        return bindings[selectorLevel - 1];
+    }
+
     private static int JsonInteger(
         IDictionary<string, object> item,
         string key)
@@ -4015,6 +4128,7 @@ internal static class ModRegressionProbe
         int surfaceHeight,
         int mapViewportWidth,
         int mapViewportHeight,
+        string visualOverlay,
         string screenshotPath,
         bool passed,
         string evidence)
@@ -4052,6 +4166,9 @@ internal static class ModRegressionProbe
             "\"read-only-process-memory; no global input\",\n");
         json.Append(
             "  \"pixel_format\": \"RGB565\",\n");
+        json.Append(
+            "  \"overlay\": \"" +
+            Escape(visualOverlay) + "\",\n");
         json.Append(
             "  \"screenshot\": \"" +
             Escape(screenshotPath) + "\",\n");

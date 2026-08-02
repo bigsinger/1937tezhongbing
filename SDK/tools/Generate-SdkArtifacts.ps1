@@ -1056,7 +1056,7 @@ $endingWidths = @($mediaCatalog.ending_images |
 if ([int]$mediaCatalog.presentation_flow.inter_level_movie_count -ne 0 -or
     [int]$mediaCatalog.presentation_flow.ending_selector_level -ne 13 -or
     [int]$mediaCatalog.presentation_flow.ending_dismissal_next_selector_level -ne 1 -or
-    (Compare-Object @(640, 800, 1024) $endingWidths).Count -ne 0) {
+    @(Compare-Object @(640, 800, 1024) $endingWidths).Count -ne 0) {
     throw 'Original briefing/ending presentation flow is inconsistent.'
 }
 $direction = $mediaCatalog.original_direction_flow
@@ -1174,12 +1174,12 @@ $assetOnlySoundIndices = @(
     $soundCatalog.asset_only_zero_based_indices |
         ForEach-Object { [int]$_ })
 $allSoundIndices = @(0..([int]$soundCatalog.slf_entry_count - 1))
-if ((Compare-Object $derivedReachable $declaredReachable).Count -ne 0 -or
+if (@(Compare-Object $derivedReachable $declaredReachable).Count -ne 0 -or
     $declaredReachable.Count -ne
         ($declaredReachable | Sort-Object -Unique).Count -or
     $assetOnlySoundIndices.Count -ne
         ($assetOnlySoundIndices | Sort-Object -Unique).Count -or
-    (Compare-Object $allSoundIndices @(
+    @(Compare-Object $allSoundIndices @(
         $declaredReachable + $assetOnlySoundIndices |
             Sort-Object -Unique)).Count -ne 0 -or
     @($declaredReachable |
