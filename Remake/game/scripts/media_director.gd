@@ -13,6 +13,9 @@ signal ending_closed
 
 const CATALOG_SCRIPT: Script = preload("res://scripts/legacy_media_catalog.gd")
 const GAME_INPUT_BINDINGS: Script = preload("res://scripts/game_input_bindings.gd")
+# Eight warm players cover ordinary scenes without allocation. The pool grows
+# only when every warm/reused player is active because the original duplicates
+# per-sound DirectSound buffers instead of stealing a global saturated slot.
 const SFX_POOL_SIZE := 8
 const AUDIO_CHANNEL_MUSIC := "music"
 const AUDIO_CHANNEL_VOICE := "voice"
@@ -227,10 +230,7 @@ func _play_audio_index(
 		music_player.play()
 	else:
 		var slot := _acquire_sfx_slot()
-		if slot < 0:
-			return false
 		var sfx_player := sfx_players[slot]
-		sfx_player.stop()
 		sfx_player.stream = stream
 		_sfx_active_indices[slot] = gfl_index
 		sfx_player.play()
@@ -658,14 +658,8 @@ func _ensure_nodes() -> void:
 	sfx_players.clear()
 	_sfx_active_indices.clear()
 	_sfx_cursor = 0
-	for slot: int in range(SFX_POOL_SIZE):
-		var sfx_player := AudioStreamPlayer.new()
-		sfx_player.name = "LegacySfxPlayer%02d" % slot
-		sfx_player.bus = "Sfx"
-		sfx_player.finished.connect(_on_sfx_finished.bind(slot))
-		add_child(sfx_player)
-		sfx_players.append(sfx_player)
-		_sfx_active_indices.append(-1)
+	for _slot: int in range(SFX_POOL_SIZE):
+		_append_sfx_player()
 
 	overlay = ColorRect.new()
 	overlay.name = "LegacyMediaOverlay"
@@ -778,10 +772,11 @@ static func select_sfx_slot(playing_slots: Array[bool], cursor: int) -> Dictiona
 				"slot": slot,
 				"next_cursor": (slot + 1) % playing_slots.size(),
 			}
-	# A saturated pool deterministically steals the next round-robin slot.
+	# The original does not steal an active global slot. Returning size tells
+	# the runtime to append one player; retained idle players are reused later.
 	return {
-		"slot": normalized_cursor,
-		"next_cursor": (normalized_cursor + 1) % playing_slots.size(),
+		"slot": playing_slots.size(),
+		"next_cursor": normalized_cursor,
 	}
 
 
@@ -811,8 +806,25 @@ func _acquire_sfx_slot() -> int:
 	for player: AudioStreamPlayer in sfx_players:
 		playing_slots.append(player.playing)
 	var selection := select_sfx_slot(playing_slots, _sfx_cursor)
-	_sfx_cursor = int(selection["next_cursor"])
-	return int(selection["slot"])
+	var slot := int(selection["slot"])
+	if slot >= sfx_players.size():
+		_append_sfx_player()
+		_sfx_cursor = (slot + 1) % sfx_players.size()
+	else:
+		_sfx_cursor = int(selection["next_cursor"])
+	return slot
+
+
+func _append_sfx_player() -> int:
+	var slot := sfx_players.size()
+	var sfx_player := AudioStreamPlayer.new()
+	sfx_player.name = "LegacySfxPlayer%02d" % slot
+	sfx_player.bus = "Sfx"
+	sfx_player.finished.connect(_on_sfx_finished.bind(slot))
+	add_child(sfx_player)
+	sfx_players.append(sfx_player)
+	_sfx_active_indices.append(-1)
+	return slot
 
 
 func _acquire_voice_slot() -> int:

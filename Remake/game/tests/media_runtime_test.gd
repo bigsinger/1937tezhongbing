@@ -66,7 +66,7 @@ func _run() -> void:
 	expect(
 		director.sfx_players.size() == DIRECTOR_SCRIPT.SFX_POOL_SIZE
 		and director.sfx_players.size() == 8,
-		"media director creates one fixed eight-player SFX pool",
+		"media director prewarms eight reusable SFX players",
 		failures,
 	)
 	expect(
@@ -265,11 +265,42 @@ func _run() -> void:
 	var all_busy: Array[bool] = [true, true, true, true, true, true, true, true]
 	var saturated_selection: Dictionary = DIRECTOR_SCRIPT.select_sfx_slot(all_busy, 7)
 	expect(
-		int(saturated_selection["slot"]) == 7
-		and int(saturated_selection["next_cursor"]) == 0,
-		"a saturated SFX pool deterministically steals one bounded slot",
+		int(saturated_selection["slot"]) == 8
+		and int(saturated_selection["next_cursor"]) == 7,
+		"a saturated SFX pool requests one new non-stealing slot",
 		failures,
 	)
+	director.catalog = SyntheticAudioCatalog.new()
+	director.set_audio_stream_loader(func(_path: String) -> AudioStreamWAV:
+		return _synthetic_audio_stream()
+	)
+	for sound_offset: int in range(9):
+		expect(
+			bool(director.call(
+				"play_audio_index",
+				9200 + sound_offset,
+				"synthetic_sfx",
+				"",
+				DIRECTOR_SCRIPT.AUDIO_CHANNEL_SFX,
+			)),
+			"concurrent synthetic SFX %d starts" % sound_offset,
+			failures,
+		)
+	await process_frame
+	var every_sfx_playing := true
+	for player: AudioStreamPlayer in director.sfx_players:
+		every_sfx_playing = every_sfx_playing and player.playing
+	expect(
+		director.sfx_players.size() == 9
+		and director._sfx_active_indices.size() == 9
+		and every_sfx_playing,
+		"the ninth concurrent SFX grows the eight-player warm pool without interruption",
+		failures,
+	)
+	director.call("close_for_state_change")
+	await process_frame
+	director.set_audio_stream_loader(Callable())
+	director.call("configure", missing_root)
 	var unavailable_count := [0]
 	director.media_unavailable.connect(func(_kind: String, _id: String) -> void: unavailable_count[0] += 1)
 	var initial_process_mode: int = director.process_mode
@@ -462,7 +493,11 @@ func _run() -> void:
 	root.remove_child(director)
 	expect(not paused, "exiting the tree restores a media-owned pause", failures)
 	director.free()
-	await process_frame
+	# AudioServer releases stopped playback objects on its following mix/update
+	# cycles. Give those deferred releases time to finish so the test does not
+	# report false-positive ObjectDB leaks on fast headless runners.
+	for _frame: int in range(4):
+		await process_frame
 
 	if failures.is_empty():
 		print("Media catalog and fallback runtime tests passed (%d checks). No original media was used." % checks)
