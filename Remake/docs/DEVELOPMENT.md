@@ -106,6 +106,20 @@ D:\Godot\Godot_v4.7.1-stable_win64_console.exe --headless `
   --skip-briefing --journey-level=m010
 ```
 
+任务世界闭环也支持只跑一关，适合验证救援、拾取、爆破、占点和撤离等短行为，
+避免把不可重复的自动整关通关当作开发门禁：
+
+```powershell
+D:\Godot\Godot_v4.7.1-stable_win64_console.exe --headless `
+  --path .\game `
+  --script res://tests/real_mission_world_loop_test.gd -- `
+  --skip-briefing --world-loop-level=m010
+```
+
+该入口只向 Godot 目标视口发送键鼠事件，不捕获、移动或限制系统鼠标。省略
+`--world-loop-level` 时才执行十二关完整回归；原版与 Remake 的真人整关通关
+只属于发布验收，不应由自动机器人代替。
+
 ## 当前导入基线
 
 已知版本完整导入应报告并生成：

@@ -97,6 +97,7 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 - `include/M1937SDK/Addresses.hpp`
 - `include/M1937SDK/MissionRoutes.hpp`
 - `include/M1937SDK/CrtRandom.hpp`
+- `include/M1937SDK/Escort.hpp`：原版自动营救、招募与追随规则
 - `generated/M1937Addresses.cs`
 - `generated/M1937MissionRoutes.cs`
 - `Patch/src/level-selector/关卡名称.json`

@@ -5,6 +5,11 @@ const IMPORTED_SPRITE_ANIMATION: Script = preload(
 	"res://scripts/imported_sprite_animation.gd"
 )
 const COMBAT_PROFILES: Script = preload("res://scripts/combat_profiles.gd")
+const LEGACY_ESCORT_RULES: Script = preload(
+	"res://scripts/legacy_escort_rules.gd"
+)
+# These distances are retained only for synthetic fixtures and actors for
+# which no original runtime-type rule has been recovered.
 const FOLLOW_REPATH_SECONDS := 0.50
 const FOLLOW_START_DISTANCE := 88.0
 const FOLLOW_STOP_DISTANCE := 52.0
@@ -14,6 +19,7 @@ signal rescued(unit: Node2D, rescuer: Node2D)
 var rescued_state := false
 var follow_target: Node2D
 var follow_repath_elapsed := FOLLOW_REPATH_SECONDS
+var original_rescue_rule: Dictionary = {}
 
 
 func configure_escort(
@@ -63,15 +69,58 @@ func configure_escort(
 	rescued_state = false
 	follow_target = null
 	follow_repath_elapsed = FOLLOW_REPATH_SECONDS
+	original_rescue_rule.clear()
 	queue_redraw()
 
 
+func configure_original_rescue_rule(rule: Dictionary) -> void:
+	original_rescue_rule = rule.duplicate(true)
+
+
+func has_source_backed_rescue_rule() -> bool:
+	return not original_rescue_rule.is_empty()
+
+
+func is_player_commandable() -> bool:
+	return (
+		is_alive
+		and rescued_state
+		and bool(original_rescue_rule.get("becomes_commandable", false))
+	)
+
+
+func can_be_rescued_by(rescuer: Node2D) -> bool:
+	if not has_source_backed_rescue_rule():
+		return _target_is_alive(rescuer)
+	return (
+		LEGACY_ESCORT_RULES.rescuer_is_eligible(
+			original_rescue_rule,
+			rescuer,
+		)
+		and LEGACY_ESCORT_RULES.is_within_rescue_range(
+			original_rescue_rule,
+			position,
+			rescuer.position,
+		)
+	)
+
+
 func rescue(rescuer: Node2D) -> bool:
-	if rescued_state or not is_alive or not _target_is_alive(rescuer):
+	if rescued_state or not is_alive or not can_be_rescued_by(rescuer):
 		return false
 	rescued_state = true
-	faction_id = 3
-	follow_target = rescuer
+	if (
+		original_rescue_rule.is_empty()
+		or bool(original_rescue_rule.get("changes_faction", false))
+	):
+		faction_id = 3
+	if (
+		original_rescue_rule.is_empty()
+		or bool(original_rescue_rule.get("follows_target", false))
+	):
+		set_follow_target(rescuer)
+	else:
+		follow_target = null
 	follow_repath_elapsed = FOLLOW_REPATH_SECONDS
 	rescued.emit(self, rescuer)
 	queue_redraw()
@@ -79,13 +128,80 @@ func rescue(rescuer: Node2D) -> bool:
 
 
 func set_follow_target(target: Node2D) -> void:
-	if _target_is_alive(target):
-		follow_target = target
+	if not _target_is_alive(target):
+		return
+	if (
+		has_source_backed_rescue_rule()
+		and not bool(original_rescue_rule.get("follows_target", false))
+	):
+		follow_target = null
+		return
+	follow_target = target
+	if (
+		has_source_backed_rescue_rule()
+		and bool(original_rescue_rule.get("follows_target", false))
+	):
+		_bind_dynamic_original_pursuit(target)
+
+
+func restore_rescued_state(
+	new_rescued_state: bool,
+	target: Node2D,
+	new_follow_repath_elapsed: float = FOLLOW_REPATH_SECONDS,
+) -> void:
+	rescued_state = new_rescued_state and is_alive
+	follow_target = null
+	follow_repath_elapsed = maxf(new_follow_repath_elapsed, 0.0)
+	if rescued_state and _target_is_alive(target):
+		set_follow_target(target)
+	queue_redraw()
+
+
+func _bind_dynamic_original_pursuit(target: Node2D) -> bool:
+	var target_runtime_index := int(target.get("original_runtime_index"))
+	if target_runtime_index < 0:
+		return false
+	original_pursuit_target_runtime_index = target_runtime_index
+	original_pursuit_target = target
+	original_pursuit_call_site_rva = (
+		LEGACY_ESCORT_RULES.ORIGINAL_PURSUIT_CALL_SITE_RVA
+	)
+	original_pursuit_delay_counter = 0
+	original_pursuit_elapsed = 0.0
+	original_pursuit_serial = 0
+	original_pursuit_last_physics_frame = -1
+	original_pursuit_last_command_variant = 0
+	original_pursuit_last_navigation_applied = false
+	return true
+
+
+func _uses_source_backed_pursuit() -> bool:
+	return (
+		has_source_backed_rescue_rule()
+		and bool(original_rescue_rule.get("follows_target", false))
+		and original_pursuit_target_runtime_index >= 0
+		and original_pursuit_call_site_rva
+			== LEGACY_ESCORT_RULES.ORIGINAL_PURSUIT_CALL_SITE_RVA
+		and original_crt_random_source != null
+		and is_instance_valid(original_crt_random_source)
+	)
 
 
 func _physics_process(delta: float) -> void:
-	_advance_original_crt_actor_random_tick(maxf(delta, 0.0))
-	if is_alive and rescued_state and _target_is_alive(follow_target):
+	# Source-backed followers are advanced by SquadUnit's exact sub_45D330
+	# pursuit scheduler. The generic distance-band follower remains only as a
+	# compatibility fallback for synthetic fixtures without a captured runtime
+	# index/random stream.
+	if (
+		is_alive
+		and rescued_state
+		and _target_is_alive(follow_target)
+		and not _uses_source_backed_pursuit()
+		and (
+			original_rescue_rule.is_empty()
+			or bool(original_rescue_rule.get("follows_target", false))
+		)
+	):
 		follow_repath_elapsed += maxf(delta, 0.0)
 		var distance := position.distance_to(follow_target.position)
 		if distance <= FOLLOW_STOP_DISTANCE:
@@ -94,6 +210,7 @@ func _physics_process(delta: float) -> void:
 		elif (
 			distance >= FOLLOW_START_DISTANCE
 			and follow_repath_elapsed >= FOLLOW_REPATH_SECONDS
+			and movement_path_index >= movement_path.size()
 		):
 			follow_repath_elapsed = 0.0
 			if dynamic_occupancy != null and dynamic_registered:

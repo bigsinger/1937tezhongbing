@@ -74,6 +74,15 @@ namespace Mission1937.SDK.Generated
         public const long ScanWorldItems = 0x0005C550L;
         public const long OriginalDirectionalVisibilityBand = 0x00068D40L;
         public const long SpecialActorUpdateDispatch = 0x00054960L;
+        public const long DriverAndParentRescueUpdate = 0x00054D90L;
+        public const long ReporterRescueUpdate = 0x000550A0L;
+        public const long QiangziRescueUpdate = 0x000590E0L;
+        public const long PengxinRescueUpdate = 0x00059490L;
+        public const long LuoUncleRescueUpdate = 0x00059530L;
+        public const long SetActorPursuitTarget = 0x0005D260L;
+        public const long AdvanceActorPursuit = 0x0005D330L;
+        public const long ActorPursuitRandomCall = 0x0005D47EL;
+        public const long FindActorByRuntimeTypeWithinRadius = 0x0005EF90L;
         public const long TimedSpecialUpdate = 0x000553B0L;
         public const long ExplosionActorUpdate = 0x000554A0L;
         public const long TriggeredSpecialUpdate = 0x000556B0L;

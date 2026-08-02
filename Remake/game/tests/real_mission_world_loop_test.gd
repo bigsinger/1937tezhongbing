@@ -9,6 +9,12 @@ const GAME_SAVE_STORE: Script = preload("res://scripts/game_save_store.gd")
 const GAME_INPUT_BINDINGS: Script = preload(
 	"res://scripts/game_input_bindings.gd"
 )
+const LEGACY_ESCORT_RULES: Script = preload(
+	"res://scripts/legacy_escort_rules.gd"
+)
+const LEGACY_DISGUISE_RULES: Script = preload(
+	"res://scripts/legacy_disguise_rules.gd"
+)
 const LEVEL_IDS: Array[String] = [
 	"m000",
 	"m001",
@@ -54,9 +60,14 @@ func _run() -> void:
 	disk_test_root = "user://real-mission-objective-disk-%d" % OS.get_process_id()
 	_cleanup_disk_test_root()
 	disk_store = GAME_SAVE_STORE.new(disk_test_root)
+	var requested_level_id := _requested_level_id()
+	var exercised_level_count := 0
 
 	for level_index: int in range(LEVEL_IDS.size()):
 		var level_id := LEVEL_IDS[level_index]
+		if not requested_level_id.is_empty() and level_id != requested_level_id:
+			continue
+		exercised_level_count += 1
 		main.switch_level(level_index, false, false)
 		_profile_checkpoint("%s initial load" % level_id, main)
 		_prepare_level_for_deterministic_world_actions(main)
@@ -76,6 +87,8 @@ func _run() -> void:
 			continue
 
 		_perform_checkpoint_world_action(main, level_id)
+		if level_id == "m007":
+			await _verify_rescued_escort_follow_runtime(main, 2394)
 		var checkpoint: Dictionary = GAME_SESSION_STATE.capture(main)
 		var checkpoint_hash: String = RUNTIME_STATE_SNAPSHOT.snapshot_hash(
 			{"session": checkpoint}
@@ -128,6 +141,8 @@ func _run() -> void:
 	# mission with an explicitly recovered-vs-repaired fork also needs a full
 	# world-action closure under the opt-in repaired rules.
 	for level_id: String in ["m006", "m008", "m009", "m011"]:
+		if not requested_level_id.is_empty() and level_id != requested_level_id:
+			continue
 		var level_index := LEVEL_IDS.find(level_id)
 		disk_capture_enabled = false
 		main.runtime_settings["mission_rule_mode"] = "repaired"
@@ -168,18 +183,18 @@ func _run() -> void:
 	main.runtime_settings["mission_rule_mode"] = "stable_mod"
 	disk_capture_enabled = false
 	_profile_checkpoint("begin physical checkpoint validation", main)
-	_validate_all_objective_disk_checkpoints(main)
+	_validate_all_objective_disk_checkpoints(main, exercised_level_count)
 
 	root.remove_child(main)
 	main.free()
 	await process_frame
 	_cleanup_disk_test_root()
 	_expect(
-		committed_world_actions >= 100,
-		"the twelve-level gate exercised a substantial real interaction sequence",
+		committed_world_actions >= (1 if not requested_level_id.is_empty() else 100),
+		"the requested mission scope exercised a substantial real interaction sequence",
 	)
 	_expect(
-		submitted_input_events >= 2 * LEVEL_IDS.size(),
+		submitted_input_events >= 2 * exercised_level_count,
 		"every level commits mission interactions through target-viewport E input",
 	)
 	_expect(
@@ -187,13 +202,17 @@ func _run() -> void:
 		"every stable-MOD required objective owns a physical disk checkpoint",
 	)
 	if failures.is_empty():
+		var scope_label := (
+			requested_level_id if not requested_level_id.is_empty() else "twelve-level"
+		)
 		print(
 			(
-				"Real twelve-level mission world loops passed "
+				"Real %s mission world loops passed "
 				+ "(%d checks, %d committed world actions, "
 				+ "%d physical objective resumes, %d viewport input events)."
 			)
 			% [
+				scope_label,
 				check_count,
 				committed_world_actions,
 				objective_disk_records.size(),
@@ -241,6 +260,18 @@ func _prepare_level_for_deterministic_world_actions(main: Node) -> void:
 		).bind(main)
 		if not runtime.is_connected("objective_completed", disk_callable):
 			runtime.connect("objective_completed", disk_callable)
+
+
+func _requested_level_id() -> String:
+	for argument: String in OS.get_cmdline_user_args():
+		if not argument.begins_with("--world-loop-level="):
+			continue
+		var requested := argument.trim_prefix("--world-loop-level=").to_lower()
+		if requested in LEVEL_IDS:
+			return requested
+		push_error("Unsupported world-loop level: %s" % requested)
+		return requested
+	return ""
 
 
 func _perform_checkpoint_world_action(main: Node, level_id: String) -> void:
@@ -457,14 +488,384 @@ func _rescue_scene(main: Node, scene_index: int) -> void:
 	_expect(target != null, "rescue scene %d has a live escort actor" % scene_index)
 	if target == null:
 		return
-	_select_and_move_player(main, target.position)
-	_press_interact_key()
+	var rule_value: Variant = target.get("original_rescue_rule")
+	var source_backed := (
+		rule_value is Dictionary
+		and not (rule_value as Dictionary).is_empty()
+	)
+	var resolved_rescuer: Node2D = null
+	if source_backed:
+		var rescuer: Node2D = _prepare_source_backed_rescuer(
+			main,
+			target,
+			rule_value as Dictionary,
+		)
+		_expect(
+			rescuer != null,
+			"scene %d resolves the recovered rescuer identity" % scene_index,
+		)
+		if rescuer == null:
+			return
+		resolved_rescuer = rescuer
+		main.select_only(rescuer)
+		rescuer.position = target.position
+		main._physics_process(1.0 / 60.0)
+	else:
+		_select_and_move_player(main, target.position)
+		_press_interact_key()
 	committed_world_actions += 1
 	_expect(
 		bool(target.get("rescued_state")),
-		"scene %d is rescued through the E/world interaction path" % scene_index,
+		(
+			"scene %d is rescued through recovered automatic proximity"
+			if source_backed
+			else "scene %d is rescued through the E/world interaction path"
+		) % scene_index,
 	)
+	if (
+		source_backed
+		and bool((rule_value as Dictionary).get(
+			"becomes_commandable",
+			false,
+		))
+	):
+		_verify_recruited_actor_commands(main, target, resolved_rescuer)
 	_flush_completed_objective_saves(main)
+
+
+func _prepare_source_backed_rescuer(
+	main: Node,
+	target: Node2D,
+	rule: Dictionary,
+) -> Node2D:
+	var rescuer: Node2D = null
+	for target_name_value: Variant in rule.get("target_names", []) as Array:
+		for unit_value: Variant in main.units:
+			var candidate := unit_value as Node2D
+			if str(candidate.get("display_name")) == str(target_name_value):
+				rescuer = candidate
+				break
+		if rescuer != null:
+			break
+	if rescuer == null:
+		return null
+	var required_types := rule.get("target_runtime_types", []) as Array
+	if (
+		not required_types.is_empty()
+		and not required_types.has(int(rescuer.get("runtime_actor_type")))
+	):
+		_expect(
+			int(target.get("runtime_actor_type")) == 19
+				and required_types == [91]
+				and int(rescuer.get("runtime_actor_type")) == 10,
+			"only m001 requires a recovered disguise transition before rescue",
+		)
+		main.select_only(rescuer)
+		main._on_inventory_slot_requested({
+			"kind": "backpack_item",
+			"item_id": LEGACY_DISGUISE_RULES.UNIFORM_ITEM_ID,
+		})
+		for _tick: int in range(LEGACY_DISGUISE_RULES.CHANGE_TICK_LIMIT + 1):
+			main._advance_original_disguise_state(
+				LEGACY_DISGUISE_RULES.ORIGINAL_ACTOR_TICK_SECONDS + 0.000001
+			)
+		committed_world_actions += 1
+		_expect(
+			int(rescuer.get("runtime_actor_type")) == 91,
+			"m001 Gu Ming completes the exact 101-tick uniform transition",
+		)
+	return rescuer
+
+
+func _verify_recruited_actor_commands(
+	main: Node,
+	recruit: Node2D,
+	rescuer: Node2D,
+) -> void:
+	# Move the rescuer fixture back to its authored spawn so the click below
+	# resolves the newly recruited actor rather than an overlapping teammate.
+	if rescuer != null and is_instance_valid(rescuer):
+		var source_value: Variant = main.world_entities_by_scene.get(
+			int(rescuer.get("scene_index"))
+		)
+		if source_value is Dictionary:
+			var source := source_value as Dictionary
+			rescuer.position = Vector2(
+				float(source.get("reference_x", source.get("x", 0.0))),
+				float(source.get("reference_y", source.get("y", 0.0))),
+			)
+	_click_world(main, recruit.position)
+	_expect(
+		bool(recruit.call("is_player_commandable"))
+			and main.selected_units.has(recruit),
+		"%s joins click/box/hotkey-compatible player selection" % str(
+			recruit.get("display_name")
+		),
+	)
+	var slot_index := -1
+	for index: int in range(main.PLAYABLE_SQUAD.size()):
+		if str(main.PLAYABLE_SQUAD[index].get("name", "")) == str(
+			recruit.get("display_name")
+		):
+			slot_index = index
+			break
+	_expect(
+		slot_index >= 0
+			and main._unit_for_original_character_slot(slot_index) == recruit,
+		"%s occupies its original fixed character hotkey after recruitment"
+			% str(recruit.get("display_name")),
+	)
+	var destination := _short_recruit_command_destination(main, recruit)
+	_expect(
+		destination != Vector2.INF,
+		"%s has a short reachable command fixture" % str(
+			recruit.get("display_name")
+		),
+	)
+	if destination == Vector2.INF:
+		return
+	_click_world(main, destination)
+	var issued_path := recruit.get("movement_path") as PackedVector2Array
+	_expect(
+		not issued_path.is_empty()
+			and (recruit.get("target_position") as Vector2).distance_to(
+				destination
+			) <= 32.0,
+		"%s accepts a real target-viewport ground command after recruitment"
+			% str(recruit.get("display_name")),
+	)
+	recruit.call("cancel_path")
+	committed_world_actions += 1
+
+
+func _short_recruit_command_destination(main: Node, recruit: Node2D) -> Vector2:
+	if main.dynamic_occupancy == null:
+		return Vector2.INF
+	for offset: Vector2 in [
+		Vector2(96.0, 0.0),
+		Vector2(-96.0, 0.0),
+		Vector2(0.0, 64.0),
+		Vector2(0.0, -64.0),
+		Vector2(96.0, 48.0),
+		Vector2(-96.0, 48.0),
+	]:
+		var requested := recruit.position + offset
+		if main.enemy_at_world_point(requested) != null:
+			continue
+		var path: PackedVector2Array = main.dynamic_occupancy.find_path_for_scene(
+			int(recruit.get("scene_index")),
+			recruit.position,
+			requested,
+		)
+		main.dynamic_occupancy.release_goal(int(recruit.get("scene_index")))
+		if (
+			path.is_empty()
+			or path[-1].distance_to(requested) > 32.0
+			or recruit.position.distance_to(path[-1]) < 32.0
+		):
+			continue
+		return path[-1]
+	return Vector2.INF
+
+
+func _verify_rescued_escort_follow_runtime(main: Node, scene_index: int) -> void:
+	var escort: Node2D
+	for escort_value: Variant in main.escorts:
+		var candidate := escort_value as Node2D
+		if int(candidate.get("scene_index")) == scene_index:
+			escort = candidate
+			break
+	_expect(escort != null, "m007 follow check resolves rescued scene %d" % scene_index)
+	if escort == null:
+		return
+	var leader_value: Variant = escort.get("follow_target")
+	var leader := leader_value as Node2D if leader_value is Node2D else null
+	_expect(
+		leader != null
+			and bool(escort.get("rescued_state"))
+			and int(escort.get("faction_id")) == 3,
+		"m007 rescue assigns the living rescuer as the faction-3 follow target",
+	)
+	if leader == null:
+		return
+	# The mission fixture moved the rescuer beside the hostage without walking
+	# its original route. Remove that actor's now-stale dynamic reservation;
+	# the checkpoint reload below reconstructs the normal product registration.
+	if (
+		bool(leader.get("dynamic_registered"))
+		and main.dynamic_occupancy != null
+	):
+		main.dynamic_occupancy.unregister_scene(int(leader.get("scene_index")))
+		leader.set("dynamic_registered", false)
+	var destination := _find_short_follow_destination(main, escort)
+	_expect(
+		destination != Vector2.INF,
+		"m007 rescued escort has a short reachable follow fixture",
+	)
+	if destination == Vector2.INF:
+		return
+	leader.call("cancel_path")
+	leader.position = destination
+	var leader_registered := bool(main.dynamic_occupancy.register_scene(
+		int(leader.get("scene_index")),
+		leader.position,
+		leader.position,
+	))
+	leader.set("dynamic_registered", leader_registered)
+	_expect(
+		leader_registered,
+		"m007 follow fixture registers the moved leader in dynamic occupancy",
+	)
+	escort.call("cancel_path")
+	escort.set_physics_process(false)
+	var initial_position := escort.position
+	var initial_distance := escort.position.distance_to(leader.position)
+	await physics_frame
+	escort.call("_physics_process", 1.0 / 60.0 + 0.000001)
+	var issued_path := escort.get("movement_path") as PackedVector2Array
+	_expect(
+		initial_distance >= 128.0
+			and not issued_path.is_empty()
+			and (escort.get("target_position") as Vector2).distance_to(
+				leader.position
+			) <= 64.0
+			and int(escort.get("original_pursuit_serial")) == 1
+			and int(escort.get("original_pursuit_call_site_rva"))
+				== LEGACY_ESCORT_RULES.ORIGINAL_PURSUIT_CALL_SITE_RVA,
+		(
+			"m007 rescued escort issues a real A* path through the recovered "
+			+ "pursuit tick (distance=%.1f, path=%d, target=%s, leader=%s, "
+			+ "serial=%d, call=0x%X, elapsed=%.6f, registered=%s)"
+		)
+			% [
+				initial_distance,
+				issued_path.size(),
+				str(escort.get("target_position")),
+				str(leader.position),
+				int(escort.get("original_pursuit_serial")),
+				int(escort.get("original_pursuit_call_site_rva")),
+				float(escort.get("original_pursuit_elapsed")),
+				str(leader_registered),
+			],
+	)
+	if issued_path.is_empty():
+		return
+	var minimum_distance := initial_distance
+	for _tick: int in range(360):
+		await physics_frame
+		escort.call("_physics_process", 1.0 / 60.0 + 0.000001)
+		minimum_distance = minf(
+			minimum_distance,
+			escort.position.distance_to(leader.position),
+		)
+		if (
+			minimum_distance <= 32.0
+		):
+			break
+	var final_distance := escort.position.distance_to(leader.position)
+	_expect(
+		minimum_distance + 32.0 < initial_distance,
+		(
+			"m007 rescued escort advances along the product movement path "
+			+ "(distance %.1f -> %.1f/%.1f, actor %s -> %s, leader %s, "
+			+ "first %s, path %d/%d)"
+		)
+			% [
+				initial_distance,
+				minimum_distance,
+				final_distance,
+				str(initial_position),
+				str(escort.position),
+				str(leader.position),
+				str(issued_path[0] if not issued_path.is_empty() else Vector2.ZERO),
+				int(escort.get("movement_path_index")),
+				(escort.get("movement_path") as PackedVector2Array).size(),
+			],
+	)
+	_expect(
+		final_distance > 4.0
+			and final_distance <= 32.0
+			and int(escort.get("original_pursuit_serial")) == 1,
+		(
+			"m007 follower reaches the nearest occupancy-safe cell beside its "
+			+ "leader (final=%.1f, minimum=%.1f, actor=%s, leader=%s, path=%d/%d, "
+			+ "serial=%d, applied=%s)"
+		)
+			% [
+				final_distance,
+				minimum_distance,
+				str(escort.position),
+				str(leader.position),
+				int(escort.get("movement_path_index")),
+				(escort.get("movement_path") as PackedVector2Array).size(),
+				int(escort.get("original_pursuit_serial")),
+				str(escort.get("original_pursuit_last_navigation_applied")),
+			],
+	)
+	_expect(
+		(escort.get("movement_path") as PackedVector2Array).size() > int(
+			escort.get("movement_path_index")
+		),
+		(
+			"m007 occupied-target pursuit retains its active native route instead "
+			+ "of applying an invented stop band or periodic replan"
+		),
+	)
+	committed_world_actions += 1
+
+
+func _find_short_follow_destination(main: Node, escort: Node2D) -> Vector2:
+	if main.dynamic_occupancy == null:
+		return Vector2.INF
+	for offset: Vector2 in [
+		Vector2(256.0, 0.0),
+		Vector2(-256.0, 0.0),
+		Vector2(0.0, 192.0),
+		Vector2(0.0, -192.0),
+		Vector2(224.0, 112.0),
+		Vector2(-224.0, 112.0),
+		Vector2(224.0, -112.0),
+		Vector2(-224.0, -112.0),
+	]:
+		var requested := escort.position + offset
+		var path: PackedVector2Array = main.dynamic_occupancy.find_path_for_scene(
+			int(escort.get("scene_index")),
+			escort.position,
+			requested,
+		)
+		main.dynamic_occupancy.release_goal(int(escort.get("scene_index")))
+		if (
+			path.is_empty()
+			or escort.position.distance_to(path[-1]) < 128.0
+			or path[-1].distance_to(requested) > 32.0
+			or not _follow_path_avoids_third_party_occupants(
+				main,
+				path,
+				int(escort.get("scene_index")),
+			)
+		):
+			continue
+		return path[-1]
+	return Vector2.INF
+
+
+func _follow_path_avoids_third_party_occupants(
+	main: Node,
+	path: PackedVector2Array,
+	escort_scene_index: int,
+) -> bool:
+	for point: Vector2 in path:
+		var cell: Vector2i = main.navigation_grid.world_to_cell(point)
+		var owners_value: Variant = main.dynamic_occupancy.movement_owners.get(
+			cell,
+			{},
+		)
+		if not owners_value is Dictionary:
+			continue
+		for owner_value: Variant in (owners_value as Dictionary).keys():
+			if int(owner_value) != escort_scene_index:
+				return false
+	return true
 
 
 func _collect_field_scene(main: Node, scene_index: int) -> void:
@@ -477,7 +878,13 @@ func _collect_field_scene(main: Node, scene_index: int) -> void:
 	_expect(pickup != null, "field-pickup scene %d exists in the real map" % scene_index)
 	if pickup == null:
 		return
-	_collect_specific_field_pickup(main, pickup)
+	var collector_name := (
+		"古明"
+		if str(main.current_mission.get("id", "")) == "m001"
+			and scene_index == 2099
+		else ""
+	)
+	_collect_specific_field_pickup(main, pickup, collector_name)
 
 
 func _collect_database_pickups(
@@ -512,12 +919,36 @@ func _collect_database_pickups(
 	)
 
 
-func _collect_specific_field_pickup(main: Node, pickup: Node2D) -> void:
+func _collect_specific_field_pickup(
+	main: Node,
+	pickup: Node2D,
+	collector_name: String = "",
+) -> void:
 	for _attempt: int in range(8):
 		if bool(pickup.get("consumed")):
 			_flush_completed_objective_saves(main)
 			return
-		_select_and_move_player(main, pickup.position)
+		var collector: Node2D = null
+		if not collector_name.is_empty():
+			for unit_value: Variant in main.units:
+				var candidate := unit_value as Node2D
+				if (
+					str(candidate.get("display_name")) == collector_name
+					and bool(candidate.get("is_alive"))
+				):
+					collector = candidate
+					break
+		if collector == null:
+			collector = _first_living_player(main)
+		_expect(
+			collector != null,
+			"field pickup resolves collector %s"
+				% (collector_name if not collector_name.is_empty() else "<first living>"),
+		)
+		if collector == null:
+			return
+		main.select_only(collector)
+		collector.position = pickup.position
 		_press_interact_key()
 		committed_world_actions += 1
 	_expect(bool(pickup.get("consumed")), "real field pickup is consumable through E")
@@ -667,6 +1098,18 @@ func _press_interact_key() -> void:
 		submitted_input_events += 1
 
 
+func _click_world(main: Node, world_position: Vector2) -> void:
+	main.level_camera.position = world_position
+	main.clamp_level_camera()
+	for pressed: bool in [true, false]:
+		var event := InputEventMouseButton.new()
+		event.button_index = MOUSE_BUTTON_LEFT
+		event.pressed = pressed
+		event.position = main.get_global_transform_with_canvas() * world_position
+		root.push_input(event, true)
+		submitted_input_events += 1
+
+
 func _eliminate_all_hostiles(main: Node) -> void:
 	var attacker = _first_living_player(main)
 	_expect(attacker != null, "hostile-clear action has a living player")
@@ -730,7 +1173,30 @@ func _occupy_simultaneous_zones(main: Node) -> void:
 		_expect(raw_entity is Dictionary, "m010 zone scene %d exists" % scenes[index])
 		if unit != null and raw_entity is Dictionary:
 			var entity := raw_entity as Dictionary
-			unit.position = Vector2(float(entity["x"]), float(entity["y"]))
+			var zone_position := Vector2(float(entity["x"]), float(entity["y"]))
+			var source_entity: Variant = main.world_entities_by_scene.get(
+				int(unit.get("scene_index"))
+			)
+			if source_entity is Dictionary:
+				var source := source_entity as Dictionary
+				unit.position = Vector2(
+					float(source.get("reference_x", source.get("x", 0.0))),
+					float(source.get("reference_y", source.get("y", 0.0))),
+				)
+			unit.call("cancel_path")
+			main.select_only(unit)
+			_click_world(main, zone_position)
+			var issued_path := unit.get("movement_path") as PackedVector2Array
+			_expect(
+				not issued_path.is_empty()
+					and (unit.get("target_position") as Vector2).distance_to(
+						zone_position
+					) <= float(rule.get("radius_world", 128.0)),
+				"m010 actor %s accepts a target-viewport ground command into zone %d"
+					% [str(names[index]), scenes[index]],
+			)
+			unit.call("cancel_path")
+			unit.position = zone_position
 			committed_world_actions += 1
 	main._evaluate_transient_mission_zones()
 	committed_world_actions += 1
@@ -865,10 +1331,13 @@ func _flush_completed_objective_saves(main: Node) -> void:
 		}
 
 
-func _validate_all_objective_disk_checkpoints(main: Node) -> void:
+func _validate_all_objective_disk_checkpoints(
+	main: Node,
+	expected_initial_count: int,
+) -> void:
 	_expect(
-		initial_disk_records.size() == LEVEL_IDS.size(),
-		"all twelve stable-MOD missions own an initial physical checkpoint",
+		initial_disk_records.size() == expected_initial_count,
+		"every exercised stable-MOD mission owns an initial physical checkpoint",
 	)
 	var records: Array[Dictionary] = []
 	for level_id: String in LEVEL_IDS:

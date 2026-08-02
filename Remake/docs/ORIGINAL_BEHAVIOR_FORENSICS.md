@@ -421,7 +421,7 @@ Remake 直接加载该资源的逐帧 PNG、原锚点和帧保持 tick。实现�
 
 | 输入 | 复刻功能 | 来源 |
 |---|---|---|
-| `E` | 营救与任务交互；兼容早期试玩包的近距离拾取入口 | `remake_editorial` |
+| `E` | 任务交互；兼容早期试玩包的近距离拾取入口。正式营救由运行时类型处理器自动判定 | `mixed` |
 | `Q` | 主动换弹 | `remake_editorial` |
 | `F` | 引爆已经安放的任务炸药 | `remake_editorial` |
 | `Tab` / `Shift+Tab` | 正向/反向轮换已持有武器 | `remake_editorial` |

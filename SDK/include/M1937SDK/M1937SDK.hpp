@@ -6,6 +6,7 @@
 #include "CrtRandom.hpp"
 #include "Disguise.hpp"
 #include "EnemyAI.hpp"
+#include "Escort.hpp"
 #include "Input.hpp"
 #include "Inventory.hpp"
 #include "Mission.hpp"

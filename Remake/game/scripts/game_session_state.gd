@@ -243,6 +243,9 @@ static func _capture_actor(actor: Node2D, group_name: String) -> Dictionary:
 		var follow_target: Variant = actor.get("follow_target")
 		record["escort"] = {
 			"rescued": bool(actor.get("rescued_state")),
+			"follow_repath_elapsed": float(
+				actor.get("follow_repath_elapsed")
+			),
 			"follow_scene_index": (
 				int((follow_target as Node).get("scene_index"))
 				if follow_target is Node and is_instance_valid(follow_target)
@@ -671,7 +674,7 @@ static func _restore_actor(game: Node, actor: Node2D, record: Dictionary, group_
 		"selected",
 		bool(record.get("selected", false))
 		and alive
-		and group_name in ["units", "enemies"],
+		and group_name in ["units", "enemies", "escorts"],
 	)
 	actor.set("auto_combat_enabled", false)
 	actor.set("combat_target", null)
@@ -756,14 +759,6 @@ static func _restore_actor(game: Node, actor: Node2D, record: Dictionary, group_
 		"original_crt_random_timing",
 		{},
 	)
-	if (
-		original_crt_random_timing is Dictionary
-		and actor.has_method("restore_original_crt_random_timing")
-	):
-		actor.call(
-			"restore_original_crt_random_timing",
-			original_crt_random_timing as Dictionary,
-		)
 	if alive:
 		actor.set("death_emitted", false)
 		actor.set("combat_action", 0)
@@ -849,16 +844,31 @@ static func _restore_actor(game: Node, actor: Node2D, record: Dictionary, group_
 			)
 	elif group_name == "escorts" and record.get("escort") is Dictionary:
 		var escort := record["escort"] as Dictionary
-		actor.set("rescued_state", bool(escort.get("rescued", false)))
-		if bool(escort.get("rescued", false)):
-			actor.set("faction_id", 3)
-			var follow := _find_actor_by_identity(
-				game,
-				int(escort.get("follow_scene_index", -1)),
-				str(escort.get("follow_display_name", "")),
+		var rescued := bool(escort.get("rescued", false))
+		var follow := _find_actor_by_identity(
+			game,
+			int(escort.get("follow_scene_index", -1)),
+			str(escort.get("follow_display_name", "")),
+		)
+		if (
+			rescued
+			and follow == null
+			and actor.has_method("has_source_backed_rescue_rule")
+			and bool(actor.call("has_source_backed_rescue_rule"))
+			and game.has_method("_first_eligible_escort_rescuer")
+		):
+			follow = game.call("_first_eligible_escort_rescuer", actor)
+		if rescued and follow == null:
+			follow = _first_living_actor(_array_property(game, "units"))
+		if actor.has_method("restore_rescued_state"):
+			actor.call(
+				"restore_rescued_state",
+				rescued,
+				follow,
+				float(escort.get("follow_repath_elapsed", 0.5)),
 			)
-			if follow == null:
-				follow = _first_living_actor(_array_property(game, "units"))
+		else:
+			actor.set("rescued_state", rescued)
 			actor.set("follow_target", follow)
 	elif group_name == "ambient_units" and record.get("ambient") is Dictionary:
 		var ambient := record["ambient"] as Dictionary
@@ -871,6 +881,17 @@ static func _restore_actor(game: Node, actor: Node2D, record: Dictionary, group_
 		actor.set(
 			"patrol_path_in_flight",
 			bool(ambient.get("patrol_path_in_flight", false)),
+		)
+	# Dynamic rescue pursuit targets do not exist in the startup catalog. Bind
+	# them before restoring the saved scheduler counters so the target identity
+	# and call-site invariants can be validated instead of silently discarded.
+	if (
+		original_crt_random_timing is Dictionary
+		and actor.has_method("restore_original_crt_random_timing")
+	):
+		actor.call(
+			"restore_original_crt_random_timing",
+			original_crt_random_timing as Dictionary,
 		)
 	if actor.has_method("_update_sprite_depth"):
 		actor.call("_update_sprite_depth")
@@ -925,7 +946,7 @@ static func _restore_enemy_targets(game: Node, records: Array) -> void:
 static func _restore_selection(game: Node) -> void:
 	var selected := _array_property(game, "selected_units")
 	selected.clear()
-	for group_name: String in ["units", "enemies"]:
+	for group_name: String in ["units", "enemies", "escorts"]:
 		for actor_value: Variant in _array_property(game, group_name):
 			if (
 				actor_value is Node2D
@@ -934,6 +955,15 @@ static func _restore_selection(game: Node) -> void:
 				and bool((actor_value as Node2D).get("selected"))
 				and (
 					group_name == "units"
+					or (
+						group_name == "escorts"
+						and (actor_value as Node2D).has_method(
+							"is_player_commandable"
+						)
+						and bool((actor_value as Node2D).call(
+							"is_player_commandable"
+						))
+					)
 					or bool(
 						(actor_value as Node2D).get(
 							"legacy_hypnosis_active"

@@ -285,9 +285,11 @@ func run_probe() -> void:
 	expect(main.escorts.size() == 2, "m000 spawns both recovered rescue actors", failures)
 	if main.escorts.size() == 2 and not main.units.is_empty():
 		for escort in main.escorts:
+			main.units[0].position = escort.position
+			main._physics_process(1.0 / 60.0)
 			expect(
-				escort.rescue(main.units[0]),
-				"the live m000 interaction path rescues a bound actor",
+				escort.rescued_state,
+				"the live m000 proximity handler automatically rescues a bound actor",
 				failures,
 			)
 		var exit_entity := main.world_entities_by_scene.get(1600, {}) as Dictionary

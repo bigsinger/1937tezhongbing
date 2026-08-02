@@ -2430,7 +2430,7 @@ bool IsDetailedActorRandomCallSite(std::uint32_t call_site) {
         case 0x0005D0CB:
         case 0x0005D15F:
         case 0x0005D394:
-        case 0x0005D47E:
+        case m1937::sdk::rva::actor_pursuit_random_call:
         case 0x0005D64F:
         case 0x0005D67C:
         case 0x0005D6A9:

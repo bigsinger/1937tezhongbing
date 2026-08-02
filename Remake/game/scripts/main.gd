@@ -3,6 +3,9 @@ extends Node2D
 const SQUAD_UNIT = preload("res://scripts/squad_unit.gd")
 const ENEMY_UNIT = preload("res://scripts/enemy_unit.gd")
 const ESCORT_UNIT = preload("res://scripts/escort_unit.gd")
+const LEGACY_ESCORT_RULES: Script = preload(
+	"res://scripts/legacy_escort_rules.gd"
+)
 const AMBIENT_UNIT = preload("res://scripts/ambient_unit.gd")
 const MISSION_PICKUP = preload("res://scripts/mission_pickup.gd")
 const SIMULATION_SCRIPT: Script = preload("res://scripts/simulation.gd")
@@ -1322,59 +1325,9 @@ func spawn_imported_entities() -> int:
 	for entity_value: Variant in entities:
 		var entity := entity_value as Dictionary
 		var scene_index := int(entity["scene_index"])
-		world_entities_by_scene[scene_index] = entity
-		var display_name := entity["display_name"] as String
-		if _is_rescue_bound_scene(scene_index):
-			spawned += 1
-			continue
 		var authored_faction_id := int(
 			entity.get("faction_id", entity.get("team_id", 0))
 		)
-		var original_player_loadout: Dictionary = (
-			ORIGINAL_INITIAL_WEAPON_INVENTORY.loadout_for_scene(
-				level_id,
-				scene_index,
-			)
-		)
-		if not original_player_loadout.is_empty():
-			playable_entities[display_name] = entity
-			continue
-		if (
-			authored_faction_id == 3
-			and _is_original_squad_display_name(display_name)
-		):
-			# Some original player slots remain controllable while their live
-			# faction differs from the authored VWF faction.  m007 Tiedan is
-			# the recovered case: scene 2298 occupies player slot 2 but starts
-			# as faction 1, so the faction-only inventory catalog deliberately
-			# does not list it under `players`.
-			var controllable_entity := entity.duplicate(true)
-			var controllable_runtime_profile: Dictionary = (
-				ORIGINAL_RUNTIME_ACTOR_CATALOG.actor_for_scene(
-					level_id,
-					scene_index,
-				)
-			)
-			if not controllable_runtime_profile.is_empty():
-				controllable_entity["original_runtime_profile"] = (
-					controllable_runtime_profile
-				)
-				controllable_entity["original_runtime_profile_source"] = (
-					"stable_mod_read_only_process_snapshot"
-				)
-			var controllable_runtime_faction: int = (
-				ORIGINAL_RUNTIME_ACTOR_CATALOG.runtime_faction_id(
-					level_id,
-					scene_index,
-					authored_faction_id,
-				)
-			)
-			if controllable_runtime_faction != authored_faction_id:
-				controllable_entity["faction_id"] = controllable_runtime_faction
-				controllable_entity["runtime_faction_override"] = true
-			controllable_entity["original_controllable_slot_override"] = true
-			playable_entities[display_name] = controllable_entity
-			continue
 		var runtime_faction_id: int = (
 			ORIGINAL_RUNTIME_ACTOR_CATALOG.runtime_faction_id(
 				level_id,
@@ -1388,8 +1341,15 @@ func spawn_imported_entities() -> int:
 				scene_index,
 			)
 		)
+		# Every live RuntimeActor belongs to the same native array. Attach its
+		# recovered identity before branching into player, escort, enemy or
+		# ambient construction; otherwise the early player/rescue branches lose
+		# their runtime index and cannot participate in exact update scheduling.
 		var runtime_entity := entity
-		if runtime_faction_id != authored_faction_id or not original_runtime_profile.is_empty():
+		if (
+			runtime_faction_id != authored_faction_id
+			or not original_runtime_profile.is_empty()
+		):
 			runtime_entity = entity.duplicate(true)
 		if not original_runtime_profile.is_empty():
 			runtime_entity["original_runtime_profile"] = original_runtime_profile
@@ -1399,6 +1359,39 @@ func spawn_imported_entities() -> int:
 		if runtime_faction_id != authored_faction_id:
 			runtime_entity["faction_id"] = runtime_faction_id
 			runtime_entity["runtime_faction_override"] = true
+		var rescue_bound := _is_rescue_bound_scene(scene_index)
+		# Keep the public scene dictionary byte-faithful for ordinary scenery and
+		# actors. Escort construction reads through this dictionary, so only its
+		# early branch needs the enriched runtime identity here.
+		world_entities_by_scene[scene_index] = (
+			runtime_entity if rescue_bound else entity
+		)
+		var display_name := entity["display_name"] as String
+		if rescue_bound:
+			spawned += 1
+			continue
+		var original_player_loadout: Dictionary = (
+			ORIGINAL_INITIAL_WEAPON_INVENTORY.loadout_for_scene(
+				level_id,
+				scene_index,
+			)
+		)
+		if not original_player_loadout.is_empty():
+			playable_entities[display_name] = runtime_entity
+			continue
+		if (
+			authored_faction_id == 3
+			and _is_original_squad_display_name(display_name)
+		):
+			# Some original player slots remain controllable while their live
+			# faction differs from the authored VWF faction.  m007 Tiedan is
+			# the recovered case: scene 2298 occupies player slot 2 but starts
+			# as faction 1, so the faction-only inventory catalog deliberately
+			# does not list it under `players`.
+			var controllable_entity := runtime_entity.duplicate(true)
+			controllable_entity["original_controllable_slot_override"] = true
+			playable_entities[display_name] = controllable_entity
+			continue
 		var database_entry_id := int(entity.get("database_entry_id", 0))
 		var door_profile: Dictionary = LEGACY_DOOR_CATALOG.profile_for_entity(
 			entity
@@ -2386,6 +2379,15 @@ func _spawn_escorts() -> void:
 			attack_groups,
 		)
 		_bind_original_crt_random_actor(escort)
+		escort.configure_original_rescue_rule(
+			LEGACY_ESCORT_RULES.rule_for(
+				str(current_mission.get(
+					"id",
+					FORMAL_LEVEL_IDS[current_level_index],
+				)),
+				escort.runtime_actor_type,
+			)
+		)
 		escort.configure_original_ai_idle_animation(stand_action_groups)
 		_configure_original_weapon_container(
 			escort,
@@ -2556,9 +2558,65 @@ func _process(delta: float) -> void:
 
 
 func _physics_process(_delta: float) -> void:
+	_advance_original_escort_rescue_proximity()
 	_advance_original_pickup_order()
 	_advance_original_drop_order()
 	_advance_burial_command_world_tick()
+
+
+func _advance_original_escort_rescue_proximity() -> int:
+	var rescued_count := 0
+	for escort: ESCORT_UNIT in escorts:
+		if (
+			escort == null
+			or not is_instance_valid(escort)
+			or not escort.is_alive
+			or escort.rescued_state
+			or not escort.has_source_backed_rescue_rule()
+		):
+			continue
+		var rescuer := _first_eligible_escort_rescuer(escort)
+		if rescuer != null and escort.rescue(rescuer):
+			rescued_count += 1
+	return rescued_count
+
+
+func _first_eligible_escort_rescuer(escort: ESCORT_UNIT) -> SQUAD_UNIT:
+	if (
+		escort == null
+		or not is_instance_valid(escort)
+		or not escort.has_source_backed_rescue_rule()
+	):
+		return null
+	var target_names := (
+		escort.original_rescue_rule.get("target_names", []) as Array
+	)
+	# The native handlers test the fixed character globals in this exact order;
+	# do not substitute nearest-actor selection here.
+	for target_name_value: Variant in target_names:
+		var target_name := str(target_name_value)
+		for unit: SQUAD_UNIT in units:
+			if (
+				unit.display_name == target_name
+				and escort.can_be_rescued_by(unit)
+			):
+				return unit
+	return null
+
+
+func _commandable_player_units() -> Array[SQUAD_UNIT]:
+	var result: Array[SQUAD_UNIT] = []
+	for unit: SQUAD_UNIT in units:
+		if unit != null and is_instance_valid(unit):
+			result.append(unit)
+	for escort: ESCORT_UNIT in escorts:
+		if (
+			escort != null
+			and is_instance_valid(escort)
+			and escort.is_player_commandable()
+		):
+			result.append(escort)
+	return result
 
 
 func _advance_original_disguise_state(delta: float) -> void:
@@ -3078,7 +3136,7 @@ func _handle_original_left_click(
 		else:
 			update_status("强制目标模式：点击存活角色或可破坏物体")
 		return
-	for unit: SQUAD_UNIT in units:
+	for unit: SQUAD_UNIT in _commandable_player_units():
 		if unit.is_alive and unit.contains_parent_point(world_position):
 			handle_selection(world_position, additive)
 			return
@@ -3199,7 +3257,7 @@ func _unit_for_original_character_slot(slot_index: int) -> SQUAD_UNIT:
 	if slot_index < 0 or slot_index >= PLAYABLE_SQUAD.size():
 		return null
 	var required_name := str(PLAYABLE_SQUAD[slot_index].get("name", ""))
-	for unit: SQUAD_UNIT in units:
+	for unit: SQUAD_UNIT in _commandable_player_units():
 		if unit.display_name == required_name:
 			return unit
 	return null
@@ -3215,7 +3273,7 @@ func clamp_level_camera() -> void:
 
 func handle_selection(world_point: Vector2, additive: bool) -> void:
 	var hit: SQUAD_UNIT
-	for unit: SQUAD_UNIT in units:
+	for unit: SQUAD_UNIT in _commandable_player_units():
 		if unit.is_alive and unit.contains_parent_point(world_point):
 			hit = unit
 			break
@@ -3247,7 +3305,7 @@ func handle_selection(world_point: Vector2, additive: bool) -> void:
 func _select_units_in_screen_rect(screen_rect: Rect2, additive: bool) -> void:
 	if not additive:
 		clear_selection()
-	for unit: SQUAD_UNIT in units:
+	for unit: SQUAD_UNIT in _commandable_player_units():
 		if not unit.is_alive:
 			continue
 		var screen_position := get_global_transform_with_canvas() * unit.position
@@ -4041,7 +4099,8 @@ func force_target_at_world_point(world_point: Vector2) -> Node2D:
 		if not selected_units.has(unit):
 			candidates.append(unit)
 	for escort: ESCORT_UNIT in escorts:
-		candidates.append(escort)
+		if not selected_units.has(escort):
+			candidates.append(escort)
 	for ambient: AMBIENT_UNIT in ambient_units:
 		candidates.append(ambient)
 	for enemy: ENEMY_UNIT in enemies:
@@ -6762,10 +6821,18 @@ func _tactical_actor_markers() -> Array[Dictionary]:
 			})
 	for escort: ESCORT_UNIT in escorts:
 		if escort.is_alive:
+			var commandable := escort.is_player_commandable()
 			markers.append({
 				"position": escort.position,
-				"color": Color(0.88, 0.82, 0.35) if not escort.rescued_state else Color(0.36, 0.82, 0.78),
-				"radius": 4.0,
+				"color": (
+					Color(0.28, 0.72, 1.0)
+					if commandable
+					else Color(0.88, 0.82, 0.35)
+						if not escort.rescued_state
+						else Color(0.36, 0.82, 0.78)
+				),
+				"radius": 5.0 if commandable else 4.0,
+				"selected": commandable and selected_units.has(escort),
 			})
 	for ambient: AMBIENT_UNIT in ambient_units:
 		if ambient.is_alive:
@@ -6985,7 +7052,7 @@ func _inventory_bbcode() -> String:
 	var lines := PackedStringArray()
 	lines.append("[color=#e7d89a][b]当前关卡：%s　选中队员：%d[/b][/color]" % [str(current_mission.get("title", "")), selected_units.size()])
 	lines.append("")
-	for unit: SQUAD_UNIT in units:
+	for unit: SQUAD_UNIT in _commandable_player_units():
 		var selected_text := " [color=#fff3a8]● 已选中[/color]" if selected_units.has(unit) else ""
 		var state_text := "阵亡" if not unit.is_alive else "生命 %d/%d" % [unit.current_hit_points, unit.maximum_hit_points]
 		var attack_type := int(unit.weapon_profile.get("attack_type", 0))
@@ -7405,7 +7472,7 @@ func _refresh_mission_ui() -> void:
 	objective_label.text = "\n".join(lines)
 
 
-func _on_escort_rescued(escort: Node2D, rescuer: Node2D) -> void:
+func _on_escort_rescued(escort: Node2D, _rescuer: Node2D) -> void:
 	var payload := {
 		"scene_index": int(escort.scene_index),
 		"display_name": str(escort.display_name),
@@ -7418,8 +7485,10 @@ func _on_escort_rescued(escort: Node2D, rescuer: Node2D) -> void:
 		_report_direction_action("follow_target")
 	update_status("已营救 %s，请护送其完成任务" % escort.display_name)
 	_play_media_audio("ui_confirm")
-	if rescuer != null:
-		escort.set_follow_target(rescuer)
+	if escort.has_method("is_player_commandable") and bool(
+		escort.call("is_player_commandable")
+	):
+		update_status("已营救 %s，其已加入可操作队伍" % escort.display_name)
 
 
 func interact_with_mission_world() -> void:
@@ -7429,6 +7498,8 @@ func interact_with_mission_world() -> void:
 		return
 	for origin: SQUAD_UNIT in origins:
 		_cancel_legacy_deployment_for_unit(origin)
+	if _advance_original_escort_rescue_proximity() > 0:
+		return
 	for cache: Node2D in legacy_burial_caches:
 		if not is_instance_valid(cache) or not bool(cache.call("has_loot")):
 			continue
@@ -7449,7 +7520,11 @@ func interact_with_mission_world() -> void:
 	var nearest_distance := INF
 	var nearest_rescuer: SQUAD_UNIT
 	for escort: ESCORT_UNIT in escorts:
-		if escort.rescued_state or not escort.is_alive:
+		if (
+			escort.rescued_state
+			or not escort.is_alive
+			or escort.has_source_backed_rescue_rule()
+		):
 			continue
 		for origin: SQUAD_UNIT in origins:
 			var distance := origin.position.distance_to(escort.position)
@@ -8245,7 +8320,7 @@ func _interaction_origins() -> Array[SQUAD_UNIT]:
 		if unit.is_alive:
 			origins.append(unit)
 	if origins.is_empty():
-		for unit: SQUAD_UNIT in units:
+		for unit: SQUAD_UNIT in _commandable_player_units():
 			if unit.is_alive:
 				origins.append(unit)
 	return origins
