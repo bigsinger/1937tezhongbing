@@ -15,6 +15,8 @@ param(
     [ValidateRange(600, 4320)]
     [int]$Height = 1080,
 
+    [string]$WindowPosition = '30000,30000',
+
     [ValidateRange(1, 100)]
     [double]$MaximumP95Ms = 20,
 
@@ -72,6 +74,7 @@ if (-not [string]::IsNullOrWhiteSpace($Levels)) {
     --path $gameDirectory `
     --windowed `
     --resolution "$($Width)x$($Height)" `
+    --position $WindowPosition `
     --max-fps 60 `
     --disable-vsync `
     --log-file $logPath `

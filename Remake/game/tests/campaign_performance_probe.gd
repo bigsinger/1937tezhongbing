@@ -566,6 +566,10 @@ func _sample_level_visit(
 			"dynamic_unreachable_precheck_count": int(
 				main.navigation_grid.dynamic_unreachable_precheck_count
 			),
+			"packed_footprint_unreachable_precheck_count": int(
+				main.navigation_grid
+					.packed_footprint_unreachable_precheck_count
+			),
 			"footprint_clearance_precompute_ms": (
 				float(
 					main.dynamic_occupancy

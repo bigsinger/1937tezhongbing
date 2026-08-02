@@ -1047,11 +1047,14 @@ func switch_level(
 	m010_split_ordered_names.clear()
 	if game_shell != null:
 		game_shell.close_for_state_change()
+		game_shell.update_original_hud([])
 	if media_director != null:
 		media_director.close_for_state_change()
 	sight_observation_mode = false
 	sight_target_pending = false
 	burial_mode = false
+	if game_shell != null:
+		game_shell.set_original_hud_action_state("observation", false)
 	current_level_index = posmod(level_index, FORMAL_LEVEL_IDS.size())
 	var level_id := FORMAL_LEVEL_IDS[current_level_index]
 	_clear_legacy_ambient_particle_field()
@@ -1273,6 +1276,8 @@ func load_imported_level(level_id: String = LEVEL_VIEW.DEFAULT_LEVEL_ID) -> bool
 	sight_observation_mode = false
 	sight_target_pending = false
 	burial_mode = false
+	if game_shell != null:
+		game_shell.set_original_hud_action_state("observation", false)
 	for mine: Node2D in deployed_mines:
 		if is_instance_valid(mine):
 			_free_level_runtime_node(mine)
@@ -1331,6 +1336,8 @@ func load_imported_level(level_id: String = LEVEL_VIEW.DEFAULT_LEVEL_ID) -> bool
 	converted_root = (
 		ProjectSettings.globalize_path("res://../LocalAssets/converted").simplify_path()
 	)
+	if game_shell != null:
+		game_shell.configure_original_hud_assets(converted_root)
 	if legacy_cursor_presenter != null:
 		legacy_cursor_presenter.load_from_converted_root(converted_root)
 	imported_level = IMPORTED_LEVEL_DATA.load_level(level_id)
@@ -3278,6 +3285,8 @@ func _cancel_pending_pointer_mode_from_right_release() -> bool:
 	burial_mode = false
 	sight_target_pending = false
 	sight_observation_mode = false
+	if game_shell != null:
+		game_shell.set_original_hud_action_state("observation", false)
 	selected_backpack_item_id = 0
 	_refresh_inventory_ui()
 	return canceled
@@ -3400,6 +3409,8 @@ func _handle_original_key_action(action: String, key_event: InputEventKey) -> bo
 			burial_mode = true
 			sight_observation_mode = false
 			sight_target_pending = false
+			if game_shell != null:
+				game_shell.set_original_hud_action_state("observation", false)
 			update_status("掩埋模式：点击阵亡的敌军目标")
 		"quick_save":
 			_save_game()
@@ -3827,6 +3838,8 @@ func _toggle_sight_observation() -> void:
 	burial_mode = false
 	sight_observation_mode = true
 	sight_target_pending = true
+	if game_shell != null:
+		game_shell.set_original_hud_action_state("observation", true)
 	update_status("视线观察模式：点击存活敌军查看视野，或点击空地埋下观察标记")
 
 
@@ -3840,6 +3853,8 @@ func _select_sight_observation_target(world_point: Vector2) -> void:
 		update_status("已设置原版唯一观察点；进入敌军当前视野后自动触发并消失")
 	sight_target_pending = false
 	sight_observation_mode = false
+	if game_shell != null:
+		game_shell.set_original_hud_action_state("observation", false)
 
 
 func _place_or_move_sight_beacon(world_point: Vector2) -> Node2D:
@@ -5900,6 +5915,7 @@ func _on_damage_received(
 ) -> void:
 	if units.has(unit):
 		_refresh_mission_ui()
+		_refresh_inventory_ui()
 
 
 func _on_ammo_changed(unit: Node2D, magazine: int, reserve: int) -> void:
@@ -5915,6 +5931,7 @@ func _on_ammo_changed(unit: Node2D, magazine: int, reserve: int) -> void:
 
 
 func _refresh_inventory_ui() -> void:
+	_refresh_original_bottom_hud()
 	if inventory_label == null:
 		return
 	var lines: Array[String] = []
@@ -5987,6 +6004,31 @@ func _refresh_inventory_ui() -> void:
 		game_shell.update_inventory(_inventory_grid_model())
 
 
+func _refresh_original_bottom_hud() -> void:
+	if game_shell == null:
+		return
+	var actor_states: Array[Dictionary] = []
+	for descriptor: Dictionary in PLAYABLE_SQUAD:
+		var actor_name := str(descriptor.get("name", ""))
+		var actor: SQUAD_UNIT
+		for candidate: SQUAD_UNIT in units:
+			if candidate.display_name == actor_name:
+				actor = candidate
+				break
+		if actor == null:
+			continue
+		actor_states.append({
+			"name": actor_name,
+			"alive": actor.is_alive,
+			"selected": selected_units.has(actor),
+			"health_ratio": (
+				float(actor.current_hit_points)
+				/ maxf(float(actor.maximum_hit_points), 1.0)
+			),
+		})
+	game_shell.update_original_hud(actor_states)
+
+
 func _on_combatant_died(unit: Node2D, killer: Node2D) -> void:
 	_cancel_legacy_deployment_for_unit(unit)
 	if unit == original_drop_order_actor:
@@ -5994,6 +6036,7 @@ func _on_combatant_died(unit: Node2D, killer: Node2D) -> void:
 	selected_units.erase(unit)
 	if unit is SQUAD_UNIT:
 		_spawn_original_inventory_drops(unit as SQUAD_UNIT)
+		_refresh_inventory_ui()
 	# Death sounds follow the same SPR-only route. Old-schema or synthetic
 	# actors without an authored group remain silent instead of guessing from
 	# faction labels.
@@ -6520,6 +6563,12 @@ func _create_game_shell() -> void:
 	game_shell.inventory_cycle_requested.connect(_on_inventory_cycle_requested)
 	game_shell.inventory_reload_requested.connect(_on_inventory_reload_requested)
 	game_shell.inventory_slot_requested.connect(_on_inventory_slot_requested)
+	game_shell.original_hud_action_requested.connect(
+		_on_original_hud_action_requested
+	)
+	game_shell.original_hud_actor_requested.connect(
+		_on_original_hud_actor_requested
+	)
 	game_shell.set_settings(runtime_settings)
 	_apply_runtime_settings(runtime_settings)
 	_sync_level_selection()
@@ -6822,6 +6871,29 @@ func _open_pause_menu() -> void:
 		)
 	else:
 		game_shell.show_pause_menu(_has_save_slot())
+
+
+func _on_original_hud_action_requested(action: String) -> void:
+	match action:
+		"observation":
+			_toggle_sight_observation()
+		"minimap":
+			_open_tactical_map()
+		"system":
+			_open_pause_menu()
+
+
+func _on_original_hud_actor_requested(actor_name: String) -> void:
+	for unit: SQUAD_UNIT in units:
+		if unit.display_name != actor_name or not unit.is_alive:
+			continue
+		select_only(unit)
+		update_status("已选择%s" % unit.display_name)
+		_play_original_actor_audio(
+			LEGACY_ACTOR_AUDIO_RULES.FAMILY_SELECTED,
+			unit,
+		)
+		return
 
 
 func _open_tactical_map() -> void:

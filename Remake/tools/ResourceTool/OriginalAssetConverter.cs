@@ -6,6 +6,7 @@ namespace Mission1937.Remake.ResourceTool;
 
 internal sealed record OriginalAssetConversionResult(
     int IBlockPngCount,
+    int PsdPngCount,
     int TileAtlasPngCount,
     int SpritePreviewPngCount,
     int SpriteFramePngCount,
@@ -50,6 +51,7 @@ internal sealed record ExpectedTaskAnchorInventory(
 internal static class OriginalAssetConverter
 {
     private const int ExpectedIBlockCount = 34;
+    private const int ExpectedPsdCount = 207;
     private const int ExpectedTileGroupCount = 45;
     private const int ExpectedSpriteCount = 980;
     private const int ExpectedSpriteFrameCount = 11_898;
@@ -103,6 +105,10 @@ internal static class OriginalAssetConverter
             entriesByType,
             "IBLOCK",
             ExpectedIBlockCount);
+        var psdEntries = GetExpectedEntries(
+            entriesByType,
+            "PSD",
+            ExpectedPsdCount);
         var tileGroupEntries = GetExpectedEntries(
             entriesByType,
             "TLG1",
@@ -125,11 +131,13 @@ internal static class OriginalAssetConverter
         var databaseResources = ValidateDatabaseResourceMap(database, archive);
 
         var iBlockDirectory = System.IO.Path.Combine(convertedRoot, "iblock");
+        var psdDirectory = System.IO.Path.Combine(convertedRoot, "psd");
         var tileDirectory = System.IO.Path.Combine(convertedRoot, "tile-atlases");
         var spriteDirectory = System.IO.Path.Combine(convertedRoot, "sprites");
         var spriteFramesDirectory = System.IO.Path.Combine(convertedRoot, "sprite-frames");
         var audioDirectory = System.IO.Path.Combine(convertedRoot, "audio");
         Directory.CreateDirectory(iBlockDirectory);
+        Directory.CreateDirectory(psdDirectory);
         Directory.CreateDirectory(tileDirectory);
         Directory.CreateDirectory(spriteDirectory);
         Directory.CreateDirectory(spriteFramesDirectory);
@@ -139,6 +147,12 @@ internal static class OriginalAssetConverter
         {
             IBlockImage.Open(sourcePaths[entry.Index]).SavePng(
                 IBlockOutputPath(iBlockDirectory, entry));
+        }
+
+        foreach (var entry in psdEntries)
+        {
+            PsdCompositeImage.Open(sourcePaths[entry.Index]).SavePng(
+                PsdOutputPath(psdDirectory, entry));
         }
 
         var decodedTileGroups = new List<TlgTileGroup>(tileGroupEntries.Length);
@@ -219,6 +233,10 @@ internal static class OriginalAssetConverter
                 entry,
                 convertedRoot,
                 IBlockOutputPath(iBlockDirectory, entry))),
+            psd_composites = psdEntries.Select(entry => AssetManifestEntry(
+                entry,
+                convertedRoot,
+                PsdOutputPath(psdDirectory, entry))),
             tile_atlases = tileGroupEntries.Select(entry => AssetManifestEntry(
                 entry,
                 convertedRoot,
@@ -243,6 +261,7 @@ internal static class OriginalAssetConverter
 
         return new OriginalAssetConversionResult(
             iBlockEntries.Length,
+            psdEntries.Length,
             tileGroupEntries.Length,
             spriteEntries.Length,
             spriteFrameCount,
@@ -794,6 +813,9 @@ internal static class OriginalAssetConverter
         };
 
     private static string IBlockOutputPath(string directory, GflEntry entry) =>
+        System.IO.Path.Combine(directory, $"{entry.Index:D4}.png");
+
+    private static string PsdOutputPath(string directory, GflEntry entry) =>
         System.IO.Path.Combine(directory, $"{entry.Index:D4}.png");
 
     private static string TileAtlasOutputPath(string directory, GflEntry entry) =>

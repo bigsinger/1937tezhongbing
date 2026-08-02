@@ -39,6 +39,23 @@ func _run() -> void:
 	)
 	await _dismiss_startup_media(main)
 	_expect(await _wait_for_render_frame(), "initial product frame renders")
+	var hud_layout: Dictionary = main.game_shell.original_hud_layout_snapshot()
+	_expect(bool(hud_layout.get("assets_ready", false)), "original HUD assets load")
+	_expect(bool(hud_layout.get("visible", false)), "original bottom HUD is visible")
+	_expect(
+		_hud_layout_matches_viewport(hud_layout, Vector2(root.size)),
+		"original bottom HUD spans the viewport and keeps its 62-pixel height",
+	)
+	_expect(
+		_visible_hud_portrait_count(hud_layout) == 1,
+		"m000 HUD exposes its one original playable actor",
+	)
+	_expect(
+		(hud_layout.get("actions", {}) as Dictionary).size() == 3,
+		"original observation, map and system buttons are present",
+	)
+	_capture("gameplay-hud.jpg")
+	_write_hud_layout("gameplay-hud-layout.json", hud_layout)
 
 	main._open_tactical_map()
 	paused = false
@@ -47,6 +64,16 @@ func _run() -> void:
 		main.game_shell.overlay_mode == GAME_SHELL_SCRIPT.OverlayMode.NONE
 		and main.game_shell.is_tactical_map_visible(),
 		"M tactical map opens as a live non-pausing HUD window",
+	)
+	_expect(
+		bool(
+			((main.game_shell.original_hud_layout_snapshot().get(
+				"actions", {}
+			) as Dictionary).get("minimap", {}) as Dictionary).get(
+				"pressed", false
+			)
+		),
+		"map HUD button mirrors the M-key map state",
 	)
 	_capture("tactical-map.jpg")
 	main.game_shell.close_for_state_change()
@@ -149,6 +176,71 @@ func _capture(file_name: String) -> void:
 			)
 			image.resize(960, resized_height, Image.INTERPOLATE_LANCZOS)
 		_expect(image.save_jpg(path, 0.62) == OK, "%s compressed screenshot saves" % file_name)
+
+
+func _hud_layout_matches_viewport(layout: Dictionary, viewport_size: Vector2) -> bool:
+	var bar_rect := layout.get("bar_rect", Rect2()) as Rect2
+	return (
+		is_equal_approx(bar_rect.position.x, 0.0)
+		and is_equal_approx(bar_rect.position.y, viewport_size.y - 62.0)
+		and is_equal_approx(bar_rect.size.x, viewport_size.x)
+		and is_equal_approx(bar_rect.size.y, 62.0)
+	)
+
+
+func _visible_hud_portrait_count(layout: Dictionary) -> int:
+	var count := 0
+	for raw_portrait: Variant in (layout.get("portraits", {}) as Dictionary).values():
+		if bool((raw_portrait as Dictionary).get("visible", false)):
+			count += 1
+	return count
+
+
+func _write_hud_layout(file_name: String, layout: Dictionary) -> void:
+	var encoded := {
+		"schema_version": 1,
+		"viewport": {"width": root.size.x, "height": root.size.y},
+		"assets_ready": bool(layout.get("assets_ready", false)),
+		"visible": bool(layout.get("visible", false)),
+		"height": float(layout.get("height", 0.0)),
+		"bar_rect": _rect_record(layout.get("bar_rect", Rect2()) as Rect2),
+		"portraits": {},
+		"actions": {},
+	}
+	for actor_name: String in (layout.get("portraits", {}) as Dictionary):
+		var portrait := (
+			(layout.get("portraits", {}) as Dictionary)[actor_name]
+			as Dictionary
+		)
+		encoded["portraits"][actor_name] = {
+			"visible": bool(portrait.get("visible", false)),
+			"rect": _rect_record(portrait.get("rect", Rect2()) as Rect2),
+		}
+	for action: String in (layout.get("actions", {}) as Dictionary):
+		var action_state := (
+			(layout.get("actions", {}) as Dictionary)[action]
+			as Dictionary
+		)
+		encoded["actions"][action] = {
+			"visible": bool(action_state.get("visible", false)),
+			"pressed": bool(action_state.get("pressed", false)),
+			"rect": _rect_record(action_state.get("rect", Rect2()) as Rect2),
+		}
+	var path := output_directory.path_join(file_name)
+	var output := FileAccess.open(path, FileAccess.WRITE)
+	_expect(output != null, "%s opens for writing" % file_name)
+	if output != null:
+		output.store_string(JSON.stringify(encoded, "  ") + "\n")
+		output.close()
+
+
+func _rect_record(rect: Rect2) -> Dictionary:
+	return {
+		"x": rect.position.x,
+		"y": rect.position.y,
+		"width": rect.size.x,
+		"height": rect.size.y,
+	}
 
 
 func _expect(condition: bool, message: String) -> void:

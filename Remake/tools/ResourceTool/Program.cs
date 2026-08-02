@@ -731,6 +731,7 @@ internal static class Program
             {
                 gfl_container = "extracted",
                 iblock_images = "converted_to_png",
+                psd_composites = "converted_to_png",
                 spr1_previews = "converted_to_png",
                 spr1_frames = "converted_to_png_with_per_sprite_json_manifests",
                 tlg1_atlases = "converted_to_png",
@@ -745,6 +746,7 @@ internal static class Program
         Console.WriteLine($"Imported {extracted.Count} GFL entries into {outputDirectory}");
         Console.WriteLine(
             $"Converted {conversion.IBlockPngCount} IBLOCK images, " +
+            $"{conversion.PsdPngCount} PSD composites, " +
             $"{conversion.TileAtlasPngCount} tile atlases, " +
             $"{conversion.SpritePreviewPngCount} sprite previews, " +
             $"{conversion.SpriteFramePngCount} sprite frames and " +

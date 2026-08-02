@@ -71,7 +71,7 @@ plain[i] = (cipher[i] - key[i]) & 0xff
 | 类型 | 数量 | payload 字节数 | 当前处理方式 |
 |---|---:|---:|---|
 | `SPR1` | 980 | 81,275,320 | 980 张预览、2,775 个组 atlas、11,898 个逐帧 PNG 与动画清单 |
-| `8BPS` | 207 | 14,347,924 | 识别为 Photoshop PSD，不转换 |
+| `8BPS` | 207 | 14,347,924 | 解码 PSD version 1 扁平复合图为 PNG |
 | `RIFF/WAVE` | 128 | 4,937,164 | 复制为本地 WAV |
 | `TLG1` | 45 | 685,381 | 解码完整图集 PNG |
 | `IBLOCK` | 34 | 9,028,443 | 解码完整 PNG |
@@ -81,12 +81,11 @@ WAV 共约 128.6 秒，以 22050 Hz/16-bit 单声道为主，少量为 8-bit 或
 ### MOD 的原流程文字简报
 
 最终方案不再清空简报资源或显示额外窗口。`ResourceTool
-install-text-briefings` 读取 `Mod/关卡名称.json`，把十五关文字绘制为
+install-text-briefings` 读取 `Mod/关卡名称.json`，把十二关文字绘制为
 640×480 RGB565，使用本项目的 LZO1X 编码器封装为 IBLOCK，再重建成对
 GFL：
 
 - `Intro_000.psd`—`Intro_011.psd`（原索引 1048—1059）原位替换；
-- `Brief_012.psd`—`Brief_014.psd` 追加在资源尾部；
 - 所有原有名称、属性、非目标载荷及数字索引保持；
 - 完成后用 `GflArchive.Open(resource, index)` 逐项重读验证。
 
@@ -99,11 +98,10 @@ dotnet run --project .\tools\ResourceTool -c Release -- `
 ```
 
 仓库入口 `Patch/tools/Update-TextBriefings.ps1` 还会在生成成功后以同卷
-临时文件成对替换 Mod 资源，异常时恢复备份。最终归档有 1,397 个条目，
-SHA-256 为
-`C5C785E926E300D779E8DFB6EEB4B26FA4597011B4D425347907DD56753D9158`。
-连续生成哈希一致。合成 fixture 覆盖 LZO1X/IBLOCK 往返、原位替换、
-扩展资源追加、非目标索引保持和伴随索引重读。
+临时文件成对替换 Mod 资源，异常时恢复备份。最终稳定 MOD 归档仍为
+1,394 个条目，不追加不存在的第 13—15 关资源；受支持 profile 会同时
+校验 GFL/伴随索引和十二个正式 VWF 的哈希。连续生成哈希一致。合成
+fixture 覆盖 LZO1X/IBLOCK 往返、原位替换、非目标索引保持和伴随索引重读。
 
 `strip-briefings` 作为容器研究与回归工具继续保留，但不再用于发布产品。
 
@@ -112,6 +110,18 @@ SHA-256 为
 IBLOCK、TLG 内嵌图像和 SPR 帧使用 LZO1X 压缩。解码器执行严格长度和回引用检查，同时复现原引擎会接受的“目标图像已经完整、压缩流末尾仍有少量 slack”行为；它不会把任意损坏流当成有效数据。
 
 颜色平面解压后是小端 RGB565，转换为 RGBA32。SPR 中没有显式 alpha 平面的 direct-surface 帧使用 RGB(0,0,0) 作为 DirectDraw source color key；带 alpha 平面的帧必须保留 alpha 数据，包括不透明黑色像素。这个区分修复了早期预览中的黑色矩形背景。
+
+## Photoshop PSD 扁平复合图
+
+207 个 `8BPS` 条目全部是 PSD version 1、8-bit RGB。转换器跳过颜色模式、
+图像资源和图层/蒙版区，只读取文件末尾与原游戏实际显示一致的扁平复合图；
+它同时支持原始平面和 PackBits 逐通道逐行压缩。每行压缩长度、PackBits
+字面量/重复段、目标宽度、尾部字节和尺寸上限均严格校验。
+
+输出位于 `converted/psd/<GFL index>.png`，资源总索引的
+`psd_composites` 字段保留原名称、数字索引和相对路径。底部 HUD、角色头像、
+武器物品图标、菜单按钮及其亮态因此可以直接复用原画。合成测试覆盖 raw
+RGB、PackBits RGBA、PNG 写出、截断数据和不支持位深，且不包含原游戏字节。
 
 ## IBLOCK 1.0.0
 

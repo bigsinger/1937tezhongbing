@@ -442,6 +442,7 @@ func find_path_for_scene(
 		_record_path_query(
 			scene_index,
 			movement_offsets.size(),
+			_movement_offsets_cache_key(movement_offsets),
 			Time.get_ticks_usec() - query_started,
 			query_start_cell,
 			query_destination_cell,
@@ -514,6 +515,9 @@ func find_path_for_scene(
 					_mark_temporary_solid(candidate, changed_solids)
 	elif not ignore_dynamic_actors:
 		dense_path_fallback_count += 1
+	var packed_unreachable_precheck_before := int(
+		navigation.packed_footprint_unreachable_precheck_count
+	)
 	var path: PackedVector2Array = navigation.find_path(
 		world_start,
 		world_destination,
@@ -526,7 +530,16 @@ func find_path_for_scene(
 	# query once so unreachable large actors keep the same safe edge route.
 	# Successful routes—the performance-sensitive common case—never pay this
 	# mutation cost.
-	if path.is_empty() and not additional_solid_lookup.is_empty():
+	var packed_start_is_isolated := (
+		int(navigation.packed_footprint_unreachable_precheck_count)
+			> packed_unreachable_precheck_before
+		and not bool(navigation.last_packed_reachability_start_has_exit)
+	)
+	if (
+		path.is_empty()
+		and not additional_solid_lookup.is_empty()
+		and not packed_start_is_isolated
+	):
 		for candidate: Vector2i in _blocked_origins_for_offsets(
 			movement_offsets
 		):
@@ -578,6 +591,7 @@ func find_path_for_scene(
 	_record_path_query(
 		scene_index,
 		movement_offsets.size(),
+		_movement_offsets_cache_key(movement_offsets),
 		Time.get_ticks_usec() - query_started,
 		query_start_cell,
 		query_destination_cell,
@@ -624,6 +638,7 @@ func reserve_path_goal_for_scene(
 func _record_path_query(
 	scene_index: int,
 	movement_offset_count: int,
+	movement_footprint_key: String,
 	query_elapsed_usec: int,
 	start_cell: Vector2i = Vector2i(-1, -1),
 	destination_cell: Vector2i = Vector2i(-1, -1),
@@ -643,6 +658,7 @@ func _record_path_query(
 			"elapsed_usec": 0,
 			"maximum_usec": 0,
 			"movement_offset_count": movement_offset_count,
+			"movement_footprint_key": movement_footprint_key,
 			"maximum_start_cell": start_cell,
 			"maximum_destination_cell": destination_cell,
 			"maximum_path_point_count": path_point_count,
@@ -654,6 +670,7 @@ func _record_path_query(
 	profile["elapsed_usec"] = int(profile["elapsed_usec"]) + query_elapsed_usec
 	if query_elapsed_usec > int(profile["maximum_usec"]):
 		profile["maximum_usec"] = query_elapsed_usec
+		profile["maximum_movement_footprint_key"] = movement_footprint_key
 		profile["maximum_start_cell"] = start_cell
 		profile["maximum_destination_cell"] = destination_cell
 		profile["maximum_path_point_count"] = path_point_count

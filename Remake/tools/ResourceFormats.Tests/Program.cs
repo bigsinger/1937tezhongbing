@@ -25,6 +25,7 @@ internal static class Program
             ReadsSyntheticSoundLibrary(temporaryDirectory);
             ReadsSyntheticVwfHeader(temporaryDirectory);
             _checks += IBlockSyntheticTests.Run(temporaryDirectory);
+            _checks += PsdCompositeSyntheticTests.Run(temporaryDirectory);
             _checks += TlgSyntheticTests.Run();
             _checks += SprSyntheticTests.Run();
             _checks += SprAnimationSemanticsTests.Run();

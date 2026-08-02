@@ -91,6 +91,16 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
 和底部工具栏均留给独立 UI 基线，避免把“原版含 UI、Remake 隐藏
 CanvasLayer”的非同类像素混入地图门禁。每个样本必须同时满足：
 
+底部工具栏现已进入独立门禁。`PsdCompositeImage` 将 207 张原版界面 PSD
+转换为本地 PNG；运行时使用 GFL 1137—1140 组成 62px 底栏，并直接采用
+五名角色的选中/未选中/死亡头像以及观察、地图、系统按钮。版本化基线
+`game/data/original_hud_layout_baseline.json` 固定 1024×768 和
+1920×1080 的底栏、首头像和三个 50×50 按钮矩形；
+`original_hud_runtime_test.gd` 用合成资源执行 55 项无原始数据断言，另由
+`product_ui_probe.gd` 对本地真实资源生成压缩窗口图和布局 JSON。探针只读
+目标视口，不操作系统鼠标。其余菜单、F1、背包和小地图面板的逐像素差分
+仍作为独立 UI 工作项，不会借底栏几何门禁宣称完成。
+
 | 指标 | 门限 |
 |---|---:|
 | RGB 平均绝对误差 | ≤ 6/255 |

@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "baseline_id": "original-bottom-hud-layout-v1",
+  "evidence": {
+    "stable_mod_surface": "1024x768 DirectDraw primary-surface capture",
+    "resource_archive": "1937Resources.GFL",
+    "bottom_background_gfl": 1137,
+    "bottom_border_gfl": 1138,
+    "left_border_gfl": 1140,
+    "right_border_gfl": 1139,
+    "height": 62,
+    "action_button_size": 50,
+    "portrait_size": 50,
+    "notes": "The 1920x1080 layout preserves native-pixel controls and extends the center background instead of scaling a fixed 1024x768 logical canvas."
+  },
+  "portrait_order": ["老赵", "铁蛋", "强子", "古明", "大牛"],
+  "portrait_gfl": {
+    "老赵": {"dead": 1187, "idle": 1188, "selected": 1189},
+    "铁蛋": {"dead": 1215, "idle": 1216, "selected": 1217},
+    "强子": {"dead": 1198, "idle": 1199, "selected": 1200},
+    "古明": {"dead": 1154, "idle": 1155, "selected": 1156},
+    "大牛": {"dead": 1126, "idle": 1127, "selected": 1128}
+  },
+  "actions": [
+    {"id": "observation", "normal_gfl": 1160, "active_gfl": 1161},
+    {"id": "minimap", "normal_gfl": 1143, "active_gfl": 1144},
+    {"id": "system", "normal_gfl": 1232, "active_gfl": 1233}
+  ],
+  "viewports": {
+    "1024x768": {
+      "bar_rect": {"x": 0, "y": 706, "width": 1024, "height": 62},
+      "first_portrait_rect": {"x": 5, "y": 712, "width": 57, "height": 50},
+      "action_rects": {
+        "observation": {"x": 864, "y": 712, "width": 50, "height": 50},
+        "minimap": {"x": 916, "y": 712, "width": 50, "height": 50},
+        "system": {"x": 968, "y": 712, "width": 50, "height": 50}
+      }
+    },
+    "1920x1080": {
+      "bar_rect": {"x": 0, "y": 1018, "width": 1920, "height": 62},
+      "first_portrait_rect": {"x": 5, "y": 1024, "width": 57, "height": 50},
+      "action_rects": {
+        "observation": {"x": 1760, "y": 1024, "width": 50, "height": 50},
+        "minimap": {"x": 1812, "y": 1024, "width": 50, "height": 50},
+        "system": {"x": 1864, "y": 1024, "width": 50, "height": 50}
+      }
+    }
+  }
+}

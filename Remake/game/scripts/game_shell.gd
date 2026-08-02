@@ -16,6 +16,8 @@ signal map_position_requested(world_position: Vector2)
 signal inventory_cycle_requested(direction: int)
 signal inventory_reload_requested
 signal inventory_slot_requested(slot: Dictionary)
+signal original_hud_action_requested(action: String)
+signal original_hud_actor_requested(actor_name: String)
 
 const TACTICAL_MAP_VIEW_SCRIPT: Script = preload("res://scripts/tactical_map_view.gd")
 const SAVE_SLOT_SELECTOR_SCRIPT: Script = preload("res://scripts/save_slot_selector.gd")
@@ -27,6 +29,36 @@ const GAME_INPUT_BINDINGS: Script = preload("res://scripts/game_input_bindings.g
 const ORIGINAL_INVENTORY_POPUP_SIZE := Vector2(276.0, 421.0)
 const ORIGINAL_BOTTOM_HUD_HEIGHT := 62.0
 const TACTICAL_MAP_PANEL_CHROME := Vector2(44.0, 77.0)
+const ORIGINAL_HUD_PORTRAITS := {
+	"老赵": {"dead": 1187, "idle": 1188, "selected": 1189},
+	"铁蛋": {"dead": 1215, "idle": 1216, "selected": 1217},
+	"强子": {"dead": 1198, "idle": 1199, "selected": 1200},
+	"古明": {"dead": 1154, "idle": 1155, "selected": 1156},
+	"大牛": {"dead": 1126, "idle": 1127, "selected": 1128},
+}
+const ORIGINAL_HUD_ACTIONS: Array[Dictionary] = [
+	{
+		"action": "observation",
+		"normal": 1160,
+		"active": 1161,
+		"tooltip": "观察敌军视线（S）",
+		"toggle": true,
+	},
+	{
+		"action": "minimap",
+		"normal": 1143,
+		"active": 1144,
+		"tooltip": "显示或隐藏地图（M）",
+		"toggle": true,
+	},
+	{
+		"action": "system",
+		"normal": 1232,
+		"active": 1233,
+		"tooltip": "游戏菜单（Esc）",
+		"toggle": false,
+	},
+]
 const DISPLAY_MODES: Array[String] = ["windowed", "fullscreen", "borderless"]
 const DIFFICULTY_MODES: Array[String] = ["original", "easy", "normal", "hard"]
 const MISSION_RULE_MODES: Array[String] = ["stable_mod", "repaired"]
@@ -48,6 +80,17 @@ var settings: Dictionary = {}
 
 var _root: Control
 var _hud_root: Control
+var _original_bottom_hud: Control
+var _original_hud_background: NinePatchRect
+var _original_hud_border: NinePatchRect
+var _original_hud_portrait_row: HBoxContainer
+var _original_hud_action_row: HBoxContainer
+var _original_hud_portrait_controls: Dictionary = {}
+var _original_hud_action_buttons: Dictionary = {}
+var _original_hud_texture_cache: Dictionary = {}
+var _original_hud_converted_root := ""
+var _original_hud_assets_ready := false
+var _original_hud_requested_visible := false
 var _dim: ColorRect
 var _failure_desaturate: ColorRect
 var _menu_panel: PanelContainer
@@ -168,6 +211,140 @@ func set_settings(new_settings: Dictionary) -> void:
 	_updating_settings_controls = false
 
 
+func configure_original_hud_assets(converted_root: String) -> bool:
+	var normalized_root := converted_root.simplify_path()
+	if (
+		_original_hud_assets_ready
+		and normalized_root == _original_hud_converted_root
+	):
+		return true
+	_original_hud_converted_root = normalized_root
+	_original_hud_texture_cache.clear()
+	_original_hud_assets_ready = false
+	if _original_bottom_hud == null or normalized_root.is_empty():
+		_update_original_hud_visibility()
+		return false
+
+	var background := _load_original_hud_texture("iblock", 1137)
+	var border := _load_original_hud_texture("psd", 1138)
+	if background == null or border == null:
+		_update_original_hud_visibility()
+		return false
+	_original_hud_background.texture = background
+	_original_hud_border.texture = border
+	if (
+		_load_original_hud_texture("iblock", 1140) == null
+		or _load_original_hud_texture("iblock", 1139) == null
+	):
+		_update_original_hud_visibility()
+		return false
+	_set_original_hud_side_texture("OriginalHudLeftBorder", "iblock", 1140)
+	_set_original_hud_side_texture("OriginalHudRightBorder", "iblock", 1139)
+
+	for actor_name: String in ORIGINAL_HUD_PORTRAITS:
+		var portrait := ORIGINAL_HUD_PORTRAITS[actor_name] as Dictionary
+		for state: String in ["dead", "idle", "selected"]:
+			if _load_original_hud_texture("psd", int(portrait[state])) == null:
+				_update_original_hud_visibility()
+				return false
+	for descriptor: Dictionary in ORIGINAL_HUD_ACTIONS:
+		var action := str(descriptor["action"])
+		var button := _original_hud_action_buttons.get(action) as TextureButton
+		if button == null:
+			continue
+		var normal := _load_original_hud_texture("psd", int(descriptor["normal"]))
+		var active := _load_original_hud_texture("psd", int(descriptor["active"]))
+		if normal == null or active == null:
+			_update_original_hud_visibility()
+			return false
+		button.texture_normal = normal
+		button.texture_hover = active
+		button.texture_pressed = active
+		button.texture_focused = active
+
+	_original_hud_assets_ready = true
+	_update_original_hud_portrait_textures()
+	_update_original_hud_visibility()
+	return true
+
+
+func set_original_hud_visible(visible: bool) -> void:
+	_original_hud_requested_visible = visible
+	_update_original_hud_visibility()
+
+
+func update_original_hud(actor_states: Array) -> void:
+	var by_name: Dictionary = {}
+	for state: Dictionary in actor_states:
+		var actor_name := str(state.get("name", ""))
+		if ORIGINAL_HUD_PORTRAITS.has(actor_name):
+			by_name[actor_name] = state
+	for actor_name: String in ORIGINAL_HUD_PORTRAITS:
+		var controls := _original_hud_portrait_controls.get(actor_name) as Dictionary
+		if controls == null:
+			continue
+		var container := controls.get("container") as Control
+		var state := by_name.get(actor_name, {}) as Dictionary
+		container.visible = not state.is_empty()
+		if state.is_empty():
+			continue
+		controls["alive"] = bool(state.get("alive", true))
+		controls["selected"] = bool(state.get("selected", false))
+		var ratio := clampf(float(state.get("health_ratio", 1.0)), 0.0, 1.0)
+		var health_fill := controls.get("health_fill") as ColorRect
+		var height := 50.0 * ratio
+		health_fill.position = Vector2(51.0, 50.0 - height)
+		health_fill.size = Vector2(4.0, height)
+		health_fill.color = (
+			Color(0.18, 0.9, 0.3, 1.0)
+			if ratio > 0.5
+			else Color(0.95, 0.78, 0.18, 1.0)
+			if ratio > 0.25
+			else Color(0.92, 0.2, 0.16, 1.0)
+		)
+		var button := controls.get("button") as TextureButton
+		button.tooltip_text = "%s　生命 %d%%" % [actor_name, roundi(ratio * 100.0)]
+	_update_original_hud_portrait_textures()
+	set_original_hud_visible(not by_name.is_empty())
+
+
+func set_original_hud_action_state(action: String, active: bool) -> void:
+	var button := _original_hud_action_buttons.get(action) as TextureButton
+	if button != null and button.toggle_mode:
+		button.set_pressed_no_signal(active)
+
+
+func original_hud_layout_snapshot() -> Dictionary:
+	var portraits: Dictionary = {}
+	for actor_name: String in _original_hud_portrait_controls:
+		var controls := _original_hud_portrait_controls[actor_name] as Dictionary
+		var container := controls.get("container") as Control
+		portraits[actor_name] = {
+			"visible": container.visible,
+			"rect": container.get_global_rect(),
+		}
+	var actions: Dictionary = {}
+	for action: String in _original_hud_action_buttons:
+		var button := _original_hud_action_buttons[action] as TextureButton
+		actions[action] = {
+			"visible": button.visible,
+			"rect": button.get_global_rect(),
+			"pressed": button.button_pressed,
+		}
+	return {
+		"assets_ready": _original_hud_assets_ready,
+		"visible": _original_bottom_hud != null and _original_bottom_hud.visible,
+		"height": ORIGINAL_BOTTOM_HUD_HEIGHT,
+		"bar_rect": (
+			_original_bottom_hud.get_global_rect()
+			if _original_bottom_hud != null
+			else Rect2()
+		),
+		"portraits": portraits,
+		"actions": actions,
+	}
+
+
 func settings_snapshot() -> Dictionary:
 	return settings.duplicate(true)
 
@@ -263,6 +440,7 @@ func show_tactical_map(
 ) -> void:
 	_resize_tactical_map(terrain_texture)
 	_map_requested_visible = true
+	set_original_hud_action_state("minimap", true)
 	_map_panel.visible = overlay_mode == OverlayMode.NONE
 	_map_view.configure(
 		terrain_texture,
@@ -281,6 +459,7 @@ func toggle_tactical_map(
 	camera_world_rect: Rect2,
 ) -> bool:
 	_map_requested_visible = not _map_requested_visible
+	set_original_hud_action_state("minimap", _map_requested_visible)
 	_map_panel.visible = _map_requested_visible and overlay_mode == OverlayMode.NONE
 	if _map_requested_visible:
 		_resize_tactical_map(terrain_texture)
@@ -307,6 +486,7 @@ func update_tactical_map(
 
 func hide_tactical_map() -> void:
 	_map_requested_visible = false
+	set_original_hud_action_state("minimap", false)
 	if _map_panel != null:
 		_map_panel.visible = false
 
@@ -784,6 +964,7 @@ func _build_interface() -> void:
 	_hud_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_hud_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_hud_root)
+	_build_original_bottom_hud()
 
 	_root = Control.new()
 	_root.name = "GameShellRoot"
@@ -811,6 +992,203 @@ func _build_interface() -> void:
 	_build_settings_panel()
 	_build_help_panel()
 	_root.visible = false
+
+
+func _build_original_bottom_hud() -> void:
+	_original_bottom_hud = Control.new()
+	_original_bottom_hud.name = "OriginalBottomHud"
+	_original_bottom_hud.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	_original_bottom_hud.offset_top = -ORIGINAL_BOTTOM_HUD_HEIGHT
+	_original_bottom_hud.offset_bottom = 0.0
+	_original_bottom_hud.mouse_filter = Control.MOUSE_FILTER_STOP
+	_original_bottom_hud.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_original_bottom_hud.visible = false
+	_hud_root.add_child(_original_bottom_hud)
+
+	_original_hud_background = NinePatchRect.new()
+	_original_hud_background.name = "OriginalHudBackground"
+	_original_hud_background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_original_hud_background.patch_margin_left = 27
+	_original_hud_background.patch_margin_right = 27
+	_original_hud_background.patch_margin_top = 2
+	_original_hud_background.patch_margin_bottom = 3
+	_original_hud_background.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_original_bottom_hud.add_child(_original_hud_background)
+
+	_original_hud_border = NinePatchRect.new()
+	_original_hud_border.name = "OriginalHudBorder"
+	_original_hud_border.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_original_hud_border.patch_margin_left = 27
+	_original_hud_border.patch_margin_right = 27
+	_original_hud_border.patch_margin_top = 3
+	_original_hud_border.patch_margin_bottom = 4
+	_original_hud_border.draw_center = false
+	_original_hud_border.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_original_bottom_hud.add_child(_original_hud_border)
+
+	for side: String in ["Left", "Right"]:
+		var side_texture := TextureRect.new()
+		side_texture.name = "OriginalHud%sBorder" % side
+		side_texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		side_texture.stretch_mode = TextureRect.STRETCH_KEEP
+		side_texture.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		if side == "Left":
+			side_texture.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+			side_texture.offset_left = 0.0
+			side_texture.offset_right = 27.0
+		else:
+			side_texture.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+			side_texture.offset_left = -27.0
+			side_texture.offset_right = 0.0
+		side_texture.offset_top = -62.0
+		side_texture.offset_bottom = 0.0
+		_original_bottom_hud.add_child(side_texture)
+
+	_original_hud_portrait_row = HBoxContainer.new()
+	_original_hud_portrait_row.name = "OriginalHudPortraits"
+	_original_hud_portrait_row.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_original_hud_portrait_row.offset_left = 5.0
+	_original_hud_portrait_row.offset_top = 6.0
+	_original_hud_portrait_row.offset_right = 5.0 + (57.0 * 5.0)
+	_original_hud_portrait_row.offset_bottom = 56.0
+	_original_hud_portrait_row.add_theme_constant_override("separation", 2)
+	_original_hud_portrait_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_original_bottom_hud.add_child(_original_hud_portrait_row)
+	for actor_name: String in ORIGINAL_HUD_PORTRAITS:
+		_build_original_hud_portrait(actor_name)
+
+	_original_hud_action_row = HBoxContainer.new()
+	_original_hud_action_row.name = "OriginalHudActions"
+	_original_hud_action_row.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_original_hud_action_row.offset_left = -160.0
+	_original_hud_action_row.offset_top = 6.0
+	_original_hud_action_row.offset_right = -4.0
+	_original_hud_action_row.offset_bottom = 56.0
+	_original_hud_action_row.add_theme_constant_override("separation", 2)
+	_original_hud_action_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_original_bottom_hud.add_child(_original_hud_action_row)
+	for descriptor: Dictionary in ORIGINAL_HUD_ACTIONS:
+		_build_original_hud_action(descriptor)
+
+
+func _build_original_hud_portrait(actor_name: String) -> void:
+	var container := Control.new()
+	container.name = "OriginalHudPortrait_%s" % actor_name
+	container.custom_minimum_size = Vector2(57.0, 50.0)
+	container.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	container.visible = false
+	_original_hud_portrait_row.add_child(container)
+
+	var button := TextureButton.new()
+	button.name = "PortraitButton"
+	button.position = Vector2.ZERO
+	button.size = Vector2(50.0, 50.0)
+	button.ignore_texture_size = true
+	button.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
+	button.focus_mode = Control.FOCUS_NONE
+	button.pressed.connect(_on_original_hud_actor_pressed.bind(actor_name))
+	container.add_child(button)
+
+	var health_back := ColorRect.new()
+	health_back.name = "HealthBackground"
+	health_back.position = Vector2(51.0, 0.0)
+	health_back.size = Vector2(4.0, 50.0)
+	health_back.color = Color(0.025, 0.035, 0.025, 0.95)
+	health_back.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	container.add_child(health_back)
+
+	var health_fill := ColorRect.new()
+	health_fill.name = "HealthFill"
+	health_fill.position = Vector2(51.0, 0.0)
+	health_fill.size = Vector2(4.0, 50.0)
+	health_fill.color = Color(0.18, 0.9, 0.3, 1.0)
+	health_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	container.add_child(health_fill)
+	_original_hud_portrait_controls[actor_name] = {
+		"container": container,
+		"button": button,
+		"health_back": health_back,
+		"health_fill": health_fill,
+		"alive": true,
+		"selected": false,
+	}
+
+
+func _build_original_hud_action(descriptor: Dictionary) -> void:
+	var action := str(descriptor["action"])
+	var button := TextureButton.new()
+	button.name = "OriginalHudAction_%s" % action
+	button.custom_minimum_size = Vector2(50.0, 50.0)
+	button.ignore_texture_size = true
+	button.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
+	button.focus_mode = Control.FOCUS_NONE
+	button.toggle_mode = bool(descriptor.get("toggle", false))
+	button.tooltip_text = str(descriptor.get("tooltip", action))
+	button.pressed.connect(_on_original_hud_action_pressed.bind(action))
+	_original_hud_action_row.add_child(button)
+	_original_hud_action_buttons[action] = button
+
+
+func _on_original_hud_action_pressed(action: String) -> void:
+	original_hud_action_requested.emit(action)
+
+
+func _on_original_hud_actor_pressed(actor_name: String) -> void:
+	original_hud_actor_requested.emit(actor_name)
+
+
+func _update_original_hud_portrait_textures() -> void:
+	if not _original_hud_assets_ready:
+		return
+	for actor_name: String in _original_hud_portrait_controls:
+		var controls := _original_hud_portrait_controls[actor_name] as Dictionary
+		var portrait := ORIGINAL_HUD_PORTRAITS[actor_name] as Dictionary
+		var state := "dead"
+		if bool(controls.get("alive", true)):
+			state = "selected" if bool(controls.get("selected", false)) else "idle"
+		var button := controls.get("button") as TextureButton
+		button.texture_normal = _load_original_hud_texture(
+			"psd", int(portrait[state])
+		)
+
+
+func _set_original_hud_side_texture(
+	node_name: String,
+	asset_kind: String,
+	gfl_index: int,
+) -> void:
+	var node := _original_bottom_hud.get_node_or_null(node_name) as TextureRect
+	if node != null:
+		node.texture = _load_original_hud_texture(asset_kind, gfl_index)
+
+
+func _load_original_hud_texture(asset_kind: String, gfl_index: int) -> Texture2D:
+	if _original_hud_converted_root.is_empty() or gfl_index <= 0:
+		return null
+	var cache_key := "%s/%04d" % [asset_kind, gfl_index]
+	if _original_hud_texture_cache.has(cache_key):
+		return _original_hud_texture_cache[cache_key] as Texture2D
+	var path := _original_hud_converted_root.path_join(
+		"%s/%04d.png" % [asset_kind, gfl_index]
+	).simplify_path()
+	var root_prefix := _original_hud_converted_root.trim_suffix("/").trim_suffix("\\")
+	if not path.begins_with(root_prefix + "/") and not path.begins_with(root_prefix + "\\"):
+		return null
+	if not FileAccess.file_exists(path):
+		return null
+	var image := Image.new()
+	if image.load(path) != OK or image.is_empty():
+		return null
+	var texture := ImageTexture.create_from_image(image)
+	_original_hud_texture_cache[cache_key] = texture
+	return texture
+
+
+func _update_original_hud_visibility() -> void:
+	if _original_bottom_hud != null:
+		_original_bottom_hud.visible = (
+			_original_hud_assets_ready and _original_hud_requested_visible
+		)
 
 
 func _build_menu_panel() -> void:

@@ -2530,6 +2530,72 @@ func _init() -> void:
 		"multi-cell actor A* applies its full footprint and stops before a narrow blocked column",
 		failures,
 	)
+	var packed_precheck_navigation: NavigationGridData = (
+		NAVIGATION_GRID_DATA.create_for_tests(
+			8,
+			8,
+			Vector2i(32, 16),
+			PackedInt64Array([
+				0, 0, 0, 0, 0, 0, 0, 0,
+				0, 0, 0, 0, 0, 0, 0, 0,
+				0, 0, 0, 0, 0, 0, 0, 0,
+				0, 0, 0, 0, 0, 0, 0, 0,
+				0, 0, 0, 0, 0, 0, 0, 0,
+				0, 0, 0, 0, 0, 0, 0, 0,
+				0, 0, 0, 0, 0, 0, 0, 0,
+				0, 0, 0, 0, 0, 0, 0, 0,
+			]),
+		)
+	)
+	packed_precheck_navigation.prepare_astar()
+	var packed_start := Vector2i(3, 3)
+	var packed_destination := Vector2i(6, 6)
+	var isolated_lookup := PackedByteArray()
+	isolated_lookup.resize(64)
+	for direction: Vector2i in (
+		NAVIGATION_GRID_DATA.ORIGINAL_PATHFINDER_NEIGHBOR_DIRECTIONS
+	):
+		isolated_lookup[
+			packed_precheck_navigation.cell_to_index(
+				packed_start + direction
+			)
+		] = 1
+	var isolated_path: PackedVector2Array = (
+		packed_precheck_navigation.find_path(
+			packed_precheck_navigation.cell_to_world(packed_start),
+			packed_precheck_navigation.cell_to_world(packed_destination),
+			true,
+			false,
+			isolated_lookup,
+		)
+	)
+	expect(
+		isolated_path.is_empty()
+			and packed_precheck_navigation
+				.packed_footprint_unreachable_precheck_count == 1
+			and packed_precheck_navigation
+				.last_packed_reachability_visited_count == 1,
+		"packed multi-cell precheck rejects an isolated origin without a full-map legacy search",
+		failures,
+	)
+	var open_lookup := PackedByteArray()
+	open_lookup.resize(64)
+	var reachable_path: PackedVector2Array = (
+		packed_precheck_navigation.find_path(
+			packed_precheck_navigation.cell_to_world(packed_start),
+			packed_precheck_navigation.cell_to_world(packed_destination),
+			true,
+			false,
+			open_lookup,
+		)
+	)
+	expect(
+		not reachable_path.is_empty()
+			and packed_precheck_navigation
+				.packed_footprint_unreachable_precheck_count == 1,
+		"packed multi-cell precheck preserves reachable legacy pathfinding",
+		failures,
+	)
 
 	var reference_navigation: NavigationGridData = NAVIGATION_GRID_DATA.create_for_tests(
 		3, 1, Vector2i(32, 16), PackedInt64Array([1030, 0, 1030])

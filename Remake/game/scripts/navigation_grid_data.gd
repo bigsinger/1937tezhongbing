@@ -11,6 +11,10 @@ const MANUAL_CORRECTION_LAYER_ID := 5
 const MAGIC_BYTES: Array[int] = [77, 51, 55, 78, 65, 86, 49, 0]
 const MAX_DESTINATION_SEARCH_RADIUS := 24
 const UNREACHED_SCORE := 0x3fffffff
+## A bounded exact flood can prove that a packed multi-cell footprint has
+## isolated one endpoint without scanning the complete formal map. Reaching
+## this cap is inconclusive and falls through to the recovered pathfinder.
+const PACKED_FOOTPRINT_PRECHECK_VISIT_LIMIT := 1024
 ## M1937 actor-facing order: north, northeast, east, southeast, south,
 ## southwest, west, northwest.
 const ORIGINAL_NEIGHBOR_DIRECTIONS: Array[Vector2i] = [
@@ -49,6 +53,11 @@ var static_component_cells: Dictionary = {}
 var static_component_destination_cache: Dictionary = {}
 var static_component_redirect_count := 0
 var dynamic_unreachable_precheck_count := 0
+var packed_footprint_unreachable_precheck_count := 0
+var packed_reachability_generation := 0
+var packed_reachability_node_generation := PackedInt32Array()
+var last_packed_reachability_visited_count := 0
+var last_packed_reachability_start_has_exit := false
 var incremental_source_update_count := 0
 var incremental_source_update_usec := 0
 var legacy_search_generation := 0
@@ -404,6 +413,24 @@ func find_path(
 	# first; reachable routes still run the recovered pathfinder and retain
 	# its observable tie-breaking and final facing.
 	if (
+		additional_solid_lookup.size() == dimensions.x * dimensions.y
+		and _packed_footprint_route_status(
+			start_cell,
+			destination_cell,
+			additional_solid_lookup,
+		)
+			== 0
+	):
+		# Large directional sprites use a packed footprint-clearance mask.
+		# An impossible request used to exhaust the complete recovered 2001
+		# search before DynamicOccupancyGrid could ask for the same safe partial
+		# route. A bounded flood only rejects a route after completely exhausting
+		# one endpoint's exact eight-neighbour component; an inconclusive result
+		# still uses the recovered pathfinder and retains its observable
+		# tie-breaking/final facing.
+		packed_footprint_unreachable_precheck_count += 1
+		path = PackedVector2Array()
+	elif (
 		precheck_dynamic_disconnect
 		and additional_solid_lookup.is_empty()
 		and astar.get_id_path(
@@ -455,6 +482,120 @@ func find_path(
 		if path.is_empty() or path[-1].distance_squared_to(world_destination) > 1.0:
 			path.append(world_destination)
 	return path
+
+
+## Returns 1 when the exact packed graph reaches the other endpoint within
+## the bound, 0 only when one endpoint's complete component is exhausted, and
+## -1 when both bounded floods are inconclusive. The latter is deliberately
+## not a failure result.
+func _packed_footprint_route_status(
+	start_cell: Vector2i,
+	destination_cell: Vector2i,
+	additional_solid_lookup: PackedByteArray,
+) -> int:
+	if (
+		not is_valid_cell(start_cell)
+		or not is_valid_cell(destination_cell)
+		or additional_solid_lookup.size() != dimensions.x * dimensions.y
+	):
+		return -1
+	last_packed_reachability_visited_count = 0
+	last_packed_reachability_start_has_exit = false
+	if start_cell == destination_cell:
+		last_packed_reachability_visited_count = 1
+		return 1
+	for direction: Vector2i in ORIGINAL_PATHFINDER_NEIGHBOR_DIRECTIONS:
+		var start_neighbor := start_cell + direction
+		if (
+			is_valid_cell(start_neighbor)
+			and not _path_cell_is_solid(
+				start_neighbor,
+				additional_solid_lookup,
+				start_cell,
+			)
+		):
+			last_packed_reachability_start_has_exit = true
+			break
+	if not last_packed_reachability_start_has_exit:
+		last_packed_reachability_visited_count = 1
+		return 0
+	var status := _bounded_packed_component_status(
+		destination_cell,
+		start_cell,
+		start_cell,
+		additional_solid_lookup,
+	)
+	if status >= 0:
+		return status
+	return _bounded_packed_component_status(
+		start_cell,
+		destination_cell,
+		start_cell,
+		additional_solid_lookup,
+	)
+
+
+func _bounded_packed_component_status(
+	seed_cell: Vector2i,
+	target_cell: Vector2i,
+	open_cell: Vector2i,
+	additional_solid_lookup: PackedByteArray,
+) -> int:
+	if seed_cell == target_cell:
+		last_packed_reachability_visited_count += 1
+		return 1
+	var cell_count := dimensions.x * dimensions.y
+	_begin_packed_reachability_search(cell_count)
+	var pending: Array[int] = [cell_to_index(seed_cell)]
+	packed_reachability_node_generation[pending[0]] = (
+		packed_reachability_generation
+	)
+	var cursor := 0
+	while cursor < pending.size():
+		var current_index := pending[cursor]
+		cursor += 1
+		var current := index_to_cell(current_index)
+		for direction: Vector2i in (
+			ORIGINAL_PATHFINDER_NEIGHBOR_DIRECTIONS
+		):
+			var neighbor := current + direction
+			if not is_valid_cell(neighbor):
+				continue
+			var neighbor_index := cell_to_index(neighbor)
+			if (
+				packed_reachability_node_generation[neighbor_index]
+					== packed_reachability_generation
+				or _path_cell_is_solid(
+					neighbor,
+					additional_solid_lookup,
+					open_cell,
+				)
+			):
+				continue
+			if neighbor == target_cell:
+				last_packed_reachability_visited_count += pending.size() + 1
+				return 1
+			if pending.size() >= PACKED_FOOTPRINT_PRECHECK_VISIT_LIMIT:
+				last_packed_reachability_visited_count += pending.size()
+				return -1
+			packed_reachability_node_generation[neighbor_index] = (
+				packed_reachability_generation
+			)
+			pending.append(neighbor_index)
+	last_packed_reachability_visited_count += pending.size()
+	return 0
+
+
+func _begin_packed_reachability_search(cell_count: int) -> void:
+	if packed_reachability_node_generation.size() != cell_count:
+		packed_reachability_node_generation.resize(cell_count)
+		packed_reachability_node_generation.fill(0)
+		packed_reachability_generation = 1
+		return
+	packed_reachability_generation += 1
+	if packed_reachability_generation >= 0x7fffffff:
+		packed_reachability_node_generation.fill(0)
+		packed_reachability_generation = 1
 
 
 func is_statically_reachable(

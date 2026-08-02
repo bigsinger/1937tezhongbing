@@ -117,6 +117,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "Godot original input parity tests failed with exit code $LASTEXITCODE."
 }
 
+& $GodotExecutable --headless --path $game --script 'res://tests/original_hud_runtime_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot original HUD runtime tests failed with exit code $LASTEXITCODE."
+}
+
 & $GodotExecutable --headless --path $game --script 'res://tests/combat_mission_runtime_test.gd'
 if ($LASTEXITCODE -ne 0) {
     throw "Godot combat and mission runtime tests failed with exit code $LASTEXITCODE."
@@ -659,14 +664,25 @@ if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
 
     $productUiProbeOutput = Join-Path $remakeRoot 'LocalAssets\qa\verify-product-ui'
     New-Item -ItemType Directory -Force -Path $productUiProbeOutput | Out-Null
-    & $GodotExecutable --windowed --path $game `
-        --script 'res://tests/product_ui_probe.gd' -- `
-        "--output-dir=$productUiProbeOutput"
-    if ($LASTEXITCODE -ne 0) {
-        throw "Godot product UI screenshot probe failed with exit code $LASTEXITCODE."
+    foreach ($productUiViewport in @('1024x768', '1920x1080')) {
+        $viewportOutput = Join-Path $productUiProbeOutput $productUiViewport
+        New-Item -ItemType Directory -Force -Path $viewportOutput | Out-Null
+        & $GodotExecutable --windowed --path $game `
+            --resolution $productUiViewport `
+            --position '30000,30000' `
+            --max-fps 60 `
+            --disable-vsync `
+            --log-file (Join-Path $viewportOutput 'godot.log') `
+            --script 'res://tests/product_ui_probe.gd' -- `
+            "--output-dir=$viewportOutput"
+        if ($LASTEXITCODE -ne 0) {
+            throw (
+                "Godot $productUiViewport product UI screenshot probe failed " +
+                "with exit code $LASTEXITCODE.")
+        }
     }
     if (Test-Path -LiteralPath $localOcrScript -PathType Leaf) {
-        Get-ChildItem -LiteralPath $productUiProbeOutput -Filter '*.jpg' -File |
+        Get-ChildItem -LiteralPath $productUiProbeOutput -Filter '*.jpg' -File -Recurse |
             ForEach-Object {
                 & powershell.exe -NoProfile -ExecutionPolicy Bypass `
                     -File $localOcrScript -ImagePath $_.FullName
