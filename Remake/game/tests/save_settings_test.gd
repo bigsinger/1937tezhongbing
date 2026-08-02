@@ -102,6 +102,8 @@ class MockGame:
 	var world_entities_by_scene: Dictionary = {}
 	var legacy_crt_random_state := 1
 	var legacy_crt_random_draw_index := 0
+	var legacy_global_alarm_active := false
+	var legacy_global_alarm_counter := 0
 	var legacy_ambient_particle_state: Dictionary = {}
 
 	func legacy_ambient_particle_snapshot() -> Dictionary:
@@ -983,6 +985,8 @@ func _test_mid_mission_capture_and_apply(failures: Array[String]) -> void:
 	root.add_child(source_game)
 	source_game.m010_split_ordered_names = {"老赵": true, "强子": true}
 	source_game.victory_presentation_completed = false
+	source_game.legacy_global_alarm_active = true
+	source_game.legacy_global_alarm_counter = 137
 	var session: Dictionary = GAME_SESSION_STATE.capture(source_game)
 	_expect(str(session["level_id"]) == "m003", "capture records current formal level", failures)
 	_expect(is_equal_approx(float(session["elapsed_seconds"]), 17.25), "capture records mission clock", failures)
@@ -1054,6 +1058,13 @@ func _test_mid_mission_capture_and_apply(failures: Array[String]) -> void:
 	_expect(
 		not bool((session["world"] as Dictionary)["victory_presentation_completed"]),
 		"an interrupted victory presentation remains distinguishable in the snapshot",
+		failures,
+	)
+	_expect(
+		bool((session["world"] as Dictionary)["legacy_global_alarm_active"])
+		and int((session["world"] as Dictionary)["legacy_global_alarm_counter"])
+			== 137,
+		"active corpse-alarm flag and exact update counter are captured together",
 		failures,
 	)
 	_expect(
@@ -1206,6 +1217,12 @@ func _test_mid_mission_capture_and_apply(failures: Array[String]) -> void:
 	_expect(
 		not target_game.victory_presentation_completed,
 		"an interrupted victory presentation restores for product-level replay",
+		failures,
+	)
+	_expect(
+		target_game.legacy_global_alarm_active
+		and target_game.legacy_global_alarm_counter == 137,
+		"active corpse-alarm flag and update counter resume without restarting",
 		failures,
 	)
 	_expect(

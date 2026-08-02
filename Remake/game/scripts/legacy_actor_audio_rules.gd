@@ -3,8 +3,8 @@ extends RefCounted
 
 ## Exact actor-voice selectors recovered from M1937.exe and 1937Sound.slf.
 ##
-## sub_45D610/sub_45D7B0/sub_45D900/sub_45DA60 were previously catalogued
-## as animation selectors.  Their callees lead to sub_40B800, which indexes
+## sub_45D610/sub_45D7B0/sub_45D900/sub_45DA20/sub_45DA60 were previously
+## catalogued as animation selectors. Their callees lead to sub_40B800, which indexes
 ## the loaded SLF sound array and plays the selected record.  These tables
 ## preserve both the ordered SLF indices and their non-linear GFL identities.
 ## Randomized entries consume the process-global MSVCRT stream at the listed
@@ -14,6 +14,7 @@ extends RefCounted
 const FAMILY_SELECTED := "selected"
 const FAMILY_ACKNOWLEDGE := "acknowledge"
 const FAMILY_HOSTILE_INITIAL := "hostile_initial_challenge"
+const FAMILY_HOSTILE_ALERT := "hostile_corpse_alert"
 const FAMILY_HOSTILE_FOLLOWUP := "hostile_followup_challenge"
 
 const AUDIO_CHANNEL := "voice"
@@ -47,6 +48,15 @@ const RULES := {
 		15: {"random_required": true, "call_site_rva": 0x0005D989, "slf_indices": [117, 118], "gfl_indices": [1380, 1381]},
 		21: {"random_required": false, "call_site_rva": 0, "slf_indices": [101], "gfl_indices": [1337]},
 		23: {"random_required": true, "call_site_rva": 0x0005D9BD, "slf_indices": [74, 75], "gfl_indices": [1297, 1298]},
+	},
+	FAMILY_HOSTILE_ALERT: {
+		4: {"random_required": false, "call_site_rva": 0, "slf_indices": [108], "gfl_indices": [1355]},
+		5: {"random_required": false, "call_site_rva": 0, "slf_indices": [108], "gfl_indices": [1355]},
+		6: {"random_required": false, "call_site_rva": 0, "slf_indices": [108], "gfl_indices": [1355]},
+		11: {"random_required": false, "call_site_rva": 0, "slf_indices": [108], "gfl_indices": [1355]},
+		12: {"random_required": false, "call_site_rva": 0, "slf_indices": [108], "gfl_indices": [1355]},
+		13: {"random_required": false, "call_site_rva": 0, "slf_indices": [108], "gfl_indices": [1355]},
+		14: {"random_required": false, "call_site_rva": 0, "slf_indices": [108], "gfl_indices": [1355]},
 	},
 	FAMILY_HOSTILE_FOLLOWUP: {
 		4: {"random_required": true, "call_site_rva": 0x0005DA81, "slf_indices": [111, 112], "gfl_indices": [1359, 1360]},

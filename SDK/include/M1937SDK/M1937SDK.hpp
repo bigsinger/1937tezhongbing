@@ -17,6 +17,7 @@
 #include "Patch.hpp"
 #include "Runtime.hpp"
 #include "RuntimeTypes.hpp"
+#include "Sound.hpp"
 #include "Sprite.hpp"
 #include "Projectiles.hpp"
 #include "SpecialActions.hpp"

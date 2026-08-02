@@ -1559,28 +1559,19 @@ func _begin_legacy_corpse_discovery(corpse: Node2D) -> bool:
 	corpse.set("legacy_corpse_discovered", true)
 	legacy_corpse_reaction_counter = 0
 	legacy_corpse_reaction_elapsed = 0.0
-	var original_random_value := next_original_crt_random_value(
-		0x0005CB9C
+	# sub_45C710 does not draw a fresh deadline when the corpse is claimed.
+	# State 3 starts from actor+0x248, initialized by sub_4533F0. A standalone
+	# unit fixture may not have received that constructor profile, so clamp it
+	# to the native 40..79 domain without consuming a fabricated global draw.
+	legacy_corpse_reaction_limit = clampi(
+		legacy_search_wait_limit,
+		LEGACY_CORPSE_DISCOVERY_RULES.REACTION_MINIMUM_LIMIT,
+		(
+			LEGACY_CORPSE_DISCOVERY_RULES.REACTION_MINIMUM_LIMIT
+			+ LEGACY_CORPSE_DISCOVERY_RULES.REACTION_RANDOM_SPAN
+			- 1
+		),
 	)
-	if original_random_value >= 0:
-		legacy_corpse_reaction_limit = (
-			original_random_value
-			% LEGACY_CORPSE_DISCOVERY_RULES.REACTION_RANDOM_SPAN
-			+ LEGACY_CORPSE_DISCOVERY_RULES.REACTION_MINIMUM_LIMIT
-		)
-	else:
-		var sampled: Dictionary = (
-			LEGACY_CORPSE_DISCOVERY_RULES.reaction_limit_from_state(
-				legacy_corpse_random_state
-			)
-		)
-		legacy_corpse_random_state = int(sampled.get("state", 1))
-		legacy_corpse_reaction_limit = int(
-			sampled.get(
-				"limit",
-				LEGACY_CORPSE_DISCOVERY_RULES.REACTION_MINIMUM_LIMIT,
-			)
-		)
 	current_target = null
 	clear_combat_target()
 	behavior_state = BehaviorState.CORPSE_DISCOVERY
@@ -1588,6 +1579,12 @@ func _begin_legacy_corpse_discovery(corpse: Node2D) -> bool:
 	cancel_path()
 	_issue_path_to(corpse.position)
 	legacy_corpse_discovery_triggered.emit(self, corpse)
+	# The native signal sequence raises the global alarm/spawns reinforcements
+	# before sub_45DA20 plays the fixed Japanese-soldier alert.
+	original_actor_audio_requested.emit(
+		self,
+		LEGACY_ACTOR_AUDIO_RULES.FAMILY_HOSTILE_ALERT,
+	)
 	return true
 
 
@@ -1607,19 +1604,61 @@ func _update_legacy_corpse_discovery(delta: float) -> void:
 		>= ORIGINAL_ATTACK_REACTION_TICK_SECONDS
 	):
 		legacy_corpse_reaction_elapsed -= ORIGINAL_ATTACK_REACTION_TICK_SECONDS
+		var animation_random_value := next_original_crt_random_value(
+			0x0005CB60
+		)
+		if animation_random_value < 0:
+			animation_random_value = _next_legacy_corpse_fallback_random_value()
+		if (
+			LEGACY_CORPSE_DISCOVERY_RULES
+			.alert_animation_plays_from_random_value(
+				animation_random_value
+			)
+		):
+			original_actor_audio_requested.emit(
+				self,
+				LEGACY_ACTOR_AUDIO_RULES.FAMILY_HOSTILE_ALERT,
+			)
 		legacy_corpse_reaction_counter += 1
 		if LEGACY_CORPSE_DISCOVERY_RULES.reaction_has_completed(
 			legacy_corpse_reaction_counter,
 			legacy_corpse_reaction_limit,
 		):
 			var corpse_position := legacy_corpse_target.position
-			_begin_legacy_coordinate_search(corpse_position)
+			original_actor_audio_requested.emit(
+				self,
+				LEGACY_ACTOR_AUDIO_RULES.FAMILY_HOSTILE_ALERT,
+			)
+			var next_limit_random_value := next_original_crt_random_value(
+				0x0005CB9C
+			)
+			if next_limit_random_value < 0:
+				next_limit_random_value = (
+					_next_legacy_corpse_fallback_random_value()
+				)
+			legacy_search_wait_counter = 0
+			legacy_search_wait_limit = (
+				LEGACY_CORPSE_DISCOVERY_RULES
+				.reaction_limit_from_random_value(next_limit_random_value)
+			)
+			legacy_search_tick_elapsed = 0.0
+			_begin_legacy_coordinate_search(corpse_position, true)
 			return
 	if movement_path_index >= movement_path.size():
 		var facing := legacy_corpse_target.position - position
 		if not facing.is_zero_approx():
 			set_animation_group(direction_group_index(facing))
 			apply_idle_frame()
+
+
+func _next_legacy_corpse_fallback_random_value() -> int:
+	var sampled: Dictionary = (
+		LEGACY_CORPSE_DISCOVERY_RULES.reaction_limit_from_state(
+			legacy_corpse_random_state
+		)
+	)
+	legacy_corpse_random_state = int(sampled.get("state", 1))
+	return int(sampled.get("random_value", 0))
 
 
 func mark_legacy_corpse_buried(value: bool = true) -> void:

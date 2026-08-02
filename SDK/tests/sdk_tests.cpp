@@ -157,6 +157,11 @@ int main(int argc, char** argv) {
         static constexpr unsigned char warning[] = {0x74, 0x0C};
         static constexpr unsigned char level[] = {
             0x01, 0x00, 0x00, 0x00};
+        static constexpr unsigned char alarm_sound_request[] = {
+            0x6A, 0x7D, 0xE8, 0x76, 0x8C, 0xFF, 0xFF};
+        static constexpr unsigned char ui_button_sound_request[] = {
+            0x6A, 0x7C, 0x89, 0x69, 0x40, 0x89, 0x69, 0x44,
+            0x89, 0x69, 0x50, 0xE8, 0xBE, 0x01, 0x00, 0x00};
         require_signature(
             file, m1937::sdk::rva::safe_blit,
             safe_blit, "SafeBlit", checks);
@@ -181,6 +186,75 @@ int main(int argc, char** argv) {
         require_signature(
             file, m1937::sdk::rva::new_game_level_immediate,
             level, "NewGameLevelImmediate", checks);
+        require_signature(
+            file, m1937::sdk::rva::alarm_sound_request_sequence,
+            alarm_sound_request, "AlarmSoundRequestSequence", checks);
+        require_signature(
+            file, m1937::sdk::rva::ui_button_sound_request_sequence,
+            ui_button_sound_request, "UiButtonSoundRequestSequence", checks);
+        require(
+            m1937::sdk::rva::general_sound_request_thunk != 0 &&
+                m1937::sdk::rva::queue_sound_request != 0 &&
+                m1937::sdk::rva::update_sound_requests != 0 &&
+                m1937::sdk::rva::play_sound_immediately != 0 &&
+                m1937::sdk::rva::start_sound_buffer != 0 &&
+                m1937::sdk::rva::sprite_group_sound_request != 0 &&
+                m1937::sdk::rva::actor_voice_sound_request != 0 &&
+                m1937::sdk::rva::hostile_alert_voice_selector != 0,
+            "sound request RVA catalog mismatch", checks);
+        require(
+            m1937::sdk::sound::slf_entry_count == 126 &&
+                m1937::sdk::sound::audited_sprite_count == 980 &&
+                m1937::sdk::sound::audited_group_count == 2775 &&
+                m1937::sdk::sound::sounded_group_count == 1137 &&
+                m1937::sdk::sound::sprite_group_one_based_indices.size() ==
+                    52 &&
+                m1937::sdk::sound::actor_voice_zero_based_indices.size() ==
+                    42 &&
+                m1937::sdk::sound::reachable_zero_based_indices.size() ==
+                    95 &&
+                m1937::sdk::sound::asset_only_zero_based_indices.size() ==
+                    31,
+            "full sound route audit counts mismatch", checks);
+        for (int sound_index = 0;
+             sound_index < m1937::sdk::sound::slf_entry_count;
+             ++sound_index) {
+            require(
+                m1937::sdk::sound::is_reachable_zero_based(sound_index) !=
+                    m1937::sdk::sound::is_asset_only_zero_based(sound_index),
+                "sound reachability is not an exact partition", checks);
+        }
+        const auto* rain_02 =
+            m1937::sdk::sound::find_environment_entry(61);
+        const auto* thunder =
+            m1937::sdk::sound::find_environment_entry(100);
+        const auto* rain =
+            m1937::sdk::sound::find_environment_entry(123);
+        const auto* button =
+            m1937::sdk::sound::find_environment_entry(124);
+        const auto* alarm =
+            m1937::sdk::sound::find_environment_entry(125);
+        require(
+            rain_02 && rain_02->gfl_index == 1391 &&
+                std::strcmp(rain_02->reachability, "asset_only") == 0 &&
+                thunder && thunder->gfl_index == 1333 &&
+                std::strcmp(thunder->reachability, "asset_only") == 0 &&
+                rain && rain->gfl_index == 1390 &&
+                std::strcmp(rain->reachability, "asset_only") == 0,
+            "rain/thunder asset-only evidence mismatch", checks);
+        require(
+            button && button->gfl_index == 1393 &&
+                std::strcmp(
+                    button->reachability, "ui_button_immediate") == 0 &&
+                alarm && alarm->gfl_index == 1324 &&
+                std::strcmp(
+                    alarm->reachability,
+                    "sprite_group_and_general_queued") == 0 &&
+                m1937::sdk::sound::ui_button_gfl_index == 1393 &&
+                m1937::sdk::sound::global_alarm_gfl_index == 1324 &&
+                m1937::sdk::sound::global_alarm_update_counter_limit == 240 &&
+                m1937::sdk::sound::global_alarm_active_request_updates == 241,
+            "UI button/global alarm sound route mismatch", checks);
         require(
             std::memcmp(
                 file.at_rva(

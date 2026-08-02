@@ -3,6 +3,7 @@ extends SceneTree
 const ENEMY_UNIT: Script = preload("res://scripts/enemy_unit.gd")
 const MISSION_PICKUP: Script = preload("res://scripts/mission_pickup.gd")
 const RULES: Script = preload("res://scripts/legacy_corpse_discovery_rules.gd")
+const AUDIO_RULES: Script = preload("res://scripts/legacy_actor_audio_rules.gd")
 
 
 class FakeNavigation:
@@ -28,9 +29,20 @@ class FakeNavigation:
 		pass
 
 
+class RecordingRandomSource extends Node:
+	var call_sites: Array[int] = []
+
+	func next_legacy_crt_random(call_site_rva: int) -> Dictionary:
+		call_sites.append(call_site_rva)
+		return {
+			"value": 7 if call_site_rva == 0x0005CB9C else 0,
+		}
+
+
 var failures: Array[String] = []
 var checks := 0
 var discovery_signal_count := 0
+var actor_audio_families: Array[String] = []
 
 
 func _init() -> void:
@@ -145,17 +157,33 @@ func _test_reaction_counter_and_snapshot() -> void:
 	var navigation := FakeNavigation.new()
 	var observer = _enemy(30, Vector2.ZERO, true, navigation)
 	var corpse = _enemy(31, Vector2(400, 0), false, navigation)
+	var random_source := RecordingRandomSource.new()
+	actor_audio_families.clear()
+	observer.original_crt_random_source = random_source
+	observer.legacy_search_wait_limit = 40
+	observer.original_actor_audio_requested.connect(_on_actor_audio_requested)
 	observer.call("_begin_legacy_corpse_discovery", corpse)
+	_expect(
+		random_source.call_sites.is_empty()
+		and observer.legacy_corpse_reaction_limit == 40
+		and actor_audio_families == [AUDIO_RULES.FAMILY_HOSTILE_ALERT],
+		"corpse contact reuses actor+0x248 and emits sub_45DA20 without an early rand()",
+	)
 	# The recovered reaction counter starts only after the observer arrives.
 	observer.cancel_path()
-	observer.legacy_corpse_reaction_limit = 40
-	observer.call(
-		"_update_legacy_corpse_discovery",
-		40.0 * ENEMY_UNIT.ORIGINAL_ATTACK_REACTION_TICK_SECONDS,
-	)
+	for _reaction_tick: int in range(40):
+		observer.call(
+			"_update_legacy_corpse_discovery",
+			ENEMY_UNIT.ORIGINAL_ATTACK_REACTION_TICK_SECONDS * 1.01,
+		)
 	_expect(
 		observer.behavior_state
-			== ENEMY_UNIT.BehaviorState.CORPSE_DISCOVERY,
+			== ENEMY_UNIT.BehaviorState.CORPSE_DISCOVERY
+		and random_source.call_sites.size() == 40
+		and random_source.call_sites.all(
+			func(call_site: int) -> bool: return call_site == 0x0005CB60
+		)
+		and actor_audio_families.size() == 1,
 		"corpse reaction remains active through its exact limit",
 	)
 	observer.call(
@@ -165,8 +193,13 @@ func _test_reaction_counter_and_snapshot() -> void:
 	_expect(
 		observer.behavior_state == ENEMY_UNIT.BehaviorState.SEARCH
 		and observer.legacy_search_active
-		and observer.last_known_target_position == corpse.position,
-		"corpse reaction enters recovered five-point coordinate search when counter exceeds the limit",
+		and observer.last_known_target_position == corpse.position
+		and random_source.call_sites.size() == 42
+		and random_source.call_sites[-2] == 0x0005CB60
+		and random_source.call_sites[-1] == 0x0005CB9C
+		and observer.legacy_search_wait_limit == 47
+		and actor_audio_families.size() == 2,
+		"corpse completion emits the fixed alert, then draws and preserves the next five-point search delay",
 	)
 	observer.legacy_corpse_discovered = true
 	observer.legacy_corpse_buried = false
@@ -189,6 +222,7 @@ func _test_reaction_counter_and_snapshot() -> void:
 	observer.free()
 	corpse.free()
 	restored.free()
+	random_source.free()
 
 
 func _test_reinforcement_constants() -> void:
@@ -207,6 +241,12 @@ func _test_reinforcement_constants() -> void:
 		int(sampled.get("limit", 0)) in range(40, 80),
 		"MSVC random corpse reaction limit remains in 40..79",
 	)
+	_expect(
+		RULES.alert_animation_plays_from_random_value(2)
+		and not RULES.alert_animation_plays_from_random_value(0)
+		and not RULES.alert_animation_plays_from_random_value(1),
+		"0x5CB60 repeats the alert animation only when rand()%3 is two",
+	)
 
 
 func _on_discovery_signal(
@@ -214,6 +254,13 @@ func _on_discovery_signal(
 	_unused_corpse: ENEMY_UNIT,
 ) -> void:
 	discovery_signal_count += 1
+
+
+func _on_actor_audio_requested(
+	_unused_enemy: ENEMY_UNIT,
+	family: String,
+) -> void:
+	actor_audio_families.append(family)
 
 
 func _enemy(

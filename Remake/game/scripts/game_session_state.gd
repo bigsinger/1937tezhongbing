@@ -300,6 +300,11 @@ static func _capture_world(game: Node) -> Dictionary:
 			if _has_property(game, "legacy_global_alarm_active")
 			else false
 		),
+		"legacy_global_alarm_counter": (
+			maxi(int(game.get("legacy_global_alarm_counter")), 0)
+			if _has_property(game, "legacy_global_alarm_counter")
+			else 0
+		),
 		"legacy_crt_random_state": (
 			int(game.get("legacy_crt_random_state"))
 			if _has_property(game, "legacy_crt_random_state")
@@ -1047,6 +1052,15 @@ static func _restore_world(game: Node, world: Dictionary, warnings: Array[String
 		"legacy_global_alarm_active",
 		bool(world.get("legacy_global_alarm_active", false)),
 	)
+	if _has_property(game, "legacy_global_alarm_counter"):
+		game.set(
+			"legacy_global_alarm_counter",
+			clampi(
+				int(world.get("legacy_global_alarm_counter", 0)),
+				0,
+				240,
+			),
+		)
 	if _has_property(game, "legacy_crt_random_state"):
 		game.set(
 			"legacy_crt_random_state",

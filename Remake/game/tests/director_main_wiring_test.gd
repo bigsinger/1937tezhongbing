@@ -179,8 +179,8 @@ func _run() -> void:
 	audio_actor.attack_groups.clear()
 	main.call("_on_attack_started", audio_actor, null, 1, 0.0)
 	_expect(
-		audio_recorder.event_plays == ["attack_pistol"],
-		"generic attack-event audio remains available for synthetic or old-schema sprites",
+		audio_recorder.event_plays.is_empty(),
+		"synthetic or old-schema sprites stay silent instead of inventing an event-level attack route",
 		failures,
 	)
 

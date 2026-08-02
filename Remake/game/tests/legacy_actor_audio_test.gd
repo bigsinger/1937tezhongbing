@@ -30,6 +30,13 @@ const EXPECTED := [
 	["hostile_initial_challenge", 15, 0x0005D989, [117, 118], [1380, 1381]],
 	["hostile_initial_challenge", 21, 0, [101], [1337]],
 	["hostile_initial_challenge", 23, 0x0005D9BD, [74, 75], [1297, 1298]],
+	["hostile_corpse_alert", 4, 0, [108], [1355]],
+	["hostile_corpse_alert", 5, 0, [108], [1355]],
+	["hostile_corpse_alert", 6, 0, [108], [1355]],
+	["hostile_corpse_alert", 11, 0, [108], [1355]],
+	["hostile_corpse_alert", 12, 0, [108], [1355]],
+	["hostile_corpse_alert", 13, 0, [108], [1355]],
+	["hostile_corpse_alert", 14, 0, [108], [1355]],
 	["hostile_followup_challenge", 4, 0x0005DA81, [111, 112], [1359, 1360]],
 	["hostile_followup_challenge", 5, 0x0005DAAA, [106, 110], [1353, 1357]],
 	["hostile_followup_challenge", 6, 0x0005DAAA, [106, 110], [1353, 1357]],
@@ -175,10 +182,10 @@ func _test_exact_selector_tables() -> void:
 		)
 	expected_gfl_indices.sort()
 	_expect(
-		EXPECTED.size() == 34
+		EXPECTED.size() == 41
 		and expected_random_call_sites.size() == 17
 		and RULES.all_gfl_indices() == expected_gfl_indices,
-		"all 34 runtime-type rules, 17 random sites and exact GFL set are closed",
+		"all 41 runtime-type rules, 17 random sites and exact GFL set are closed",
 	)
 	_expect(
 		RULES.selector_profile("selected", 2, 0).is_empty()
@@ -270,6 +277,18 @@ func _test_shared_random_stream_wiring() -> void:
 		and director.requests.size() == request_count
 		and game.legacy_crt_random_draw_index == draw_count,
 		"an original unmapped runtime type remains silent without a draw",
+	)
+	actor.runtime_actor_type = 4
+	_expect(
+		bool(game.call(
+			"_play_original_actor_audio",
+			RULES.FAMILY_HOSTILE_ALERT,
+			actor,
+		))
+		and director.requests.size() == request_count + 1
+		and int(director.requests[-1].get("gfl_index", -1)) == 1355
+		and game.legacy_crt_random_draw_index == draw_count,
+		"fixed corpse-alert selector plays GFL 1355 without consuming rand()",
 	)
 	actor.free()
 	director.free()

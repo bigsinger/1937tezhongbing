@@ -58,6 +58,9 @@ const LEGACY_CRT_RANDOM_CATALOG: Script = preload(
 const LEGACY_ACTOR_AUDIO_RULES: Script = preload(
 	"res://scripts/legacy_actor_audio_rules.gd"
 )
+const LEGACY_SOUND_ROUTE_CATALOG: Script = preload(
+	"res://scripts/generated/legacy_sound_route_catalog.gd"
+)
 const LEGACY_AMBIENT_PARTICLE_RANDOM_CALL_SITES := {
 	0x0005FD2C: true,
 	0x0005FD41: true,
@@ -276,6 +279,7 @@ var next_mission_pickup_serial := 1
 var next_legacy_reinforcement_scene_index := 1000000
 var next_legacy_reinforcement_serial := 1
 var legacy_global_alarm_active := false
+var legacy_global_alarm_counter := 0
 var selected_units: Array[SQUAD_UNIT] = []
 var status_label: Label
 var badge_label: Label
@@ -397,8 +401,19 @@ func _ready() -> void:
 	)
 	_initialize_persistence()
 	_create_media_director()
+	var tree := get_tree()
+	if (
+		tree != null
+		and not tree.node_added.is_connected(
+			_on_runtime_node_added_for_original_button_audio
+		)
+	):
+		tree.node_added.connect(
+			_on_runtime_node_added_for_original_button_audio
+		)
 	_create_game_shell()
 	create_interface()
+	_connect_existing_original_button_audio(self)
 	create_level_camera()
 	startup_level_selection_pending = _should_show_startup_level_selector()
 	switch_level(
@@ -1099,6 +1114,12 @@ func _prewarm_original_actor_voices() -> void:
 	if media_director == null:
 		return
 	var warmed_gfl_indices: Dictionary = {}
+	for gfl_index: int in [
+		LEGACY_SOUND_ROUTE_CATALOG.UI_BUTTON_GFL_INDEX,
+		LEGACY_SOUND_ROUTE_CATALOG.GLOBAL_ALARM_GFL_INDEX,
+	]:
+		warmed_gfl_indices[gfl_index] = true
+		media_director.prewarm_audio_index(gfl_index)
 	for unit: SQUAD_UNIT in units:
 		for family: String in [
 			LEGACY_ACTOR_AUDIO_RULES.FAMILY_SELECTED,
@@ -1115,6 +1136,7 @@ func _prewarm_original_actor_voices() -> void:
 	for enemy: ENEMY_UNIT in enemies:
 		for family: String in [
 			LEGACY_ACTOR_AUDIO_RULES.FAMILY_HOSTILE_INITIAL,
+			LEGACY_ACTOR_AUDIO_RULES.FAMILY_HOSTILE_ALERT,
 			LEGACY_ACTOR_AUDIO_RULES.FAMILY_HOSTILE_FOLLOWUP,
 		]:
 			for gfl_index: int in LEGACY_ACTOR_AUDIO_RULES.gfl_indices_for(
@@ -1242,6 +1264,7 @@ func load_imported_level(level_id: String = LEVEL_VIEW.DEFAULT_LEVEL_ID) -> bool
 	next_legacy_reinforcement_scene_index = 1000000
 	next_legacy_reinforcement_serial = 1
 	legacy_global_alarm_active = false
+	legacy_global_alarm_counter = 0
 	imported_entity_count = 0
 	navigation_grid = null
 	dynamic_occupancy = null
@@ -2596,10 +2619,63 @@ func _process(delta: float) -> void:
 
 
 func _physics_process(_delta: float) -> void:
+	_advance_original_global_alarm()
 	_advance_original_escort_rescue_proximity()
 	_advance_original_pickup_order()
 	_advance_original_drop_order()
 	_advance_burial_command_world_tick()
+
+
+func _advance_original_global_alarm() -> bool:
+	if not legacy_global_alarm_active:
+		return false
+	legacy_global_alarm_counter += 1
+	if (
+		legacy_global_alarm_counter
+		> LEGACY_SOUND_ROUTE_CATALOG.GLOBAL_ALARM_UPDATE_COUNTER_LIMIT
+	):
+		# sub_408480 clears the flag on update 241, after incrementing the
+		# counter, but still submits index 125 on that final update.
+		legacy_global_alarm_counter = 0
+		legacy_global_alarm_active = false
+	if media_director == null:
+		return false
+	return bool(media_director.request_sfx_audio_index(
+		LEGACY_SOUND_ROUTE_CATALOG.GLOBAL_ALARM_GFL_INDEX,
+		get_instance_id(),
+	))
+
+
+func _on_runtime_node_added_for_original_button_audio(node: Node) -> void:
+	if node != self and not is_ancestor_of(node):
+		return
+	_connect_original_button_audio(node)
+
+
+func _connect_existing_original_button_audio(root_node: Node) -> void:
+	_connect_original_button_audio(root_node)
+	for child: Node in root_node.get_children():
+		_connect_existing_original_button_audio(child)
+
+
+func _connect_original_button_audio(node: Node) -> bool:
+	if not node is BaseButton:
+		return false
+	var button := node as BaseButton
+	if not button.pressed.is_connected(_on_original_ui_button_pressed):
+		button.pressed.connect(_on_original_ui_button_pressed)
+	return true
+
+
+func _on_original_ui_button_pressed() -> void:
+	if media_director == null:
+		return
+	media_director.play_audio_index(
+		LEGACY_SOUND_ROUTE_CATALOG.UI_BUTTON_GFL_INDEX,
+		"original_ui_button_release",
+		"",
+		"sfx",
+	)
 
 
 func _advance_original_escort_rescue_proximity() -> int:
@@ -2761,7 +2837,6 @@ func _on_original_disguise_attack_committed(
 	if not was_observed:
 		return
 	unit.expose_original_disguise()
-	_play_media_audio("alert")
 	update_status("%s 的伪装行动被敌军目击" % unit.display_name)
 
 
@@ -2861,7 +2936,6 @@ func _on_original_disguise_transition_ready(
 		)
 	):
 		selected_backpack_item_id = 0
-	_play_media_audio("ui_confirm")
 	update_status(
 		"%s 已%s"
 		% [
@@ -4622,11 +4696,13 @@ func _on_projectile_impact_created(
 	_attacker: Node2D,
 	_world_position: Vector2,
 	_attack_type: int,
-	runtime_actor_type: int,
-	original_gfl_index: int,
+	_runtime_actor_type: int,
+	_original_gfl_index: int,
 ) -> void:
-	if runtime_actor_type == 60 and original_gfl_index == 306:
-		_play_media_audio("projectile_impact")
+	# The two apparent impact WAVs are loaded archive records but have no
+	# executable request path. Visual impact actors retain their own exact SPR
+	# group sounds, so do not invent a second event-level playback here.
+	pass
 
 
 func _on_projectile_explosion_actor_requested(
@@ -4930,7 +5006,6 @@ func _on_projectile_exploded(
 	_vertical_radius: float,
 	alert_radius_override: float = 0.0,
 ) -> void:
-	_play_media_audio("explosion")
 	if attacker == null or not is_instance_valid(attacker):
 		return
 	var alert_target: Node2D = attacker
@@ -4972,22 +5047,9 @@ func _on_attack_started(
 				"target_role_id": "m005_agui",
 			},
 		)
-	var attack_event := str({
-		1: "attack_pistol",
-		2: "attack_rifle",
-		3: "attack_light_machinegun_burst",
-		4: "attack_dagger",
-		5: "attack_broadsword",
-		6: "attack_dart",
-		7: "attack_slingshot",
-	}.get(attack_type, ""))
-	var has_authored_animation_sound := (
-		attacker != null
-		and attacker.has_method("has_authored_attack_animation_sound")
-		and bool(attacker.call("has_authored_attack_animation_sound"))
-	)
-	if not attack_event.is_empty() and not has_authored_animation_sound:
-		_play_media_audio(attack_event)
+	# The executable has no event-level attack-sound dispatcher. Attack audio
+	# comes only from the active SPR frame group's exact SLF index; a group with
+	# no sound field is intentionally silent.
 	if LEGACY_DISGUISE_RULES.attack_can_break_disguise(
 		int(attacker.get("runtime_actor_type")),
 		attack_type,
@@ -5004,11 +5066,11 @@ func _on_attack_started(
 	var alert_target: Node2D = target if attacker is ENEMY_UNIT else attacker
 	if alert_target == null or not alert_target.has_method("is_combat_alive"):
 		return
-	var alerted_count := _queue_or_broadcast_alert(
+	_queue_or_broadcast_alert(
 		attacker, alert_target, attacker.position, alert_radius
 	)
-	if alerted_count > 0 and not attacker is ENEMY_UNIT:
-		_play_media_audio("alert", "japanese_soldier")
+	# sub_45DA20 is not a generic gunshot response. It is emitted only by the
+	# corpse-discovery state, whose exact path lives in EnemyUnit.
 
 
 func _queue_or_broadcast_alert(
@@ -5875,16 +5937,9 @@ func _on_combatant_died(unit: Node2D, killer: Node2D) -> void:
 	selected_units.erase(unit)
 	if unit is SQUAD_UNIT:
 		_spawn_original_inventory_drops(unit as SQUAD_UNIT)
-	var death_actor := (
-		"enemy" if unit is ENEMY_UNIT else ("civilian" if unit is ESCORT_UNIT else "ally")
-	)
-	var has_authored_death_sound := (
-		unit != null
-		and unit.has_method("has_authored_death_animation_sound")
-		and bool(unit.call("has_authored_death_animation_sound"))
-	)
-	if not has_authored_death_sound:
-		_play_media_audio("death", death_actor)
+	# Death sounds follow the same SPR-only route. Old-schema or synthetic
+	# actors without an authored group remain silent instead of guessing from
+	# faction labels.
 	var death_alert_radius: float = COMBAT_PROFILES.alert_radius("ally_death")
 	if unit is ENEMY_UNIT:
 		# sub_4585F0 sends a 256-radius coordinate pulse for a faction-1 death.
@@ -6957,7 +7012,6 @@ func _use_original_backpack_item(
 		"set_disguise":
 			if not actor.begin_original_disguise_transition(item_id):
 				return false
-			_play_media_audio("ui_confirm")
 			update_status(
 				"%s 开始更换 %s"
 				% [
@@ -6976,7 +7030,6 @@ func _use_original_backpack_item(
 		and not actor.backpack_inventory.has_item(item_id)
 	):
 		selected_backpack_item_id = 0
-	_play_media_audio("ui_confirm")
 	update_status(
 		"%s 使用 %s：%s"
 		% [
@@ -7469,7 +7522,6 @@ func _on_objective_completed(objective_id: String) -> void:
 		)
 	if objective_id == "place_mine_charges":
 		_report_direction_action("place_all_charges")
-	_play_media_audio("ui_confirm")
 	update_status("任务目标完成：%s" % objective_id)
 	_play_mission_media_cue("on_objective", objective_id)
 
@@ -7481,7 +7533,6 @@ func _on_mission_victory() -> void:
 	victory_handled_level_id = level_id
 	if mission_direction_runtime != null:
 		mission_direction_runtime.publish_event("victory")
-	_play_media_audio("ui_confirm")
 	_update_campaign_progress_for_victory()
 	victory_presentation_completed = false
 	_save_game(AUTO_SAVE_SLOT, false)
@@ -7671,7 +7722,6 @@ func _on_escort_rescued(escort: Node2D, _rescuer: Node2D) -> void:
 	if str(current_mission.get("id", "")) == "m006":
 		_report_direction_action("follow_target")
 	update_status("已营救 %s，请护送其完成任务" % escort.display_name)
-	_play_media_audio("ui_confirm")
 	if escort.has_method("is_player_commandable") and bool(
 		escort.call("is_player_commandable")
 	):
@@ -7861,7 +7911,6 @@ func _collect_original_inventory_pickup(
 	event_payload["item_name"] = item_name
 	event_payload["collector_name"] = str(collector.display_name)
 	_publish_item_acquired_if_mission_bound(event_payload)
-	_play_media_audio("ui_confirm")
 	update_status("%s 拾取 %s" % [collector.display_name, item_name])
 	_refresh_inventory_ui()
 	return true
@@ -8258,7 +8307,6 @@ func _activate_bound_scene(binding_kind: String, scene_index: int) -> bool:
 				# The preflight count and consumption occur synchronously, so
 				# this is an invariant guard rather than a recoverable branch.
 				push_error("Actor inventory changed while activating charge scene %d" % scene_index)
-		_play_media_audio("explosion")
 		_refresh_inventory_ui()
 		_report_direction_action("place_charge")
 		var every_charge_placed := true
@@ -8426,7 +8474,6 @@ func _detonate_mission_charges() -> void:
 		update_status("当前任务没有可手动引爆的矿坑炸药")
 		return
 	_publish_mission_event("explosion", {"cause": "manual_detonation"})
-	_play_media_audio("explosion")
 	if current_mission_state.is_failed():
 		return
 	update_status("炸药已引爆；前往东南升降机撤离")
@@ -8847,13 +8894,6 @@ func _is_mission_combat_target_scene(scene_index: int) -> bool:
 func update_status(message: String) -> void:
 	if status_label != null:
 		status_label.text = message
-
-
-func _play_media_audio(event_key: String, actor_key: String = "") -> bool:
-	if media_director == null or event_key.is_empty():
-		return false
-	media_event_seed += 1
-	return bool(media_director.play_audio_event(event_key, actor_key, media_event_seed))
 
 
 func _play_original_actor_audio(

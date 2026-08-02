@@ -8,6 +8,7 @@ $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $sdkRoot '..'))
 $addressPath = Join-Path $sdkRoot 'address-catalog.json'
 $routePath = Join-Path $sdkRoot 'mission-routes.json'
 $crtRandPath = Join-Path $sdkRoot 'crt-rand-call-sites.json'
+$soundPath = Join-Path $sdkRoot 'sound-routes.json'
 
 function Convert-ToSnakeCase {
     param([Parameter(Mandatory)][string]$Name)
@@ -27,6 +28,17 @@ function Escape-CppString {
     param([AllowEmptyString()][string]$Value)
     if ($null -eq $Value) { return '' }
     return $Value.Replace('\', '\\').Replace('"', '\"')
+}
+
+function Escape-GdString {
+    param([AllowEmptyString()][string]$Value)
+    if ($null -eq $Value) { return '' }
+    return $Value.Replace('\', '\\').Replace('"', '\"')
+}
+
+function Format-IntegerArray {
+    param($Values)
+    return (@($Values | ForEach-Object { [string][int]$_ }) -join ', ')
 }
 
 function New-AddressHeader {
@@ -84,6 +96,167 @@ function New-CSharpAddresses {
     }
     $lines.Add('    }')
     $lines.Add('}')
+    $lines.Add('')
+    return [string]::Join("`n", $lines)
+}
+
+function New-SoundHeader {
+    param($Catalog)
+    $sprite = @($Catalog.routes.sprite_group.unique_slf_indices)
+    $voice = @($Catalog.routes.actor_voice.unique_slf_indices)
+    $reachable = @($Catalog.reachable_zero_based_indices)
+    $assetOnly = @($Catalog.asset_only_zero_based_indices)
+    $environment = @($Catalog.audited_environment_and_ui_entries)
+    $uiButtonEntry = @($environment | Where-Object {
+        [int]$_.zero_based_index -eq [int]$Catalog.routes.ui_button_release.slf_indices[0]
+    })[0]
+    $globalAlarmEntry = @($environment | Where-Object {
+        [int]$_.zero_based_index -eq [int]$Catalog.routes.global_alarm.slf_indices[0]
+    })[0]
+    $lines = [Collections.Generic.List[string]]::new()
+    $lines.Add('#pragma once')
+    $lines.Add('')
+    $lines.Add('// Generated from SDK/sound-routes.json. Do not edit.')
+    $lines.Add('#include <array>')
+    $lines.Add('#include <cstddef>')
+    $lines.Add('')
+    $lines.Add('namespace m1937::sdk::sound {')
+    $lines.Add('')
+    $lines.Add(('inline constexpr int slf_entry_count = {0};' -f [int]$Catalog.slf_entry_count))
+    $lines.Add(('inline constexpr int sprite_group_parameter_index = {0};' -f [int]$Catalog.routes.sprite_group.parameter_index))
+    $lines.Add(('inline constexpr int audited_sprite_count = {0};' -f [int]$Catalog.routes.sprite_group.audited_sprite_count))
+    $lines.Add(('inline constexpr int audited_group_count = {0};' -f [int]$Catalog.routes.sprite_group.audited_group_count))
+    $lines.Add(('inline constexpr int sounded_group_count = {0};' -f [int]$Catalog.routes.sprite_group.sounded_group_count))
+    $lines.Add(('inline constexpr int ui_button_zero_based_index = {0};' -f [int]$Catalog.routes.ui_button_release.slf_indices[0]))
+    $lines.Add(('inline constexpr int ui_button_gfl_index = {0};' -f [int]$uiButtonEntry.gfl_index))
+    $lines.Add(('inline constexpr int global_alarm_zero_based_index = {0};' -f [int]$Catalog.routes.global_alarm.slf_indices[0]))
+    $lines.Add(('inline constexpr int global_alarm_gfl_index = {0};' -f [int]$globalAlarmEntry.gfl_index))
+    $lines.Add(('inline constexpr int global_alarm_update_counter_limit = {0};' -f [int]$Catalog.routes.global_alarm.update_counter_limit))
+    $lines.Add(('inline constexpr int global_alarm_active_request_updates = {0};' -f [int]$Catalog.routes.global_alarm.active_request_updates))
+    $lines.Add('')
+    $lines.Add(('inline constexpr std::array<int, {0}> sprite_group_one_based_indices{{{{' -f $sprite.Count))
+    $lines.Add(('    {0}' -f (Format-IntegerArray $sprite)))
+    $lines.Add('}};')
+    $lines.Add(('inline constexpr std::array<int, {0}> actor_voice_zero_based_indices{{{{' -f $voice.Count))
+    $lines.Add(('    {0}' -f (Format-IntegerArray $voice)))
+    $lines.Add('}};')
+    $lines.Add(('inline constexpr std::array<int, {0}> reachable_zero_based_indices{{{{' -f $reachable.Count))
+    $lines.Add(('    {0}' -f (Format-IntegerArray $reachable)))
+    $lines.Add('}};')
+    $lines.Add(('inline constexpr std::array<int, {0}> asset_only_zero_based_indices{{{{' -f $assetOnly.Count))
+    $lines.Add(('    {0}' -f (Format-IntegerArray $assetOnly)))
+    $lines.Add('}};')
+    $lines.Add('')
+    $lines.Add('template <std::size_t Size>')
+    $lines.Add('constexpr bool contains(')
+    $lines.Add('    const std::array<int, Size>& values, int value) noexcept {')
+    $lines.Add('    for (const auto candidate : values)')
+    $lines.Add('        if (candidate == value)')
+    $lines.Add('            return true;')
+    $lines.Add('    return false;')
+    $lines.Add('}')
+    $lines.Add('')
+    $lines.Add('constexpr bool is_reachable_zero_based(int index) noexcept {')
+    $lines.Add('    return contains(reachable_zero_based_indices, index);')
+    $lines.Add('}')
+    $lines.Add('')
+    $lines.Add('constexpr bool is_asset_only_zero_based(int index) noexcept {')
+    $lines.Add('    return contains(asset_only_zero_based_indices, index);')
+    $lines.Add('}')
+    $lines.Add('')
+    $lines.Add('struct AuditedEnvironmentEntry final {')
+    $lines.Add('    int zero_based_index;')
+    $lines.Add('    int one_based_index;')
+    $lines.Add('    int gfl_index;')
+    $lines.Add('    const char* category;')
+    $lines.Add('    const char* event_key;')
+    $lines.Add('    const char* resource_name;')
+    $lines.Add('    const char* reachability;')
+    $lines.Add('};')
+    $lines.Add('')
+    $lines.Add(('inline constexpr std::array<AuditedEnvironmentEntry, {0}> audited_environment_entries{{{{' -f $environment.Count))
+    foreach ($entry in $environment) {
+        $lines.Add(('    {{{0}, {1}, {2}, "{3}", "{4}", "{5}", "{6}"}},' -f
+            [int]$entry.zero_based_index,
+            [int]$entry.one_based_index,
+            [int]$entry.gfl_index,
+            (Escape-CppString ([string]$entry.category)),
+            (Escape-CppString ([string]$entry.event_key)),
+            (Escape-CppString ([string]$entry.resource_name)),
+            (Escape-CppString ([string]$entry.reachability))))
+    }
+    $lines.Add('}};')
+    $lines.Add('')
+    $lines.Add('constexpr const AuditedEnvironmentEntry* find_environment_entry(')
+    $lines.Add('    int zero_based_index) noexcept {')
+    $lines.Add('    for (const auto& entry : audited_environment_entries)')
+    $lines.Add('        if (entry.zero_based_index == zero_based_index)')
+    $lines.Add('            return &entry;')
+    $lines.Add('    return nullptr;')
+    $lines.Add('}')
+    $lines.Add('')
+    $lines.Add('}  // namespace m1937::sdk::sound')
+    $lines.Add('')
+    return [string]::Join("`n", $lines)
+}
+
+function New-GdscriptSoundCatalog {
+    param($Catalog)
+    $sprite = @($Catalog.routes.sprite_group.unique_slf_indices)
+    $voice = @($Catalog.routes.actor_voice.unique_slf_indices)
+    $reachable = @($Catalog.reachable_zero_based_indices)
+    $assetOnly = @($Catalog.asset_only_zero_based_indices)
+    $environment = @($Catalog.audited_environment_and_ui_entries)
+    $uiButtonEntry = @($environment | Where-Object {
+        [int]$_.zero_based_index -eq [int]$Catalog.routes.ui_button_release.slf_indices[0]
+    })[0]
+    $globalAlarmEntry = @($environment | Where-Object {
+        [int]$_.zero_based_index -eq [int]$Catalog.routes.global_alarm.slf_indices[0]
+    })[0]
+    $lines = [Collections.Generic.List[string]]::new()
+    $lines.Add('class_name LegacySoundRouteCatalog')
+    $lines.Add('extends RefCounted')
+    $lines.Add('')
+    $lines.Add('## Generated from SDK/sound-routes.json. Do not edit.')
+    $lines.Add(('const SLF_ENTRY_COUNT := {0}' -f [int]$Catalog.slf_entry_count))
+    $lines.Add(('const SPRITE_GROUP_PARAMETER_INDEX := {0}' -f [int]$Catalog.routes.sprite_group.parameter_index))
+    $lines.Add(('const AUDITED_SPRITE_COUNT := {0}' -f [int]$Catalog.routes.sprite_group.audited_sprite_count))
+    $lines.Add(('const AUDITED_GROUP_COUNT := {0}' -f [int]$Catalog.routes.sprite_group.audited_group_count))
+    $lines.Add(('const SOUNDED_GROUP_COUNT := {0}' -f [int]$Catalog.routes.sprite_group.sounded_group_count))
+    $lines.Add(('const UI_BUTTON_ZERO_BASED_INDEX := {0}' -f [int]$Catalog.routes.ui_button_release.slf_indices[0]))
+    $lines.Add(('const UI_BUTTON_GFL_INDEX := {0}' -f [int]$uiButtonEntry.gfl_index))
+    $lines.Add(('const GLOBAL_ALARM_ZERO_BASED_INDEX := {0}' -f [int]$Catalog.routes.global_alarm.slf_indices[0]))
+    $lines.Add(('const GLOBAL_ALARM_GFL_INDEX := {0}' -f [int]$globalAlarmEntry.gfl_index))
+    $lines.Add(('const GLOBAL_ALARM_UPDATE_COUNTER_LIMIT := {0}' -f [int]$Catalog.routes.global_alarm.update_counter_limit))
+    $lines.Add(('const GLOBAL_ALARM_ACTIVE_REQUEST_UPDATES := {0}' -f [int]$Catalog.routes.global_alarm.active_request_updates))
+    $lines.Add(('const SPRITE_GROUP_ONE_BASED_INDICES: Array[int] = [{0}]' -f (Format-IntegerArray $sprite)))
+    $lines.Add(('const ACTOR_VOICE_ZERO_BASED_INDICES: Array[int] = [{0}]' -f (Format-IntegerArray $voice)))
+    $lines.Add(('const REACHABLE_ZERO_BASED_INDICES: Array[int] = [{0}]' -f (Format-IntegerArray $reachable)))
+    $lines.Add(('const ASSET_ONLY_ZERO_BASED_INDICES: Array[int] = [{0}]' -f (Format-IntegerArray $assetOnly)))
+    $lines.Add('const AUDITED_ENVIRONMENT_ENTRIES: Array[Dictionary] = [')
+    foreach ($entry in $environment) {
+        $lines.Add(('    {{"zero_based_index": {0}, "one_based_index": {1}, "gfl_index": {2}, "category": "{3}", "event_key": "{4}", "resource_name": "{5}", "reachability": "{6}"}},' -f
+            [int]$entry.zero_based_index,
+            [int]$entry.one_based_index,
+            [int]$entry.gfl_index,
+            (Escape-GdString ([string]$entry.category)),
+            (Escape-GdString ([string]$entry.event_key)),
+            (Escape-GdString ([string]$entry.resource_name)),
+            (Escape-GdString ([string]$entry.reachability))))
+    }
+    $lines.Add(']')
+    $lines.Add('')
+    $lines.Add('static func is_reachable_zero_based(index: int) -> bool:')
+    $lines.Add('    return REACHABLE_ZERO_BASED_INDICES.has(index)')
+    $lines.Add('')
+    $lines.Add('static func is_asset_only_zero_based(index: int) -> bool:')
+    $lines.Add('    return ASSET_ONLY_ZERO_BASED_INDICES.has(index)')
+    $lines.Add('')
+    $lines.Add('static func environment_entry(index: int) -> Dictionary:')
+    $lines.Add('    for entry: Dictionary in AUDITED_ENVIRONMENT_ENTRIES:')
+    $lines.Add('        if int(entry.get("zero_based_index", -1)) == index:')
+    $lines.Add('            return entry.duplicate(true)')
+    $lines.Add('    return {}')
     $lines.Add('')
     return [string]::Join("`n", $lines)
 }
@@ -457,6 +630,9 @@ $routeCatalog = Get-Content -LiteralPath $routePath -Raw -Encoding UTF8 |
 $crtRandCatalog =
     Get-Content -LiteralPath $crtRandPath -Raw -Encoding UTF8 |
     ConvertFrom-Json
+$soundCatalog =
+    Get-Content -LiteralPath $soundPath -Raw -Encoding UTF8 |
+    ConvertFrom-Json
 
 $duplicateNames = $addressCatalog.addresses |
     Group-Object name | Where-Object Count -gt 1
@@ -482,6 +658,109 @@ if ($duplicateCrtRandSites -or
 if ([string]$crtRandCatalog.supported_executable_sha256 -cne
     [string]$addressCatalog.supported_executable.sha256) {
     throw 'CRT rand catalog targets a different executable identity.'
+}
+if ([string]$soundCatalog.supported_executable_sha256 -cne
+    [string]$addressCatalog.supported_executable.sha256) {
+    throw 'Sound route catalog targets a different executable identity.'
+}
+$soundSymbols = @(
+    [string]$soundCatalog.request_pipeline.queued.manager_request_symbol
+    [string]$soundCatalog.request_pipeline.queued.request_counter_symbol
+    [string]$soundCatalog.request_pipeline.queued.frame_update_symbol
+    [string]$soundCatalog.request_pipeline.queued.buffer_start_symbol
+    @($soundCatalog.request_pipeline.queued.direct_callers |
+        ForEach-Object { [string]$_ })
+    [string]$soundCatalog.request_pipeline.immediate.manager_request_symbol
+    [string]$soundCatalog.request_pipeline.immediate.buffer_start_symbol
+    @($soundCatalog.request_pipeline.immediate.direct_callers |
+        ForEach-Object { [string]$_ })
+    [string]$soundCatalog.routes.sprite_group.dispatcher_symbol
+    [string]$soundCatalog.routes.sprite_group.request_symbol
+    [string]$soundCatalog.routes.actor_voice.request_symbol
+    @($soundCatalog.routes.actor_voice.selector_symbols |
+        ForEach-Object { [string]$_ })
+    [string]$soundCatalog.routes.global_alarm.request_symbol
+    [string]$soundCatalog.routes.global_alarm.caller_symbol
+    [string]$soundCatalog.routes.global_alarm.call_sequence_symbol
+    [string]$soundCatalog.routes.ui_button_release.request_symbol
+    [string]$soundCatalog.routes.ui_button_release.caller_symbol
+    [string]$soundCatalog.routes.ui_button_release.call_sequence_symbol
+) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+    Sort-Object -Unique
+$addressNames = @($addressCatalog.addresses.name)
+$missingSoundSymbols = @($soundSymbols |
+    Where-Object { $addressNames -notcontains $_ })
+if ($missingSoundSymbols.Count -ne 0) {
+    throw (
+        'Sound route catalog references missing address symbols: ' +
+        ($missingSoundSymbols -join ', '))
+}
+$spriteSoundIndices = @(
+    $soundCatalog.routes.sprite_group.unique_slf_indices |
+        ForEach-Object { [int]$_ })
+$voiceSoundIndices = @(
+    $soundCatalog.routes.actor_voice.unique_slf_indices |
+        ForEach-Object { [int]$_ })
+$directSoundIndices = @(
+    $soundCatalog.routes.global_alarm.slf_indices |
+        ForEach-Object { [int]$_ }) + @(
+    $soundCatalog.routes.ui_button_release.slf_indices |
+        ForEach-Object { [int]$_ })
+$derivedReachable = @(
+    @($spriteSoundIndices | ForEach-Object { $_ - 1 }) +
+    $voiceSoundIndices +
+    $directSoundIndices |
+        Sort-Object -Unique)
+$declaredReachable = @(
+    $soundCatalog.reachable_zero_based_indices |
+        ForEach-Object { [int]$_ })
+$assetOnlySoundIndices = @(
+    $soundCatalog.asset_only_zero_based_indices |
+        ForEach-Object { [int]$_ })
+$allSoundIndices = @(0..([int]$soundCatalog.slf_entry_count - 1))
+if ((Compare-Object $derivedReachable $declaredReachable).Count -ne 0 -or
+    $declaredReachable.Count -ne
+        ($declaredReachable | Sort-Object -Unique).Count -or
+    $assetOnlySoundIndices.Count -ne
+        ($assetOnlySoundIndices | Sort-Object -Unique).Count -or
+    (Compare-Object $allSoundIndices @(
+        $declaredReachable + $assetOnlySoundIndices |
+            Sort-Object -Unique)).Count -ne 0 -or
+    @($declaredReachable |
+        Where-Object { $assetOnlySoundIndices -contains $_ }).Count -ne 0) {
+    throw (
+        'Sound route reachability must be the exact disjoint partition of ' +
+        'the SLF library derived from its four executable routes.')
+}
+foreach ($entry in $soundCatalog.audited_environment_and_ui_entries) {
+    $zeroBased = [int]$entry.zero_based_index
+    if ([int]$entry.one_based_index -ne $zeroBased + 1 -or
+        $zeroBased -lt 0 -or
+        $zeroBased -ge [int]$soundCatalog.slf_entry_count -or
+        [string]::IsNullOrWhiteSpace([string]$entry.resource_name) -or
+        ([string]$entry.reachability -eq 'asset_only') -ne
+            ($assetOnlySoundIndices -contains $zeroBased)) {
+        throw "Invalid audited sound entry at zero-based index $zeroBased."
+    }
+}
+$uiButtonEntries = @($soundCatalog.audited_environment_and_ui_entries |
+    Where-Object {
+        [int]$_.zero_based_index -eq
+            [int]$soundCatalog.routes.ui_button_release.slf_indices[0]
+    })
+$globalAlarmEntries = @($soundCatalog.audited_environment_and_ui_entries |
+    Where-Object {
+        [int]$_.zero_based_index -eq
+            [int]$soundCatalog.routes.global_alarm.slf_indices[0]
+    })
+if ($uiButtonEntries.Count -ne 1 -or
+    [string]$uiButtonEntries[0].reachability -ne 'ui_button_immediate' -or
+    $globalAlarmEntries.Count -ne 1 -or
+    [string]$globalAlarmEntries[0].reachability -ne
+        'sprite_group_and_general_queued' -or
+    [int]$soundCatalog.routes.global_alarm.update_counter_limit -ne 240 -or
+    [int]$soundCatalog.routes.global_alarm.active_request_updates -ne 241) {
+    throw 'Sound route special UI/alarm identities or timing are invalid.'
 }
 $levels = @($routeCatalog.routes | ForEach-Object { [int]$_.selector_level })
 if (($levels | Sort-Object -Unique).Count -ne $levels.Count -or
@@ -513,6 +792,11 @@ $outputs = [ordered]@{
         New-AddressHeader $addressCatalog
     (Join-Path $sdkRoot 'generated\M1937Addresses.cs') =
         New-CSharpAddresses $addressCatalog
+    (Join-Path $sdkRoot 'include\M1937SDK\Sound.hpp') =
+        New-SoundHeader $soundCatalog
+    (Join-Path $repositoryRoot (
+        'Remake\game\scripts\generated\legacy_sound_route_catalog.gd')) =
+        New-GdscriptSoundCatalog $soundCatalog
     (Join-Path $sdkRoot 'include\M1937SDK\CrtRandom.hpp') =
         New-CrtRandomHeader $crtRandCatalog
     (Join-Path $repositoryRoot (

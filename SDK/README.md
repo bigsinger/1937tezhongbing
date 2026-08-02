@@ -28,6 +28,10 @@ PE 指纹和原始指令字节。
   16/20/25/27/28/29 次级搜索、严格 `<128` 插入顺序候选和
   `±(64..191) × ±(32..95)` 目标点。无交叉引用的 `0x45DFC0` 仅作为
   `formal_missions=false` 的休眠证据保留；
+- `Sound.hpp` 由 `sound-routes.json` 生成，固定 126 项 SLF 的四条可执行
+  请求路径、95 条可达/31 条 asset-only 完整分区、980 个 SPR / 2,775 个
+  frame group 审计，以及 GFL 1393 按钮松开和 GFL 1324 尸体警报的精确
+  身份与 241 次活动更新；
 - `Projectiles.hpp` 固定 type 1/2/3/6/7/9 的 effect/mode、
   64/64/64/16/5/8 步长、actor/GFL、直接伤害、L3→L2 碰撞顺序、
   actor 60 命中火花、0x44 运行时投射物布局、Bresenham/抛物线公式和
@@ -214,6 +218,13 @@ F2—F6 在按下沿提交，Esc/F1/F7/W/A/B/R/S/C/M 在松开沿提交，Ctrl/�
 的角色动画 serial。精确 runtime type、SLF 序号和 GFL 映射由 Remake 的
 `legacy_actor_audio_rules.gd` 与无资源测试固化；SDK 调用点目录继续作为
 C++/Godot 生成物的唯一 RVA/semantic 来源。
+
+固定选择器 `sub_45DA20` 不消费随机数，只为 runtime type
+4/5/6/11/12/13/14 请求 SLF 零基 108（GFL 1355 日本士兵警报），并且只由
+尸体 state 3 调用。`sound-routes.json` 进一步闭合队列/立即播放的全部直接
+调用者：雨、雷等 31 条加载记录被明确标为 asset-only，按钮零基 124 与全局
+警报零基 125 则分别由有效松开和 241 次尸体警报更新触发。生成检查会同时验证
+地址符号、调用序列字节和完整 0..125 分区。
 
 任务定义、事件、原子状态和原生插件开发详见
 [`docs/任务Sidecar与原生插件开发指南.md`](docs/任务Sidecar与原生插件开发指南.md)。

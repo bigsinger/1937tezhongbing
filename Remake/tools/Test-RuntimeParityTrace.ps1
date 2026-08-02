@@ -46,6 +46,8 @@ $patrolBaselinePaths = @(
 $patrolBaselinePath = $patrolBaselinePaths[0]
 $contactBaselinePath = Join-Path $remakeRoot `
     'validation\baselines\mod\m000-natural-contact-v1.json'
+$runtimeActorCatalogPath = Join-Path $remakeRoot `
+    'game\data\original_runtime_actor_catalog.json'
 $nativeAlertBaselinePath = Join-Path $remakeRoot `
     'validation\baselines\mod\m000-native-alert-command-v1.json'
 $nativeFailureSceneIndices = @(
@@ -904,9 +906,36 @@ try {
         throw 'Planned route-shape divergence was not detected.'
     }
 
+    # The contact baseline was captured before the independent live-faction
+    # catalog and therefore contains the authored VWF faction for scene 1427.
+    # Build a Remake-shaped candidate with the authoritative runtime factions
+    # instead of incorrectly using that historical MOD trace as both sides.
+    $contactSelfCandidatePath = Join-Path $root `
+        'natural-contact-self-candidate.json'
+    $contactSelfCandidate = Get-Content -LiteralPath $contactBaselinePath `
+        -Raw -Encoding UTF8 | ConvertFrom-Json
+    $contactSelfCandidate.runtime = 'remake'
+    $contactSelfCandidate.trace_id = 'remake-m000-m000-natural-contact-v1'
+    $runtimeActorCatalog = Get-Content `
+        -LiteralPath $runtimeActorCatalogPath `
+        -Raw -Encoding UTF8 | ConvertFrom-Json
+    $runtimeActorProfiles = $runtimeActorCatalog.levels.m000.actors
+    foreach ($checkpoint in @($contactSelfCandidate.checkpoints)) {
+        foreach ($actor in @($checkpoint.actors)) {
+            $runtimeProfileProperty =
+                $runtimeActorProfiles.PSObject.Properties[
+                    [string][int]$actor.scene_index]
+            if ($null -ne $runtimeProfileProperty) {
+                $actor.faction_id =
+                    [int]$runtimeProfileProperty.Value.runtime_faction_id
+            }
+        }
+    }
+    $contactSelfCandidate | ConvertTo-Json -Depth 40 |
+        Set-Content -LiteralPath $contactSelfCandidatePath -Encoding UTF8
     $contactSelf = & $contactCompareScript `
         -ReferenceTrace $contactBaselinePath `
-        -CandidateTrace $contactBaselinePath
+        -CandidateTrace $contactSelfCandidatePath
     if (-not [bool]$contactSelf.passed -or
         [int]$contactSelf.audited_actor_count -ne 54 -or
         @($contactSelf.required_contact_scenes) -notcontains 1598 -or

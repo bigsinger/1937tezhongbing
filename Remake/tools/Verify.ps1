@@ -177,6 +177,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "Godot legacy actor-audio selector tests failed with exit code $LASTEXITCODE."
 }
 
+& $GodotExecutable --headless --path $game --script 'res://tests/legacy_sound_reachability_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot legacy sound-reachability tests failed with exit code $LASTEXITCODE."
+}
+
 & $GodotExecutable --headless --path $game --script 'res://tests/legacy_animation_audio_test.gd'
 if ($LASTEXITCODE -ne 0) {
     throw "Godot legacy animation-audio tests failed with exit code $LASTEXITCODE."
