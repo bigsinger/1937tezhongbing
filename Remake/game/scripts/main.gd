@@ -6,6 +6,9 @@ const ESCORT_UNIT = preload("res://scripts/escort_unit.gd")
 const LEGACY_ESCORT_RULES: Script = preload(
 	"res://scripts/legacy_escort_rules.gd"
 )
+const LEGACY_MISSION_RULES: Script = preload(
+	"res://scripts/legacy_mission_rules.gd"
+)
 const AMBIENT_UNIT = preload("res://scripts/ambient_unit.gd")
 const MISSION_PICKUP = preload("res://scripts/mission_pickup.gd")
 const SIMULATION_SCRIPT: Script = preload("res://scripts/simulation.gd")
@@ -4257,6 +4260,7 @@ func _spawn_legacy_special_world_object(
 	world_object.connect("tree_exited", Callable(self, "_on_legacy_special_world_object_exited").bind(world_object))
 	add_child(world_object)
 	legacy_special_world_objects.append(world_object)
+	_record_native_timed_explosive_presence(world_object)
 	return world_object
 
 
@@ -4644,6 +4648,12 @@ func _on_world_explosion_requested(
 		)
 		if normalized_distance <= 1.0:
 			candidate.call("take_damage", damage, instigator if instigator != null else source)
+	_resolve_native_destroyed_targets_from_explosion(
+		world_position,
+		horizontal_radius,
+		vertical_radius,
+		damage,
+	)
 	var special_visual_burst_count := _apply_legacy_special_damage_bands(
 		source,
 		instigator,
@@ -7692,6 +7702,18 @@ func _publish_item_acquired_if_mission_bound(
 		"trigger_scene_index",
 	]:
 		if payload.has(field) and _scene_is_mission_bound(int(payload[field])):
+			var item_role := str(payload.get("item_role", ""))
+			var collector_name := str(payload.get("collector_name", ""))
+			if (
+				not item_role.is_empty()
+				and not LEGACY_MISSION_RULES.item_holder_is_eligible(
+					str(current_mission.get("id", "")),
+					item_role,
+					collector_name,
+				)
+			):
+				update_status("该任务物品必须交给指定队员携带")
+				return []
 			return _publish_mission_event("item_acquired", payload)
 	return []
 
@@ -7885,6 +7907,113 @@ func _attack_groups_for_actor_variant(
 	)
 
 
+func _current_native_mission_rule() -> Dictionary:
+	return LEGACY_MISSION_RULES.rule_for(
+		str(current_mission.get("id", ""))
+	)
+
+
+func _current_native_target_rule() -> Dictionary:
+	return LEGACY_MISSION_RULES.target_rule_for(
+		str(current_mission.get("id", ""))
+	)
+
+
+func _record_native_timed_explosive_presence(world_object: Node2D) -> void:
+	if world_object == null or not is_instance_valid(world_object):
+		return
+	var rule := _current_native_target_rule()
+	if (
+		str(rule.get("completion", ""))
+			!= LEGACY_MISSION_RULES.TIMED_EXPLOSIVE_WITHIN_RADIUS
+		or int(world_object.get("original_actor_type"))
+			!= int(rule.get("required_runtime_actor_type", 0))
+	):
+		return
+	var binding := str(rule.get("binding", ""))
+	var radius := float(rule.get("radius_world", 0.0))
+	var exclusive := bool(rule.get("exclusive_boundary", true))
+	for scene_index: int in _binding_scenes(binding):
+		if (
+			activated_mission_scenes.has(scene_index)
+			or not world_entities_by_scene.has(scene_index)
+		):
+			continue
+		var entity := world_entities_by_scene[scene_index] as Dictionary
+		var target_position := Vector2(float(entity["x"]), float(entity["y"]))
+		if LEGACY_MISSION_RULES.distance_matches(
+			world_object.global_position,
+			target_position,
+			radius,
+			exclusive,
+		):
+			_complete_native_explosion_scene(scene_index)
+
+
+func _resolve_native_destroyed_targets_from_explosion(
+	explosion_position: Vector2,
+	horizontal_radius: float,
+	vertical_radius: float,
+	damage: int,
+) -> void:
+	var rule := _current_native_target_rule()
+	if (
+		damage <= 0
+		or str(rule.get("completion", ""))
+			!= LEGACY_MISSION_RULES.TARGET_HIT_POINTS_NONPOSITIVE
+	):
+		return
+	for scene_index: int in _binding_scenes(str(rule.get("binding", ""))):
+		if (
+			activated_mission_scenes.has(scene_index)
+			or not world_entities_by_scene.has(scene_index)
+		):
+			continue
+		var entity := world_entities_by_scene[scene_index] as Dictionary
+		var target_position := Vector2(float(entity["x"]), float(entity["y"]))
+		if (
+			LEGACY_MISSION_RULES.explosion_destroys_target(
+				maxi(int(entity.get("current_hit_points", 8)), 1),
+				damage,
+			)
+			and LEGACY_MISSION_RULES.explosion_covers_target(
+				explosion_position,
+				target_position,
+				horizontal_radius,
+				vertical_radius,
+			)
+		):
+			_complete_native_explosion_scene(scene_index)
+
+
+func _complete_native_explosion_scene(scene_index: int) -> bool:
+	if (
+		activated_mission_scenes.has(scene_index)
+		or mission_runtime == null
+		or not mission_runtime.is_configured()
+	):
+		return activated_mission_scenes.has(scene_index)
+	activated_mission_scenes[scene_index] = true
+	_publish_mission_event(
+		"trigger_activated",
+		{"scene_index": scene_index, "display_name": "检测爆炸精灵"},
+	)
+	if not mission_runtime.last_error.is_empty():
+		activated_mission_scenes.erase(scene_index)
+		return false
+	_report_direction_action("place_charge")
+	var all_completed := true
+	for target_scene: int in _binding_scenes("explosion"):
+		if not activated_mission_scenes.has(target_scene):
+			all_completed = false
+			break
+	if all_completed:
+		_report_direction_action("place_all_charges")
+	update_status("原版任务目标 %d 已满足" % scene_index)
+	queue_redraw()
+	return true
+
+
 func _activate_bound_scene(binding_kind: String, scene_index: int) -> bool:
 	if activated_mission_scenes.has(scene_index):
 		return true
@@ -7902,6 +8031,14 @@ func _activate_bound_scene(binding_kind: String, scene_index: int) -> bool:
 	if binding_kind == "explosion":
 		if activated_mission_scenes.has(scene_index):
 			return true
+		var native_rule := _current_native_target_rule()
+		var native_completion := str(native_rule.get("completion", ""))
+		if native_completion == LEGACY_MISSION_RULES.TIMED_EXPLOSIVE_WITHIN_RADIUS:
+			update_status("请选择定时炸药并部署到任务点 128 范围内")
+			return false
+		if native_completion == LEGACY_MISSION_RULES.TARGET_HIT_POINTS_NONPOSITIVE:
+			update_status("该任务点必须由真实爆炸摧毁，不能直接交互完成")
+			return false
 		var charge_policy := _current_charge_policy()
 		var charge_mode := str(charge_policy.get("mode", "preplanted"))
 		var quantity_per_target := maxi(
@@ -8119,8 +8256,13 @@ func _detonate_mission_charges() -> void:
 
 
 func _binding_is_interactive(binding_kind: String) -> bool:
-	if binding_kind in ["exit", "explosion"]:
+	if binding_kind == "exit":
 		return true
+	if binding_kind == "explosion":
+		# The source-backed cases are invisible runtime predicates: type 98 is
+		# either destroyed by an actual blast or observes a nearby type 85.
+		# They never complete through the generic E-key hotspot.
+		return _current_native_target_rule().is_empty()
 	var raw_pickups: Variant = current_mission.get("pickup_bindings", {})
 	if raw_pickups is Dictionary and (raw_pickups as Dictionary).has(binding_kind):
 		return true
@@ -8141,10 +8283,101 @@ func _binding_has_world_marker(binding_kind: String) -> bool:
 
 
 func _evaluate_transient_mission_zones() -> void:
+	_evaluate_native_item_holder_conditions()
 	for scene_index: int in _binding_scenes("exit"):
 		_evaluate_exit_scene(scene_index)
 	_observe_first_ai_zone_approach()
 	_evaluate_simultaneous_zone_rule()
+
+
+func _evaluate_native_item_holder_conditions() -> int:
+	if (
+		mission_runtime == null
+		or not mission_runtime.is_configured()
+		or current_mission_state == null
+		or current_mission_state.is_failed()
+		or current_mission_state.is_victory()
+	):
+		return 0
+	var native_rule := _current_native_mission_rule()
+	var raw_holder_rules: Variant = native_rule.get("item_holders", {})
+	if not raw_holder_rules is Dictionary or (raw_holder_rules as Dictionary).is_empty():
+		return 0
+	var raw_role_drops: Variant = current_mission.get("role_drops", {})
+	if not raw_role_drops is Dictionary:
+		return 0
+	var published := 0
+	for item_role_value: Variant in (raw_holder_rules as Dictionary).keys():
+		var item_role := str(item_role_value)
+		var objective: Dictionary = {}
+		for raw_objective: Variant in current_mission.get("objectives", []) as Array:
+			if not raw_objective is Dictionary:
+				continue
+			var candidate := raw_objective as Dictionary
+			var condition := candidate.get("condition", {}) as Dictionary
+			var where := condition.get("where", {}) as Dictionary
+			if (
+				str(condition.get("event", "")) == "item_acquired"
+				and str(where.get("item_role", "")) == item_role
+			):
+				objective = candidate
+				break
+		if objective.is_empty():
+			continue
+		var objective_id := str(objective.get("id", ""))
+		if (
+			objective_id.is_empty()
+			or current_mission_state.is_objective_complete(objective_id)
+			or not current_mission_state.dependencies_complete(objective)
+		):
+			continue
+		var source_scene_index := -1
+		var item_id := 0
+		for role_binding_value: Variant in (raw_role_drops as Dictionary).keys():
+			var role_binding := str(role_binding_value)
+			var raw_drop: Variant = (raw_role_drops as Dictionary)[role_binding_value]
+			if (
+				not raw_drop is Dictionary
+				or str((raw_drop as Dictionary).get("item_role", "")) != item_role
+			):
+				continue
+			item_id = int((raw_drop as Dictionary).get("original_item_id", 0))
+			var scenes := _binding_scenes(role_binding)
+			if not scenes.is_empty():
+				source_scene_index = scenes[0]
+			break
+		if item_id <= 0 or source_scene_index < 0:
+			continue
+		for unit: SQUAD_UNIT in units:
+			if (
+				not unit.is_alive
+				or unit.backpack_inventory == null
+				or not LEGACY_MISSION_RULES.item_holder_is_eligible(
+					str(current_mission.get("id", "")),
+					item_role,
+					str(unit.display_name),
+				)
+				or unit.backpack_inventory.item_count(item_id) <= 0
+			):
+				continue
+			var completed := _publish_mission_event(
+				"item_acquired",
+				{
+					"item_role": item_role,
+					"item_id": item_id,
+					"original_item_id": item_id,
+					"source_scene_index": source_scene_index,
+					"collector_name": str(unit.display_name),
+				},
+			)
+			if not mission_runtime.last_error.is_empty():
+				break
+			if not completed.is_empty() or current_mission_state.is_objective_complete(
+				objective_id
+			):
+				published += 1
+			break
+	return published
 
 
 func _observe_first_ai_zone_approach() -> void:
@@ -8260,8 +8493,27 @@ func _evaluate_exit_scene(scene_index: int) -> void:
 
 
 func _required_exit_party_is_present(exit_position: Vector2) -> bool:
+	var native_rules: Dictionary = LEGACY_MISSION_RULES.exit_rule_for(
+		str(current_mission.get("id", ""))
+	)
 	var raw_rules: Variant = current_mission.get("exit_party", {})
-	var rules := raw_rules as Dictionary if raw_rules is Dictionary else {}
+	var rules: Dictionary = (
+		native_rules
+		if not native_rules.is_empty()
+		else (raw_rules as Dictionary if raw_rules is Dictionary else {})
+	)
+	var radius_world := float(
+		rules.get("radius_world", MISSION_INTERACTION_RADIUS)
+	)
+	var exclusive_boundary := bool(
+		rules.get("exclusive_boundary", false)
+	)
+	var raw_runtime_types: Variant = rules.get("player_runtime_types", {})
+	var player_runtime_types := (
+		raw_runtime_types as Dictionary
+		if raw_runtime_types is Dictionary
+		else {}
+	)
 	var raw_player_names: Variant = rules.get("player_names", [])
 	if raw_player_names is Array and not (raw_player_names as Array).is_empty():
 		for name_value: Variant in raw_player_names as Array:
@@ -8272,8 +8524,19 @@ func _required_exit_party_is_present(exit_position: Vector2) -> bool:
 					continue
 				found_player = (
 					unit.is_alive
-					and unit.position.distance_to(exit_position) <= MISSION_INTERACTION_RADIUS
+					and LEGACY_MISSION_RULES.distance_matches(
+						unit.position,
+						exit_position,
+						radius_world,
+						exclusive_boundary,
+					)
 				)
+				if found_player and player_runtime_types.has(required_name):
+					var allowed_types: Variant = player_runtime_types[required_name]
+					found_player = (
+						allowed_types is Array
+						and (allowed_types as Array).has(unit.runtime_actor_type)
+					)
 				break
 			if not found_player:
 				return false
@@ -8283,7 +8546,12 @@ func _required_exit_party_is_present(exit_position: Vector2) -> bool:
 			if not unit.is_alive:
 				continue
 			living_players += 1
-			if unit.position.distance_to(exit_position) > MISSION_INTERACTION_RADIUS:
+			if not LEGACY_MISSION_RULES.distance_matches(
+				unit.position,
+				exit_position,
+				radius_world,
+				exclusive_boundary,
+			):
 				return false
 		if living_players == 0:
 			return false
@@ -8306,7 +8574,12 @@ func _required_exit_party_is_present(exit_position: Vector2) -> bool:
 			found_escort = (
 				escort.is_alive
 				and escort.rescued_state
-				and escort.position.distance_to(exit_position) <= MISSION_INTERACTION_RADIUS
+				and LEGACY_MISSION_RULES.distance_matches(
+					escort.position,
+					exit_position,
+					radius_world,
+					exclusive_boundary,
+				)
 			)
 			break
 		if not found_escort:

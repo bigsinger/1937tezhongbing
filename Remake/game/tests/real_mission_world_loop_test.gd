@@ -12,6 +12,12 @@ const GAME_INPUT_BINDINGS: Script = preload(
 const LEGACY_ESCORT_RULES: Script = preload(
 	"res://scripts/legacy_escort_rules.gd"
 )
+const LEGACY_MISSION_RULES: Script = preload(
+	"res://scripts/legacy_mission_rules.gd"
+)
+const LEGACY_SPECIAL_ACTION_PROFILES: Script = preload(
+	"res://scripts/legacy_special_action_profiles.gd"
+)
 const LEGACY_DISGUISE_RULES: Script = preload(
 	"res://scripts/legacy_disguise_rules.gd"
 )
@@ -1012,8 +1018,14 @@ func _collect_role_item(
 
 func _place_all_charges(main: Node) -> void:
 	var scenes: Array[int] = main._binding_scenes("explosion")
+	var native_rule: Dictionary = main._current_native_target_rule()
+	if not native_rule.is_empty() and not scenes.is_empty():
+		_assert_native_target_rejects_generic_interaction(main, scenes[0])
 	for scene_index: int in scenes:
-		_interact_bound_scene(main, scene_index)
+		if native_rule.is_empty():
+			_interact_bound_scene(main, scene_index)
+		else:
+			_satisfy_native_explosion_scene(main, scene_index, native_rule)
 	var every_scene_activated := true
 	for scene_index: int in scenes:
 		if not main.activated_mission_scenes.has(scene_index):
@@ -1023,6 +1035,77 @@ func _place_all_charges(main: Node) -> void:
 		every_scene_activated,
 		"%s activates every real explosion scene" % str(main.current_mission.get("id", "")),
 	)
+
+
+func _assert_native_target_rejects_generic_interaction(
+	main: Node,
+	scene_index: int,
+) -> void:
+	var entity: Variant = main.world_entities_by_scene.get(scene_index)
+	_expect(entity is Dictionary, "native target scene %d exists for E rejection" % scene_index)
+	if not entity is Dictionary:
+		return
+	var actor: Node2D = _first_living_player(main)
+	_expect(actor != null, "native target E rejection has a living player")
+	if actor == null:
+		return
+	var target_position := Vector2(float(entity["x"]), float(entity["y"]))
+	main.select_only(actor)
+	actor.position = target_position
+	_press_interact_key()
+	_expect(
+		not main.activated_mission_scenes.has(scene_index),
+		"native target scene %d cannot be forged by the generic E interaction"
+			% scene_index,
+	)
+	# The following authentic blast must not kill the fixture actor merely
+	# because the negative interaction check placed it on the detector.
+	actor.position = target_position + Vector2(256.0, 0.0)
+
+
+func _satisfy_native_explosion_scene(
+	main: Node,
+	scene_index: int,
+	native_rule: Dictionary,
+) -> void:
+	if main.activated_mission_scenes.has(scene_index):
+		return
+	var entity: Variant = main.world_entities_by_scene.get(scene_index)
+	_expect(entity is Dictionary, "native target scene %d exists" % scene_index)
+	if not entity is Dictionary:
+		return
+	var attacker: Node2D = _first_living_player(main)
+	_expect(attacker != null, "native target scene %d has a living source actor" % scene_index)
+	if attacker == null:
+		return
+	var target_position := Vector2(float(entity["x"]), float(entity["y"]))
+	var profile: Dictionary = LEGACY_SPECIAL_ACTION_PROFILES.profile_for_attack_type(10)
+	var world_object: Node2D = main._spawn_legacy_special_world_object(
+		profile,
+		target_position,
+		attacker,
+	)
+	_expect(
+		world_object != null,
+		"native target scene %d creates the real actor-85 world object" % scene_index,
+	)
+	if world_object == null:
+		return
+	committed_world_actions += 1
+	if (
+		str(native_rule.get("completion", ""))
+		== LEGACY_MISSION_RULES.TARGET_HIT_POINTS_NONPOSITIVE
+	):
+		world_object.call(
+			"advance_world_ticks",
+			maxi(int(profile.get("fuse_world_ticks", 100)), 1),
+		)
+	_expect(
+		main.activated_mission_scenes.has(scene_index),
+		"native scene %d completes through its recovered world-state predicate"
+			% scene_index,
+	)
+	_flush_completed_objective_saves(main)
 
 
 func _interact_bound_scene(main: Node, scene_index: int) -> void:

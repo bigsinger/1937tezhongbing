@@ -150,18 +150,24 @@ func _run() -> void:
 	}
 	main.activated_mission_scenes.clear()
 	_expect(
-		main._activate_bound_scene("explosion", 2520)
+		not main._activate_bound_scene("explosion", 2520)
+		and not main.activated_mission_scenes.has(2520),
+		"source-backed blast targets reject the generic E-key completion path",
+		failures,
+	)
+	_expect(
+		main._complete_native_explosion_scene(2520)
 		and activation_runtime.observed_active
 		and main.activated_mission_scenes.has(2520),
-		"the causal blast is marked before synchronous next-incomplete camera dispatch",
+		"the causal native blast is marked before synchronous next-incomplete camera dispatch",
 		failures,
 	)
 	activation_runtime.reject = true
 	_expect(
-		not main._activate_bound_scene("explosion", 2521)
+		not main._complete_native_explosion_scene(2521)
 		and activation_runtime.observed_active
 		and not main.activated_mission_scenes.has(2521),
-		"a rejected blast rolls its tentative director activation back",
+		"a rejected native blast rolls its tentative director activation back",
 		failures,
 	)
 

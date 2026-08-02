@@ -144,6 +144,7 @@ func _run_tests() -> void:
 	_test_m008_manual_explosion_sequence(failures)
 	_test_m010_simultaneous_high_ground(failures)
 	_test_mission_rule_profiles(failures)
+	_test_native_mission_item_holder_scan(failures)
 	_test_mission_media_cues(failures)
 	_test_all_mission_world_event_closures(failures)
 
@@ -1171,6 +1172,74 @@ func _test_mission_rule_profiles(failures: Array[String]) -> void:
 		"catalog validation rejects incomplete dual-rule mission profiles",
 		failures,
 	)
+
+
+func _test_native_mission_item_holder_scan(failures: Array[String]) -> void:
+	var mission: Dictionary = MISSION_DATA.load_mission("m004")
+	var state = MISSION_STATE.new(mission)
+	var runtime = MISSION_RUNTIME_SCRIPT.new()
+	root.add_child(runtime)
+	_expect(
+		runtime.configure(mission, _build_mission_level_fixture(mission), state),
+		"m004 native holder fixture configures its real scene bindings",
+		failures,
+	)
+	runtime.publish_world_event(
+		"role_eliminated",
+		{"role_id": "m004_plan_officer", "scene_index": 2637},
+	)
+	var main = MAIN_SCRIPT.new()
+	main.current_mission = mission
+	main.current_mission_state = state
+	main.mission_runtime = runtime
+	var empty_groups: Array[Dictionary] = []
+	var wrong_holder = SQUAD_UNIT_SCRIPT.new()
+	wrong_holder.configure(
+		"老赵",
+		Color.WHITE,
+		Vector2.ZERO,
+		null,
+		empty_groups,
+		empty_groups,
+	)
+	wrong_holder.add_backpack_item(101, 1, 0)
+	var eligible_holder = SQUAD_UNIT_SCRIPT.new()
+	eligible_holder.configure(
+		"古明",
+		Color.WHITE,
+		Vector2.ZERO,
+		null,
+		empty_groups,
+		empty_groups,
+	)
+	main.add_child(wrong_holder)
+	main.add_child(eligible_holder)
+	main.units.assign([wrong_holder, eligible_holder])
+	_expect(
+		main._evaluate_native_item_holder_conditions() == 0
+		and not state.is_objective_complete("acquire_plan"),
+		"m004 current-container evaluator rejects item 101 in Old Zhao's backpack",
+		failures,
+	)
+	var transferred: Dictionary = wrong_holder.backpack_inventory.take_for_drop(
+		101,
+		1,
+	)
+	eligible_holder.add_backpack_item(
+		101,
+		int(transferred.get("quantity", 0)),
+		int(transferred.get("quantity_mode", 0)),
+	)
+	_expect(
+		not transferred.is_empty()
+		and main._evaluate_native_item_holder_conditions() == 1
+		and state.is_objective_complete("acquire_plan"),
+		"m004 current-container evaluator advances after item 101 transfers to Gu Ming",
+		failures,
+	)
+	main.mission_runtime = null
+	main.free()
+	runtime.free()
 
 
 func _test_mission_media_cues(failures: Array[String]) -> void:

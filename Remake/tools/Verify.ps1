@@ -152,6 +152,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "Godot legacy escort-rule tests failed with exit code $LASTEXITCODE."
 }
 
+& $GodotExecutable --headless --path $game --script 'res://tests/legacy_mission_rules_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot legacy mission-rule tests failed with exit code $LASTEXITCODE."
+}
+
 & $GodotExecutable --headless --path $game --script 'res://tests/legacy_world_items_test.gd'
 if ($LASTEXITCODE -ne 0) {
     throw "Godot legacy world-item tests failed with exit code $LASTEXITCODE."

@@ -122,27 +122,32 @@ type 11 的项目 99 没有原版数字快捷键，也不进入开局配置；�
 ### 3.1 任务爆破与角色炸药
 
 DBL 998 的物品 45 明确位于拾取角色的武器容器，不是共享背包或
-`field_inventory`。原程序“哪些任务目标另外消耗炸药”的完整实现尚未恢复，
-`missions.json` 因而把当前规则显式标为
-`remake_policy_from_recovered_map_inventory`，依据每关地图炸药数量与爆破
-scene 数量选择两种无歧义模式：
+`field_inventory`。type 10 在攻击命中帧从该容器消费一次物品 45 并创建
+actor 85；m003/m008 的原任务求值器只查询 type 98 严格 128 像素内是否
+存在 actor 85，不会再从任务层扣一次。m001/m002/m004 则观察 type 98 的
+生命是否归零，由手榴弹、油桶或定时炸药产生的真实 `128×64` 世界爆炸均可
+满足，而对目标按 `E` 不会推进。
+
+`missions.json` 继续保留来源为
+`remake_policy_from_recovered_map_inventory` 的兼容策略，以便校验逐关地图
+物资闭环和支持尚未恢复专用求值器的分支：
 
 | 关卡 | DBL 998 拾取数 | 爆破目标数 | 当前策略 |
 |---|---:|---:|---|
-| m001 | 1 | 2 | `preplanted`：目标视为已预置炸药，不扣角色物品 45 |
-| m002 | 1 | 1 | `inventory_required`：每个目标消耗 1 份炸药 |
-| m003 | 6 | 5 | `inventory_required`：每个目标消耗 1 份，地图多 1 份容错 |
-| m004 | 0 | 2 | `preplanted`：粮仓使用预置引燃物，不扣角色物品 45 |
-| m008 | 4 | 4 | `inventory_required`：每个目标消耗 1 份炸药 |
+| m001 | 1 | 2 | 原生 type 98 生命判定：接受真实世界爆炸 |
+| m002 | 1 | 1 | 原生 type 98 生命判定：物品 45 由部署动作消费 |
+| m003 | 6 | 5 | 原生 type 85 严格半径判定：每处部署一份 |
+| m004 | 0 | 2 | 原生 type 98 生命判定：地图无强造的背包炸药 |
+| m008 | 4 | 4 | 原生 type 85 严格半径判定：每处部署一份 |
 | m009 | 9 | 4 | `inventory_required`：每个目标消耗 1 份炸药 |
 | m011 | 4 | 6 | `preplanted`：六目标修复后物资不足，视为预置炸药 |
 
-`inventory_required` 目标会先汇总角色容器中的物品 45，再经
+没有专用原生求值器的 `inventory_required` 兼容目标会先汇总角色容器中的物品 45，再经
 `MissionRuntime.publish_world_event()` 校验当前关卡和 scene 绑定；只有发布
 成功且没有运行时错误后，才按“当前选中角色优先、其余队员随后”的顺序扣除，
 并把目标标记为已激活。缺炸药、无效策略、未配置运行时或被拒绝的 scene
-均不会扣除，也不会留下“幽灵完成”状态。type 10 自身已在攻击命中帧消费
-一次物品 45，世界对象生成回调不会再从共享库存重复扣除。
+均不会扣除，也不会留下“幽灵完成”状态。该路径不得用于覆盖 m001/m002/
+m003/m004/m008 的原生世界状态规则。
 
 ## 4. type 8/10 特殊部署物与汽油桶
 
@@ -218,7 +223,9 @@ actor 61 的 128 伤害和 `ProjectileWorld` 分流。`original_inventory_test.g
 `world_interactables_test.gd` 覆盖原关卡拾取点击框、32×16 邻格、
 远距离自动寻路和一次转移，以及 type 8 基础世界交互、汽油桶
 受伤与连锁爆炸，以及七关爆破策略的 schema、真实 DBL 998 计数、成功后
-扣除和失败不扣除；`legacy_special_actions_test.gd` 覆盖 type 8/10/11
+扣除和失败不扣除；`legacy_mission_rules_test.gd` 与真实关卡短闭环额外固定
+五关 type 98/type 85 求值、严格/包含 128 边界并拒绝 `E` 伪完成；
+`legacy_special_actions_test.gd` 覆盖 type 8/10/11
 生命周期，`legacy_explosion_visual_test.gd` 固定 actor 61/62 主动画、粒子
 目录、随机序列、散布、缺失 type 102 和 90/150 tick 边界。各套件在日志中
 报告当前检查数，文档不固定复制计数。真实导入资源存在时，`Verify.ps1`

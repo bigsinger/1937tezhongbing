@@ -262,6 +262,38 @@ int main(int argc, char** argv) {
                         m1937::sdk::mission::Outcome::failed),
                     "failed") == 0,
             "mission outcome mapping mismatch", checks);
+        {
+        using namespace m1937::sdk::mission;
+        const auto* mission2 = find_interaction_rule(2);
+        const auto* mission4 = find_interaction_rule(4);
+        const auto* mission5 = find_interaction_rule(5);
+        const auto* mission9 = find_interaction_rule(9);
+        require(
+            mission2 && mission4 && mission5 && mission9 &&
+                mission2->target_predicate ==
+                    TargetPredicate::hit_points_nonpositive &&
+                mission2->required_exit_actor_runtime_type == 91 &&
+                mission4->target_predicate ==
+                    TargetPredicate::timed_explosive_within_radius &&
+                mission4->required_nearby_runtime_type == 85 &&
+                mission4->target_radius_exclusive &&
+                character_allowed(
+                    mission5->item_101_holder_mask,
+                    character_gu_ming) &&
+                character_allowed(
+                    mission5->item_101_holder_mask,
+                    character_daniu) &&
+                mission9->exit_radius_exclusive,
+            "recovered mission interaction table mismatch", checks);
+        require(
+            distance_matches(127, 0, 128, true) &&
+                !distance_matches(128, 0, 128, true) &&
+                distance_matches(128, 0, 128, false) &&
+                !damage_destroys_target(8, 7) &&
+                damage_destroys_target(8, 8) &&
+                find_interaction_rule(6) == nullptr,
+            "recovered mission boundary semantics mismatch", checks);
+        }
 
         {
         using namespace m1937::sdk::crt_random;
