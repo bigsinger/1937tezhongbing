@@ -33,11 +33,12 @@ $expected = [ordered]@{
     help = @('full_surface', 1024, 768, 'world_or_full_overlay')
     items = @('native_overlay_crop', 276, 421, 'rgb565_original_inventory_overlay')
     weapons = @('native_overlay_crop', 276, 421, 'rgb565_original_inventory_overlay')
+    pause = @('native_overlay_crop', 132, 318, 'world_or_full_overlay')
     minimap = @('native_overlay_crop', 336, 166, 'world_or_full_overlay')
 }
 $samples = @($baseline.samples)
 if ($samples.Count -ne $expected.Count) {
-    throw 'Original overlay visual baseline must contain four samples.'
+    throw 'Original overlay visual baseline must contain five samples.'
 }
 foreach ($entry in $expected.GetEnumerator()) {
     $matches = @($samples | Where-Object overlay -CEQ $entry.Key)
@@ -73,4 +74,4 @@ foreach ($entry in $expected.GetEnumerator()) {
 
 Write-Host (
     'Original overlay visual baselines passed: F1, item inventory, weapon ' +
-    'inventory and minimap; no original screenshots committed.')
+    'inventory, pause menu and minimap; no original screenshots committed.')

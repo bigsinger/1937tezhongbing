@@ -52,7 +52,7 @@ if ($Overlay -in @('weapons', 'items')) {
     $thresholdProfile = 'rgb565_original_inventory_overlay'
 }
 $overlayBaseline = $null
-if ($Overlay -eq 'minimap') {
+if ($Overlay -in @('minimap', 'pause')) {
     if (-not (Test-Path -LiteralPath $overlayBaselinePath -PathType Leaf)) {
         throw "Original overlay baseline is missing: $overlayBaselinePath"
     }
@@ -592,10 +592,42 @@ try {
         $comparisonCandidate = $remakeImage
         $comparisonScope = 'full_surface'
         $overlayRegion = $null
-        if ($Overlay -in @('weapons', 'items', 'minimap')) {
+        if ($Overlay -in @('weapons', 'items', 'minimap', 'pause')) {
             $overlayWidth = 276
             $overlayHeight = 421
-            if ($Overlay -eq 'minimap') {
+            $referenceLeft = $surfaceWidth - $overlayWidth
+            $referenceTop = $surfaceHeight - 62 - $overlayHeight
+            $candidateLeft = $candidateWidth - $overlayWidth
+            $candidateTop = $candidateHeight - 62 - $overlayHeight
+            if ($Overlay -eq 'pause') {
+                $referenceViewport = @($overlayBaseline.viewports | Where-Object {
+                    [int]$_.width -eq $surfaceWidth -and
+                    [int]$_.height -eq $surfaceHeight
+                })
+                $candidateViewport = @($overlayBaseline.viewports | Where-Object {
+                    [int]$_.width -eq $candidateWidth -and
+                    [int]$_.height -eq $candidateHeight
+                })
+                if ($referenceViewport.Count -ne 1 -or
+                    $candidateViewport.Count -ne 1) {
+                    throw (
+                        'Pause-menu baseline supports only its versioned ' +
+                        '1024x768 and 1920x1080 viewports.')
+                }
+                $referenceRect = @($referenceViewport[0].pause_menu_rect)
+                $candidateRect = @($candidateViewport[0].pause_menu_rect)
+                $overlayWidth = [int]$referenceRect[2]
+                $overlayHeight = [int]$referenceRect[3]
+                if ($overlayWidth -ne [int]$candidateRect[2] -or
+                    $overlayHeight -ne [int]$candidateRect[3]) {
+                    throw 'Pause-menu baseline dimensions disagree across runtimes.'
+                }
+                $referenceLeft = [int]$referenceRect[0]
+                $referenceTop = [int]$referenceRect[1]
+                $candidateLeft = [int]$candidateRect[0]
+                $candidateTop = [int]$candidateRect[1]
+            }
+            elseif ($Overlay -eq 'minimap') {
                 $mapRecord = @($overlayBaseline.minimaps | Where-Object {
                     [string]$_.level_id -ceq $levelId
                 })
@@ -604,11 +636,11 @@ try {
                 }
                 $overlayWidth = [int]$mapRecord[0].width
                 $overlayHeight = [int]$mapRecord[0].height
+                $referenceLeft = $surfaceWidth - $overlayWidth
+                $referenceTop = $surfaceHeight - 62 - $overlayHeight
+                $candidateLeft = $candidateWidth - $overlayWidth
+                $candidateTop = $candidateHeight - 62 - $overlayHeight
             }
-            $referenceLeft = $surfaceWidth - $overlayWidth
-            $referenceTop = $surfaceHeight - 62 - $overlayHeight
-            $candidateLeft = $candidateWidth - $overlayWidth
-            $candidateTop = $candidateHeight - 62 - $overlayHeight
             $comparisonReference = Join-Path $comparisonOutput (
                 'stable-mod-overlay.png')
             $comparisonCandidate = Join-Path $comparisonOutput (

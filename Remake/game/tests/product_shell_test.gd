@@ -91,6 +91,27 @@ func _run() -> void:
 		failures,
 	)
 	expect(shell._load_button.disabled, "pause menu disables load without a save", failures)
+	expect(
+		shell._classic_menu_buttons.size() == 8
+		and shell._classic_load_button.disabled
+		and shell._classic_resume_button.visible,
+		"pause menu exposes the eight original entries and mirrors load state",
+		failures,
+	)
+	shell._classic_settings_button.pressed.emit()
+	expect(
+		shell.overlay_mode == GAME_SHELL_SCRIPT.OverlayMode.MODERN_MENU and paused,
+		"original 游戏设置 entry opens the retained modern options page",
+		failures,
+	)
+	expect(shell.close_active_overlay(), "modern options return to the original pause menu", failures)
+	shell._classic_credits_button.pressed.emit()
+	expect(
+		shell.overlay_mode == GAME_SHELL_SCRIPT.OverlayMode.CREDITS and paused,
+		"original 制作人员 entry opens the recovered credits page",
+		failures,
+	)
+	expect(shell.close_active_overlay(), "credits return to the original pause menu", failures)
 	shell._show_settings()
 	expect(
 		shell.overlay_mode == GAME_SHELL_SCRIPT.OverlayMode.SETTINGS
@@ -195,7 +216,7 @@ func _run() -> void:
 			level_requests.append(level_id)
 	)
 	shell.show_pause_menu(false)
-	shell._level_select_button.pressed.emit()
+	shell._classic_level_select_button.pressed.emit()
 	expect(
 		shell.overlay_mode == GAME_SHELL_SCRIPT.OverlayMode.LEVEL_SELECTOR
 		and paused
@@ -567,6 +588,13 @@ func _run() -> void:
 		and shell._failure_desaturate.visible
 		and not shell._save_button.visible,
 		"failure mode desaturates, pauses, and removes saving",
+		failures,
+	)
+	expect(
+		not shell._classic_resume_button.visible
+		and not shell._classic_save_button.visible
+		and shell._classic_load_button.visible,
+		"failure mode mirrors the valid original menu actions",
 		failures,
 	)
 	var escape := InputEventKey.new()

@@ -30,6 +30,12 @@ const ORIGINAL_INVENTORY_POPUP_SIZE := Vector2(276.0, 421.0)
 const ORIGINAL_BOTTOM_HUD_HEIGHT := 62.0
 const ORIGINAL_INVENTORY_BACKGROUND_PSD := 1129
 const ORIGINAL_HELP_SIZE := Vector2(640.0, 480.0)
+const ORIGINAL_PAUSE_MENU_SIZE := Vector2(132.0, 318.0)
+const ORIGINAL_PAUSE_MENU_CENTER_OFFSET := Vector2(-305.0, -118.0)
+const ORIGINAL_PAUSE_MENU_BUTTON_PITCH := 40.0
+const ORIGINAL_PAUSE_MENU_BACKGROUND_PSD := 1095
+const ORIGINAL_PAUSE_MENU_LABEL_OFFSET := Vector2i(5, 4)
+const ORIGINAL_CREDITS_PSD := 1254
 const OVERLAY_DIM_COLOR := Color(0.018, 0.024, 0.020, 0.78)
 const ORIGINAL_HELP_BACKDROP_COLOR := Color(0.0, 0.0, 0.0, 1.0)
 const ORIGINAL_HUD_PORTRAITS := {
@@ -62,6 +68,16 @@ const ORIGINAL_HUD_ACTIONS: Array[Dictionary] = [
 		"toggle": false,
 	},
 ]
+const ORIGINAL_PAUSE_MENU_BUTTONS: Array[Dictionary] = [
+	{"id": "resume", "normal": 1103, "hover": 1104, "tooltip": "开始游戏"},
+	{"id": "restart", "normal": 1114, "hover": 1115, "tooltip": "重玩本关"},
+	{"id": "missions", "normal": 1101, "hover": 1102, "tooltip": "返回任务"},
+	{"id": "save", "normal": 1097, "hover": 1098, "tooltip": "存储进度"},
+	{"id": "load", "normal": 1109, "hover": 1110, "tooltip": "载入进度"},
+	{"id": "settings", "normal": 1107, "hover": 1108, "tooltip": "游戏设置"},
+	{"id": "credits", "normal": 1112, "hover": 1113, "tooltip": "制作人员"},
+	{"id": "quit", "normal": 1105, "hover": 1106, "tooltip": "退出游戏"},
+]
 const DISPLAY_MODES: Array[String] = ["windowed", "fullscreen", "borderless"]
 const DIFFICULTY_MODES: Array[String] = ["original", "easy", "normal", "hard"]
 const MISSION_RULE_MODES: Array[String] = ["stable_mod", "repaired"]
@@ -76,6 +92,8 @@ enum OverlayMode {
 	SETTINGS,
 	HELP,
 	LEVEL_SELECTOR,
+	MODERN_MENU,
+	CREDITS,
 }
 
 var overlay_mode := OverlayMode.NONE
@@ -98,6 +116,16 @@ var _original_hud_requested_visible := false
 var _dim: ColorRect
 var _failure_desaturate: ColorRect
 var _menu_panel: PanelContainer
+var _classic_menu_panel: Control
+var _classic_menu_buttons: Dictionary = {}
+var _classic_resume_button: TextureButton
+var _classic_restart_button: TextureButton
+var _classic_level_select_button: TextureButton
+var _classic_save_button: TextureButton
+var _classic_load_button: TextureButton
+var _classic_settings_button: TextureButton
+var _classic_credits_button: TextureButton
+var _classic_quit_button: TextureButton
 var _menu_title: Label
 var _menu_message: Label
 var _resume_button: Button
@@ -121,6 +149,7 @@ var _audio_sliders: Dictionary = {}
 var _audio_value_labels: Dictionary = {}
 var _settings_panel: PanelContainer
 var _settings_return_mode := OverlayMode.PAUSE_MENU
+var _modern_menu_return_mode := OverlayMode.PAUSE_MENU
 var _control_buttons: Dictionary = {}
 var _capturing_action := ""
 var _settings_status: Label
@@ -134,6 +163,9 @@ var _inventory_mode := "items"
 var _help_panel: PanelContainer
 var _help_texture: TextureRect
 var _help_fallback: Label
+var _credits_panel: PanelContainer
+var _credits_texture: TextureRect
+var _credits_return_mode := OverlayMode.PAUSE_MENU
 var _slot_selector_panel: PanelContainer
 var _slot_selector: SaveSlotSelector
 var _slot_return_mode := OverlayMode.PAUSE_MENU
@@ -272,14 +304,75 @@ func configure_original_hud_assets(converted_root: String) -> bool:
 		"psd",
 		ORIGINAL_INVENTORY_BACKGROUND_PSD,
 	)
-	if _inventory_background != null and inventory_background != null:
+	var inventory_ready := _inventory_background != null and inventory_background != null
+	if inventory_ready:
 		_inventory_background.texture = inventory_background
-		_original_overlay_assets_ready = true
+	var classic_menu_ready := _configure_original_pause_menu_assets()
+	var credits := _load_original_hud_texture("psd", ORIGINAL_CREDITS_PSD)
+	var credits_ready := _credits_texture != null and credits != null
+	if credits_ready:
+		_credits_texture.texture = credits
+	_original_overlay_assets_ready = (
+		inventory_ready and classic_menu_ready and credits_ready
+	)
 
 	_original_hud_assets_ready = true
 	_update_original_hud_portrait_textures()
 	_update_original_hud_visibility()
 	return true
+
+
+func _configure_original_pause_menu_assets() -> bool:
+	if _classic_menu_buttons.size() != ORIGINAL_PAUSE_MENU_BUTTONS.size():
+		return false
+	var background := _load_original_hud_texture(
+		"psd", ORIGINAL_PAUSE_MENU_BACKGROUND_PSD
+	)
+	if background == null:
+		return false
+	for descriptor: Dictionary in ORIGINAL_PAUSE_MENU_BUTTONS:
+		var button := _classic_menu_buttons.get(str(descriptor["id"])) as TextureButton
+		if button == null:
+			return false
+		var normal := _load_original_hud_texture("psd", int(descriptor["normal"]))
+		var hover := _load_original_hud_texture("psd", int(descriptor["hover"]))
+		if normal == null or hover == null:
+			return false
+		var normal_composite := _compose_original_pause_menu_texture(
+			background, normal
+		)
+		var hover_composite := _compose_original_pause_menu_texture(
+			background, hover
+		)
+		if normal_composite == null or hover_composite == null:
+			return false
+		button.texture_normal = normal_composite
+		button.texture_hover = hover_composite
+		button.texture_pressed = hover_composite
+		button.texture_focused = hover_composite
+		button.texture_disabled = normal_composite
+		button.size = normal_composite.get_size()
+	return true
+
+
+func _compose_original_pause_menu_texture(
+	background: Texture2D,
+	label_texture: Texture2D,
+) -> Texture2D:
+	var background_image := background.get_image()
+	var label_image := label_texture.get_image()
+	if background_image == null or label_image == null:
+		return null
+	if background_image.is_empty() or label_image.is_empty():
+		return null
+	background_image.convert(Image.FORMAT_RGBA8)
+	label_image.convert(Image.FORMAT_RGBA8)
+	background_image.blend_rect(
+		label_image,
+		Rect2i(Vector2i.ZERO, label_image.get_size()),
+		ORIGINAL_PAUSE_MENU_LABEL_OFFSET,
+	)
+	return ImageTexture.create_from_image(background_image)
 
 
 func set_original_hud_visible(visible: bool) -> void:
@@ -363,6 +456,20 @@ func original_overlay_layout_snapshot() -> Dictionary:
 	var map_texture_size := Vector2.ZERO
 	if _map_view != null and _map_view.terrain_texture != null:
 		map_texture_size = _map_view.terrain_texture.get_size()
+	var pause_buttons: Dictionary = {}
+	for button_id: String in _classic_menu_buttons:
+		var button := _classic_menu_buttons[button_id] as TextureButton
+		pause_buttons[button_id] = {
+			"rect": button.get_global_rect(),
+			"visible": button.visible,
+			"disabled": button.disabled,
+			"texture_size": (
+				button.texture_normal.get_size()
+				if button.texture_normal != null
+				else Vector2.ZERO
+			),
+		}
+	var desaturate_material := _failure_desaturate.material as ShaderMaterial
 	return {
 		"assets_ready": _original_overlay_assets_ready,
 		"inventory_rect": (
@@ -383,6 +490,36 @@ func original_overlay_layout_snapshot() -> Dictionary:
 			if _help_texture != null and _help_texture.texture != null
 			else Vector2.ZERO
 		),
+		"pause_menu_rect": (
+			_classic_menu_panel.get_global_rect()
+			if _classic_menu_panel != null
+			else Rect2()
+		),
+		"pause_buttons": pause_buttons,
+		"desaturate_visible": (
+			_failure_desaturate != null and _failure_desaturate.visible
+		),
+		"desaturate_brightness": (
+			float(desaturate_material.get_shader_parameter("brightness"))
+			if desaturate_material != null
+			else 0.0
+		),
+		"desaturate_average_mix": (
+			float(desaturate_material.get_shader_parameter("average_mix"))
+			if desaturate_material != null
+			else 0.0
+		),
+		"credits_rect": (
+			_credits_panel.get_global_rect()
+			if _credits_panel != null
+			else Rect2()
+		),
+		"credits_texture_size": (
+			_credits_texture.texture.get_size()
+			if _credits_texture != null and _credits_texture.texture != null
+			else Vector2.ZERO
+		),
+		"dim_visible": _dim != null and _dim.visible,
 		"backdrop_color": _dim.color if _dim != null else Color.TRANSPARENT,
 	}
 
@@ -399,7 +536,16 @@ func show_pause_menu(can_load: bool, message: String = "") -> void:
 	_next_level_button.visible = false
 	_save_button.visible = true
 	_load_button.disabled = not can_load
-	_resume_button.grab_focus()
+	_classic_resume_button.visible = true
+	_classic_restart_button.visible = true
+	_classic_level_select_button.visible = true
+	_classic_save_button.visible = true
+	_classic_load_button.visible = true
+	_classic_load_button.disabled = not can_load
+	_classic_settings_button.visible = true
+	_classic_credits_button.visible = true
+	_classic_quit_button.visible = true
+	_release_gui_focus()
 
 
 func show_victory(can_load: bool, has_next_level: bool) -> void:
@@ -414,6 +560,15 @@ func show_victory(can_load: bool, has_next_level: bool) -> void:
 	_next_level_button.visible = has_next_level
 	_save_button.visible = true
 	_load_button.disabled = not can_load
+	_classic_resume_button.visible = true
+	_classic_restart_button.visible = true
+	_classic_level_select_button.visible = true
+	_classic_save_button.visible = true
+	_classic_load_button.visible = true
+	_classic_load_button.disabled = not can_load
+	_classic_settings_button.visible = true
+	_classic_credits_button.visible = true
+	_classic_quit_button.visible = true
 	if has_next_level:
 		_next_level_button.grab_focus()
 	else:
@@ -467,10 +622,19 @@ func show_failure(failure_text: String, can_load: bool) -> void:
 	_next_level_button.visible = false
 	_save_button.visible = false
 	_load_button.disabled = not can_load
+	_classic_resume_button.visible = false
+	_classic_restart_button.visible = true
+	_classic_level_select_button.visible = true
+	_classic_save_button.visible = false
+	_classic_load_button.visible = true
+	_classic_load_button.disabled = not can_load
+	_classic_settings_button.visible = true
+	_classic_credits_button.visible = true
+	_classic_quit_button.visible = true
 	if can_load:
-		_load_button.grab_focus()
+		_classic_load_button.grab_focus()
 	else:
-		_restart_button.grab_focus()
+		_classic_restart_button.grab_focus()
 
 
 func show_tactical_map(
@@ -606,6 +770,12 @@ func is_failure_open() -> bool:
 func close_active_overlay() -> bool:
 	if overlay_mode in [OverlayMode.NONE, OverlayMode.FAILURE]:
 		return false
+	if overlay_mode == OverlayMode.MODERN_MENU:
+		_enter_mode(_modern_menu_return_mode)
+		return true
+	if overlay_mode == OverlayMode.CREDITS:
+		_enter_mode(_credits_return_mode)
+		return true
 	if overlay_mode == OverlayMode.SLOT_SELECTOR:
 		_return_from_slot_selector()
 		return true
@@ -707,24 +877,36 @@ func _enter_mode(mode: int) -> void:
 		mode == OverlayMode.FAILURE
 		or (mode == OverlayMode.SLOT_SELECTOR and _slot_return_mode == OverlayMode.FAILURE)
 	)
+	var pause_background := mode == OverlayMode.PAUSE_MENU
+	var desaturate_background := pause_background or failure_background
 	# The original W/A popup is a right-side panel over the live scene.  It
 	# blocks commands while open, but it does not tint the map underneath.
 	# F1 replaces the whole primary surface with black before blitting the
 	# native 640x480 guide; other modal screens retain the modern dimmer.
 	_dim.color = (
 		ORIGINAL_HELP_BACKDROP_COLOR
-		if mode == OverlayMode.HELP
+		if mode in [OverlayMode.HELP, OverlayMode.CREDITS]
 		else OVERLAY_DIM_COLOR
 	)
-	_dim.visible = not failure_background and mode != OverlayMode.INVENTORY
-	_failure_desaturate.visible = failure_background
-	_menu_panel.visible = mode in [OverlayMode.PAUSE_MENU, OverlayMode.FAILURE]
+	var desaturate_material := _failure_desaturate.material as ShaderMaterial
+	if desaturate_material != null:
+		desaturate_material.set_shader_parameter(
+			"brightness", 1.0 if pause_background else 0.48
+		)
+		desaturate_material.set_shader_parameter(
+			"average_mix", 1.0 if pause_background else 0.0
+		)
+	_dim.visible = not desaturate_background and mode != OverlayMode.INVENTORY
+	_failure_desaturate.visible = desaturate_background
+	_classic_menu_panel.visible = mode in [OverlayMode.PAUSE_MENU, OverlayMode.FAILURE]
+	_menu_panel.visible = mode == OverlayMode.MODERN_MENU
 	_map_panel.visible = mode == OverlayMode.TACTICAL_MAP
 	_inventory_panel.visible = mode == OverlayMode.INVENTORY
 	_slot_selector_panel.visible = mode == OverlayMode.SLOT_SELECTOR
 	_settings_panel.visible = mode == OverlayMode.SETTINGS
 	_help_panel.visible = mode == OverlayMode.HELP
 	_level_selector_panel.visible = mode == OverlayMode.LEVEL_SELECTOR
+	_credits_panel.visible = mode == OverlayMode.CREDITS
 
 
 func _close_overlay() -> void:
@@ -758,6 +940,9 @@ func _release_pause() -> void:
 
 func _on_resume_pressed() -> void:
 	if overlay_mode == OverlayMode.FAILURE:
+		return
+	if overlay_mode == OverlayMode.PAUSE_MENU and _next_level_button.visible:
+		_on_next_level_pressed()
 		return
 	_close_overlay()
 	resume_requested.emit()
@@ -806,6 +991,22 @@ func _show_level_selector_from_menu() -> void:
 	show_level_selector(false)
 
 
+func _show_game_settings() -> void:
+	_modern_menu_return_mode = overlay_mode
+	if _modern_menu_return_mode not in [OverlayMode.PAUSE_MENU, OverlayMode.FAILURE]:
+		_modern_menu_return_mode = OverlayMode.PAUSE_MENU
+	_enter_mode(OverlayMode.MODERN_MENU)
+	_menu_title.text = "游戏设置"
+	_menu_message.text = "现代显示、难度与辅助选项"
+
+
+func _show_credits() -> void:
+	_credits_return_mode = overlay_mode
+	if _credits_return_mode not in [OverlayMode.PAUSE_MENU, OverlayMode.FAILURE]:
+		_credits_return_mode = OverlayMode.PAUSE_MENU
+	_enter_mode(OverlayMode.CREDITS)
+
+
 func _on_level_chosen(level_id: String) -> void:
 	_close_overlay()
 	level_requested.emit(level_id)
@@ -826,7 +1027,11 @@ func _on_quit_pressed() -> void:
 
 func _show_settings() -> void:
 	_settings_return_mode = overlay_mode
-	if _settings_return_mode not in [OverlayMode.PAUSE_MENU, OverlayMode.FAILURE]:
+	if _settings_return_mode not in [
+		OverlayMode.PAUSE_MENU,
+		OverlayMode.FAILURE,
+		OverlayMode.MODERN_MENU,
+	]:
 		_settings_return_mode = OverlayMode.PAUSE_MENU
 	_enter_mode(OverlayMode.SETTINGS)
 	if _settings_status != null:
@@ -1033,12 +1238,14 @@ func _build_interface() -> void:
 	_root.add_child(_dim)
 
 	_build_menu_panel()
+	_build_classic_pause_menu()
 	_build_map_panel()
 	_build_inventory_panel()
 	_build_slot_selector_panel()
 	_build_level_selector_panel()
 	_build_settings_panel()
 	_build_help_panel()
+	_build_credits_panel()
 	_root.visible = false
 
 
@@ -1433,6 +1640,72 @@ func _build_menu_panel() -> void:
 	_add_button(content, "退出游戏", _on_quit_pressed)
 
 
+func _build_classic_pause_menu() -> void:
+	_classic_menu_panel = Control.new()
+	_classic_menu_panel.name = "OriginalPauseMenu"
+	_classic_menu_panel.set_anchors_preset(Control.PRESET_CENTER)
+	_classic_menu_panel.offset_left = ORIGINAL_PAUSE_MENU_CENTER_OFFSET.x
+	_classic_menu_panel.offset_top = ORIGINAL_PAUSE_MENU_CENTER_OFFSET.y
+	_classic_menu_panel.offset_right = (
+		ORIGINAL_PAUSE_MENU_CENTER_OFFSET.x + ORIGINAL_PAUSE_MENU_SIZE.x
+	)
+	_classic_menu_panel.offset_bottom = (
+		ORIGINAL_PAUSE_MENU_CENTER_OFFSET.y + ORIGINAL_PAUSE_MENU_SIZE.y
+	)
+	_classic_menu_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_classic_menu_panel.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_root.add_child(_classic_menu_panel)
+
+	_classic_resume_button = _build_classic_pause_button(
+		"resume", 0, _on_resume_pressed
+	)
+	_classic_restart_button = _build_classic_pause_button(
+		"restart", 1, _on_restart_pressed
+	)
+	_classic_level_select_button = _build_classic_pause_button(
+		"missions", 2, _show_level_selector_from_menu
+	)
+	_classic_save_button = _build_classic_pause_button(
+		"save", 3, _on_save_pressed
+	)
+	_classic_load_button = _build_classic_pause_button(
+		"load", 4, _on_load_pressed
+	)
+	_classic_settings_button = _build_classic_pause_button(
+		"settings", 5, _show_game_settings
+	)
+	_classic_credits_button = _build_classic_pause_button(
+		"credits", 6, _show_credits
+	)
+	_classic_quit_button = _build_classic_pause_button(
+		"quit", 7, _on_quit_pressed
+	)
+
+
+func _build_classic_pause_button(
+	button_id: String,
+	row: int,
+	callback: Callable,
+) -> TextureButton:
+	var descriptor: Dictionary = {}
+	for candidate: Dictionary in ORIGINAL_PAUSE_MENU_BUTTONS:
+		if str(candidate["id"]) == button_id:
+			descriptor = candidate
+			break
+	var button := TextureButton.new()
+	button.name = "OriginalPause_%s" % button_id
+	button.position = Vector2(0.0, float(row) * ORIGINAL_PAUSE_MENU_BUTTON_PITCH)
+	button.size = Vector2(132.0, 38.0)
+	button.ignore_texture_size = true
+	button.stretch_mode = TextureButton.STRETCH_KEEP
+	button.focus_mode = Control.FOCUS_ALL
+	button.tooltip_text = str(descriptor.get("tooltip", button_id))
+	button.pressed.connect(callback)
+	_classic_menu_panel.add_child(button)
+	_classic_menu_buttons[button_id] = button
+	return button
+
+
 func _build_settings_panel() -> void:
 	_settings_panel = PanelContainer.new()
 	_settings_panel.name = "SettingsPanel"
@@ -1660,6 +1933,21 @@ func _build_help_panel() -> void:
 	_help_panel.add_child(_help_fallback)
 
 
+func _build_credits_panel() -> void:
+	_credits_panel = PanelContainer.new()
+	_credits_panel.name = "OriginalCreditsPanel"
+	_center_control(_credits_panel, ORIGINAL_HELP_SIZE)
+	_credits_panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+	_root.add_child(_credits_panel)
+	_credits_texture = TextureRect.new()
+	_credits_texture.custom_minimum_size = ORIGINAL_HELP_SIZE
+	_credits_texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_credits_texture.stretch_mode = TextureRect.STRETCH_KEEP
+	_credits_texture.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_credits_texture.mouse_filter = Control.MOUSE_FILTER_STOP
+	_credits_panel.add_child(_credits_texture)
+
+
 func _add_button(parent: Control, text_value: String, callback: Callable) -> Button:
 	var button := Button.new()
 	button.text = text_value
@@ -1675,6 +1963,15 @@ func _center_control(control: Control, dimensions: Vector2) -> void:
 	control.offset_top = -dimensions.y * 0.5
 	control.offset_right = dimensions.x * 0.5
 	control.offset_bottom = dimensions.y * 0.5
+
+
+func _release_gui_focus() -> void:
+	var viewport := get_viewport()
+	if viewport == null:
+		return
+	var focus_owner := viewport.gui_get_focus_owner()
+	if focus_owner != null:
+		focus_owner.release_focus()
 
 
 func _panel_style(color: Color) -> StyleBoxFlat:
@@ -1705,10 +2002,14 @@ func _failure_shader_material() -> ShaderMaterial:
 	shader.code = """
 shader_type canvas_item;
 uniform sampler2D screen_texture : hint_screen_texture, filter_linear;
+uniform float brightness = 0.48;
+uniform float average_mix = 0.0;
 void fragment() {
 	vec4 source = texture(screen_texture, SCREEN_UV);
-	float gray = dot(source.rgb, vec3(0.299, 0.587, 0.114));
-	COLOR = vec4(vec3(gray) * 0.48, 1.0);
+	float luminance = dot(source.rgb, vec3(0.299, 0.587, 0.114));
+	float average = (source.r + source.g + source.b) / 3.0;
+	float gray = mix(luminance, average, average_mix);
+	COLOR = vec4(vec3(gray) * brightness, 1.0);
 }
 """
 	var material := ShaderMaterial.new()

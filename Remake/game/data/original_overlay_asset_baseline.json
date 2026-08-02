@@ -143,6 +143,72 @@
                           ],
                  "anchor":  "viewport_center"
              },
+    "pause_menu":  {
+                       "anchor":  "viewport_center_plus_recovered_1024_offset",
+                       "center_offset":  [
+                                             -305,
+                                             -118
+                                         ],
+                       "panel_size":  [
+                                          132,
+                                          318
+                                      ],
+                       "button_pitch":  40,
+                       "button_background":  {
+                                                 "kind":  "psd",
+                                                 "gfl_index":  1095
+                                             },
+                       "label_offset":  [
+                                            5,
+                                            4
+                                        ],
+                       "background_transform":  "equal_rgb_average_no_dimming",
+                       "button_pairs":  {
+                                            "resume":  [
+                                                           1103,
+                                                           1104
+                                                       ],
+                                            "restart":  [
+                                                            1114,
+                                                            1115
+                                                        ],
+                                            "missions":  [
+                                                             1101,
+                                                             1102
+                                                         ],
+                                            "save":  [
+                                                         1097,
+                                                         1098
+                                                     ],
+                                            "load":  [
+                                                         1109,
+                                                         1110
+                                                     ],
+                                            "settings":  [
+                                                             1107,
+                                                             1108
+                                                         ],
+                                            "credits":  [
+                                                            1112,
+                                                            1113
+                                                        ],
+                                            "quit":  [
+                                                         1105,
+                                                         1106
+                                                     ]
+                                        }
+                   },
+    "credits":  {
+                    "asset":  {
+                                  "kind":  "psd",
+                                  "gfl_index":  1254
+                              },
+                    "size":  [
+                                 640,
+                                 480
+                             ],
+                    "anchor":  "viewport_center"
+                },
     "minimaps":  [
                      {
                          "level_id":  "m000",
@@ -449,7 +515,19 @@
                                             144,
                                             640,
                                             480
-                                        ]
+                                        ],
+                          "pause_menu_rect":  [
+                                                  207,
+                                                  266,
+                                                  132,
+                                                  318
+                                              ],
+                          "credits_rect":  [
+                                               192,
+                                               144,
+                                               640,
+                                               480
+                                           ]
                       },
                       {
                           "width":  1920,
@@ -465,7 +543,19 @@
                                             300,
                                             640,
                                             480
-                                        ]
+                                        ],
+                          "pause_menu_rect":  [
+                                                  655,
+                                                  422,
+                                                  132,
+                                                  318
+                                              ],
+                          "credits_rect":  [
+                                               640,
+                                               300,
+                                               640,
+                                               480
+                                           ]
                       }
                   ],
     "assets":  [
@@ -572,6 +662,142 @@
                        "width":  640,
                        "height":  480,
                        "converted_png_sha256":  "315046736a753a0124cc370c6fee4e4115a939f1a6361e8dcc84b48c8d66b046"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1095,
+                       "resource_name":  "按钮衬底-中.psd",
+                       "width":  132,
+                       "height":  38,
+                       "converted_png_sha256":  "6d30d2f5098e06a4ac9d2c1e8f867dc1ab68e61d67129a14e16c1f8da00cbcc2"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1097,
+                       "resource_name":  "按钮-存储进度.psd",
+                       "width":  120,
+                       "height":  28,
+                       "converted_png_sha256":  "d4fba01274a082c8d1e70f38cc2c9b7527d452b130d72fedecf504308312eafb"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1098,
+                       "resource_name":  "按钮-存储进度-灰.psd",
+                       "width":  120,
+                       "height":  28,
+                       "converted_png_sha256":  "b96446a2c5dd1891c4365ccf6dc8e0f9e94d37254b32196112020162aa4b8807"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1101,
+                       "resource_name":  "按钮-返回任务.psd",
+                       "width":  120,
+                       "height":  29,
+                       "converted_png_sha256":  "30e21b3244774adf9eb4f25e6314fe65049e35024b4c5b8ae39d5b86c0da788a"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1102,
+                       "resource_name":  "按钮-返回任务-亮.psd",
+                       "width":  120,
+                       "height":  29,
+                       "converted_png_sha256":  "a6acef1535be4cc711f8a359990483b518a27345d4718d922f8b488107231065"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1103,
+                       "resource_name":  "按钮-开始游戏.psd",
+                       "width":  119,
+                       "height":  29,
+                       "converted_png_sha256":  "78565f6c1dbbd753cb636b2e6106a62e207fe92fc3cea6c4f1cc07e57073f636"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1104,
+                       "resource_name":  "按钮-开始游戏-亮.psd",
+                       "width":  119,
+                       "height":  29,
+                       "converted_png_sha256":  "064e55bbb92873cefa53a360bb75718f40451f6cbc5bd7e245b3a3055329896e"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1105,
+                       "resource_name":  "按钮-退出游戏.psd",
+                       "width":  120,
+                       "height":  27,
+                       "converted_png_sha256":  "5b8140aff0086e8de5e5b828316b3ef5833026070dd6462300496cc632bd0a8d"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1106,
+                       "resource_name":  "按钮-退出游戏-亮.psd",
+                       "width":  120,
+                       "height":  27,
+                       "converted_png_sha256":  "0a7133a2e91ea5a0937bb222782bb14c58e21446d0a69bbea670feed3a8070ec"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1107,
+                       "resource_name":  "按钮-游戏设置.psd",
+                       "width":  120,
+                       "height":  27,
+                       "converted_png_sha256":  "c4f6ab877d3ba1c8f85629136a2c211fd2b6d24833f241758c85be14e5bdb0a6"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1108,
+                       "resource_name":  "按钮-游戏设置-亮.psd",
+                       "width":  120,
+                       "height":  27,
+                       "converted_png_sha256":  "526f37b0983e7fd454b5d17c9f7a753074194e9dbdaf96eb61cd5f6461e1edc4"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1109,
+                       "resource_name":  "按钮-载入进度.psd",
+                       "width":  120,
+                       "height":  28,
+                       "converted_png_sha256":  "78126a2396533b2a0aa34f8bae1aab64e25151cdc3f97121cf5b85e43608ce6a"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1110,
+                       "resource_name":  "按钮-载入进度-亮.psd",
+                       "width":  120,
+                       "height":  28,
+                       "converted_png_sha256":  "b0c9db8d792e63840426533581205618ef159448c45b7290d7dc016230dbbef7"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1112,
+                       "resource_name":  "按钮-制作人员.psd",
+                       "width":  119,
+                       "height":  28,
+                       "converted_png_sha256":  "07c807d4897cfa2c3ae61aeb5fcf269f39b4f04826dd858c7b968f0c04b6cf93"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1113,
+                       "resource_name":  "按钮-制作人员-亮.psd",
+                       "width":  119,
+                       "height":  28,
+                       "converted_png_sha256":  "5a580471b9b8c99725fc77cb09a7f6c983d97f7ce1346e3ffaaf1982fd330dc2"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1114,
+                       "resource_name":  "按钮-重玩本关.psd",
+                       "width":  120,
+                       "height":  28,
+                       "converted_png_sha256":  "c779207fcb98a4cc3e9c3506d84bb8a6058ed522365583df0049d146034398df"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1115,
+                       "resource_name":  "按钮-重玩本关-亮.psd",
+                       "width":  120,
+                       "height":  28,
+                       "converted_png_sha256":  "89a9a8ebcabb2a496e97dc43e555e3e2786fed4fc09c0ab4147e9601ca84985e"
                    },
                    {
                        "kind":  "psd",
@@ -951,6 +1177,14 @@
                    },
                    {
                        "kind":  "psd",
+                       "gfl_index":  1254,
+                       "resource_name":  "制作人员-样本.psd",
+                       "width":  640,
+                       "height":  480,
+                       "converted_png_sha256":  "8dab54551c6a93aa2259a97566655e61e3e82816bfe4045bfe98ef9e5d5ba4ce"
+                   },
+                   {
+                       "kind":  "psd",
                        "gfl_index":  1258,
                        "resource_name":  "中药.psd",
                        "width":  50,
@@ -968,6 +1202,7 @@
                ],
     "evidence":  {
                      "original_click_formula":  "screen-276+13+50*column, screen-62-421+40+84*row",
+                     "original_pause_geometry":  "1024x768 primary surface: PSD1095 x=207, y=266+40*row; label +5,+4",
                      "runtime_loading":  "Remake loads these exact converted PNG files without filtering",
                      "cursor_runtime":  "mouse.spr primary.x/z are the hotspot and frame_hold_ticks drive a 60 Hz loop",
                      "original_bytes_committed":  false

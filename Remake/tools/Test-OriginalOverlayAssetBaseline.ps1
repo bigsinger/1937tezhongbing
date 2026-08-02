@@ -42,6 +42,21 @@ if ([int]$baseline.help.asset.gfl_index -ne 1047 -or
     @($baseline.help.size) -join ',' -ne '640,480') {
     throw 'Original F1 help identity is invalid.'
 }
+$pauseMenu = $baseline.pause_menu
+if (@($pauseMenu.center_offset) -join ',' -ne '-305,-118' -or
+    @($pauseMenu.panel_size) -join ',' -ne '132,318' -or
+    [int]$pauseMenu.button_pitch -ne 40 -or
+    [int]$pauseMenu.button_background.gfl_index -ne 1095 -or
+    @($pauseMenu.label_offset) -join ',' -ne '5,4' -or
+    [string]$pauseMenu.background_transform -ne
+        'equal_rgb_average_no_dimming' -or
+    @($pauseMenu.button_pairs.PSObject.Properties).Count -ne 8) {
+    throw 'Recovered original pause-menu geometry is invalid.'
+}
+if ([int]$baseline.credits.asset.gfl_index -ne 1254 -or
+    @($baseline.credits.size) -join ',' -ne '640,480') {
+    throw 'Original credits identity is invalid.'
+}
 $expectedLevels = 0..11 | ForEach-Object { 'm{0:D3}' -f $_ }
 $minimapLevels = @($baseline.minimaps.level_id)
 if (@($baseline.minimaps).Count -ne 12 -or
@@ -91,7 +106,13 @@ foreach ($asset in $assets) {
     }
     $keys[$key] = $true
 }
-foreach ($requiredKey in @('psd/1129', 'iblock/1047')) {
+foreach ($requiredKey in @(
+        'psd/1129',
+        'psd/1095',
+        'psd/1254',
+        'psd/1097',
+        'psd/1115',
+        'iblock/1047')) {
     if (-not $keys.ContainsKey($requiredKey)) {
         throw "Required overlay asset is absent: $requiredKey"
     }
@@ -110,8 +131,15 @@ foreach ($viewport in @($baseline.viewports)) {
         (([int]$viewport.height - 480) / 2),
         640,
         480) -join ','
+    $expectedPause = @(
+        (([int]$viewport.width / 2) - 305),
+        (([int]$viewport.height / 2) - 118),
+        132,
+        318) -join ','
     if (@($viewport.inventory_rect) -join ',' -ne $expectedInventory -or
-        @($viewport.help_rect) -join ',' -ne $expectedHelp) {
+        @($viewport.help_rect) -join ',' -ne $expectedHelp -or
+        @($viewport.credits_rect) -join ',' -ne $expectedHelp -or
+        @($viewport.pause_menu_rect) -join ',' -ne $expectedPause) {
         throw "Overlay anchoring is invalid at $($viewport.width)x$($viewport.height)."
     }
 }
@@ -124,5 +152,5 @@ if ($serialized -match 'LocalAssets|[A-Z]:\\|/converted/') {
 }
 
 Write-Host (
-    "Original overlay baseline passed: {0} assets, 12 maps, 16 cursor frames, two viewports." -f
+    "Original overlay baseline passed: {0} assets, 12 maps, 8 pause buttons, 16 cursor frames, two viewports." -f
     $assets.Count)

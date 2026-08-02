@@ -49,6 +49,16 @@ $missionItemPairs = [ordered]@{
     uniform = @(1178, 1179)
     explosives = @(1248, 1249)
 }
+$pauseMenuPairs = [ordered]@{
+    resume = @(1103, 1104)
+    restart = @(1114, 1115)
+    missions = @(1101, 1102)
+    save = @(1097, 1098)
+    load = @(1109, 1110)
+    settings = @(1107, 1108)
+    credits = @(1112, 1113)
+    quit = @(1105, 1106)
+}
 $minimapIds = [ordered]@{
     m000 = 1036; m001 = 1026; m002 = 1027; m003 = 1028
     m004 = 1029; m005 = 1030; m006 = 1031; m007 = 1032
@@ -66,11 +76,18 @@ foreach ($entry in @($manifest.iblock)) {
 $assetKeys = [Collections.Generic.HashSet[string]]::new(
     [StringComparer]::Ordinal)
 [void]$assetKeys.Add('psd/1129')
+[void]$assetKeys.Add('psd/1095')
+[void]$assetKeys.Add('psd/1254')
 [void]$assetKeys.Add('iblock/1047')
 foreach ($id in $minimapIds.Values) {
     [void]$assetKeys.Add("iblock/$id")
 }
 foreach ($pair in $inventoryPairs.Values + $missionItemPairs.Values) {
+    foreach ($id in $pair) {
+        [void]$assetKeys.Add("psd/$id")
+    }
+}
+foreach ($pair in $pauseMenuPairs.Values) {
     foreach ($id in $pair) {
         [void]$assetKeys.Add("psd/$id")
     }
@@ -180,6 +197,16 @@ $viewports = foreach ($viewport in @(
             (($viewport.height - 480) / 2),
             640,
             480)
+        pause_menu_rect = @(
+            (($viewport.width / 2) - 305),
+            (($viewport.height / 2) - 118),
+            132,
+            318)
+        credits_rect = @(
+            (($viewport.width - 640) / 2),
+            (($viewport.height - 480) / 2),
+            640,
+            480)
     }
 }
 
@@ -201,6 +228,21 @@ $baseline = [ordered]@{
     }
     help = [ordered]@{
         asset = @{ kind = 'iblock'; gfl_index = 1047 }
+        size = @(640, 480)
+        anchor = 'viewport_center'
+    }
+    pause_menu = [ordered]@{
+        anchor = 'viewport_center_plus_recovered_1024_offset'
+        center_offset = @(-305, -118)
+        panel_size = @(132, 318)
+        button_pitch = 40
+        button_background = @{ kind = 'psd'; gfl_index = 1095 }
+        label_offset = @(5, 4)
+        background_transform = 'equal_rgb_average_no_dimming'
+        button_pairs = $pauseMenuPairs
+    }
+    credits = [ordered]@{
+        asset = @{ kind = 'psd'; gfl_index = 1254 }
         size = @(640, 480)
         anchor = 'viewport_center'
     }
@@ -228,6 +270,8 @@ $baseline = [ordered]@{
     evidence = [ordered]@{
         original_click_formula = `
             'screen-276+13+50*column, screen-62-421+40+84*row'
+        original_pause_geometry = `
+            '1024x768 primary surface: PSD1095 x=207, y=266+40*row; label +5,+4'
         runtime_loading = `
             'Remake loads these exact converted PNG files without filtering'
         cursor_runtime = `

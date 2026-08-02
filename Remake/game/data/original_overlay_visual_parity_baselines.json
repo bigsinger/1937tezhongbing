@@ -2,12 +2,12 @@
   "schema_version": 1,
   "baseline_id": "stable-mod-original-overlay-visual-parity-v1",
   "content_profile": "repository-mod-12-level-20260729",
-  "captured_utc": "2026-08-02T17:07:07.3778643Z",
+  "captured_utc": "2026-08-02T18:28:03.8741340Z",
   "method": "stable MOD cnc-ddraw RGB565 primary-surface memory versus Remake target viewport; target-process DirectInput replay only; native overlay crops where applicable",
   "input_isolation": "no desktop capture; no global mouse, keyboard or focus input",
   "original_binary_images_committed": false,
   "representative_level": "m000",
-  "coverage_note": "The compositor is exercised on m000; exact source hashes and native dimensions for all 12 minimaps, all inventory icons, the inventory chassis, F1 guide and cursor frames are covered by original_overlay_asset_baseline.json and real_assets_test.gd.",
+  "coverage_note": "The compositor is exercised on m000; exact source hashes and native dimensions for all 12 minimaps, all inventory icons, the inventory chassis, the eight-button pause menu, F1 guide, credits and cursor frames are covered by original_overlay_asset_baseline.json and real_assets_test.gd.",
   "samples": [
     {
       "overlay": "help",
@@ -70,6 +70,27 @@
       },
       "stable_mod_sha256": "377161DAD43C43B92EECF7DFA4902723159F4723885ECC9504511F4AE3F6B08B",
       "remake_sha256": "1D2A758EAAEB4899A325C5AAF343868902B1E4C8808EBD098ED4684E2B51F96F",
+      "passed": true
+    },
+    {
+      "overlay": "pause",
+      "comparison_scope": "native_overlay_crop",
+      "dimensions": [132, 318],
+      "threshold_profile": "world_or_full_overlay",
+      "metrics": {
+        "mean_absolute_error": 4.454323,
+        "near_match_ratio": 0.969173,
+        "edge_correlation": 0.954145,
+        "black_hole_ratio": 0.0
+      },
+      "thresholds": {
+        "maximum_mean_absolute_error": 6.0,
+        "minimum_near_match_ratio": 0.92,
+        "minimum_edge_correlation": 0.94,
+        "maximum_black_hole_ratio": 0.003
+      },
+      "stable_mod_sha256": "D14829C9914CBA2B4083A6313E50E351933653BD53474B834CB8EF93131BF109",
+      "remake_sha256": "BF948507C272765137EE416B1B560A42442CF2224F4ADDAB86804E99DF9307CC",
       "passed": true
     },
     {

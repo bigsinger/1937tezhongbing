@@ -120,7 +120,27 @@ func _run() -> void:
 		main.game_shell.overlay_mode == GAME_SHELL_SCRIPT.OverlayMode.PAUSE_MENU,
 		"Esc pause menu opens",
 	)
+	var pause_layout: Dictionary = main.game_shell.original_overlay_layout_snapshot()
+	_expect(
+		_original_pause_layout_matches_viewport(pause_layout, Vector2(root.size)),
+		"Esc uses the recovered eight-button pause layout and undimmed grayscale",
+	)
 	_capture("pause-menu.jpg")
+	main.game_shell._classic_credits_button.pressed.emit()
+	paused = false
+	_expect(await _wait_for_render_frame(), "credits frame renders")
+	_expect(
+		main.game_shell.overlay_mode == GAME_SHELL_SCRIPT.OverlayMode.CREDITS,
+		"制作人员 opens the original credits composite",
+	)
+	var credits_layout: Dictionary = main.game_shell.original_overlay_layout_snapshot()
+	_expect(
+		(credits_layout.get("credits_texture_size", Vector2.ZERO) as Vector2)
+		== Vector2(640.0, 480.0),
+		"credits retain their original 640x480 pixels",
+	)
+	_capture("credits.jpg")
+	_expect(main.game_shell.close_active_overlay(), "credits return to the pause menu")
 	main.game_shell.close_for_state_change()
 
 	main._open_level_selector(false)
@@ -219,6 +239,26 @@ func _visible_hud_portrait_count(layout: Dictionary) -> int:
 		if bool((raw_portrait as Dictionary).get("visible", false)):
 			count += 1
 	return count
+
+
+func _original_pause_layout_matches_viewport(
+	layout: Dictionary,
+	viewport_size: Vector2,
+) -> bool:
+	var panel_rect := layout.get("pause_menu_rect", Rect2()) as Rect2
+	var expected_rect := Rect2(
+		viewport_size * 0.5 + Vector2(-305.0, -118.0),
+		Vector2(132.0, 318.0),
+	)
+	var buttons := layout.get("pause_buttons", {}) as Dictionary
+	return (
+		panel_rect == expected_rect
+		and buttons.size() == 8
+		and bool(layout.get("desaturate_visible", false))
+		and is_equal_approx(float(layout.get("desaturate_brightness", 0.0)), 1.0)
+		and is_equal_approx(float(layout.get("desaturate_average_mix", 0.0)), 1.0)
+		and not bool(layout.get("dim_visible", true))
+	)
 
 
 func _original_inventory_layout_matches_viewport(

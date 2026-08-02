@@ -6,6 +6,10 @@ const OVERLAY_BASELINE_PATH := "res://data/original_overlay_asset_baseline.json"
 const HUD_HEIGHT := 62.0
 const PORTRAIT_NAMES: Array[String] = ["老赵", "铁蛋", "强子", "古明", "大牛"]
 const PSD_TEXTURE_IDS: Array[int] = [
+	1095,
+	1097, 1098,
+	1101, 1102, 1103, 1104, 1105, 1106,
+	1107, 1108, 1109, 1110, 1112, 1113, 1114, 1115,
 	1126, 1127, 1128,
 	1129,
 	1138,
@@ -16,6 +20,7 @@ const PSD_TEXTURE_IDS: Array[int] = [
 	1198, 1199, 1200,
 	1215, 1216, 1217,
 	1232, 1233,
+	1254,
 ]
 
 var failures: Array[String] = []
@@ -282,6 +287,79 @@ func _check_overlay_layout(shell: GameShell, viewport_size: Vector2i) -> void:
 	)
 	shell.close_for_state_change()
 
+	shell.show_pause_menu(false)
+	paused = false
+	await process_frame
+	await process_frame
+	layout = shell.original_overlay_layout_snapshot()
+	var pause_origin := Vector2(
+		float(viewport_size.x) * 0.5 - 305.0,
+		float(viewport_size.y) * 0.5 - 118.0,
+	)
+	_expect(
+		(layout.get("pause_menu_rect", Rect2()) as Rect2)
+		== Rect2(pause_origin, Vector2(132.0, 318.0)),
+		"original pause menu retains its recovered center-relative geometry at %s"
+		% viewport_size,
+	)
+	var pause_buttons := layout.get("pause_buttons", {}) as Dictionary
+	var ordered_button_ids: Array[String] = [
+		"resume", "restart", "missions", "save",
+		"load", "settings", "credits", "quit",
+	]
+	_expect(
+		pause_buttons.size() == ordered_button_ids.size(),
+		"pause menu exposes exactly the eight original entries",
+	)
+	for row: int in range(ordered_button_ids.size()):
+		var button_id := ordered_button_ids[row]
+		var button_record := pause_buttons.get(button_id, {}) as Dictionary
+		var button_rect := button_record.get("rect", Rect2()) as Rect2
+		var texture_size := button_record.get("texture_size", Vector2.ZERO) as Vector2
+		_expect(
+			button_rect.position == pause_origin + Vector2(0.0, float(row) * 40.0),
+			"pause entry %s retains the recovered 40-pixel row pitch" % button_id,
+		)
+		_expect(
+			button_rect.size == texture_size
+			and texture_size == Vector2(132.0, 38.0),
+			"pause entry %s composites the original 132x38 stone frame" % button_id,
+		)
+	_expect(
+		bool(layout.get("desaturate_visible", false))
+		and is_equal_approx(float(layout.get("desaturate_brightness", 0.0)), 1.0)
+		and is_equal_approx(float(layout.get("desaturate_average_mix", 0.0)), 1.0)
+		and not bool(layout.get("dim_visible", true)),
+		"pause reproduces the original equal-RGB grayscale surface without dimming",
+	)
+
+	shell._show_credits()
+	paused = false
+	await process_frame
+	layout = shell.original_overlay_layout_snapshot()
+	_expect(
+		(layout.get("credits_rect", Rect2()) as Rect2) == Rect2(
+			(float(viewport_size.x) - 640.0) * 0.5,
+			(float(viewport_size.y) - 480.0) * 0.5,
+			640.0,
+			480.0,
+		),
+		"original credits remain centered at native 640x480 in %s" % viewport_size,
+	)
+	_expect(
+		(layout.get("credits_texture_size", Vector2.ZERO) as Vector2)
+		== Vector2(640.0, 480.0),
+		"credits use the original PSD 1254 composite",
+	)
+	_expect(
+		(layout.get("backdrop_color", Color.TRANSPARENT) as Color).is_equal_approx(
+			Color.BLACK
+		),
+		"credits use the original black outer surface",
+	)
+	_expect(shell.close_active_overlay(), "credits return to the owning pause menu")
+	shell.close_for_state_change()
+
 
 func _fixture_texture(dimensions: Vector2i, color: Color) -> Texture2D:
 	var image := Image.create(dimensions.x, dimensions.y, false, Image.FORMAT_RGBA8)
@@ -375,16 +453,37 @@ func _write_fixture_assets(fixture_root: String) -> bool:
 		):
 			return false
 	for index: int in PSD_TEXTURE_IDS:
-		var width := 1024 if index == 1138 else 276 if index == 1129 else 50
-		var height := 62 if index == 1138 else 421 if index == 1129 else 50
+		var fixture_size := _fixture_psd_size(index)
 		if not _save_fixture_png(
 			psd_root.path_join("%04d.png" % index),
-			width,
-			height,
+			fixture_size.x,
+			fixture_size.y,
 			Color(0.25, 0.28, 0.21, 1.0),
 		):
 			return false
 	return true
+
+
+func _fixture_psd_size(index: int) -> Vector2i:
+	match index:
+		1095:
+			return Vector2i(132, 38)
+		1097, 1098, 1109, 1110, 1114, 1115:
+			return Vector2i(120, 28)
+		1101, 1102:
+			return Vector2i(120, 29)
+		1103, 1104, 1112, 1113:
+			return Vector2i(119, 29 if index in [1103, 1104] else 28)
+		1105, 1106, 1107, 1108:
+			return Vector2i(120, 27)
+		1129:
+			return Vector2i(276, 421)
+		1138:
+			return Vector2i(1024, 62)
+		1254:
+			return Vector2i(640, 480)
+		_:
+			return Vector2i(50, 50)
 
 
 func _save_fixture_png(
