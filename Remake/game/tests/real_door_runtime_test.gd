@@ -173,9 +173,10 @@ func _run_tests() -> void:
 			"closed real door blocks at least one recovered passage cell",
 		)
 		_expect(
-			bool(checkpoint_door.call("open"))
+			_click_world(main, checkpoint_door.position)
+				and bool(checkpoint_door.get("is_open"))
 				and main.dynamic_occupancy.is_source_scene_disabled(scene_index),
-			"opening a real door releases its source footprint",
+			"a target-viewport left click opens a real door and releases its source footprint",
 		)
 		_expect(
 			not _any_solid(main.navigation_grid, movement_cells),
@@ -337,11 +338,33 @@ func _audit_static_navigation_footprints(
 func _first_door_with_source_footprint(main: Node) -> Node2D:
 	for door_value: Variant in main.legacy_doors as Array:
 		var door := door_value as Node2D
-		if not (
+		if (
 			door.get("movement_release_cells") as Array[Vector2i]
 		).is_empty():
+			continue
+		var overlaps_player := false
+		for unit_value: Variant in main.units as Array:
+			var unit := unit_value as Node2D
+			if bool(unit.get("is_alive")) and bool(
+				unit.call("contains_parent_point", door.position)
+			):
+				overlaps_player = true
+				break
+		if not overlaps_player:
 			return door
 	return null
+
+
+func _click_world(main: Node, world_position: Vector2) -> bool:
+	main.level_camera.position = world_position
+	main.clamp_level_camera()
+	for pressed: bool in [true, false]:
+		var event := InputEventMouseButton.new()
+		event.button_index = MOUSE_BUTTON_LEFT
+		event.pressed = pressed
+		event.position = main.get_global_transform_with_canvas() * world_position
+		root.push_input(event, true)
+	return true
 
 
 func _door_by_scene(main: Node, scene_index: int) -> Node2D:

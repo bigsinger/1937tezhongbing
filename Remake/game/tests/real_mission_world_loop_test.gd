@@ -6,6 +6,9 @@ const RUNTIME_STATE_SNAPSHOT: Script = preload(
 	"res://scripts/runtime_state_snapshot.gd"
 )
 const GAME_SAVE_STORE: Script = preload("res://scripts/game_save_store.gd")
+const GAME_INPUT_BINDINGS: Script = preload(
+	"res://scripts/game_input_bindings.gd"
+)
 const LEVEL_IDS: Array[String] = [
 	"m000",
 	"m001",
@@ -24,6 +27,7 @@ const LEVEL_IDS: Array[String] = [
 var failures: Array[String] = []
 var check_count := 0
 var committed_world_actions := 0
+var submitted_input_events := 0
 var disk_store: RefCounted
 var disk_test_root := ""
 var disk_capture_enabled := true
@@ -46,6 +50,7 @@ func _run() -> void:
 	root.add_child(main)
 	main.set_process(false)
 	main.set_physics_process(false)
+	main.runtime_settings["controls"] = GAME_INPUT_BINDINGS.default_bindings()
 	disk_test_root = "user://real-mission-objective-disk-%d" % OS.get_process_id()
 	_cleanup_disk_test_root()
 	disk_store = GAME_SAVE_STORE.new(disk_test_root)
@@ -174,6 +179,10 @@ func _run() -> void:
 		"the twelve-level gate exercised a substantial real interaction sequence",
 	)
 	_expect(
+		submitted_input_events >= 2 * LEVEL_IDS.size(),
+		"every level commits mission interactions through target-viewport E input",
+	)
+	_expect(
 		objective_disk_records.size() == expected_objective_records.size(),
 		"every stable-MOD required objective owns a physical disk checkpoint",
 	)
@@ -182,12 +191,13 @@ func _run() -> void:
 			(
 				"Real twelve-level mission world loops passed "
 				+ "(%d checks, %d committed world actions, "
-				+ "%d physical objective resumes)."
+				+ "%d physical objective resumes, %d viewport input events)."
 			)
 			% [
 				check_count,
 				committed_world_actions,
 				objective_disk_records.size(),
+				submitted_input_events,
 			]
 		)
 		quit(0)
@@ -448,7 +458,7 @@ func _rescue_scene(main: Node, scene_index: int) -> void:
 	if target == null:
 		return
 	_select_and_move_player(main, target.position)
-	main.interact_with_mission_world()
+	_press_interact_key()
 	committed_world_actions += 1
 	_expect(
 		bool(target.get("rescued_state")),
@@ -508,7 +518,7 @@ func _collect_specific_field_pickup(main: Node, pickup: Node2D) -> void:
 			_flush_completed_objective_saves(main)
 			return
 		_select_and_move_player(main, pickup.position)
-		main.interact_with_mission_world()
+		_press_interact_key()
 		committed_world_actions += 1
 	_expect(bool(pickup.get("consumed")), "real field pickup is consumable through E")
 	_expect(
@@ -560,7 +570,7 @@ func _collect_role_item(
 		if role_pickup == null:
 			break
 		_select_and_move_player(main, role_pickup.position)
-		main.interact_with_mission_world()
+		_press_interact_key()
 		committed_world_actions += 1
 	_expect(
 		main.current_mission_state.is_objective_complete(objective_id),
@@ -598,7 +608,7 @@ func _interact_bound_scene(main: Node, scene_index: int) -> void:
 		):
 			break
 		_select_and_move_player(main, world_position)
-		main.interact_with_mission_world()
+		_press_interact_key()
 		committed_world_actions += 1
 	_expect(
 		main.activated_mission_scenes.has(scene_index)
@@ -642,6 +652,19 @@ func _use_exit(main: Node, scene_index: int) -> void:
 		if required_escort_scenes.has(int(escort.get("scene_index"))):
 			escort.position = exit_position
 	_interact_bound_scene(main, scene_index)
+
+
+func _press_interact_key() -> void:
+	# Keep mission closure deterministic by positioning the fixture beside each
+	# recovered world target, but enter the product interaction path exactly as a
+	# player does.  Events are submitted only to this Godot test viewport; no
+	# desktop focus, cursor or global input API is used.
+	for pressed: bool in [true, false]:
+		var event := InputEventKey.new()
+		event.keycode = KEY_E
+		event.pressed = pressed
+		root.push_input(event)
+		submitted_input_events += 1
 
 
 func _eliminate_all_hostiles(main: Node) -> void:

@@ -5035,10 +5035,17 @@ void ApplyWindowReplayKeyboard(DWORD size, LPVOID data) {
         return;
     }
     auto *keys = static_cast<unsigned char *>(data);
+    // Automated replay is intentionally process-local and deterministic. Do
+    // not merge the operator's physical keyboard state into a probe run: an
+    // unrelated key press on the desktop must never alter the recorded game
+    // route. This branch is reachable only when both M1937_AUTOTEST and
+    // M1937_WINDOW_REPLAY are explicitly enabled; normal player input keeps
+    // the original DirectInput state above.
+    memset(keys, 0, size);
     bool changed = false;
     for (int index = 0; index < 256; ++index) {
         if ((g_replay_keyboard[index] & 0x80) != 0) {
-            keys[index] |= 0x80;
+            keys[index] = 0x80;
             changed = true;
         }
     }
@@ -5066,12 +5073,18 @@ void ApplyWindowReplayMouse(DWORD size, LPVOID data) {
     const LONG delta_y = g_replay_mouse.lY;
     g_replay_mouse.lX = 0;
     g_replay_mouse.lY = 0;
-    mouse->lX += delta_x;
-    mouse->lY += delta_y;
+    // Like the keyboard path, a replay run owns only the target process's
+    // synthetic DirectInput state. Suppress physical mouse drift, wheel and
+    // buttons so validation never moves or captures the desktop pointer and
+    // cannot inherit a real held button. Normal gameplay never enters this
+    // environment-gated branch.
+    memset(mouse, 0, sizeof(*mouse));
+    mouse->lX = delta_x;
+    mouse->lY = delta_y;
     bool changed = delta_x != 0 || delta_y != 0;
     for (int index = 0; index < 4; ++index) {
         if ((g_replay_mouse.rgbButtons[index] & 0x80) != 0) {
-            mouse->rgbButtons[index] |= 0x80;
+            mouse->rgbButtons[index] = 0x80;
             changed = true;
         }
     }
