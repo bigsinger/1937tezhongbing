@@ -398,6 +398,15 @@ var legacy_crt_random_state := 1
 var legacy_crt_random_draw_index := 0
 var legacy_crt_random_trace_enabled := false
 var legacy_crt_random_trace: Array[Dictionary] = []
+var legacy_crt_random_parity_trace_enabled := false
+var legacy_crt_random_parity_order_context: HashingContext
+var legacy_crt_random_parity_value_context: HashingContext
+var legacy_crt_random_parity_actor_order_context: HashingContext
+var legacy_crt_random_parity_actor_value_context: HashingContext
+var legacy_crt_random_parity_draw_count := 0
+var legacy_crt_random_parity_actor_draw_count := 0
+var legacy_crt_random_parity_call_site_counts: Dictionary = {}
+var legacy_crt_random_parity_actor_call_site_counts: Dictionary = {}
 var field_pickups: Array[Node2D] = []
 var original_pickup_order_target: Node2D
 var original_pickup_order_collector: SQUAD_UNIT
@@ -434,11 +443,16 @@ var runtime_settings: Dictionary = {
 
 
 func _ready() -> void:
+	var command_line_arguments := (
+		OS.get_cmdline_args() + OS.get_cmdline_user_args()
+	)
 	legacy_crt_random_trace_enabled = (
 		OS.get_environment("M1937_REMAKE_RNG_TRACE") == "1"
-		or "--trace-legacy-rng" in (
-			OS.get_cmdline_args() + OS.get_cmdline_user_args()
-		)
+		or "--trace-legacy-rng" in command_line_arguments
+	)
+	legacy_crt_random_parity_trace_enabled = (
+		OS.get_environment("M1937_REMAKE_RNG_PARITY_TRACE") == "1"
+		or "--trace-legacy-rng-parity" in command_line_arguments
 	)
 	_initialize_persistence()
 	_create_media_director()
@@ -467,7 +481,10 @@ func _ready() -> void:
 	queue_redraw()
 
 
-func next_legacy_crt_random(call_site_rva: int) -> Dictionary:
+func next_legacy_crt_random(
+	call_site_rva: int,
+	runtime_index: int = -1,
+) -> Dictionary:
 	var metadata: Dictionary = (
 		LEGACY_CRT_RANDOM_CATALOG.metadata_for_rva(call_site_rva)
 	)
@@ -492,6 +509,7 @@ func next_legacy_crt_random(call_site_rva: int) -> Dictionary:
 		"state_before": state_before,
 		"state": state_after,
 		"value": random_value,
+		"runtime_index": runtime_index,
 		"domain": str(metadata.get("domain", "")),
 		"purpose": str(metadata.get("purpose", "")),
 	}
@@ -539,6 +557,7 @@ func commit_legacy_crt_random_draws(draws: Array) -> bool:
 			"state_before": state_before,
 			"state": expected_state,
 			"value": expected_value,
+			"runtime_index": int(draw.get("runtime_index", -1)),
 			"domain": str(metadata.get("domain", "")),
 			"purpose": str(metadata.get("purpose", "")),
 		})
@@ -568,7 +587,10 @@ func commit_legacy_ambient_crt_random_batch(
 	# LCG transition in tests/forensics. Ordinary play commits the already
 	# verified internal particle transaction in O(1), avoiding a second
 	# GDScript pass over the same native sequence.
-	if not legacy_crt_random_trace_enabled:
+	if (
+		not legacy_crt_random_trace_enabled
+		and not legacy_crt_random_parity_trace_enabled
+	):
 		legacy_crt_random_state = state_after
 		legacy_crt_random_draw_index += draw_count
 		return true
@@ -623,6 +645,7 @@ func commit_legacy_ambient_crt_random_batch(
 			"value": LEGACY_CRT_RANDOM_CATALOG.random_value(
 				trace_state
 			),
+			"runtime_index": -1,
 			"domain": str(metadata.get("domain", "")),
 			"purpose": str(metadata.get("purpose", "")),
 		})
@@ -631,6 +654,8 @@ func commit_legacy_ambient_crt_random_batch(
 
 
 func _record_legacy_crt_random_draw(draw: Dictionary) -> void:
+	if legacy_crt_random_parity_trace_enabled:
+		_record_legacy_crt_random_parity_draw(draw)
 	if not legacy_crt_random_trace_enabled:
 		return
 	legacy_crt_random_trace.append(draw.duplicate(true))
@@ -638,10 +663,143 @@ func _record_legacy_crt_random_draw(draw: Dictionary) -> void:
 		legacy_crt_random_trace.pop_front()
 
 
+func begin_legacy_crt_random_parity_trace() -> bool:
+	legacy_crt_random_parity_trace_enabled = true
+	return _restart_legacy_crt_random_parity_trace()
+
+
+func legacy_crt_random_parity_snapshot(
+	finalize: bool = false,
+) -> Dictionary:
+	var snapshot := {
+		"draw_count": legacy_crt_random_parity_draw_count,
+		"actor_draw_count": legacy_crt_random_parity_actor_draw_count,
+		"call_site_counts": (
+			legacy_crt_random_parity_call_site_counts.duplicate(true)
+		),
+		"actor_call_site_counts": (
+			legacy_crt_random_parity_actor_call_site_counts.duplicate(true)
+		),
+		"final_state": legacy_crt_random_state,
+		"final_draw_index": legacy_crt_random_draw_index,
+		"ordered_call_site_actor_sha256": "",
+		"ordered_call_site_actor_value_sha256": "",
+		"actor_order_sha256": "",
+		"actor_value_sha256": "",
+	}
+	if not finalize:
+		return snapshot
+	snapshot["ordered_call_site_actor_sha256"] = (
+		_finish_legacy_crt_random_parity_context(
+			legacy_crt_random_parity_order_context
+		)
+	)
+	snapshot["ordered_call_site_actor_value_sha256"] = (
+		_finish_legacy_crt_random_parity_context(
+			legacy_crt_random_parity_value_context
+		)
+	)
+	snapshot["actor_order_sha256"] = (
+		_finish_legacy_crt_random_parity_context(
+			legacy_crt_random_parity_actor_order_context
+		)
+	)
+	snapshot["actor_value_sha256"] = (
+		_finish_legacy_crt_random_parity_context(
+			legacy_crt_random_parity_actor_value_context
+		)
+	)
+	legacy_crt_random_parity_trace_enabled = false
+	legacy_crt_random_parity_order_context = null
+	legacy_crt_random_parity_value_context = null
+	legacy_crt_random_parity_actor_order_context = null
+	legacy_crt_random_parity_actor_value_context = null
+	return snapshot
+
+
+func _restart_legacy_crt_random_parity_trace() -> bool:
+	legacy_crt_random_parity_draw_count = 0
+	legacy_crt_random_parity_actor_draw_count = 0
+	legacy_crt_random_parity_call_site_counts.clear()
+	legacy_crt_random_parity_actor_call_site_counts.clear()
+	legacy_crt_random_parity_order_context = HashingContext.new()
+	legacy_crt_random_parity_value_context = HashingContext.new()
+	legacy_crt_random_parity_actor_order_context = HashingContext.new()
+	legacy_crt_random_parity_actor_value_context = HashingContext.new()
+	for context: HashingContext in [
+		legacy_crt_random_parity_order_context,
+		legacy_crt_random_parity_value_context,
+		legacy_crt_random_parity_actor_order_context,
+		legacy_crt_random_parity_actor_value_context,
+	]:
+		if context.start(HashingContext.HASH_SHA256) != OK:
+			legacy_crt_random_parity_trace_enabled = false
+			push_error("无法初始化原版 CRT rand parity 哈希")
+			return false
+	return true
+
+
+func _record_legacy_crt_random_parity_draw(draw: Dictionary) -> void:
+	if legacy_crt_random_parity_order_context == null:
+		if not _restart_legacy_crt_random_parity_trace():
+			return
+	var call_site_rva := int(draw.get("call_site_rva", 0))
+	var runtime_index := int(draw.get("runtime_index", -1))
+	var random_value := int(draw.get("value", -1))
+	var order_bytes := PackedByteArray()
+	order_bytes.resize(8)
+	order_bytes.encode_u32(0, call_site_rva)
+	order_bytes.encode_s32(4, runtime_index)
+	var value_bytes := PackedByteArray()
+	value_bytes.resize(12)
+	value_bytes.encode_u32(0, call_site_rva)
+	value_bytes.encode_s32(4, runtime_index)
+	value_bytes.encode_u32(8, random_value)
+	if (
+		legacy_crt_random_parity_order_context.update(order_bytes) != OK
+		or legacy_crt_random_parity_value_context.update(value_bytes) != OK
+	):
+		legacy_crt_random_parity_trace_enabled = false
+		push_error("原版 CRT rand parity 全局哈希更新失败")
+		return
+	legacy_crt_random_parity_draw_count += 1
+	var site_key := "0x%08X" % call_site_rva
+	legacy_crt_random_parity_call_site_counts[site_key] = int(
+		legacy_crt_random_parity_call_site_counts.get(site_key, 0)
+	) + 1
+	if runtime_index < 0:
+		return
+	var actor_site_key := "%d:%s" % [runtime_index, site_key]
+	legacy_crt_random_parity_actor_call_site_counts[actor_site_key] = int(
+		legacy_crt_random_parity_actor_call_site_counts.get(
+			actor_site_key,
+			0,
+		)
+	) + 1
+	if (
+		legacy_crt_random_parity_actor_order_context.update(order_bytes) != OK
+		or legacy_crt_random_parity_actor_value_context.update(value_bytes) != OK
+	):
+		legacy_crt_random_parity_trace_enabled = false
+		push_error("原版 CRT rand parity actor 哈希更新失败")
+		return
+	legacy_crt_random_parity_actor_draw_count += 1
+
+
+func _finish_legacy_crt_random_parity_context(
+	context: HashingContext,
+) -> String:
+	if context == null:
+		return ""
+	return context.finish().hex_encode().to_upper()
+
+
 func _reset_legacy_crt_random_for_level_load() -> void:
 	legacy_crt_random_state = LEGACY_CRT_RANDOM_CATALOG.INITIAL_STATE
 	legacy_crt_random_draw_index = 0
 	legacy_crt_random_trace.clear()
+	if legacy_crt_random_parity_trace_enabled:
+		_restart_legacy_crt_random_parity_trace()
 
 
 func _configure_legacy_ambient_particle_field(level_id: String) -> bool:
@@ -765,7 +923,10 @@ func _replay_original_first_gameplay_random_update(
 		var call_site_rva := (
 			str(record.get("call_site_rva", "0x0")).hex_to_int()
 		)
-		var draw := next_legacy_crt_random(call_site_rva)
+		var draw := next_legacy_crt_random(
+			call_site_rva,
+			int(record.get("runtime_index", -1)),
+		)
 		if (
 			draw.is_empty()
 			or int(draw.get("value", -1))
@@ -5236,7 +5397,8 @@ func _queue_or_broadcast_alert(
 		if enemy.receive_original_coordinate_alert(alert_coordinate):
 			alerted_count += 1
 			var reaction_draw: Dictionary = next_legacy_crt_random(
-				0x0005DF71
+				0x0005DF71,
+				enemy.original_runtime_index,
 			)
 			if (
 				not reaction_draw.is_empty()
@@ -9109,8 +9271,17 @@ func _play_original_actor_audio(
 		return false
 	var random_value := -1
 	if bool(profile.get("random_required", false)):
+		var runtime_index_value: Variant = actor.get(
+			"original_runtime_index"
+		)
+		var runtime_index := (
+			int(runtime_index_value)
+			if runtime_index_value != null
+			else -1
+		)
 		var draw := next_legacy_crt_random(
-			int(profile.get("call_site_rva", 0))
+			int(profile.get("call_site_rva", 0)),
+			runtime_index,
 		)
 		if draw.is_empty():
 			return false

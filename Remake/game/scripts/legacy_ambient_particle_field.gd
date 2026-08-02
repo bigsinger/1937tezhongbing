@@ -546,6 +546,8 @@ func _begin_random_batch() -> bool:
 	random_batch_draw_count = 0
 	random_batch_trace_enabled = bool(
 		random_source.get("legacy_crt_random_trace_enabled")
+	) or bool(
+		random_source.get("legacy_crt_random_parity_trace_enabled")
 	)
 	random_batch_active = true
 	return true

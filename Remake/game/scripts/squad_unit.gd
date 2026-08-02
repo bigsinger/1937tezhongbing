@@ -759,6 +759,7 @@ func next_original_crt_random_value(call_site_rva: int) -> int:
 	var draw_value: Variant = original_crt_random_source.call(
 		"next_legacy_crt_random",
 		call_site_rva,
+		original_runtime_index,
 	)
 	if not draw_value is Dictionary or (draw_value as Dictionary).is_empty():
 		return -1

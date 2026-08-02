@@ -34,6 +34,7 @@ func _init() -> void:
 	_test_twelve_level_catalog()
 	_test_exact_startup_checkpoint_and_next_draw()
 	_test_exact_first_gameplay_update_replay()
+	_test_parity_hash_trace()
 	_test_first_gameplay_actor_side_effects()
 	_test_twelve_level_runtime_state_and_pursuit()
 	_test_recurring_secondary_search_runtime()
@@ -254,6 +255,68 @@ func _test_exact_first_gameplay_update_replay() -> void:
 	_expect(
 		exact_trace_match,
 		"m000 replay preserves every captured value, call site and draw index",
+	)
+	game.free()
+
+
+func _test_parity_hash_trace() -> void:
+	var baseline_value: Variant = JSON.parse_string(
+		FileAccess.get_file_as_string(
+			"res://data/original_crt_random_recurring_timing.json"
+		)
+	)
+	_expect(
+		baseline_value is Dictionary,
+		"recurring parity baseline is readable by the runtime",
+	)
+	if not baseline_value is Dictionary:
+		return
+	var levels_value: Variant = (baseline_value as Dictionary).get(
+		"levels",
+		[],
+	)
+	if not levels_value is Array or (levels_value as Array).is_empty():
+		_expect(false, "recurring parity baseline exposes m000")
+		return
+	var first_round: Dictionary = (
+		((levels_value as Array)[0] as Dictionary).get("rounds", [])[0]
+	)
+	var game = MAIN_SCRIPT.new()
+	game.call("_apply_original_crt_random_startup_checkpoint", "m000")
+	var began := bool(game.begin_legacy_crt_random_parity_trace())
+	var replayed := bool(game.call(
+		"_replay_original_first_gameplay_random_update",
+		"m000",
+		false,
+	))
+	var snapshot: Dictionary = game.legacy_crt_random_parity_snapshot(true)
+	_expect(
+		began
+		and replayed
+		and int(snapshot.get("draw_count", 0)) == 59
+		and int(snapshot.get("actor_draw_count", 0)) == 58
+		and int(snapshot.get("final_draw_index", 0)) == 8548
+		and int(snapshot.get("call_site_counts", {}).get(
+			"0x0005C81C",
+			0,
+		)) == 54,
+		"parity trace records exact draw, actor and call-site counts",
+	)
+	var hashes_match := true
+	for hash_name: String in [
+		"ordered_call_site_actor_sha256",
+		"ordered_call_site_actor_value_sha256",
+		"actor_order_sha256",
+		"actor_value_sha256",
+	]:
+		hashes_match = (
+			hashes_match
+			and str(snapshot.get(hash_name, ""))
+				== str(first_round.get(hash_name, ""))
+		)
+	_expect(
+		hashes_match,
+		"runtime parity hashes use the committed little-endian trace encoding",
 	)
 	game.free()
 

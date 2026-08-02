@@ -32,7 +32,10 @@ class FakeNavigation:
 class RecordingRandomSource extends Node:
 	var call_sites: Array[int] = []
 
-	func next_legacy_crt_random(call_site_rva: int) -> Dictionary:
+	func next_legacy_crt_random(
+		call_site_rva: int,
+		_unused_runtime_index: int = -1,
+	) -> Dictionary:
 		call_sites.append(call_site_rva)
 		return {
 			"value": 7 if call_site_rva == 0x0005CB9C else 0,
