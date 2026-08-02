@@ -35,6 +35,18 @@ const ORIGINAL_PAUSE_MENU_CENTER_OFFSET := Vector2(-305.0, -118.0)
 const ORIGINAL_PAUSE_MENU_BUTTON_PITCH := 40.0
 const ORIGINAL_PAUSE_MENU_BACKGROUND_PSD := 1095
 const ORIGINAL_PAUSE_MENU_LABEL_OFFSET := Vector2i(5, 4)
+const ORIGINAL_FAILURE_TITLE_SIZE := Vector2(172.0, 50.0)
+const ORIGINAL_FAILURE_TITLE_CENTER_OFFSET := Vector2(-99.0, -59.0)
+const ORIGINAL_FAILURE_BUTTON_SIZE := Vector2(132.0, 38.0)
+const ORIGINAL_FAILURE_RESTART_CENTER_OFFSET := Vector2(-158.0, -3.0)
+const ORIGINAL_FAILURE_MAIN_CENTER_OFFSET := Vector2(-8.0, -3.0)
+const ORIGINAL_FAILURE_TITLE_BACKGROUND_PSD := 1093
+const ORIGINAL_FAILURE_BUTTON_BACKGROUND_PSD := 1095
+const ORIGINAL_FAILURE_RESTART_NORMAL_PSD := 1260
+const ORIGINAL_FAILURE_RESTART_HOVER_PSD := 1261
+const ORIGINAL_FAILURE_RESTART_LABEL_OFFSET := Vector2i(8, 8)
+const ORIGINAL_FAILURE_TEXT_COLOR := Color(0.69, 0.70, 0.53, 1.0)
+const ORIGINAL_FAILURE_TEXT_HOVER_COLOR := Color(0.94, 0.94, 0.86, 1.0)
 const ORIGINAL_CREDITS_PSD := 1254
 const OVERLAY_DIM_COLOR := Color(0.018, 0.024, 0.020, 0.78)
 const ORIGINAL_HELP_BACKDROP_COLOR := Color(0.0, 0.0, 0.0, 1.0)
@@ -126,6 +138,15 @@ var _classic_load_button: TextureButton
 var _classic_settings_button: TextureButton
 var _classic_credits_button: TextureButton
 var _classic_quit_button: TextureButton
+var _classic_failure_panel: Control
+var _failure_title_background: TextureRect
+var _failure_title_label: Label
+var _failure_restart_button: TextureButton
+var _failure_main_button: TextureButton
+var _failure_main_label: Label
+var _original_failure_font: SystemFont
+var _failure_text := ""
+var _failure_can_load := false
 var _menu_title: Label
 var _menu_message: Label
 var _resume_button: Button
@@ -308,12 +329,16 @@ func configure_original_hud_assets(converted_root: String) -> bool:
 	if inventory_ready:
 		_inventory_background.texture = inventory_background
 	var classic_menu_ready := _configure_original_pause_menu_assets()
+	var classic_failure_ready := _configure_original_failure_assets()
 	var credits := _load_original_hud_texture("psd", ORIGINAL_CREDITS_PSD)
 	var credits_ready := _credits_texture != null and credits != null
 	if credits_ready:
 		_credits_texture.texture = credits
 	_original_overlay_assets_ready = (
-		inventory_ready and classic_menu_ready and credits_ready
+		inventory_ready
+		and classic_menu_ready
+		and classic_failure_ready
+		and credits_ready
 	)
 
 	_original_hud_assets_ready = true
@@ -355,9 +380,62 @@ func _configure_original_pause_menu_assets() -> bool:
 	return true
 
 
+func _configure_original_failure_assets() -> bool:
+	if (
+		_failure_title_background == null
+		or _failure_restart_button == null
+		or _failure_main_button == null
+	):
+		return false
+	var title_background := _load_original_hud_texture(
+		"psd", ORIGINAL_FAILURE_TITLE_BACKGROUND_PSD
+	)
+	var button_background := _load_original_hud_texture(
+		"psd", ORIGINAL_FAILURE_BUTTON_BACKGROUND_PSD
+	)
+	var restart_normal := _load_original_hud_texture(
+		"psd", ORIGINAL_FAILURE_RESTART_NORMAL_PSD
+	)
+	var restart_hover := _load_original_hud_texture(
+		"psd", ORIGINAL_FAILURE_RESTART_HOVER_PSD
+	)
+	if (
+		title_background == null
+		or button_background == null
+		or restart_normal == null
+		or restart_hover == null
+	):
+		return false
+	_failure_title_background.texture = title_background
+	var restart_normal_composite := _compose_original_pause_menu_texture(
+		button_background,
+		restart_normal,
+		ORIGINAL_FAILURE_RESTART_LABEL_OFFSET,
+	)
+	var restart_hover_composite := _compose_original_pause_menu_texture(
+		button_background,
+		restart_hover,
+		ORIGINAL_FAILURE_RESTART_LABEL_OFFSET,
+	)
+	if restart_normal_composite == null or restart_hover_composite == null:
+		return false
+	_failure_restart_button.texture_normal = restart_normal_composite
+	_failure_restart_button.texture_hover = restart_hover_composite
+	_failure_restart_button.texture_pressed = restart_hover_composite
+	_failure_restart_button.texture_focused = restart_hover_composite
+	_failure_restart_button.size = restart_normal_composite.get_size()
+	_failure_main_button.texture_normal = button_background
+	_failure_main_button.texture_hover = button_background
+	_failure_main_button.texture_pressed = button_background
+	_failure_main_button.texture_focused = button_background
+	_failure_main_button.size = button_background.get_size()
+	return true
+
+
 func _compose_original_pause_menu_texture(
 	background: Texture2D,
 	label_texture: Texture2D,
+	label_offset: Vector2i = ORIGINAL_PAUSE_MENU_LABEL_OFFSET,
 ) -> Texture2D:
 	var background_image := background.get_image()
 	var label_image := label_texture.get_image()
@@ -370,7 +448,7 @@ func _compose_original_pause_menu_texture(
 	background_image.blend_rect(
 		label_image,
 		Rect2i(Vector2i.ZERO, label_image.get_size()),
-		ORIGINAL_PAUSE_MENU_LABEL_OFFSET,
+		label_offset,
 	)
 	return ImageTexture.create_from_image(background_image)
 
@@ -470,6 +548,35 @@ func original_overlay_layout_snapshot() -> Dictionary:
 			),
 		}
 	var desaturate_material := _failure_desaturate.material as ShaderMaterial
+	var failure_buttons := {
+		"restart": {
+			"rect": (
+				_failure_restart_button.get_global_rect()
+				if _failure_restart_button != null
+				else Rect2()
+			),
+			"texture_size": (
+				_failure_restart_button.texture_normal.get_size()
+				if (
+					_failure_restart_button != null
+					and _failure_restart_button.texture_normal != null
+				)
+				else Vector2.ZERO
+			),
+		},
+		"main": {
+			"rect": (
+				_failure_main_button.get_global_rect()
+				if _failure_main_button != null
+				else Rect2()
+			),
+			"texture_size": (
+				_failure_main_button.texture_normal.get_size()
+				if _failure_main_button != null and _failure_main_button.texture_normal != null
+				else Vector2.ZERO
+			),
+		},
+	}
 	return {
 		"assets_ready": _original_overlay_assets_ready,
 		"inventory_rect": (
@@ -496,6 +603,17 @@ func original_overlay_layout_snapshot() -> Dictionary:
 			else Rect2()
 		),
 		"pause_buttons": pause_buttons,
+		"failure_title_rect": (
+			_failure_title_background.get_global_rect()
+			if _failure_title_background != null
+			else Rect2()
+		),
+		"failure_title_texture_size": (
+			_failure_title_background.texture.get_size()
+			if _failure_title_background != null and _failure_title_background.texture != null
+			else Vector2.ZERO
+		),
+		"failure_buttons": failure_buttons,
 		"desaturate_visible": (
 			_failure_desaturate != null and _failure_desaturate.visible
 		),
@@ -535,7 +653,10 @@ func show_pause_menu(can_load: bool, message: String = "") -> void:
 	_resume_button.visible = true
 	_next_level_button.visible = false
 	_save_button.visible = true
+	_load_button.visible = true
 	_load_button.disabled = not can_load
+	_restart_button.visible = true
+	_level_select_button.visible = true
 	_classic_resume_button.visible = true
 	_classic_restart_button.visible = true
 	_classic_level_select_button.visible = true
@@ -559,7 +680,10 @@ func show_victory(can_load: bool, has_next_level: bool) -> void:
 	_resume_button.visible = true
 	_next_level_button.visible = has_next_level
 	_save_button.visible = true
+	_load_button.visible = true
 	_load_button.disabled = not can_load
+	_restart_button.visible = true
+	_level_select_button.visible = true
 	_classic_resume_button.visible = true
 	_classic_restart_button.visible = true
 	_classic_level_select_button.visible = true
@@ -602,7 +726,11 @@ func show_level_selector(startup: bool = false) -> void:
 	if (
 		not startup
 		and _level_selector_return_mode
-		not in [OverlayMode.PAUSE_MENU, OverlayMode.FAILURE]
+		not in [
+			OverlayMode.PAUSE_MENU,
+			OverlayMode.FAILURE,
+			OverlayMode.MODERN_MENU,
+		]
 	):
 		_level_selector_return_mode = OverlayMode.PAUSE_MENU
 	_enter_mode(OverlayMode.LEVEL_SELECTOR)
@@ -615,26 +743,19 @@ func show_level_selector(startup: bool = false) -> void:
 
 
 func show_failure(failure_text: String, can_load: bool) -> void:
+	_failure_text = failure_text
+	_failure_can_load = can_load
 	_enter_mode(OverlayMode.FAILURE)
 	_menu_title.text = "任务失败"
 	_menu_message.text = failure_text
 	_resume_button.visible = false
 	_next_level_button.visible = false
 	_save_button.visible = false
+	_load_button.visible = true
 	_load_button.disabled = not can_load
-	_classic_resume_button.visible = false
-	_classic_restart_button.visible = true
-	_classic_level_select_button.visible = true
-	_classic_save_button.visible = false
-	_classic_load_button.visible = true
-	_classic_load_button.disabled = not can_load
-	_classic_settings_button.visible = true
-	_classic_credits_button.visible = true
-	_classic_quit_button.visible = true
-	if can_load:
-		_classic_load_button.grab_focus()
-	else:
-		_classic_restart_button.grab_focus()
+	_restart_button.visible = true
+	_level_select_button.visible = true
+	_release_gui_focus()
 
 
 func show_tactical_map(
@@ -761,10 +882,39 @@ func is_overlay_open() -> bool:
 
 
 func is_failure_open() -> bool:
-	return (
-		overlay_mode == OverlayMode.FAILURE
-		or (overlay_mode == OverlayMode.SLOT_SELECTOR and _slot_return_mode == OverlayMode.FAILURE)
-	)
+	return _mode_uses_failure_background(overlay_mode)
+
+
+func _mode_uses_failure_background(mode: int) -> bool:
+	if mode == OverlayMode.FAILURE:
+		return true
+	if mode == OverlayMode.MODERN_MENU:
+		return _modern_menu_return_mode == OverlayMode.FAILURE
+	if mode == OverlayMode.SLOT_SELECTOR:
+		return (
+			_slot_return_mode == OverlayMode.FAILURE
+			or (
+				_slot_return_mode == OverlayMode.MODERN_MENU
+				and _modern_menu_return_mode == OverlayMode.FAILURE
+			)
+		)
+	if mode == OverlayMode.LEVEL_SELECTOR:
+		return (
+			_level_selector_return_mode == OverlayMode.FAILURE
+			or (
+				_level_selector_return_mode == OverlayMode.MODERN_MENU
+				and _modern_menu_return_mode == OverlayMode.FAILURE
+			)
+		)
+	if mode == OverlayMode.SETTINGS:
+		return (
+			_settings_return_mode == OverlayMode.FAILURE
+			or (
+				_settings_return_mode == OverlayMode.MODERN_MENU
+				and _modern_menu_return_mode == OverlayMode.FAILURE
+			)
+		)
+	return false
 
 
 func close_active_overlay() -> bool:
@@ -873,10 +1023,7 @@ func _enter_mode(mode: int) -> void:
 	_acquire_pause()
 	overlay_mode = mode
 	_root.visible = true
-	var failure_background := (
-		mode == OverlayMode.FAILURE
-		or (mode == OverlayMode.SLOT_SELECTOR and _slot_return_mode == OverlayMode.FAILURE)
-	)
+	var failure_background := _mode_uses_failure_background(mode)
 	var pause_background := mode == OverlayMode.PAUSE_MENU
 	var desaturate_background := pause_background or failure_background
 	# The original W/A popup is a right-side panel over the live scene.  It
@@ -890,15 +1037,12 @@ func _enter_mode(mode: int) -> void:
 	)
 	var desaturate_material := _failure_desaturate.material as ShaderMaterial
 	if desaturate_material != null:
-		desaturate_material.set_shader_parameter(
-			"brightness", 1.0 if pause_background else 0.48
-		)
-		desaturate_material.set_shader_parameter(
-			"average_mix", 1.0 if pause_background else 0.0
-		)
+		desaturate_material.set_shader_parameter("brightness", 1.0)
+		desaturate_material.set_shader_parameter("average_mix", 1.0)
 	_dim.visible = not desaturate_background and mode != OverlayMode.INVENTORY
 	_failure_desaturate.visible = desaturate_background
-	_classic_menu_panel.visible = mode in [OverlayMode.PAUSE_MENU, OverlayMode.FAILURE]
+	_classic_menu_panel.visible = mode == OverlayMode.PAUSE_MENU
+	_classic_failure_panel.visible = mode == OverlayMode.FAILURE
 	_menu_panel.visible = mode == OverlayMode.MODERN_MENU
 	_map_panel.visible = mode == OverlayMode.TACTICAL_MAP
 	_inventory_panel.visible = mode == OverlayMode.INVENTORY
@@ -964,7 +1108,11 @@ func _show_slot_selector(selector_mode: int) -> void:
 
 func _return_from_slot_selector() -> void:
 	var return_mode := _slot_return_mode
-	if return_mode not in [OverlayMode.PAUSE_MENU, OverlayMode.FAILURE]:
+	if return_mode not in [
+		OverlayMode.PAUSE_MENU,
+		OverlayMode.FAILURE,
+		OverlayMode.MODERN_MENU,
+	]:
 		return_mode = OverlayMode.PAUSE_MENU
 	_enter_mode(return_mode)
 
@@ -991,6 +1139,23 @@ func _show_level_selector_from_menu() -> void:
 	show_level_selector(false)
 
 
+func _show_failure_main_menu() -> void:
+	_modern_menu_return_mode = OverlayMode.FAILURE
+	_enter_mode(OverlayMode.MODERN_MENU)
+	_menu_title.text = "任务失败"
+	_menu_message.text = (
+		_failure_text
+		+ "\n可重玩本关、读取存档、选择其他任务或调整设置。"
+	)
+	_resume_button.visible = false
+	_next_level_button.visible = false
+	_save_button.visible = false
+	_load_button.visible = true
+	_load_button.disabled = not _failure_can_load
+	_restart_button.visible = true
+	_level_select_button.visible = true
+
+
 func _show_game_settings() -> void:
 	_modern_menu_return_mode = overlay_mode
 	if _modern_menu_return_mode not in [OverlayMode.PAUSE_MENU, OverlayMode.FAILURE]:
@@ -1014,7 +1179,11 @@ func _on_level_chosen(level_id: String) -> void:
 
 func _return_from_level_selector() -> void:
 	var return_mode := _level_selector_return_mode
-	if return_mode in [OverlayMode.PAUSE_MENU, OverlayMode.FAILURE]:
+	if return_mode in [
+		OverlayMode.PAUSE_MENU,
+		OverlayMode.FAILURE,
+		OverlayMode.MODERN_MENU,
+	]:
 		_enter_mode(return_mode)
 		return
 	_close_overlay()
@@ -1239,6 +1408,7 @@ func _build_interface() -> void:
 
 	_build_menu_panel()
 	_build_classic_pause_menu()
+	_build_classic_failure_menu()
 	_build_map_panel()
 	_build_inventory_panel()
 	_build_slot_selector_panel()
@@ -1704,6 +1874,105 @@ func _build_classic_pause_button(
 	_classic_menu_panel.add_child(button)
 	_classic_menu_buttons[button_id] = button
 	return button
+
+
+func _build_classic_failure_menu() -> void:
+	_original_failure_font = SystemFont.new()
+	_original_failure_font.font_names = PackedStringArray([
+		"SimSun",
+		"NSimSun",
+		"宋体",
+	])
+	_original_failure_font.font_weight = 400
+	_original_failure_font.allow_system_fallback = true
+	_original_failure_font.force_autohinter = true
+
+	_classic_failure_panel = Control.new()
+	_classic_failure_panel.name = "OriginalFailureMenu"
+	_classic_failure_panel.set_anchors_preset(Control.PRESET_CENTER)
+	_classic_failure_panel.offset_left = 0.0
+	_classic_failure_panel.offset_top = 0.0
+	_classic_failure_panel.offset_right = 0.0
+	_classic_failure_panel.offset_bottom = 0.0
+	_classic_failure_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_classic_failure_panel.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_root.add_child(_classic_failure_panel)
+
+	_failure_title_background = TextureRect.new()
+	_failure_title_background.name = "OriginalFailureTitle"
+	_failure_title_background.position = ORIGINAL_FAILURE_TITLE_CENTER_OFFSET
+	_failure_title_background.size = ORIGINAL_FAILURE_TITLE_SIZE
+	_failure_title_background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_failure_title_background.stretch_mode = TextureRect.STRETCH_KEEP
+	_failure_title_background.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_classic_failure_panel.add_child(_failure_title_background)
+
+	_failure_title_label = Label.new()
+	_failure_title_label.name = "OriginalFailureTitleText"
+	_failure_title_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_failure_title_label.text = "任务失败"
+	_failure_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_failure_title_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_failure_title_label.add_theme_font_size_override("font_size", 38)
+	_style_original_failure_text(_failure_title_label)
+	_failure_title_background.add_child(_failure_title_label)
+
+	_failure_restart_button = TextureButton.new()
+	_failure_restart_button.name = "OriginalFailureRestart"
+	_failure_restart_button.position = ORIGINAL_FAILURE_RESTART_CENTER_OFFSET
+	_failure_restart_button.size = ORIGINAL_FAILURE_BUTTON_SIZE
+	_failure_restart_button.ignore_texture_size = true
+	_failure_restart_button.stretch_mode = TextureButton.STRETCH_KEEP
+	_failure_restart_button.focus_mode = Control.FOCUS_ALL
+	_failure_restart_button.tooltip_text = "重玩本关"
+	_failure_restart_button.pressed.connect(_on_restart_pressed)
+	_classic_failure_panel.add_child(_failure_restart_button)
+
+	_failure_main_button = TextureButton.new()
+	_failure_main_button.name = "OriginalFailureMain"
+	_failure_main_button.position = ORIGINAL_FAILURE_MAIN_CENTER_OFFSET
+	_failure_main_button.size = ORIGINAL_FAILURE_BUTTON_SIZE
+	_failure_main_button.ignore_texture_size = true
+	_failure_main_button.stretch_mode = TextureButton.STRETCH_KEEP
+	_failure_main_button.focus_mode = Control.FOCUS_ALL
+	_failure_main_button.tooltip_text = "回主界面"
+	_failure_main_button.pressed.connect(_show_failure_main_menu)
+	_failure_main_button.mouse_entered.connect(_set_failure_main_highlight.bind(true))
+	_failure_main_button.mouse_exited.connect(_set_failure_main_highlight.bind(false))
+	_failure_main_button.focus_entered.connect(_set_failure_main_highlight.bind(true))
+	_failure_main_button.focus_exited.connect(_set_failure_main_highlight.bind(false))
+	_classic_failure_panel.add_child(_failure_main_button)
+
+	_failure_main_label = Label.new()
+	_failure_main_label.name = "OriginalFailureMainText"
+	_failure_main_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_failure_main_label.text = "回主界面"
+	_failure_main_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_failure_main_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_failure_main_label.add_theme_font_size_override("font_size", 25)
+	_failure_main_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_style_original_failure_text(_failure_main_label)
+	_failure_main_button.add_child(_failure_main_label)
+
+
+func _style_original_failure_text(label: Label) -> void:
+	label.add_theme_font_override("font", _original_failure_font)
+	label.add_theme_color_override("font_color", ORIGINAL_FAILURE_TEXT_COLOR)
+	label.add_theme_color_override("font_outline_color", Color(0.02, 0.025, 0.02, 1.0))
+	label.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.75))
+	label.add_theme_constant_override("outline_size", 1)
+	label.add_theme_constant_override("shadow_offset_x", 1)
+	label.add_theme_constant_override("shadow_offset_y", 1)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+
+func _set_failure_main_highlight(highlighted: bool) -> void:
+	if _failure_main_label == null:
+		return
+	_failure_main_label.add_theme_color_override(
+		"font_color",
+		ORIGINAL_FAILURE_TEXT_HOVER_COLOR if highlighted else ORIGINAL_FAILURE_TEXT_COLOR,
+	)
 
 
 func _build_settings_panel() -> void:

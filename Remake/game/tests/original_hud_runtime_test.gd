@@ -6,6 +6,7 @@ const OVERLAY_BASELINE_PATH := "res://data/original_overlay_asset_baseline.json"
 const HUD_HEIGHT := 62.0
 const PORTRAIT_NAMES: Array[String] = ["老赵", "铁蛋", "强子", "古明", "大牛"]
 const PSD_TEXTURE_IDS: Array[int] = [
+	1093,
 	1095,
 	1097, 1098,
 	1101, 1102, 1103, 1104, 1105, 1106,
@@ -21,6 +22,7 @@ const PSD_TEXTURE_IDS: Array[int] = [
 	1215, 1216, 1217,
 	1232, 1233,
 	1254,
+	1260, 1261,
 ]
 
 var failures: Array[String] = []
@@ -360,6 +362,57 @@ func _check_overlay_layout(shell: GameShell, viewport_size: Vector2i) -> void:
 	_expect(shell.close_active_overlay(), "credits return to the owning pause menu")
 	shell.close_for_state_change()
 
+	shell.show_failure("必要队员牺牲", false)
+	paused = false
+	await process_frame
+	layout = shell.original_overlay_layout_snapshot()
+	var viewport_center := Vector2(viewport_size) * 0.5
+	_expect(
+		(layout.get("failure_title_rect", Rect2()) as Rect2)
+		== Rect2(
+			viewport_center + Vector2(-99.0, -59.0),
+			Vector2(172.0, 50.0),
+		),
+		"failure title retains its recovered center-relative geometry at %s"
+		% viewport_size,
+	)
+	_expect(
+		(layout.get("failure_title_texture_size", Vector2.ZERO) as Vector2)
+		== Vector2(172.0, 50.0),
+		"failure title uses original PSD 1093",
+	)
+	var failure_buttons := layout.get("failure_buttons", {}) as Dictionary
+	var restart_record := failure_buttons.get("restart", {}) as Dictionary
+	var main_record := failure_buttons.get("main", {}) as Dictionary
+	_expect(
+		(restart_record.get("rect", Rect2()) as Rect2)
+		== Rect2(
+			viewport_center + Vector2(-158.0, -3.0),
+			Vector2(132.0, 38.0),
+		)
+		and (restart_record.get("texture_size", Vector2.ZERO) as Vector2)
+		== Vector2(132.0, 38.0),
+		"failure restart composites PSD 1095 with PSD 1260 at the recovered position",
+	)
+	_expect(
+		(main_record.get("rect", Rect2()) as Rect2)
+		== Rect2(
+			viewport_center + Vector2(-8.0, -3.0),
+			Vector2(132.0, 38.0),
+		)
+		and (main_record.get("texture_size", Vector2.ZERO) as Vector2)
+		== Vector2(132.0, 38.0),
+		"failure main button retains the recovered horizontal layout",
+	)
+	_expect(
+		bool(layout.get("desaturate_visible", false))
+		and is_equal_approx(float(layout.get("desaturate_brightness", 0.0)), 1.0)
+		and is_equal_approx(float(layout.get("desaturate_average_mix", 0.0)), 1.0)
+		and not bool(layout.get("dim_visible", true)),
+		"failure reproduces the original equal-RGB grayscale surface without dimming",
+	)
+	shell.close_for_state_change()
+
 
 func _fixture_texture(dimensions: Vector2i, color: Color) -> Texture2D:
 	var image := Image.create(dimensions.x, dimensions.y, false, Image.FORMAT_RGBA8)
@@ -466,6 +519,8 @@ func _write_fixture_assets(fixture_root: String) -> bool:
 
 func _fixture_psd_size(index: int) -> Vector2i:
 	match index:
+		1093:
+			return Vector2i(172, 50)
 		1095:
 			return Vector2i(132, 38)
 		1097, 1098, 1109, 1110, 1114, 1115:
@@ -482,6 +537,8 @@ func _fixture_psd_size(index: int) -> Vector2i:
 			return Vector2i(1024, 62)
 		1254:
 			return Vector2i(640, 480)
+		1260, 1261:
+			return Vector2i(103, 25)
 		_:
 			return Vector2i(50, 50)
 

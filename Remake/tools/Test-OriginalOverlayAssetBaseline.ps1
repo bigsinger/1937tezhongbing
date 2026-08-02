@@ -57,6 +57,20 @@ if ([int]$baseline.credits.asset.gfl_index -ne 1254 -or
     @($baseline.credits.size) -join ',' -ne '640,480') {
     throw 'Original credits identity is invalid.'
 }
+$failureMenu = $baseline.failure_menu
+if ([int]$failureMenu.title.background.gfl_index -ne 1093 -or
+    @($failureMenu.title.center_offset) -join ',' -ne '-99,-59' -or
+    @($failureMenu.title.size) -join ',' -ne '172,50' -or
+    [int]$failureMenu.restart.background.gfl_index -ne 1095 -or
+    [int]$failureMenu.restart.normal.gfl_index -ne 1260 -or
+    [int]$failureMenu.restart.hover.gfl_index -ne 1261 -or
+    @($failureMenu.restart.label_offset) -join ',' -ne '8,8' -or
+    @($failureMenu.restart.center_offset) -join ',' -ne '-158,-3' -or
+    @($failureMenu.main.center_offset) -join ',' -ne '-8,-3' -or
+    [string]$failureMenu.background_transform -ne
+        'equal_rgb_average_no_dimming') {
+    throw 'Recovered original failure-menu geometry is invalid.'
+}
 $expectedLevels = 0..11 | ForEach-Object { 'm{0:D3}' -f $_ }
 $minimapLevels = @($baseline.minimaps.level_id)
 if (@($baseline.minimaps).Count -ne 12 -or
@@ -109,6 +123,9 @@ foreach ($asset in $assets) {
 foreach ($requiredKey in @(
         'psd/1129',
         'psd/1095',
+        'psd/1093',
+        'psd/1260',
+        'psd/1261',
         'psd/1254',
         'psd/1097',
         'psd/1115',
@@ -136,10 +153,34 @@ foreach ($viewport in @($baseline.viewports)) {
         (([int]$viewport.height / 2) - 118),
         132,
         318) -join ','
+    $expectedFailureTitle = @(
+        (([int]$viewport.width / 2) - 99),
+        (([int]$viewport.height / 2) - 59),
+        172,
+        50) -join ','
+    $expectedFailureRestart = @(
+        (([int]$viewport.width / 2) - 158),
+        (([int]$viewport.height / 2) - 3),
+        132,
+        38) -join ','
+    $expectedFailureMain = @(
+        (([int]$viewport.width / 2) - 8),
+        (([int]$viewport.height / 2) - 3),
+        132,
+        38) -join ','
+    $expectedFailureMenu = @(
+        (([int]$viewport.width / 2) - 158),
+        (([int]$viewport.height / 2) - 59),
+        282,
+        94) -join ','
     if (@($viewport.inventory_rect) -join ',' -ne $expectedInventory -or
         @($viewport.help_rect) -join ',' -ne $expectedHelp -or
         @($viewport.credits_rect) -join ',' -ne $expectedHelp -or
-        @($viewport.pause_menu_rect) -join ',' -ne $expectedPause) {
+        @($viewport.pause_menu_rect) -join ',' -ne $expectedPause -or
+        @($viewport.failure_title_rect) -join ',' -ne $expectedFailureTitle -or
+        @($viewport.failure_restart_rect) -join ',' -ne $expectedFailureRestart -or
+        @($viewport.failure_main_rect) -join ',' -ne $expectedFailureMain -or
+        @($viewport.failure_menu_rect) -join ',' -ne $expectedFailureMenu) {
         throw "Overlay anchoring is invalid at $($viewport.width)x$($viewport.height)."
     }
 }
@@ -152,5 +193,5 @@ if ($serialized -match 'LocalAssets|[A-Z]:\\|/converted/') {
 }
 
 Write-Host (
-    "Original overlay baseline passed: {0} assets, 12 maps, 8 pause buttons, 16 cursor frames, two viewports." -f
+    "Original overlay baseline passed: {0} assets, 12 maps, 8 pause buttons, exact failure menu, 16 cursor frames, two viewports." -f
     $assets.Count)

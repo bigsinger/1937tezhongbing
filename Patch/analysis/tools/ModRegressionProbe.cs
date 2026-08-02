@@ -482,7 +482,7 @@ internal static class ModRegressionProbe
                 "[--native-mission-cheat-victory-only] " +
                 "[--visual-capture-only " +
                 "--visual-camera-x=X --visual-camera-y=Y " +
-                "--visual-overlay=none|weapons|items|minimap|help|pause] " +
+                "--visual-overlay=none|weapons|items|minimap|help|pause|failure] " +
                 "[--identity-catalog=PATH --parity-patrol-only | " +
                 "--parity-contact-only | --parity-pickup-only | " +
                 "--parity-attack-only | --parity-world-item-only | " +
@@ -654,7 +654,8 @@ internal static class ModRegressionProbe
         visualOverlay = visualOverlay.Trim().ToLowerInvariant();
         string[] supportedVisualOverlays =
         {
-            "none", "weapons", "items", "minimap", "help", "pause"
+            "none", "weapons", "items", "minimap", "help", "pause",
+            "failure"
         };
         if (!supportedVisualOverlays.Contains(visualOverlay))
         {
@@ -1849,15 +1850,34 @@ internal static class ModRegressionProbe
                             spawnScreenWidth,
                             spawnScreenHeight,
                             out baselineEvidence);
-                        int overlayDik =
-                            visualOverlay == "weapons" ? DikW :
-                            visualOverlay == "items" ? DikA :
-                            visualOverlay == "minimap" ? DikM :
-                            visualOverlay == "help" ? DikF1 :
-                            DikEscape;
-                        overlayInputSent =
-                            PulseKey(window, overlayDik) &&
-                            overlayInputSent;
+                        if (visualOverlay == "failure")
+                        {
+                            // Apply fatal damage through the already-audited
+                            // process-local replay entry.  The original
+                            // sub_458700 damage path and sub_405410 mission
+                            // evaluator produce the failure presentation; the
+                            // probe never writes the mission result, moves the
+                            // system cursor, or sends global input.
+                            overlayInputSent =
+                                nativeFailureSceneIndex > 0 &&
+                                SendReplay(
+                                    window,
+                                    ReplayApplyFatalDamage,
+                                    nativeFailureSceneIndex) &&
+                                overlayInputSent;
+                        }
+                        else
+                        {
+                            int overlayDik =
+                                visualOverlay == "weapons" ? DikW :
+                                visualOverlay == "items" ? DikA :
+                                visualOverlay == "minimap" ? DikM :
+                                visualOverlay == "help" ? DikF1 :
+                                DikEscape;
+                            overlayInputSent =
+                                PulseKey(window, overlayDik) &&
+                                overlayInputSent;
+                        }
                         Thread.Sleep(600);
                     }
                     // The RGB565 primary surface can briefly contain a

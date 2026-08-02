@@ -52,7 +52,9 @@ func _run_probe() -> void:
 		failures.append("--output=PATH is required")
 	if not level_id in FORMAL_LEVEL_IDS:
 		failures.append("unsupported level id: %s" % level_id)
-	if overlay not in ["none", "weapons", "items", "minimap", "help", "pause"]:
+	if overlay not in [
+		"none", "weapons", "items", "minimap", "help", "pause", "failure"
+	]:
 		failures.append("unsupported overlay: %s" % overlay)
 	if not failures.is_empty():
 		_finish(failures, Vector2.ZERO, Vector2i.ZERO, 0, 0)
@@ -103,6 +105,11 @@ func _run_probe() -> void:
 				main._open_control_guide()
 			"pause":
 				main._open_pause_menu()
+			"failure":
+				main.game_shell.show_failure(
+					"任务失败：必要队员牺牲",
+					false,
+				)
 		paused = false
 	# Stop the product controller's per-frame camera clamp. It uses the full
 	# 768-pixel modern viewport, while the original clamps against its

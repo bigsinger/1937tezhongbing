@@ -77,6 +77,9 @@ $assetKeys = [Collections.Generic.HashSet[string]]::new(
     [StringComparer]::Ordinal)
 [void]$assetKeys.Add('psd/1129')
 [void]$assetKeys.Add('psd/1095')
+[void]$assetKeys.Add('psd/1093')
+[void]$assetKeys.Add('psd/1260')
+[void]$assetKeys.Add('psd/1261')
 [void]$assetKeys.Add('psd/1254')
 [void]$assetKeys.Add('iblock/1047')
 foreach ($id in $minimapIds.Values) {
@@ -202,6 +205,26 @@ $viewports = foreach ($viewport in @(
             (($viewport.height / 2) - 118),
             132,
             318)
+        failure_title_rect = @(
+            (($viewport.width / 2) - 99),
+            (($viewport.height / 2) - 59),
+            172,
+            50)
+        failure_restart_rect = @(
+            (($viewport.width / 2) - 158),
+            (($viewport.height / 2) - 3),
+            132,
+            38)
+        failure_main_rect = @(
+            (($viewport.width / 2) - 8),
+            (($viewport.height / 2) - 3),
+            132,
+            38)
+        failure_menu_rect = @(
+            (($viewport.width / 2) - 158),
+            (($viewport.height / 2) - 59),
+            282,
+            94)
         credits_rect = @(
             (($viewport.width - 640) / 2),
             (($viewport.height - 480) / 2),
@@ -241,6 +264,30 @@ $baseline = [ordered]@{
         background_transform = 'equal_rgb_average_no_dimming'
         button_pairs = $pauseMenuPairs
     }
+    failure_menu = [ordered]@{
+        anchor = 'viewport_center_plus_recovered_1024_offsets'
+        title = [ordered]@{
+            background = @{ kind = 'psd'; gfl_index = 1093 }
+            center_offset = @(-99, -59)
+            size = @(172, 50)
+            text = '任务失败'
+        }
+        restart = [ordered]@{
+            background = @{ kind = 'psd'; gfl_index = 1095 }
+            normal = @{ kind = 'psd'; gfl_index = 1260 }
+            hover = @{ kind = 'psd'; gfl_index = 1261 }
+            label_offset = @(8, 8)
+            center_offset = @(-158, -3)
+            size = @(132, 38)
+        }
+        main = [ordered]@{
+            background = @{ kind = 'psd'; gfl_index = 1095 }
+            center_offset = @(-8, -3)
+            size = @(132, 38)
+            text = '回主界面'
+        }
+        background_transform = 'equal_rgb_average_no_dimming'
+    }
     credits = [ordered]@{
         asset = @{ kind = 'psd'; gfl_index = 1254 }
         size = @(640, 480)
@@ -272,6 +319,8 @@ $baseline = [ordered]@{
             'screen-276+13+50*column, screen-62-421+40+84*row'
         original_pause_geometry = `
             '1024x768 primary surface: PSD1095 x=207, y=266+40*row; label +5,+4'
+        original_failure_geometry = `
+            '1024x768 primary surface: title 413,325; restart 354,381; main 504,381; restart label +8,+8'
         runtime_loading = `
             'Remake loads these exact converted PNG files without filtering'
         cursor_runtime = `

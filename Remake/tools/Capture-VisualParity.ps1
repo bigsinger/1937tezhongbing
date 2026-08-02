@@ -10,7 +10,8 @@ param(
     [switch]$ExpandedViewport,
     [switch]$TiledModernViewport,
     [switch]$IncludeUi,
-    [ValidateSet('none', 'weapons', 'items', 'minimap', 'help', 'pause')]
+    [ValidateSet(
+        'none', 'weapons', 'items', 'minimap', 'help', 'pause', 'failure')]
     [string]$Overlay = 'none',
     [switch]$AllowMismatch,
     [switch]$KeepRuntime
@@ -51,8 +52,20 @@ if ($Overlay -in @('weapons', 'items')) {
     $thresholds.maximum_black_hole_ratio = 0.001
     $thresholdProfile = 'rgb565_original_inventory_overlay'
 }
+elseif ($Overlay -eq 'failure') {
+    # PSD 1093/1095/1260/1261 and the recovered control rectangles are checked
+    # byte-for-byte by the asset baseline. The two remaining Chinese labels are
+    # drawn dynamically: the original GDI/RGB565 glyph rasterizer is not
+    # available to Godot, so this crop retains tight whole-panel colour and
+    # missing-pixel bounds while allowing that measured glyph-edge difference.
+    $thresholds.maximum_mean_absolute_error = 16.0
+    $thresholds.minimum_near_match_ratio = 0.82
+    $thresholds.minimum_edge_correlation = 0.55
+    $thresholds.maximum_black_hole_ratio = 0.006
+    $thresholdProfile = 'rgb565_original_failure_dynamic_text'
+}
 $overlayBaseline = $null
-if ($Overlay -in @('minimap', 'pause')) {
+if ($Overlay -in @('minimap', 'pause', 'failure')) {
     if (-not (Test-Path -LiteralPath $overlayBaselinePath -PathType Leaf)) {
         throw "Original overlay baseline is missing: $overlayBaselinePath"
     }
@@ -265,6 +278,27 @@ function Invoke-StableModVisualCapture {
             '--visual-capture-only')
         if ($Overlay -ne 'none') {
             $arguments += "--visual-overlay=$Overlay"
+        }
+        if ($Overlay -eq 'failure') {
+            $levelId = 'm{0:D3}' -f ($SelectorLevel - 1)
+            $failureBaselinePath = Join-Path $remakeRoot (
+                "validation\baselines\mod\$levelId-native-required-player-failure-v1.json")
+            if (-not (Test-Path -LiteralPath $failureBaselinePath -PathType Leaf)) {
+                throw "Native failure baseline is missing: $failureBaselinePath"
+            }
+            $failureBaseline = Get-Content -LiteralPath $failureBaselinePath `
+                -Raw -Encoding UTF8 | ConvertFrom-Json
+            $activeCheckpoint = @($failureBaseline.checkpoints | Where-Object {
+                [string]$_.id -ceq 'gameplay_active'
+            })
+            if ($activeCheckpoint.Count -ne 1) {
+                throw "No unique active failure checkpoint exists for $levelId."
+            }
+            $failureScene = [int]$activeCheckpoint[0].actor.scene_index
+            if ($failureScene -le 0) {
+                throw "Invalid native failure scene for $levelId."
+            }
+            $arguments += "--native-failure-scene=$failureScene"
         }
         if ($CameraWorldX -ge 0 -and $CameraWorldY -ge 0) {
             $arguments += "--visual-camera-x=$CameraWorldX"
@@ -592,14 +626,14 @@ try {
         $comparisonCandidate = $remakeImage
         $comparisonScope = 'full_surface'
         $overlayRegion = $null
-        if ($Overlay -in @('weapons', 'items', 'minimap', 'pause')) {
+        if ($Overlay -in @('weapons', 'items', 'minimap', 'pause', 'failure')) {
             $overlayWidth = 276
             $overlayHeight = 421
             $referenceLeft = $surfaceWidth - $overlayWidth
             $referenceTop = $surfaceHeight - 62 - $overlayHeight
             $candidateLeft = $candidateWidth - $overlayWidth
             $candidateTop = $candidateHeight - 62 - $overlayHeight
-            if ($Overlay -eq 'pause') {
+            if ($Overlay -in @('pause', 'failure')) {
                 $referenceViewport = @($overlayBaseline.viewports | Where-Object {
                     [int]$_.width -eq $surfaceWidth -and
                     [int]$_.height -eq $surfaceHeight
@@ -611,16 +645,22 @@ try {
                 if ($referenceViewport.Count -ne 1 -or
                     $candidateViewport.Count -ne 1) {
                     throw (
-                        'Pause-menu baseline supports only its versioned ' +
+                        'Centered-overlay baseline supports only its versioned ' +
                         '1024x768 and 1920x1080 viewports.')
                 }
-                $referenceRect = @($referenceViewport[0].pause_menu_rect)
-                $candidateRect = @($candidateViewport[0].pause_menu_rect)
+                $rectProperty = if ($Overlay -eq 'failure') {
+                    'failure_menu_rect'
+                }
+                else {
+                    'pause_menu_rect'
+                }
+                $referenceRect = @($referenceViewport[0].$rectProperty)
+                $candidateRect = @($candidateViewport[0].$rectProperty)
                 $overlayWidth = [int]$referenceRect[2]
                 $overlayHeight = [int]$referenceRect[3]
                 if ($overlayWidth -ne [int]$candidateRect[2] -or
                     $overlayHeight -ne [int]$candidateRect[3]) {
-                    throw 'Pause-menu baseline dimensions disagree across runtimes.'
+                    throw 'Centered-overlay baseline dimensions disagree across runtimes.'
                 }
                 $referenceLeft = [int]$referenceRect[0]
                 $referenceTop = [int]$referenceRect[1]

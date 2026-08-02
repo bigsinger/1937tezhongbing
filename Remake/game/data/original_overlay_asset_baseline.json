@@ -198,6 +198,66 @@
                                                      ]
                                         }
                    },
+    "failure_menu":  {
+                         "anchor":  "viewport_center_plus_recovered_1024_offsets",
+                         "title":  {
+                                       "background":  {
+                                                          "kind":  "psd",
+                                                          "gfl_index":  1093
+                                                      },
+                                       "center_offset":  [
+                                                             -99,
+                                                             -59
+                                                         ],
+                                       "size":  [
+                                                    172,
+                                                    50
+                                                ],
+                                       "text":  "浠诲姟澶辫触"
+                                   },
+                         "restart":  {
+                                         "background":  {
+                                                            "kind":  "psd",
+                                                            "gfl_index":  1095
+                                                        },
+                                         "normal":  {
+                                                        "kind":  "psd",
+                                                        "gfl_index":  1260
+                                                    },
+                                         "hover":  {
+                                                       "kind":  "psd",
+                                                       "gfl_index":  1261
+                                                   },
+                                         "label_offset":  [
+                                                              8,
+                                                              8
+                                                          ],
+                                         "center_offset":  [
+                                                               -158,
+                                                               -3
+                                                           ],
+                                         "size":  [
+                                                      132,
+                                                      38
+                                                  ]
+                                     },
+                         "main":  {
+                                      "background":  {
+                                                         "kind":  "psd",
+                                                         "gfl_index":  1095
+                                                     },
+                                      "center_offset":  [
+                                                            -8,
+                                                            -3
+                                                        ],
+                                      "size":  [
+                                                   132,
+                                                   38
+                                               ],
+                                      "text":  "鍥炰富鐣岄潰"
+                                  },
+                         "background_transform":  "equal_rgb_average_no_dimming"
+                     },
     "credits":  {
                     "asset":  {
                                   "kind":  "psd",
@@ -522,6 +582,30 @@
                                                   132,
                                                   318
                                               ],
+                          "failure_title_rect":  [
+                                                     413,
+                                                     325,
+                                                     172,
+                                                     50
+                                                 ],
+                          "failure_restart_rect":  [
+                                                       354,
+                                                       381,
+                                                       132,
+                                                       38
+                                                   ],
+                          "failure_main_rect":  [
+                                                    504,
+                                                    381,
+                                                    132,
+                                                    38
+                                                ],
+                          "failure_menu_rect":  [
+                                                    354,
+                                                    325,
+                                                    282,
+                                                    94
+                                                ],
                           "credits_rect":  [
                                                192,
                                                144,
@@ -550,6 +634,30 @@
                                                   132,
                                                   318
                                               ],
+                          "failure_title_rect":  [
+                                                     861,
+                                                     481,
+                                                     172,
+                                                     50
+                                                 ],
+                          "failure_restart_rect":  [
+                                                       802,
+                                                       537,
+                                                       132,
+                                                       38
+                                                   ],
+                          "failure_main_rect":  [
+                                                    952,
+                                                    537,
+                                                    132,
+                                                    38
+                                                ],
+                          "failure_menu_rect":  [
+                                                    802,
+                                                    481,
+                                                    282,
+                                                    94
+                                                ],
                           "credits_rect":  [
                                                640,
                                                300,
@@ -662,6 +770,14 @@
                        "width":  640,
                        "height":  480,
                        "converted_png_sha256":  "315046736a753a0124cc370c6fee4e4115a939f1a6361e8dcc84b48c8d66b046"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1093,
+                       "resource_name":  "按钮衬底-大.psd",
+                       "width":  172,
+                       "height":  50,
+                       "converted_png_sha256":  "632e12edc7d93af0dc562b270d737916ef1ff1bd833accd4852214dcb85b3d28"
                    },
                    {
                        "kind":  "psd",
@@ -1198,11 +1314,28 @@
                        "width":  50,
                        "height":  50,
                        "converted_png_sha256":  "e28afa37f48cf676b238d8323f16958d768f7f93dc921ba532e3e49776da09b6"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1260,
+                       "resource_name":  "重玩本关.psd",
+                       "width":  103,
+                       "height":  25,
+                       "converted_png_sha256":  "0f5d3c42e83b286507cb112a740839fa42c7957e79b715d73135372aa871a82f"
+                   },
+                   {
+                       "kind":  "psd",
+                       "gfl_index":  1261,
+                       "resource_name":  "重玩本关-亮.psd",
+                       "width":  103,
+                       "height":  25,
+                       "converted_png_sha256":  "f844f661c4c0487f89cccf033a7b875f3eef2e88ebf20b0e56cfc00c4bf804be"
                    }
                ],
     "evidence":  {
                      "original_click_formula":  "screen-276+13+50*column, screen-62-421+40+84*row",
                      "original_pause_geometry":  "1024x768 primary surface: PSD1095 x=207, y=266+40*row; label +5,+4",
+                     "original_failure_geometry":  "1024x768 primary surface: title 413,325; restart 354,381; main 504,381; restart label +8,+8",
                      "runtime_loading":  "Remake loads these exact converted PNG files without filtering",
                      "cursor_runtime":  "mouse.spr primary.x/z are the hotspot and frame_hold_ticks drive a 60 Hz loop",
                      "original_bytes_committed":  false

@@ -591,10 +591,30 @@ func _run() -> void:
 		failures,
 	)
 	expect(
-		not shell._classic_resume_button.visible
-		and not shell._classic_save_button.visible
-		and shell._classic_load_button.visible,
-		"failure mode mirrors the valid original menu actions",
+		shell._classic_failure_panel.visible
+		and not shell._classic_menu_panel.visible
+		and shell._failure_restart_button.visible
+		and shell._failure_main_button.visible,
+		"failure mode uses the recovered two-button original layout",
+		failures,
+	)
+	var failure_layout: Dictionary = shell.original_overlay_layout_snapshot()
+	var failure_buttons := failure_layout.get("failure_buttons", {}) as Dictionary
+	var failure_center := Vector2(root.size) * 0.5
+	expect(
+		(failure_layout.get("failure_title_rect", Rect2()) as Rect2)
+		== Rect2(failure_center + Vector2(-99.0, -59.0), Vector2(172.0, 50.0))
+		and (
+			(failure_buttons.get("restart", {}) as Dictionary).get(
+				"rect", Rect2()
+			) as Rect2
+		) == Rect2(failure_center + Vector2(-158.0, -3.0), Vector2(132.0, 38.0))
+		and (
+			(failure_buttons.get("main", {}) as Dictionary).get(
+				"rect", Rect2()
+			) as Rect2
+		) == Rect2(failure_center + Vector2(-8.0, -3.0), Vector2(132.0, 38.0)),
+		"failure controls retain their recovered center-relative coordinates",
 		failures,
 	)
 	var escape := InputEventKey.new()
@@ -602,12 +622,22 @@ func _run() -> void:
 	escape.pressed = true
 	shell._unhandled_input(escape)
 	expect(shell.is_failure_open() and paused, "Escape cannot bypass forced failure mode", failures)
+	shell._failure_main_button.pressed.emit()
+	expect(
+		shell.overlay_mode == GAME_SHELL_SCRIPT.OverlayMode.MODERN_MENU
+		and shell._failure_desaturate.visible
+		and shell._load_button.visible
+		and not shell._load_button.disabled
+		and shell._restart_button.visible,
+		"回主界面 exposes modern recovery actions without changing failure state",
+		failures,
+	)
 	shell._on_load_pressed()
 	expect(
 		shell.overlay_mode == GAME_SHELL_SCRIPT.OverlayMode.SLOT_SELECTOR
 		and shell._failure_desaturate.visible
 		and shell._slot_selector.slot_buttons.has("quick"),
-		"failure load opens a multi-slot selector over the grayscale world",
+		"failure recovery menu opens a multi-slot selector over the grayscale world",
 		failures,
 	)
 	(shell._slot_selector.slot_buttons["quick"] as Button).pressed.emit()
@@ -616,8 +646,9 @@ func _run() -> void:
 		"chosen load slot keeps failure mode until Main confirms restoration",
 		failures,
 	)
-	shell._return_from_slot_selector()
-	shell._restart_button.pressed.emit()
+	shell.close_for_state_change()
+	shell.show_failure("测试失败", true)
+	shell._failure_restart_button.pressed.emit()
 	expect(
 		restart_requests[0] == 1 and not shell.is_overlay_open() and not paused,
 		"restart releases failure pause before requesting a new level",

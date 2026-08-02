@@ -2,12 +2,12 @@
   "schema_version": 1,
   "baseline_id": "stable-mod-original-overlay-visual-parity-v1",
   "content_profile": "repository-mod-12-level-20260729",
-  "captured_utc": "2026-08-02T18:28:03.8741340Z",
+  "captured_utc": "2026-08-02T19:14:47.9462838Z",
   "method": "stable MOD cnc-ddraw RGB565 primary-surface memory versus Remake target viewport; target-process DirectInput replay only; native overlay crops where applicable",
   "input_isolation": "no desktop capture; no global mouse, keyboard or focus input",
   "original_binary_images_committed": false,
   "representative_level": "m000",
-  "coverage_note": "The compositor is exercised on m000; exact source hashes and native dimensions for all 12 minimaps, all inventory icons, the inventory chassis, the eight-button pause menu, F1 guide, credits and cursor frames are covered by original_overlay_asset_baseline.json and real_assets_test.gd.",
+  "coverage_note": "The compositor is exercised on m000; exact source hashes and native dimensions for all 12 minimaps, all inventory icons, the inventory chassis, the eight-button pause menu, the two-button failure menu, F1 guide, credits and cursor frames are covered by original_overlay_asset_baseline.json and real_assets_test.gd.",
   "samples": [
     {
       "overlay": "help",
@@ -91,6 +91,27 @@
       },
       "stable_mod_sha256": "D14829C9914CBA2B4083A6313E50E351933653BD53474B834CB8EF93131BF109",
       "remake_sha256": "BF948507C272765137EE416B1B560A42442CF2224F4ADDAB86804E99DF9307CC",
+      "passed": true
+    },
+    {
+      "overlay": "failure",
+      "comparison_scope": "native_overlay_crop",
+      "dimensions": [282, 94],
+      "threshold_profile": "rgb565_original_failure_dynamic_text",
+      "metrics": {
+        "mean_absolute_error": 14.8193,
+        "near_match_ratio": 0.829184,
+        "edge_correlation": 0.57533,
+        "black_hole_ratio": 0.00497963
+      },
+      "thresholds": {
+        "maximum_mean_absolute_error": 16.0,
+        "minimum_near_match_ratio": 0.82,
+        "minimum_edge_correlation": 0.55,
+        "maximum_black_hole_ratio": 0.006
+      },
+      "stable_mod_sha256": "CD9DEBA0C47D34CBF08F006028A3E9117B940E56659485A4EAFB852EC10967B4",
+      "remake_sha256": "F3C7B5F079EEF621710258E6154C4AF913694B1BE189F9BFEAC750B32BCCCE58",
       "passed": true
     },
     {

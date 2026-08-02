@@ -157,7 +157,15 @@ func _run() -> void:
 	main.game_shell.show_failure("自动验收：任务失败\n可重新开始本关或从多槽选择器读取存档。", false)
 	paused = false
 	_expect(await _wait_for_render_frame(), "failure menu frame renders")
-	_expect(main.game_shell.is_failure_open(), "forced failure menu opens")
+	var failure_layout: Dictionary = main.game_shell.original_overlay_layout_snapshot()
+	_expect(
+		main.game_shell.is_failure_open()
+		and _original_failure_layout_matches_viewport(
+			failure_layout,
+			Vector2(root.size),
+		),
+		"forced failure menu uses the recovered two-button geometry and grayscale",
+	)
 	_capture("failure-menu.jpg")
 	main.game_shell.close_for_state_change()
 
@@ -261,6 +269,32 @@ func _original_pause_layout_matches_viewport(
 	)
 
 
+func _original_failure_layout_matches_viewport(
+	layout: Dictionary,
+	viewport_size: Vector2,
+) -> bool:
+	var center := viewport_size * 0.5
+	var buttons := layout.get("failure_buttons", {}) as Dictionary
+	var restart := buttons.get("restart", {}) as Dictionary
+	var main := buttons.get("main", {}) as Dictionary
+	return (
+		(layout.get("failure_title_rect", Rect2()) as Rect2)
+		== Rect2(center + Vector2(-99.0, -59.0), Vector2(172.0, 50.0))
+		and (layout.get("failure_title_texture_size", Vector2.ZERO) as Vector2)
+		== Vector2(172.0, 50.0)
+		and (restart.get("rect", Rect2()) as Rect2)
+		== Rect2(center + Vector2(-158.0, -3.0), Vector2(132.0, 38.0))
+		and (restart.get("texture_size", Vector2.ZERO) as Vector2)
+		== Vector2(132.0, 38.0)
+		and (main.get("rect", Rect2()) as Rect2)
+		== Rect2(center + Vector2(-8.0, -3.0), Vector2(132.0, 38.0))
+		and (main.get("texture_size", Vector2.ZERO) as Vector2)
+		== Vector2(132.0, 38.0)
+		and bool(layout.get("desaturate_visible", false))
+		and is_equal_approx(float(layout.get("desaturate_brightness", 0.0)), 1.0)
+		and is_equal_approx(float(layout.get("desaturate_average_mix", 0.0)), 1.0)
+		and not bool(layout.get("dim_visible", true))
+	)
 func _original_inventory_layout_matches_viewport(
 	layout: Dictionary,
 	viewport_size: Vector2,
