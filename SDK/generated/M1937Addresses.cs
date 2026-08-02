@@ -44,9 +44,13 @@ namespace Mission1937.SDK.Generated
         public const long InitializeMissionBindings = 0x00004BB0L;
         public const long EvaluateMission = 0x00005410L;
         public const long EvaluateMissionThunk = 0x0000106EL;
+        public const long PlayMovieThunk = 0x000011B8L;
+        public const long SelectBriefingOrEndingAsset = 0x00002BD0L;
+        public const long PresentBriefingAndLoadLevel = 0x000031C0L;
         public const long UpdateGameWorld = 0x00006AD0L;
         public const long FalseResourceWarningBranch = 0x0000734AL;
         public const long StartupMovieEnqueue = 0x0000762CL;
+        public const long PlayMovieBlocking = 0x00007D80L;
         public const long GeneralSoundRequestThunk = 0x00001131L;
         public const long GuardedGeneralSoundRequest = 0x000045A0L;
         public const long AlarmSoundDispatch = 0x00008480L;
@@ -59,6 +63,7 @@ namespace Mission1937.SDK.Generated
         public const long PlaySoundImmediately = 0x0000B8A0L;
         public const long StartSoundBuffer = 0x0000C320L;
         public const long SpriteGroupSoundDispatcher = 0x0001D6F0L;
+        public const long UpdateMovieFrame = 0x0001DAD0L;
         public const long SpriteGroupSoundRequest = 0x00027C80L;
         public const long UiButtonUpdate = 0x000485D0L;
         public const long UiButtonSoundRequestSequence = 0x000486C2L;

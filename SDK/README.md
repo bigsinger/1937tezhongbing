@@ -32,6 +32,9 @@ PE 指纹和原始指令字节。
   请求路径、95 条可达/31 条 asset-only 完整分区、980 个 SPR / 2,775 个
   frame group 审计，以及 GFL 1393 按钮松开和 GFL 1324 尸体警报的精确
   身份与 241 次活动更新；
+- `Media.hpp` 由 `media-routes.json` 生成，固定原程序唯一两次影片调用的
+  logo→历史片顺序、原始参数和 RVA，并统一描述十二关简报及 selector 13
+  的 640/800/1024 结局图；完整交叉引用闭包证明没有关卡间影片调用；
 - `Projectiles.hpp` 固定 type 1/2/3/6/7/9 的 effect/mode、
   64/64/64/16/5/8 步长、actor/GFL、直接伤害、L3→L2 碰撞顺序、
   actor 60 命中火花、0x44 运行时投射物布局、Bresenham/抛物线公式和
@@ -104,12 +107,16 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 - `include/M1937SDK/Addresses.hpp`
 - `include/M1937SDK/MissionRoutes.hpp`
 - `include/M1937SDK/CrtRandom.hpp`
+- `include/M1937SDK/Media.hpp`
+- `include/M1937SDK/Sound.hpp`
 - `include/M1937SDK/Escort.hpp`：原版自动营救、招募与追随规则
 - `include/M1937SDK/Mission.hpp`：任务控制器布局与六关原生交互求值表
 - `generated/M1937Addresses.cs`
 - `generated/M1937MissionRoutes.cs`
 - `Patch/src/level-selector/关卡名称.json`
 - `Remake/game/scripts/generated/legacy_crt_random_catalog.gd`
+- `Remake/game/scripts/generated/legacy_media_route_catalog.gd`
+- `Remake/game/scripts/generated/legacy_sound_route_catalog.gd`
 
 跨运行时轨迹不是地址清单生成物；其 schema 由 SDK 版本化维护，MOD
 只读探针与 Remake 回放器共同消费。已证明的原版对象映射才能写入轨迹，
@@ -125,7 +132,7 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 当前生命值，`+0x20C` 与所有已解析 VWF 对象精确对应，证明为默认攻击类型。
 46 名已解析敌军已用于 m000 巡逻差分门禁。
 
-不要直接编辑这些文件；`Test-SdkSingleSource.ps1` 会验证它们与两个 JSON
+不要直接编辑这些文件；`Test-SdkSingleSource.ps1` 会验证它们与对应 JSON
 机器源一致。
 
 验证程序会以离线方式读取 `Mod\M1937.exe`，检查 PE 身份、关键函数签名、

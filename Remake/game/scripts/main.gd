@@ -61,6 +61,12 @@ const LEGACY_ACTOR_AUDIO_RULES: Script = preload(
 const LEGACY_SOUND_ROUTE_CATALOG: Script = preload(
 	"res://scripts/generated/legacy_sound_route_catalog.gd"
 )
+const LEGACY_MEDIA_ROUTE_CATALOG: Script = preload(
+	"res://scripts/generated/legacy_media_route_catalog.gd"
+)
+const ORIGINAL_STARTUP_MEDIA_QUEUE: Script = preload(
+	"res://scripts/original_startup_media_queue.gd"
+)
 const LEGACY_AMBIENT_PARTICLE_RANDOM_CALL_SITES := {
 	0x0005FD2C: true,
 	0x0005FD41: true,
@@ -345,6 +351,7 @@ var game_settings: RefCounted
 var save_store: RefCounted
 var campaign_progress: Dictionary = {}
 var startup_level_selection_pending := false
+var startup_media_queue: RefCounted = ORIGINAL_STARTUP_MEDIA_QUEUE.new()
 var command_line_controls_display := false
 var media_event_seed := 0
 var last_formation_move_total_usec := 0
@@ -422,7 +429,7 @@ func _ready() -> void:
 		not startup_level_selection_pending,
 	)
 	if startup_level_selection_pending:
-		call_deferred("_open_level_selector", true)
+		call_deferred("_begin_original_startup_media_sequence")
 	queue_redraw()
 
 
@@ -1170,6 +1177,56 @@ func _should_show_startup_level_selector() -> bool:
 		if argument.contains("res://tests/") or argument.contains("\\tests\\"):
 			return false
 	return true
+
+
+func _should_play_original_startup_media() -> bool:
+	if (
+		not startup_level_selection_pending
+		or media_director == null
+		or DisplayServer.get_name() == "headless"
+		or OS.get_environment("M1937_REMAKE_SKIP_STARTUP_MEDIA") == "1"
+	):
+		return false
+	for argument: String in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if argument == "--skip-startup-media":
+			return false
+		# Automated probes must remain short and deterministic even when local
+		# converted movies are present (the historical film is about 140 s).
+		if argument.contains("res://tests/") or argument.contains("\\tests\\"):
+			return false
+	return true
+
+
+func _begin_original_startup_media_sequence() -> void:
+	if not startup_level_selection_pending:
+		return
+	if not _should_play_original_startup_media():
+		_complete_original_startup_media_sequence()
+		return
+	startup_media_queue.call(
+		"begin",
+		LEGACY_MEDIA_ROUTE_CATALOG.startup_sequence(),
+	)
+	_play_next_original_startup_movie()
+
+
+func _play_next_original_startup_movie() -> void:
+	while bool(startup_media_queue.call("is_active")):
+		var movie_id := str(startup_media_queue.call("next_movie_id"))
+		if movie_id.is_empty():
+			return
+		if media_director != null and bool(media_director.play_movie(movie_id)):
+			return
+		# Missing/invalid optional conversion: resolve immediately and continue
+		# with the next original entry. No error popup and no modal deadlock.
+		startup_media_queue.call("resolve", movie_id)
+	_complete_original_startup_media_sequence()
+
+
+func _complete_original_startup_media_sequence() -> void:
+	startup_media_queue.call("clear")
+	if startup_level_selection_pending:
+		_open_level_selector(true)
 
 
 func _should_show_briefing() -> bool:
@@ -6570,6 +6627,7 @@ func _on_level_requested(level_id: String) -> void:
 		update_status("自由选关失败：无效关卡 %s" % level_id)
 		return
 	startup_level_selection_pending = false
+	startup_media_queue.call("clear")
 	switch_level(level_index)
 	update_status("自由选关：第 %d 关 %s" % [
 		level_index + 1,
@@ -6581,6 +6639,7 @@ func _on_level_selection_cancelled() -> void:
 	if not startup_level_selection_pending:
 		return
 	startup_level_selection_pending = false
+	startup_media_queue.call("clear")
 	switch_level(current_level_index)
 
 
@@ -7561,7 +7620,10 @@ func _on_media_dialogue_finished(sequence_id: String, _skipped: bool) -> void:
 	call_deferred("_try_complete_victory_presentation")
 
 
-func _on_media_movie_finished(_movie_id: String, _skipped: bool) -> void:
+func _on_media_movie_finished(movie_id: String, _skipped: bool) -> void:
+	if bool(startup_media_queue.call("resolve", movie_id)):
+		call_deferred("_play_next_original_startup_movie")
+		return
 	call_deferred("_try_complete_victory_presentation")
 
 

@@ -228,6 +228,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "Godot media catalog and fallback runtime tests failed with exit code $LASTEXITCODE."
 }
 
+& $GodotExecutable --headless --path $game --script 'res://tests/legacy_media_order_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot original media-order tests failed with exit code $LASTEXITCODE."
+}
+
 & $GodotExecutable --headless --path $game --script 'res://tests/mission_direction_runtime_test.gd'
 if ($LASTEXITCODE -ne 0) {
     throw "Godot twelve-level mission direction tests failed with exit code $LASTEXITCODE."

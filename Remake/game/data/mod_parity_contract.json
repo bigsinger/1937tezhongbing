@@ -73,8 +73,8 @@
     {
       "id": "dialogue_camera_tutorial_and_cutscenes",
       "status": "partial",
-      "evidence": ["briefing/audio media mapping", "strict original profile creates no remake_editorial dialogue/camera/tutorial/AI runtime and suppresses editorial mission cues", "easy/normal/hard explicitly opt in to the 43-beat/45-line editorial direction layer", "recovered briefing and m011 ending media remain enabled in original", "camera and tutorial runtime"],
-      "gaps": ["source-backed original dialogue/camera/tutorial timing", "all inter-level media"]
+      "evidence": ["briefing/audio media mapping", "the executable contains exactly two SVT strings and both direct movie calls occur at startup before the selector; no inter-level movie call exists", "strict original profile creates no remake_editorial dialogue/camera/tutorial/AI runtime and suppresses editorial mission cues", "easy/normal/hard explicitly opt in to the 43-beat/45-line editorial direction layer", "recovered briefing and m011 ending media remain enabled in original", "camera and tutorial runtime"],
+      "gaps": ["source-backed original dialogue/camera/tutorial timing"]
     },
     {
       "id": "menus_hud_minimap_and_cursor",
@@ -90,12 +90,15 @@
     },
     {
       "id": "audio_and_media",
-      "status": "partial",
+      "status": "verified",
       "evidence": [
         "128 WAV cues",
         "12 briefings",
         "music/voice/SFX buses",
         "legacy movie conversion",
+        "exactly two executable SVT strings and two xrefs close the original movie call graph: GameKingLogo.SVT then 1937Intro.SVT in sub_407300, both through the synchronous sub_407D80 player before the selector and with no inter-level movie calls",
+        "SDK/media-routes.json generates C++ and GDScript catalogs for the two startup calls, twelve Intro_000..011 briefings and selector-13 width-dependent Intro_012 ending images",
+        "normal product startup plays the logo then historical intro when converted media exists; Enter/Space/Esc skips locally, missing conversions advance without a popup or deadlock, and automated probes suppress the 140-second queue",
         "sub_45D610/sub_45D7B0/sub_45D900/sub_45DA20/sub_45DA60 exact sound-array call chain",
         "41 runtime-type voice selector rules with exact SLF/GFL order and 17 unique randomized call sites",
         "player selection and movement acknowledgement use exact indexed voice playback on the persisted process-global CRT stream",
@@ -116,7 +119,7 @@
         "modal dialogue remains exclusive while actor voice slots expand only when all existing slots are active, then report their own GFL completion index and are reused",
         "eight SFX players are prewarmed for allocation-free ordinary scenes; a ninth concurrent request appends a non-stealing slot, and all completed slots are retained for deterministic idle reuse"
       ],
-      "gaps": ["complete cutscene order"]
+      "gaps": []
     },
     {
       "id": "performance_and_windows_release",

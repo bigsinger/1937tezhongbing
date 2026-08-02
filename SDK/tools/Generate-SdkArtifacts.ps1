@@ -9,6 +9,7 @@ $addressPath = Join-Path $sdkRoot 'address-catalog.json'
 $routePath = Join-Path $sdkRoot 'mission-routes.json'
 $crtRandPath = Join-Path $sdkRoot 'crt-rand-call-sites.json'
 $soundPath = Join-Path $sdkRoot 'sound-routes.json'
+$mediaPath = Join-Path $sdkRoot 'media-routes.json'
 
 function Convert-ToSnakeCase {
     param([Parameter(Mandatory)][string]$Name)
@@ -257,6 +258,206 @@ function New-GdscriptSoundCatalog {
     $lines.Add('        if int(entry.get("zero_based_index", -1)) == index:')
     $lines.Add('            return entry.duplicate(true)')
     $lines.Add('    return {}')
+    $lines.Add('')
+    return [string]::Join("`n", $lines)
+}
+
+function New-MediaHeader {
+    param($Catalog)
+    $startup = @($Catalog.startup_sequence)
+    $briefings = @($Catalog.level_briefings)
+    $endings = @($Catalog.ending_images)
+    $lines = [Collections.Generic.List[string]]::new()
+    $lines.Add('#pragma once')
+    $lines.Add('')
+    $lines.Add('// Generated from SDK/media-routes.json. Do not edit.')
+    $lines.Add('#include <array>')
+    $lines.Add('#include <cstdint>')
+    $lines.Add('')
+    $lines.Add('namespace m1937::sdk::media {')
+    $lines.Add('')
+    $lines.Add(('inline constexpr bool movie_player_blocks = {0};' -f $(
+        if ([bool]$Catalog.movie_player.blocking_until_finished_or_input) {
+            'true'
+        } else {
+            'false'
+        })))
+    $lines.Add(('inline constexpr int executable_svt_string_count = {0};' -f
+        [int]$Catalog.movie_player.executable_svt_string_count))
+    $lines.Add(('inline constexpr int direct_movie_call_count = {0};' -f
+        [int]$Catalog.movie_player.direct_call_count))
+    $lines.Add(('inline constexpr int inter_level_movie_count = {0};' -f
+        [int]$Catalog.presentation_flow.inter_level_movie_count))
+    $lines.Add(('inline constexpr int ending_selector_level = {0};' -f
+        [int]$Catalog.presentation_flow.ending_selector_level))
+    $lines.Add(('inline constexpr int ending_dismissal_next_selector_level = {0};' -f
+        [int]$Catalog.presentation_flow.ending_dismissal_next_selector_level))
+    $lines.Add('')
+    $lines.Add('struct StartupMovie final {')
+    $lines.Add('    int order;')
+    $lines.Add('    const char* id;')
+    $lines.Add('    const char* role;')
+    $lines.Add('    const char* source_filename;')
+    $lines.Add('    const char* source_disk_filename;')
+    $lines.Add('    std::uintptr_t source_string_rva;')
+    $lines.Add('    std::uintptr_t call_rva;')
+    $lines.Add('    int player_argument_1;')
+    $lines.Add('    int player_argument_2;')
+    $lines.Add('    int source_width;')
+    $lines.Add('    int source_height;')
+    $lines.Add('    double duration_seconds;')
+    $lines.Add('    const char* converted_relative_path;')
+    $lines.Add('};')
+    $lines.Add('')
+    $lines.Add(('inline constexpr std::array<StartupMovie, {0}> startup_sequence{{{{' -f
+        $startup.Count))
+    foreach ($entry in $startup) {
+        $lines.Add(('    {{{0}, "{1}", "{2}", "{3}", "{4}", {5}, {6}, {7}, {8}, {9}, {10}, {11}, "{12}"}},' -f
+            [int]$entry.order,
+            (Escape-CppString ([string]$entry.id)),
+            (Escape-CppString ([string]$entry.role)),
+            (Escape-CppString ([string]$entry.source_filename)),
+            (Escape-CppString ([string]$entry.source_disk_filename)),
+            (Format-Rva ([string]$entry.source_string_rva)),
+            (Format-Rva ([string]$entry.call_rva)),
+            [int]$entry.player_argument_1,
+            [int]$entry.player_argument_2,
+            [int]$entry.source_width,
+            [int]$entry.source_height,
+            ([double]$entry.duration_seconds).ToString(
+                '0.000000', [Globalization.CultureInfo]::InvariantCulture),
+            (Escape-CppString ([string]$entry.converted_relative_path))))
+    }
+    $lines.Add('}};')
+    $lines.Add('')
+    $lines.Add('struct LevelBriefing final {')
+    $lines.Add('    int selector_level;')
+    $lines.Add('    const char* level_id;')
+    $lines.Add('    const char* resource_name;')
+    $lines.Add('    int gfl_index;')
+    $lines.Add('    const char* converted_relative_path;')
+    $lines.Add('};')
+    $lines.Add('')
+    $lines.Add(('inline constexpr std::array<LevelBriefing, {0}> level_briefings{{{{' -f
+        $briefings.Count))
+    foreach ($entry in $briefings) {
+        $lines.Add(('    {{{0}, "{1}", "{2}", {3}, "{4}"}},' -f
+            [int]$entry.selector_level,
+            (Escape-CppString ([string]$entry.level_id)),
+            (Escape-CppString ([string]$entry.resource_name)),
+            [int]$entry.gfl_index,
+            (Escape-CppString ([string]$entry.converted_relative_path))))
+    }
+    $lines.Add('}};')
+    $lines.Add('')
+    $lines.Add('struct EndingImage final {')
+    $lines.Add('    int target_width;')
+    $lines.Add('    const char* resource_name;')
+    $lines.Add('    std::uintptr_t resource_string_rva;')
+    $lines.Add('    int gfl_index;')
+    $lines.Add('    const char* converted_relative_path;')
+    $lines.Add('};')
+    $lines.Add('')
+    $lines.Add(('inline constexpr std::array<EndingImage, {0}> ending_images{{{{' -f
+        $endings.Count))
+    foreach ($entry in $endings) {
+        $lines.Add(('    {{{0}, "{1}", {2}, {3}, "{4}"}},' -f
+            [int]$entry.target_width,
+            (Escape-CppString ([string]$entry.resource_name)),
+            (Format-Rva ([string]$entry.resource_string_rva)),
+            [int]$entry.gfl_index,
+            (Escape-CppString ([string]$entry.converted_relative_path))))
+    }
+    $lines.Add('}};')
+    $lines.Add('')
+    $lines.Add('}  // namespace m1937::sdk::media')
+    $lines.Add('')
+    return [string]::Join("`n", $lines)
+}
+
+function New-GdscriptMediaCatalog {
+    param($Catalog)
+    $lines = [Collections.Generic.List[string]]::new()
+    $lines.Add('class_name LegacyMediaRouteCatalog')
+    $lines.Add('extends RefCounted')
+    $lines.Add('')
+    $lines.Add('## Generated from SDK/media-routes.json. Do not edit.')
+    $lines.Add(('const CATALOG_ID := "{0}"' -f
+        (Escape-GdString ([string]$Catalog.catalog_id))))
+    $lines.Add(('const MOVIE_PLAYER_BLOCKS := {0}' -f $(
+        if ([bool]$Catalog.movie_player.blocking_until_finished_or_input) {
+            'true'
+        } else {
+            'false'
+        })))
+    $lines.Add(('const EXECUTABLE_SVT_STRING_COUNT := {0}' -f
+        [int]$Catalog.movie_player.executable_svt_string_count))
+    $lines.Add(('const DIRECT_MOVIE_CALL_COUNT := {0}' -f
+        [int]$Catalog.movie_player.direct_call_count))
+    $lines.Add(('const INTER_LEVEL_MOVIE_COUNT := {0}' -f
+        [int]$Catalog.presentation_flow.inter_level_movie_count))
+    $lines.Add(('const ENDING_SELECTOR_LEVEL := {0}' -f
+        [int]$Catalog.presentation_flow.ending_selector_level))
+    $lines.Add(('const ENDING_DISMISSAL_NEXT_SELECTOR_LEVEL := {0}' -f
+        [int]$Catalog.presentation_flow.ending_dismissal_next_selector_level))
+    $lines.Add('const STARTUP_SEQUENCE: Array[Dictionary] = [')
+    foreach ($entry in $Catalog.startup_sequence) {
+        $lines.Add(('    {{"order": {0}, "id": "{1}", "role": "{2}", "source_filename": "{3}", "source_disk_filename": "{4}", "source_string_rva": {5}, "call_rva": {6}, "player_argument_1": {7}, "player_argument_2": {8}, "source_width": {9}, "source_height": {10}, "duration_seconds": {11}, "converted_relative_path": "{12}"}},' -f
+            [int]$entry.order,
+            (Escape-GdString ([string]$entry.id)),
+            (Escape-GdString ([string]$entry.role)),
+            (Escape-GdString ([string]$entry.source_filename)),
+            (Escape-GdString ([string]$entry.source_disk_filename)),
+            (Format-Rva ([string]$entry.source_string_rva)),
+            (Format-Rva ([string]$entry.call_rva)),
+            [int]$entry.player_argument_1,
+            [int]$entry.player_argument_2,
+            [int]$entry.source_width,
+            [int]$entry.source_height,
+            ([double]$entry.duration_seconds).ToString(
+                '0.000000', [Globalization.CultureInfo]::InvariantCulture),
+            (Escape-GdString ([string]$entry.converted_relative_path))))
+    }
+    $lines.Add(']')
+    $lines.Add('const LEVEL_BRIEFINGS: Array[Dictionary] = [')
+    foreach ($entry in $Catalog.level_briefings) {
+        $lines.Add(('    {{"selector_level": {0}, "level_id": "{1}", "resource_name": "{2}", "gfl_index": {3}, "converted_relative_path": "{4}"}},' -f
+            [int]$entry.selector_level,
+            (Escape-GdString ([string]$entry.level_id)),
+            (Escape-GdString ([string]$entry.resource_name)),
+            [int]$entry.gfl_index,
+            (Escape-GdString ([string]$entry.converted_relative_path))))
+    }
+    $lines.Add(']')
+    $lines.Add('const ENDING_IMAGES: Array[Dictionary] = [')
+    foreach ($entry in $Catalog.ending_images) {
+        $lines.Add(('    {{"target_width": {0}, "resource_name": "{1}", "resource_string_rva": {2}, "gfl_index": {3}, "converted_relative_path": "{4}"}},' -f
+            [int]$entry.target_width,
+            (Escape-GdString ([string]$entry.resource_name)),
+            (Format-Rva ([string]$entry.resource_string_rva)),
+            [int]$entry.gfl_index,
+            (Escape-GdString ([string]$entry.converted_relative_path))))
+    }
+    $lines.Add(']')
+    $lines.Add('')
+    $lines.Add('static func startup_sequence() -> Array[Dictionary]:')
+    $lines.Add('    return STARTUP_SEQUENCE.duplicate(true)')
+    $lines.Add('')
+    $lines.Add('static func briefing_for_level(level_id: String) -> Dictionary:')
+    $lines.Add('    for entry: Dictionary in LEVEL_BRIEFINGS:')
+    $lines.Add('        if str(entry.get("level_id", "")) == level_id:')
+    $lines.Add('            return entry.duplicate(true)')
+    $lines.Add('    return {}')
+    $lines.Add('')
+    $lines.Add('static func ending_for_target_width(target_width: int) -> Dictionary:')
+    $lines.Add('    var best: Dictionary = {}')
+    $lines.Add('    var best_distance := 0x7fffffff')
+    $lines.Add('    for entry: Dictionary in ENDING_IMAGES:')
+    $lines.Add('        var distance := absi(int(entry.get("target_width", 0)) - target_width)')
+    $lines.Add('        if distance < best_distance:')
+    $lines.Add('            best_distance = distance')
+    $lines.Add('            best = entry')
+    $lines.Add('    return best.duplicate(true)')
     $lines.Add('')
     return [string]::Join("`n", $lines)
 }
@@ -633,6 +834,9 @@ $crtRandCatalog =
 $soundCatalog =
     Get-Content -LiteralPath $soundPath -Raw -Encoding UTF8 |
     ConvertFrom-Json
+$mediaCatalog =
+    Get-Content -LiteralPath $mediaPath -Raw -Encoding UTF8 |
+    ConvertFrom-Json
 
 $duplicateNames = $addressCatalog.addresses |
     Group-Object name | Where-Object Count -gt 1
@@ -663,6 +867,88 @@ if ([string]$soundCatalog.supported_executable_sha256 -cne
     [string]$addressCatalog.supported_executable.sha256) {
     throw 'Sound route catalog targets a different executable identity.'
 }
+if ([string]$mediaCatalog.supported_executable_sha256 -cne
+    [string]$addressCatalog.supported_executable.sha256) {
+    throw 'Media route catalog targets a different executable identity.'
+}
+$addressNames = @($addressCatalog.addresses.name)
+$mediaSymbols = @(
+    [string]$mediaCatalog.movie_player.thunk_symbol
+    [string]$mediaCatalog.movie_player.function_symbol
+    [string]$mediaCatalog.movie_player.frame_update_symbol
+    [string]$mediaCatalog.movie_player.startup_sequence_symbol
+    [string]$mediaCatalog.presentation_flow.asset_selector_symbol
+    [string]$mediaCatalog.presentation_flow.display_and_level_load_symbol
+) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+    Sort-Object -Unique
+$missingMediaSymbols = @($mediaSymbols |
+    Where-Object { $addressNames -notcontains $_ })
+if ($missingMediaSymbols.Count -ne 0) {
+    throw (
+        'Media route catalog references missing address symbols: ' +
+        ($missingMediaSymbols -join ', '))
+}
+$startupMovies = @($mediaCatalog.startup_sequence)
+if ($startupMovies.Count -ne 2 -or
+    [int]$mediaCatalog.movie_player.executable_svt_string_count -ne 2 -or
+    [int]$mediaCatalog.movie_player.direct_call_count -ne 2 -or
+    -not [bool]$mediaCatalog.movie_player.blocking_until_finished_or_input) {
+    throw 'Original movie route must contain exactly two blocking startup calls.'
+}
+$expectedStartupMovies = @(
+    [pscustomobject]@{
+        order = 0
+        id = 'logo'
+        source_filename = 'GameKingLogo.SVT'
+        call_rva = '0x00007635'
+        argument_2 = 0
+    },
+    [pscustomobject]@{
+        order = 1
+        id = 'historical_intro'
+        source_filename = '1937Intro.SVT'
+        call_rva = '0x00007644'
+        argument_2 = 100
+    }
+)
+for ($startupIndex = 0; $startupIndex -lt 2; $startupIndex++) {
+    $entry = $startupMovies[$startupIndex]
+    $expected = $expectedStartupMovies[$startupIndex]
+    if ([int]$entry.order -ne [int]$expected.order -or
+        [string]$entry.id -cne [string]$expected.id -or
+        [string]$entry.source_filename -cne [string]$expected.source_filename -or
+        (Format-Rva ([string]$entry.call_rva)) -cne
+            (Format-Rva ([string]$expected.call_rva)) -or
+        [int]$entry.player_argument_1 -ne 0 -or
+        [int]$entry.player_argument_2 -ne [int]$expected.argument_2 -or
+        [string]::IsNullOrWhiteSpace(
+            [string]$entry.converted_relative_path)) {
+        throw "Invalid original startup movie entry at order $startupIndex."
+    }
+}
+$mediaBriefings = @($mediaCatalog.level_briefings)
+if ($mediaBriefings.Count -ne 12) {
+    throw 'Media route catalog must contain the twelve original briefings.'
+}
+for ($briefingIndex = 0; $briefingIndex -lt 12; $briefingIndex++) {
+    $entry = $mediaBriefings[$briefingIndex]
+    $expectedSelector = $briefingIndex + 1
+    $expectedLevelId = 'm{0:D3}' -f $briefingIndex
+    $expectedResourceName = 'Intro_{0:D3}.psd' -f $briefingIndex
+    if ([int]$entry.selector_level -ne $expectedSelector -or
+        [string]$entry.level_id -cne $expectedLevelId -or
+        [string]$entry.resource_name -cne $expectedResourceName) {
+        throw "Invalid original briefing entry at selector $expectedSelector."
+    }
+}
+$endingWidths = @($mediaCatalog.ending_images |
+    ForEach-Object { [int]$_.target_width } | Sort-Object)
+if ([int]$mediaCatalog.presentation_flow.inter_level_movie_count -ne 0 -or
+    [int]$mediaCatalog.presentation_flow.ending_selector_level -ne 13 -or
+    [int]$mediaCatalog.presentation_flow.ending_dismissal_next_selector_level -ne 1 -or
+    (Compare-Object @(640, 800, 1024) $endingWidths).Count -ne 0) {
+    throw 'Original briefing/ending presentation flow is inconsistent.'
+}
 $soundSymbols = @(
     [string]$soundCatalog.request_pipeline.queued.manager_request_symbol
     [string]$soundCatalog.request_pipeline.queued.request_counter_symbol
@@ -687,7 +973,6 @@ $soundSymbols = @(
     [string]$soundCatalog.routes.ui_button_release.call_sequence_symbol
 ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
     Sort-Object -Unique
-$addressNames = @($addressCatalog.addresses.name)
 $missingSoundSymbols = @($soundSymbols |
     Where-Object { $addressNames -notcontains $_ })
 if ($missingSoundSymbols.Count -ne 0) {
@@ -797,6 +1082,11 @@ $outputs = [ordered]@{
     (Join-Path $repositoryRoot (
         'Remake\game\scripts\generated\legacy_sound_route_catalog.gd')) =
         New-GdscriptSoundCatalog $soundCatalog
+    (Join-Path $sdkRoot 'include\M1937SDK\Media.hpp') =
+        New-MediaHeader $mediaCatalog
+    (Join-Path $repositoryRoot (
+        'Remake\game\scripts\generated\legacy_media_route_catalog.gd')) =
+        New-GdscriptMediaCatalog $mediaCatalog
     (Join-Path $sdkRoot 'include\M1937SDK\CrtRandom.hpp') =
         New-CrtRandomHeader $crtRandCatalog
     (Join-Path $repositoryRoot (

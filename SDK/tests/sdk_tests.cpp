@@ -105,6 +105,18 @@ void require(bool value, const char* description, int& checks) {
     checks++;
 }
 
+void require_ascii(
+    const PeFile& file,
+    std::uint32_t rva,
+    const char* expected,
+    const char* name,
+    int& checks) {
+    const auto length = std::strlen(expected) + 1;
+    if (std::memcmp(file.at_rva(rva, length), expected, length) != 0)
+        throw std::runtime_error(std::string("ASCII mismatch: ") + name);
+    checks++;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -151,10 +163,29 @@ int main(int argc, char** argv) {
             0x68, 0x88, 0xE3, 0x4B, 0x00, 0x50, 0xA1, 0x58};
         static constexpr unsigned char mission_evaluator_thunk[] = {
             0xE9, 0x9D, 0x43, 0x00, 0x00};
+        static constexpr unsigned char play_movie_thunk[] = {
+            0xE9, 0xC3, 0x6B, 0x00, 0x00};
+        static constexpr unsigned char briefing_asset_selector[] = {
+            0x6A, 0xFF, 0x68, 0xE5, 0xE2, 0x4B, 0x00, 0x64,
+            0xA1, 0x00, 0x00, 0x00, 0x00, 0x50, 0x64, 0x89};
+        static constexpr unsigned char briefing_presenter[] = {
+            0x64, 0xA1, 0x00, 0x00, 0x00, 0x00, 0x6A, 0xFF,
+            0x68, 0x2E, 0xE3, 0x4B, 0x00, 0x50, 0xA1, 0xD8};
         static constexpr unsigned char world_update[] = {
             0x83, 0xEC, 0x10, 0x56, 0x8B, 0xF1, 0x8B, 0x4E,
             0x40, 0x85, 0xC9, 0x0F, 0x84, 0x7D, 0x02, 0x00};
         static constexpr unsigned char warning[] = {0x74, 0x0C};
+        static constexpr unsigned char startup_movie_sequence[] = {
+            0x68, 0x8C, 0xF7, 0x4C, 0x00, 0x53, 0x53, 0x8B,
+            0xCE, 0xE8, 0x7E, 0x9B, 0xFF, 0xFF, 0x68, 0x7C,
+            0xF7, 0x4C, 0x00, 0x6A, 0x64, 0x53, 0x8B, 0xCE,
+            0xE8, 0x6F, 0x9B, 0xFF, 0xFF};
+        static constexpr unsigned char play_movie_blocking[] = {
+            0x6A, 0xFF, 0x68, 0x5B, 0xE4, 0x4B, 0x00, 0x64,
+            0xA1, 0x00, 0x00, 0x00, 0x00, 0x50, 0x64, 0x89};
+        static constexpr unsigned char update_movie_frame[] = {
+            0x56, 0x8B, 0xF1, 0x6A, 0x00, 0x6A, 0x00, 0x8B,
+            0x46, 0x14, 0x6A, 0x00, 0x6A, 0x00, 0x50, 0x8B};
         static constexpr unsigned char level[] = {
             0x01, 0x00, 0x00, 0x00};
         static constexpr unsigned char alarm_sound_request[] = {
@@ -178,11 +209,45 @@ int main(int argc, char** argv) {
             file, m1937::sdk::rva::evaluate_mission_thunk,
             mission_evaluator_thunk, "EvaluateMissionThunk", checks);
         require_signature(
+            file, m1937::sdk::rva::play_movie_thunk,
+            play_movie_thunk, "PlayMovieThunk", checks);
+        require_signature(
+            file, m1937::sdk::rva::select_briefing_or_ending_asset,
+            briefing_asset_selector, "SelectBriefingOrEndingAsset", checks);
+        require_signature(
+            file, m1937::sdk::rva::present_briefing_and_load_level,
+            briefing_presenter, "PresentBriefingAndLoadLevel", checks);
+        require_signature(
             file, m1937::sdk::rva::update_game_world,
             world_update, "UpdateGameWorld", checks);
         require_signature(
             file, m1937::sdk::rva::false_resource_warning_branch,
             warning, "FalseResourceWarningBranch", checks);
+        require_signature(
+            file, m1937::sdk::rva::startup_movie_enqueue,
+            startup_movie_sequence, "StartupMovieEnqueue", checks);
+        require_signature(
+            file, m1937::sdk::rva::play_movie_blocking,
+            play_movie_blocking, "PlayMovieBlocking", checks);
+        require_signature(
+            file, m1937::sdk::rva::update_movie_frame,
+            update_movie_frame, "UpdateMovieFrame", checks);
+        require_ascii(
+            file,
+            static_cast<std::uint32_t>(
+                m1937::sdk::media::startup_sequence[0].source_string_rva),
+            "GameKingLogo.SVT", "startup logo string", checks);
+        require_ascii(
+            file,
+            static_cast<std::uint32_t>(
+                m1937::sdk::media::startup_sequence[1].source_string_rva),
+            "1937Intro.SVT", "historical intro string", checks);
+        for (const auto& ending : m1937::sdk::media::ending_images) {
+            require_ascii(
+                file,
+                static_cast<std::uint32_t>(ending.resource_string_rva),
+                ending.resource_name, "ending image string", checks);
+        }
         require_signature(
             file, m1937::sdk::rva::new_game_level_immediate,
             level, "NewGameLevelImmediate", checks);
@@ -202,6 +267,63 @@ int main(int argc, char** argv) {
                 m1937::sdk::rva::actor_voice_sound_request != 0 &&
                 m1937::sdk::rva::hostile_alert_voice_selector != 0,
             "sound request RVA catalog mismatch", checks);
+        require(
+            m1937::sdk::media::movie_player_blocks &&
+                m1937::sdk::media::executable_svt_string_count == 2 &&
+                m1937::sdk::media::direct_movie_call_count == 2 &&
+                m1937::sdk::media::inter_level_movie_count == 0 &&
+                m1937::sdk::media::ending_selector_level == 13 &&
+                m1937::sdk::media::ending_dismissal_next_selector_level == 1,
+            "original media-flow constants mismatch", checks);
+        require(
+            m1937::sdk::media::startup_sequence.size() == 2 &&
+                m1937::sdk::media::startup_sequence[0].order == 0 &&
+                std::strcmp(
+                    m1937::sdk::media::startup_sequence[0].id,
+                    "logo") == 0 &&
+                std::strcmp(
+                    m1937::sdk::media::startup_sequence[0].source_filename,
+                    "GameKingLogo.SVT") == 0 &&
+                m1937::sdk::media::startup_sequence[0].call_rva == 0x7635 &&
+                m1937::sdk::media::startup_sequence[0].player_argument_2 == 0 &&
+                m1937::sdk::media::startup_sequence[1].order == 1 &&
+                std::strcmp(
+                    m1937::sdk::media::startup_sequence[1].id,
+                    "historical_intro") == 0 &&
+                std::strcmp(
+                    m1937::sdk::media::startup_sequence[1].source_filename,
+                    "1937Intro.SVT") == 0 &&
+                m1937::sdk::media::startup_sequence[1].call_rva == 0x7644 &&
+                m1937::sdk::media::startup_sequence[1].player_argument_2 == 100,
+            "original startup movie order mismatch", checks);
+        require(
+            m1937::sdk::media::level_briefings.size() == 12 &&
+                m1937::sdk::media::level_briefings.front().selector_level == 1 &&
+                std::strcmp(
+                    m1937::sdk::media::level_briefings.front().level_id,
+                    "m000") == 0 &&
+                m1937::sdk::media::level_briefings.front().gfl_index == 1048 &&
+                m1937::sdk::media::level_briefings.back().selector_level == 12 &&
+                std::strcmp(
+                    m1937::sdk::media::level_briefings.back().level_id,
+                    "m011") == 0 &&
+                m1937::sdk::media::level_briefings.back().gfl_index == 1059,
+            "twelve original briefing routes mismatch", checks);
+        for (std::size_t index = 0;
+             index < m1937::sdk::media::level_briefings.size();
+             ++index) {
+            const auto& briefing = m1937::sdk::media::level_briefings[index];
+            require(
+                briefing.selector_level == static_cast<int>(index) + 1 &&
+                    briefing.gfl_index == static_cast<int>(index) + 1048,
+                "briefing selector sequence mismatch", checks);
+        }
+        require(
+            m1937::sdk::media::ending_images.size() == 3 &&
+                m1937::sdk::media::ending_images[0].target_width == 640 &&
+                m1937::sdk::media::ending_images[1].target_width == 800 &&
+                m1937::sdk::media::ending_images[2].target_width == 1024,
+            "original ending image variants mismatch", checks);
         require(
             m1937::sdk::sound::slf_entry_count == 126 &&
                 m1937::sdk::sound::audited_sprite_count == 980 &&

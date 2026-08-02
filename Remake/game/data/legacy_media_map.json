@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "source_policy": "Metadata only. Original and transcoded media stay in ignored LocalAssets.",
+  "source_policy": "Metadata only. Exact original media order is generated from SDK/media-routes.json; original and transcoded media stay in ignored LocalAssets.",
   "briefings": [
     {"level_id": "m000", "gfl_index": 1048, "relative_path": "iblock/1048.png"},
     {"level_id": "m001", "gfl_index": 1049, "relative_path": "iblock/1049.png"},
@@ -35,11 +35,11 @@
     {"width": 1024, "gfl_index": 1060, "relative_path": "iblock/1060.png"}
   ],
   "movies": [
-    {"id": "logo", "role": "publisher_logo", "relative_path": "media/video/logo.ogv", "auto_play": false},
-    {"id": "historical_intro", "role": "historical_intro", "relative_path": "media/video/historical_intro.ogv", "auto_play": false},
-    {"id": "bonus_013", "role": "unreferenced_bonus", "relative_path": "media/video/bonus_013.ogv", "auto_play": false},
-    {"id": "bonus_014", "role": "unreferenced_bonus", "relative_path": "media/video/bonus_014.ogv", "auto_play": false},
-    {"id": "bonus_015", "role": "unreferenced_bonus", "relative_path": "media/video/bonus_015.ogv", "auto_play": false}
+    {"id": "logo", "role": "publisher_logo", "source_filename": "GameKingLogo.SVT", "original_startup_order": 0, "referenced_by_original_game": true, "relative_path": "media/video/logo.ogv", "auto_play": true},
+    {"id": "historical_intro", "role": "historical_intro", "source_filename": "1937Intro.SVT", "original_startup_order": 1, "referenced_by_original_game": true, "relative_path": "media/video/historical_intro.ogv", "auto_play": true},
+    {"id": "bonus_013", "role": "unreferenced_bonus", "source_filename": "1937m013.vwf", "referenced_by_original_game": false, "relative_path": "media/video/bonus_013.ogv", "auto_play": false},
+    {"id": "bonus_014", "role": "unreferenced_bonus", "source_filename": "1937m014.vwf", "referenced_by_original_game": false, "relative_path": "media/video/bonus_014.ogv", "auto_play": false},
+    {"id": "bonus_015", "role": "unreferenced_bonus", "source_filename": "1937m015.vwf", "referenced_by_original_game": false, "relative_path": "media/video/bonus_015.ogv", "auto_play": false}
   ],
   "audio_events": {
     "attack_pistol": {"default": [1363, 1364, 1365, 1366]},

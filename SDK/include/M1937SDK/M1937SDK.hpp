@@ -9,6 +9,7 @@
 #include "Escort.hpp"
 #include "Input.hpp"
 #include "Inventory.hpp"
+#include "Media.hpp"
 #include "Mission.hpp"
 #include "MissionRoutes.hpp"
 #include "Module.hpp"

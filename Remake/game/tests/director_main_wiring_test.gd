@@ -34,6 +34,8 @@ class AudioRecorder extends CanvasLayer:
 	var continuous_requests: Array[Dictionary] = []
 	var exact_plays: Array[int] = []
 	var event_plays: Array[String] = []
+	var movie_attempts: Array[String] = []
+	var available_movies := {"logo": true, "historical_intro": true}
 
 	func request_sfx_audio_index(gfl_index: int, requester_id: int = 0) -> bool:
 		continuous_requests.append({"gfl_index": gfl_index, "requester_id": requester_id})
@@ -57,6 +59,10 @@ class AudioRecorder extends CanvasLayer:
 	) -> bool:
 		event_plays.append(event_key)
 		return true
+
+	func play_movie(movie_id: String) -> bool:
+		movie_attempts.append(movie_id)
+		return bool(available_movies.get(movie_id, false))
 
 
 func _init() -> void:
@@ -183,6 +189,43 @@ func _run() -> void:
 		"synthetic or old-schema sprites stay silent instead of inventing an event-level attack route",
 		failures,
 	)
+
+	main.startup_media_queue.call(
+		"begin",
+		main.LEGACY_MEDIA_ROUTE_CATALOG.startup_sequence(),
+	)
+	main.call("_play_next_original_startup_movie")
+	_expect(
+		audio_recorder.movie_attempts == ["logo"]
+		and str(main.startup_media_queue.call("awaiting_movie_id")) == "logo",
+		"Main starts the recovered logo first and waits for its completion",
+		failures,
+	)
+	main.startup_media_queue.call("resolve", "logo")
+	main.call("_play_next_original_startup_movie")
+	_expect(
+		audio_recorder.movie_attempts == ["logo", "historical_intro"]
+		and str(main.startup_media_queue.call("awaiting_movie_id"))
+			== "historical_intro",
+		"Main advances from the logo to the recovered historical intro",
+		failures,
+	)
+	main.startup_media_queue.call("clear")
+	audio_recorder.movie_attempts.clear()
+	audio_recorder.available_movies = {"historical_intro": true}
+	main.startup_media_queue.call(
+		"begin",
+		main.LEGACY_MEDIA_ROUTE_CATALOG.startup_sequence(),
+	)
+	main.call("_play_next_original_startup_movie")
+	_expect(
+		audio_recorder.movie_attempts == ["logo", "historical_intro"]
+		and str(main.startup_media_queue.call("awaiting_movie_id"))
+			== "historical_intro",
+		"Main skips a missing logo without skipping the available second movie",
+		failures,
+	)
+	main.startup_media_queue.call("clear")
 
 	var first = SQUAD_UNIT.new()
 	first.configure("first", Color.WHITE, Vector2(100, 100))
