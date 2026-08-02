@@ -16,6 +16,9 @@ class SyntheticAudioCatalog extends RefCounted:
 	func sound_path(gfl_index: int) -> String:
 		return "user://prewarm-audio-fixture/%d.wav" % gfl_index
 
+	func sound_metadata(_gfl_index: int) -> Dictionary:
+		return {"category": "voice", "caption": ""}
+
 
 func _init() -> void:
 	call_deferred("_run")
@@ -67,6 +70,11 @@ func _run() -> void:
 		failures,
 	)
 	expect(
+		director.voice_players.is_empty(),
+		"world voice players are allocated only when an actor actually speaks",
+		failures,
+	)
+	expect(
 		director.music_player != null
 		and director.music_player.bus == "Music"
 		and director.video_player.bus == "Music",
@@ -77,13 +85,13 @@ func _run() -> void:
 	director.call("_ensure_nodes")
 	expect(
 		audio_node_count == 10 and _audio_player_child_count(director) == 10,
-		"one music, one voice, and eight SFX channels stay bounded after repeated initialization",
+		"one music, one dialogue, and eight SFX channels stay stable after repeated initialization",
 		failures,
 	)
 	var synthetic_audio_load_calls := [0]
 	director.set_audio_stream_loader(func(_path: String) -> AudioStreamWAV:
 		synthetic_audio_load_calls[0] += 1
-		return AudioStreamWAV.new()
+		return _synthetic_audio_stream()
 	)
 	var cached_stream_a: AudioStreamWAV = director.call(
 		"_load_cached_audio_stream",
@@ -132,6 +140,60 @@ func _run() -> void:
 		and director.active_audio_index == -1
 		and not director.audio_player.playing,
 		"event and exact-index prewarming decode each variant once without playback",
+		failures,
+	)
+	var voice_finished_indices: Array[int] = []
+	director.audio_finished.connect(
+		func(gfl_index: int) -> void: voice_finished_indices.append(gfl_index)
+	)
+	expect(
+		bool(director.call("play_audio_index", 9001, "selected"))
+		and bool(director.call("play_audio_index", 9002, "challenge_attack"))
+		and bool(director.call("play_audio_index", 9001, "selected")),
+		"distinct and repeated same-frame actor voices all start successfully",
+		failures,
+	)
+	await process_frame
+	expect(
+		director.voice_players.size() == 3
+		and director.voice_players[0].playing
+		and director.voice_players[1].playing
+		and director.voice_players[2].playing
+		and director._voice_active_indices == [9001, 9002, 9001],
+		"actor voices overlap without a global priority channel or active-slot stealing",
+		failures,
+	)
+	expect(
+		not director.audio_player.playing and director.active_audio_index == -1,
+		"world actor voices do not occupy or disturb the modal-dialogue player",
+		failures,
+	)
+	director.voice_players[0].stop()
+	director.call("_on_voice_finished", 0)
+	expect(
+		voice_finished_indices == [9001]
+		and director._voice_active_indices[0] == -1,
+		"a completed actor-voice slot reports its own original GFL index",
+		failures,
+	)
+	expect(
+		bool(director.call("play_audio_index", 9002, "challenge_chase"))
+		and director.voice_players.size() == 3
+		and director._voice_active_indices[0] == 9002,
+		"the first idle actor-voice player is reused without growing the pool",
+		failures,
+	)
+	director.call("close_for_state_change")
+	var voice_state_cleared := true
+	for slot: int in range(director.voice_players.size()):
+		voice_state_cleared = (
+			voice_state_cleared
+			and not director.voice_players[slot].playing
+			and director._voice_active_indices[slot] == -1
+		)
+	expect(
+		voice_state_cleared,
+		"level replacement stops every concurrent actor voice and clears its index",
 		failures,
 	)
 	director.set_audio_stream_loader(Callable())
@@ -423,3 +485,15 @@ func _audio_player_child_count(parent: Node) -> int:
 		if child is AudioStreamPlayer:
 			result += 1
 	return result
+
+
+func _synthetic_audio_stream() -> AudioStreamWAV:
+	var stream := AudioStreamWAV.new()
+	stream.format = AudioStreamWAV.FORMAT_8_BITS
+	stream.mix_rate = 8000
+	stream.stereo = false
+	var samples := PackedByteArray()
+	samples.resize(80000)
+	samples.fill(128)
+	stream.data = samples
+	return stream

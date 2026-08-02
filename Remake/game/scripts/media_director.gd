@@ -30,10 +30,13 @@ const FALLBACK_VOICE_EVENTS := {
 }
 
 var catalog: RefCounted
-# The original public name is retained for compatibility.  It is now the
-# exclusive voice/dialogue channel; short world sounds use the fixed pool.
+# The original public name is retained for compatibility. It is the exclusive
+# modal-dialogue channel. Actor voices use independently allocated players so
+# one unit speaking cannot cut off another unit, matching the original sound
+# object's per-resource DirectSound request queues.
 var audio_player: AudioStreamPlayer
 var music_player: AudioStreamPlayer
+var voice_players: Array[AudioStreamPlayer] = []
 var sfx_players: Array[AudioStreamPlayer] = []
 var video_player: VideoStreamPlayer
 var overlay: ColorRect
@@ -48,6 +51,7 @@ var active_movie := ""
 var active_ending := false
 var active_audio_index := -1
 var active_music_index := -1
+var _voice_active_indices: Array[int] = []
 var _sfx_active_indices: Array[int] = []
 var _sfx_cursor := 0
 var subtitle_seconds := 0.0
@@ -104,6 +108,8 @@ func close_for_state_change() -> void:
 		audio_player.stop()
 	if music_player != null:
 		music_player.stop()
+	for player: AudioStreamPlayer in voice_players:
+		player.stop()
 	for player: AudioStreamPlayer in sfx_players:
 		player.stop()
 	active_briefing = ""
@@ -111,6 +117,8 @@ func close_for_state_change() -> void:
 	active_ending = false
 	active_audio_index = -1
 	active_music_index = -1
+	for index: int in range(_voice_active_indices.size()):
+		_voice_active_indices[index] = -1
 	for index: int in range(_sfx_active_indices.size()):
 		_sfx_active_indices[index] = -1
 	dialogue_sequence_id = ""
@@ -201,10 +209,17 @@ func _play_audio_index(
 	var channel := resolve_audio_channel(
 		channel_override, event_key, metadata, actor_key
 	)
-	if channel == AUDIO_CHANNEL_VOICE:
+	if channel == AUDIO_CHANNEL_VOICE and event_key == "dialogue":
+		audio_player.stop()
 		audio_player.stream = stream
 		active_audio_index = gfl_index
 		audio_player.play()
+	elif channel == AUDIO_CHANNEL_VOICE:
+		var voice_slot := _acquire_voice_slot()
+		var voice_player := voice_players[voice_slot]
+		voice_player.stream = stream
+		_voice_active_indices[voice_slot] = gfl_index
+		voice_player.play()
 	elif channel == AUDIO_CHANNEL_MUSIC:
 		music_player.stop()
 		music_player.stream = stream
@@ -597,6 +612,15 @@ func _on_music_finished() -> void:
 		audio_finished.emit(finished)
 
 
+func _on_voice_finished(slot: int) -> void:
+	if slot < 0 or slot >= _voice_active_indices.size():
+		return
+	var finished := _voice_active_indices[slot]
+	_voice_active_indices[slot] = -1
+	if finished >= 0:
+		audio_finished.emit(finished)
+
+
 func _on_sfx_finished(slot: int) -> void:
 	if slot < 0 or slot >= _sfx_active_indices.size():
 		return
@@ -622,7 +646,7 @@ func _ensure_nodes() -> void:
 	_ensure_audio_bus("Sfx")
 	_ensure_audio_bus("Voice")
 	audio_player = AudioStreamPlayer.new()
-	audio_player.name = "LegacyVoicePlayer"
+	audio_player.name = "LegacyDialoguePlayer"
 	audio_player.bus = "Voice"
 	audio_player.finished.connect(_on_audio_finished)
 	add_child(audio_player)
@@ -761,6 +785,17 @@ static func select_sfx_slot(playing_slots: Array[bool], cursor: int) -> Dictiona
 	}
 
 
+static func select_voice_slot(playing_slots: Array[bool]) -> int:
+	# The original owns buffers per sound object and grows that object's buffer
+	# list to the number of same-frame requests. Distinct actor sounds therefore
+	# overlap without a global priority/steal rule. Returning size means the
+	# caller must append a player instead of interrupting an active one.
+	for slot: int in range(playing_slots.size()):
+		if not playing_slots[slot]:
+			return slot
+	return playing_slots.size()
+
+
 static func dialogue_ready_to_auto_advance(
 	auto_advance: bool,
 	minimum_seconds: float,
@@ -778,6 +813,23 @@ func _acquire_sfx_slot() -> int:
 	var selection := select_sfx_slot(playing_slots, _sfx_cursor)
 	_sfx_cursor = int(selection["next_cursor"])
 	return int(selection["slot"])
+
+
+func _acquire_voice_slot() -> int:
+	var playing_slots: Array[bool] = []
+	for player: AudioStreamPlayer in voice_players:
+		playing_slots.append(player.playing)
+	var slot := select_voice_slot(playing_slots)
+	if slot < voice_players.size():
+		return slot
+	var voice_player := AudioStreamPlayer.new()
+	voice_player.name = "LegacyWorldVoicePlayer%02d" % slot
+	voice_player.bus = "Voice"
+	voice_player.finished.connect(_on_voice_finished.bind(slot))
+	add_child(voice_player)
+	voice_players.append(voice_player)
+	_voice_active_indices.append(-1)
+	return slot
 
 
 func _begin_modal_transition() -> void:
