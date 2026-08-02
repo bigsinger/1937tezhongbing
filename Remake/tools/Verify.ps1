@@ -35,6 +35,7 @@ if ($LASTEXITCODE -ne 0) {
 & (Join-Path $PSScriptRoot 'Test-CrtRandomStartupBaseline.ps1')
 & (Join-Path $PSScriptRoot 'Test-CrtRandomRuntimeTimingBaseline.ps1')
 & (Join-Path $PSScriptRoot 'Test-CrtRandomRecurringTimingBaseline.ps1')
+& (Join-Path $PSScriptRoot 'Test-CrtRandomLocalSearchTimingBaseline.ps1')
 & (Join-Path $PSScriptRoot 'Test-CrtRandomRuntimeStateBaseline.ps1')
 if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
     & (Join-Path $PSScriptRoot 'Test-ModRuntimeIdentityCatalog.ps1') `

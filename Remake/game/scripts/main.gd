@@ -99,6 +99,9 @@ const LEGACY_AMBIENT_PARTICLE_RANDOM_CALL_SITES := {
 const ORIGINAL_CRT_RANDOM_STARTUP_CATALOG: Script = preload(
 	"res://scripts/original_crt_random_startup_catalog.gd"
 )
+const ORIGINAL_CRT_RANDOM_LOCAL_SEARCH_TIMING: Script = preload(
+	"res://scripts/original_crt_random_local_search_timing.gd"
+)
 const LEGACY_AMBIENT_PARTICLE_FIELD_SCRIPT: Script = preload(
 	"res://scripts/legacy_ambient_particle_field.gd"
 )
@@ -396,6 +399,9 @@ var last_level_load_phase_usec: Dictionary = {}
 var last_squad_spawn_phase_usec: Dictionary = {}
 var legacy_crt_random_state := 1
 var legacy_crt_random_draw_index := 0
+var legacy_crt_recurring_level_id := ""
+var legacy_crt_recurring_round_index := 0
+var legacy_crt_recurring_first_gate_runtime_index := -1
 var legacy_crt_random_trace_enabled := false
 var legacy_crt_random_trace: Array[Dictionary] = []
 var legacy_crt_random_parity_trace_enabled := false
@@ -494,6 +500,12 @@ func next_legacy_crt_random(
 			% call_site_rva
 		)
 		return {}
+	if (
+		call_site_rva == 0x0005C81C
+		and runtime_index
+			== legacy_crt_recurring_first_gate_runtime_index
+	):
+		legacy_crt_recurring_round_index += 1
 	var state_before := legacy_crt_random_state
 	var state_after: int = LEGACY_CRT_RANDOM_CATALOG.next_state(
 		state_before
@@ -515,6 +527,25 @@ func next_legacy_crt_random(
 	}
 	_record_legacy_crt_random_draw(draw)
 	return draw
+
+
+func original_recurring_local_search_event(
+	runtime_index: int,
+) -> Dictionary:
+	if (
+		legacy_crt_recurring_level_id.is_empty()
+		or legacy_crt_recurring_round_index <= 0
+		or runtime_index < 0
+	):
+		return {}
+	return (
+		ORIGINAL_CRT_RANDOM_LOCAL_SEARCH_TIMING
+		. event_for_actor_round(
+			legacy_crt_recurring_level_id,
+			legacy_crt_recurring_round_index,
+			runtime_index,
+		)
+	)
 
 
 func commit_legacy_crt_random_draws(draws: Array) -> bool:
@@ -797,6 +828,9 @@ func _finish_legacy_crt_random_parity_context(
 func _reset_legacy_crt_random_for_level_load() -> void:
 	legacy_crt_random_state = LEGACY_CRT_RANDOM_CATALOG.INITIAL_STATE
 	legacy_crt_random_draw_index = 0
+	legacy_crt_recurring_level_id = ""
+	legacy_crt_recurring_round_index = 0
+	legacy_crt_recurring_first_gate_runtime_index = -1
 	legacy_crt_random_trace.clear()
 	if legacy_crt_random_parity_trace_enabled:
 		_restart_legacy_crt_random_parity_trace()
@@ -894,6 +928,23 @@ func _apply_original_crt_random_startup_checkpoint(
 	# the exact post-initialization checkpoint instead of inventing draws.
 	legacy_crt_random_state = startup_state
 	legacy_crt_random_draw_index = startup_draw_count
+	legacy_crt_recurring_level_id = level_id
+	legacy_crt_recurring_round_index = 0
+	legacy_crt_recurring_first_gate_runtime_index = -1
+	var startup_profile: Dictionary = (
+		ORIGINAL_CRT_RANDOM_STARTUP_CATALOG.level_profile(level_id)
+	)
+	var gate_indices_value: Variant = startup_profile.get(
+		"observation_gate_actor_indices",
+		[],
+	)
+	if (
+		gate_indices_value is Array
+		and not (gate_indices_value as Array).is_empty()
+	):
+		legacy_crt_recurring_first_gate_runtime_index = int(
+			(gate_indices_value as Array)[0]
+		)
 	legacy_crt_random_trace.clear()
 	return true
 

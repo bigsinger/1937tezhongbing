@@ -11,6 +11,13 @@ const ORIGINAL_ACTOR_RANDOM_TICK_SECONDS := 1.0 / 60.0
 ## same measured 60 Hz actor update and mutate one shared counter. A
 ## stationary route actor therefore advances that counter twice per tick.
 const ORIGINAL_AI_IDLE_TICK_SECONDS := ORIGINAL_ACTOR_RANDOM_TICK_SECONDS
+const ORIGINAL_LOCAL_SEARCH_CALL_SITES: Array[int] = [
+	0x0005D08F,
+	0x0005D09D,
+	0x0005D0B4,
+	0x0005D0CB,
+	0x0005D15F,
+]
 ## RuntimeActor movement is advanced by M1937's 60 Hz actor update.  The
 ## secondary SPR triplet supplies the maximum X and Y displacement per tick
 ## (components 0 and 2); run mode uses three times the walk values.
@@ -142,6 +149,14 @@ var original_pursuit_serial := 0
 var original_pursuit_last_physics_frame := -1
 var original_pursuit_last_command_variant := 0
 var original_pursuit_last_navigation_applied := false
+var original_local_search_last_physics_frame := -1
+var original_local_search_last_round_index := 0
+var original_local_search_serial := 0
+var original_local_search_point_index := 0
+var original_local_search_values_match := true
+var original_local_search_last_goal := Vector2.ZERO
+var original_local_search_next_wait_limit := 0
+var original_local_search_last_navigation_applied := false
 var original_first_gameplay_update_serial := 0
 var original_first_gameplay_semantic_effects: Array[String] = []
 var original_first_gameplay_call_sites := PackedInt32Array()
@@ -318,6 +333,14 @@ func configure(
 	original_pursuit_last_physics_frame = -1
 	original_pursuit_last_command_variant = 0
 	original_pursuit_last_navigation_applied = false
+	original_local_search_last_physics_frame = -1
+	original_local_search_last_round_index = 0
+	original_local_search_serial = 0
+	original_local_search_point_index = 0
+	original_local_search_values_match = true
+	original_local_search_last_goal = Vector2.ZERO
+	original_local_search_next_wait_limit = 0
+	original_local_search_last_navigation_applied = false
 	original_first_gameplay_update_serial = 0
 	original_first_gameplay_semantic_effects.clear()
 	original_first_gameplay_call_sites.clear()
@@ -611,12 +634,35 @@ func bind_original_crt_random_source(
 	var runtime_entry_value: Variant = (
 		original_crt_runtime_state_profile.get("entry", {})
 	)
+	var has_runtime_shared_counter := false
 	if runtime_entry_value is Dictionary:
+		var runtime_entry := runtime_entry_value as Dictionary
 		original_route_update_active = (
-			int((runtime_entry_value as Dictionary).get(
+			int(runtime_entry.get(
 				"route_update_active",
 				0,
 			)) == 1
+		)
+		if (
+			runtime_entry.has("stationary_tick_counter")
+			and runtime_entry.has("stationary_tick_limit")
+		):
+			original_ai_idle_tick_counter = maxi(
+				int(runtime_entry.get("stationary_tick_counter", 0)),
+				0,
+			)
+			original_ai_idle_tick_limit = clampi(
+				int(runtime_entry.get("stationary_tick_limit", 0)),
+				0,
+				(
+					AI_IDLE_RANDOM_RULES.SEARCH_WAIT_MINIMUM_LIMIT
+					+ AI_IDLE_RANDOM_RULES.SEARCH_WAIT_RANDOM_SPAN
+					- 1
+				),
+			)
+			has_runtime_shared_counter = true
+		original_secondary_search_contact_state = (
+			int(runtime_entry.get("contact_state", 0)) != 0
 		)
 	else:
 		original_route_update_active = false
@@ -624,9 +670,13 @@ func bind_original_crt_random_source(
 	original_ai_shared_counter_last_physics_frame = -1
 	original_ai_stationary_reset_serial = 0
 	original_ai_route_reset_serial = 0
-	original_ai_idle_tick_counter = 0
 	original_ai_idle_tick_elapsed = 0.0
-	if original_crt_initialization_profile.has("initial_idle_limit"):
+	if not has_runtime_shared_counter:
+		original_ai_idle_tick_counter = 0
+	if (
+		not has_runtime_shared_counter
+		and original_crt_initialization_profile.has("initial_idle_limit")
+	):
 		original_ai_idle_tick_limit = clampi(
 			int(original_crt_initialization_profile.get(
 				"initial_idle_limit",
@@ -662,7 +712,17 @@ func bind_original_crt_random_source(
 			if runtime_actor_type == 56
 			else 0x0005D47E
 		)
-	original_pursuit_delay_counter = 0
+	original_pursuit_delay_counter = (
+		maxi(
+			int((runtime_entry_value as Dictionary).get(
+				"pursuit_delay_counter",
+				0,
+			)),
+			0,
+		)
+		if runtime_entry_value is Dictionary
+		else 0
+	)
 	original_pursuit_elapsed = 0.0
 	original_pursuit_serial = 0
 	original_pursuit_last_physics_frame = -1
@@ -816,6 +876,7 @@ func original_crt_random_timing_snapshot() -> Dictionary:
 		),
 		"secondary_search": original_secondary_search_snapshot(),
 		"pursuit": original_pursuit_snapshot(),
+		"local_search": original_local_search_snapshot(),
 		"first_gameplay_update_serial": (
 			original_first_gameplay_update_serial
 		),
@@ -976,6 +1037,41 @@ func restore_original_crt_random_timing(state: Dictionary) -> bool:
 		original_pursuit_last_navigation_applied = bool(
 			pursuit_state.get("last_navigation_applied", false)
 		)
+	var local_search_value: Variant = state.get("local_search", {})
+	if local_search_value is Dictionary:
+		var local_search_state := local_search_value as Dictionary
+		original_local_search_last_round_index = maxi(
+			int(local_search_state.get("last_round_index", 0)),
+			0,
+		)
+		original_local_search_serial = maxi(
+			int(local_search_state.get("serial", 0)),
+			0,
+		)
+		original_local_search_point_index = clampi(
+			int(local_search_state.get("point_index", 0)),
+			0,
+			AI_IDLE_RANDOM_RULES.SEARCH_POINT_COUNT,
+		)
+		original_local_search_values_match = bool(
+			local_search_state.get("values_match", true)
+		)
+		original_local_search_last_goal = Vector2(
+			float(local_search_state.get("last_goal_x", 0.0)),
+			float(local_search_state.get("last_goal_y", 0.0)),
+		)
+		original_local_search_next_wait_limit = clampi(
+			int(local_search_state.get("next_wait_limit", 0)),
+			0,
+			(
+				AI_IDLE_RANDOM_RULES.SEARCH_WAIT_MINIMUM_LIMIT
+				+ AI_IDLE_RANDOM_RULES.SEARCH_WAIT_RANDOM_SPAN
+				- 1
+			),
+		)
+		original_local_search_last_navigation_applied = bool(
+			local_search_state.get("last_navigation_applied", false)
+		)
 	original_first_gameplay_update_serial = maxi(
 		int(state.get("first_gameplay_update_serial", 0)),
 		0,
@@ -1030,6 +1126,7 @@ func restore_original_crt_random_timing(state: Dictionary) -> bool:
 	original_crt_primary_candidate_last_physics_frame = -1
 	original_secondary_search_last_physics_frame = -1
 	original_pursuit_last_physics_frame = -1
+	original_local_search_last_physics_frame = -1
 	return true
 
 
@@ -1040,6 +1137,133 @@ func _advance_original_crt_actor_random_tick(delta: float) -> void:
 	else:
 		_advance_original_pursuit(delta)
 	_advance_original_crt_primary_candidate_scan(delta)
+	_advance_original_recurring_local_search()
+
+
+func original_local_search_snapshot() -> Dictionary:
+	return {
+		"last_round_index": original_local_search_last_round_index,
+		"serial": original_local_search_serial,
+		"point_index": original_local_search_point_index,
+		"values_match": original_local_search_values_match,
+		"last_goal_x": original_local_search_last_goal.x,
+		"last_goal_y": original_local_search_last_goal.y,
+		"next_wait_limit": original_local_search_next_wait_limit,
+		"last_navigation_applied": (
+			original_local_search_last_navigation_applied
+		),
+	}
+
+
+func _advance_original_recurring_local_search() -> bool:
+	var physics_frame := Engine.get_physics_frames()
+	if original_local_search_last_physics_frame == physics_frame:
+		return false
+	original_local_search_last_physics_frame = physics_frame
+	if (
+		not is_alive
+		or original_runtime_index < 0
+		or original_crt_random_source == null
+		or not is_instance_valid(original_crt_random_source)
+		or not original_crt_random_source.has_method(
+			"original_recurring_local_search_event"
+		)
+	):
+		return false
+	var event_value: Variant = original_crt_random_source.call(
+		"original_recurring_local_search_event",
+		original_runtime_index,
+	)
+	if not event_value is Dictionary:
+		return false
+	var event := event_value as Dictionary
+	if event.is_empty():
+		return false
+	var round_index := int(event.get("round_index", 0))
+	if (
+		round_index <= 0
+		or round_index <= original_local_search_last_round_index
+	):
+		return false
+	# The timing catalog proves a quiet, input-free native state.  It is an
+	# exact replay aid, not permission to force the same search after gameplay
+	# has moved the actor or changed its shared counter/path phase.
+	var evidence_position := Vector2(
+		float(event.get("world_x", position.x)),
+		float(event.get("world_y", position.y)),
+	)
+	if (
+		position.distance_to(evidence_position) > 1.5
+		or original_ai_idle_tick_counter
+			!= int(event.get("shared_counter_before", -1))
+		or original_ai_idle_tick_limit
+			!= int(event.get("shared_limit_before", -1))
+		or original_route_update_active
+			!= bool(int(event.get("route_update_active", 0)))
+		or (
+			int(event.get("movement_path_state", -1)) == 0
+			and movement_path_index < movement_path.size()
+		)
+	):
+		return false
+	var expected_values_value: Variant = event.get("values", [])
+	if (
+		not expected_values_value is Array
+		or (expected_values_value as Array).size()
+			!= ORIGINAL_LOCAL_SEARCH_CALL_SITES.size()
+	):
+		return false
+	var expected_values: Array[int] = []
+	for value: Variant in expected_values_value as Array:
+		expected_values.append(int(value))
+	var actual_values := next_original_crt_random_values(
+		ORIGINAL_LOCAL_SEARCH_CALL_SITES
+	)
+	if actual_values.size() != ORIGINAL_LOCAL_SEARCH_CALL_SITES.size():
+		return false
+	original_local_search_last_round_index = round_index
+	original_local_search_serial += 1
+	original_local_search_values_match = (
+		actual_values == expected_values
+	)
+	var sampled: Dictionary = (
+		AI_IDLE_RANDOM_RULES.local_search_point_from_values(
+			actual_values,
+			position,
+			_original_secondary_search_world_bounds(),
+		)
+	)
+	if sampled.is_empty():
+		return false
+	original_local_search_last_goal = sampled.get(
+		"point",
+		position,
+	) as Vector2
+	original_local_search_next_wait_limit = int(
+		sampled.get(
+			"next_wait_limit",
+			AI_IDLE_RANDOM_RULES.SEARCH_WAIT_MINIMUM_LIMIT,
+		)
+	)
+	# sub_45D060 clears the shared +0x16C counter and writes the fifth
+	# rand()%160+40 result to +0x170 before issuing the coordinate command.
+	original_ai_idle_tick_counter = 0
+	original_ai_idle_tick_limit = original_local_search_next_wait_limit
+	original_ai_idle_tick_elapsed = 0.0
+	original_route_update_active = false
+	original_local_search_point_index += 1
+	if (
+		original_local_search_point_index
+		> AI_IDLE_RANDOM_RULES.SEARCH_POINT_COUNT
+	):
+		original_local_search_point_index = 1
+	cancel_path()
+	original_local_search_last_navigation_applied = (
+		_issue_original_first_gameplay_path(
+			original_local_search_last_goal
+		)
+	)
+	return true
 
 
 func original_secondary_search_snapshot() -> Dictionary:

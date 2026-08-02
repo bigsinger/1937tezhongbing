@@ -3,6 +3,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$EvidenceRoot,
     [string]$OutputPath = '',
+    [string]$LocalSearchOutputPath = '',
     [string]$RepositoryRoot = '',
     [ValidateRange(120, 100000)]
     [int]$MinimumRounds = 120
@@ -25,6 +26,11 @@ if ([string]::IsNullOrWhiteSpace($OutputPath)) {
         'game\data\original_crt_random_recurring_timing.json')
 }
 $OutputPath = [IO.Path]::GetFullPath($OutputPath)
+if ([string]::IsNullOrWhiteSpace($LocalSearchOutputPath)) {
+    $LocalSearchOutputPath = Join-Path $remakeRoot (
+        'game\data\original_crt_random_local_search_timing.json')
+}
+$LocalSearchOutputPath = [IO.Path]::GetFullPath($LocalSearchOutputPath)
 $startupPath = Join-Path $remakeRoot (
     'game\data\original_crt_random_startup_catalog.json')
 $callSitePath = Join-Path $RepositoryRoot (
@@ -92,6 +98,7 @@ function New-PendingRound {
         GateActors = [Collections.Generic.List[int]]::new()
         SiteCounts = @{}
         ActorSiteCounts = @{}
+        LocalSearchCalls = [Collections.Generic.List[object]]::new()
         OrderStream = $orderStream
         ValueStream = $valueStream
         ActorOrderStream = $actorOrderStream
@@ -155,6 +162,7 @@ function Complete-PendingRound {
         ActorValueBytes = $actorValueBytes
         SiteCounts = $Round.SiteCounts
         ActorSiteCounts = $Round.ActorSiteCounts
+        LocalSearchCalls = @($Round.LocalSearchCalls)
     }
 }
 
@@ -183,6 +191,13 @@ foreach ($caller in $callSiteCatalog.callers) {
 }
 
 $levelResults = [Collections.Generic.List[object]]::new()
+$localSearchLevelResults = [Collections.Generic.List[object]]::new()
+$localSearchCallSites = @(
+    '0x0005D08F',
+    '0x0005D09D',
+    '0x0005D0B4',
+    '0x0005D0CB',
+    '0x0005D15F')
 for ($levelIndex = 0; $levelIndex -lt 12; $levelIndex++) {
     $levelId = 'm{0:D3}' -f $levelIndex
     $levelFolder = Join-Path $EvidenceRoot (
@@ -233,6 +248,7 @@ for ($levelIndex = 0; $levelIndex -lt 12; $levelIndex++) {
     $globalActorValue = New-IncrementalSha256
     $globalSiteCounts = @{}
     $globalActorSiteCounts = @{}
+    $localSearchEvents = [Collections.Generic.List[object]]::new()
     $globalDrawCount = 0
     $globalActorDrawCount = 0
     $state = [uint64]1
@@ -325,6 +341,58 @@ for ($levelIndex = 0; $levelIndex -lt 12; $levelIndex++) {
                                 $completed.ActorSiteCounts[$actorSite])
                         }
                     }
+                    $localCalls = @($completed.LocalSearchCalls)
+                    if ($localCalls.Count % $localSearchCallSites.Count -ne 0) {
+                        throw (
+                            "Incomplete local-search group in ${levelId} " +
+                            "round $($completed.Summary.index).")
+                    }
+                    for (
+                        $localIndex = 0;
+                        $localIndex -lt $localCalls.Count;
+                        $localIndex += $localSearchCallSites.Count
+                    ) {
+                        $firstLocal = $localCalls[$localIndex]
+                        $values = [Collections.Generic.List[int]]::new()
+                        for (
+                            $siteIndex = 0;
+                            $siteIndex -lt $localSearchCallSites.Count;
+                            $siteIndex++
+                        ) {
+                            $localCall = $localCalls[$localIndex + $siteIndex]
+                            if (
+                                [int]$localCall.runtime_index -ne
+                                    [int]$firstLocal.runtime_index -or
+                                [string]$localCall.call_site_rva -ne
+                                    $localSearchCallSites[$siteIndex]
+                            ) {
+                                throw (
+                                    "Local-search order diverged in ${levelId} " +
+                                    "round $($completed.Summary.index).")
+                            }
+                            $values.Add([int]$localCall.value)
+                        }
+                        $snapshot = $firstLocal.actor_snapshot
+                        $localSearchEvents.Add([pscustomobject][ordered]@{
+                            round_index = [int]$completed.Summary.index
+                            runtime_index = [int]$firstLocal.runtime_index
+                            world_x = [int]$snapshot.world_x
+                            world_y = [int]$snapshot.world_y
+                            shared_counter_before = [int](
+                                $snapshot.stationary_tick_counter)
+                            shared_limit_before = [int](
+                                $snapshot.stationary_tick_limit)
+                            movement_path_state = [int](
+                                $snapshot.movement_path_state)
+                            route_update_active = [int](
+                                $snapshot.route_update_active)
+                            search_delay_counter = [int](
+                                $snapshot.search_delay_counter)
+                            search_delay_limit = [int](
+                                $snapshot.search_delay_limit)
+                            values = @($values)
+                        })
+                    }
                 }
                 if ($firstAcceptedTick -lt 0) {
                     if ($sequence -ne $firstGameplaySequence) {
@@ -375,6 +443,20 @@ for ($levelIndex = 0; $levelIndex -lt 12; $levelIndex++) {
                 }
                 else {
                     $pendingRound.ActorSiteCounts[$actorSiteKey] = 1
+                }
+                if ($site -in $localSearchCallSites) {
+                    if ($null -eq $record.PSObject.Properties['actor_snapshot']) {
+                        throw (
+                            "Local-search actor snapshot is missing in " +
+                            "${levelId} sequence $sequence.")
+                    }
+                    $pendingRound.LocalSearchCalls.Add(
+                        [pscustomobject][ordered]@{
+                            runtime_index = $runtimeIndex
+                            call_site_rva = $site
+                            value = $expectedValue
+                            actor_snapshot = $record.actor_snapshot
+                        })
                 }
             }
             if ($site -eq '0x0005C81C') {
@@ -463,6 +545,34 @@ for ($levelIndex = 0; $levelIndex -lt 12; $levelIndex++) {
         })) + "`n"
     $actorCountHash = Get-Sha256Bytes (
         [Text.UTF8Encoding]::new($false).GetBytes($actorCountText))
+    $localSearchEventText = [string]::Join(
+        "`n",
+        @($localSearchEvents | ForEach-Object {
+            '{0}|{1}|{2}|{3}|{4}|{5}|{6}|{7}|{8}|{9}|{10}' -f `
+                [int]$_.round_index,
+                [int]$_.runtime_index,
+                [int]$_.world_x,
+                [int]$_.world_y,
+                [int]$_.shared_counter_before,
+                [int]$_.shared_limit_before,
+                [int]$_.movement_path_state,
+                [int]$_.route_update_active,
+                [int]$_.search_delay_counter,
+                [int]$_.search_delay_limit,
+                (@($_.values) -join ',')
+        }))
+    if ($localSearchEvents.Count -gt 0) {
+        $localSearchEventText += "`n"
+    }
+    $localSearchEventHash = Get-Sha256Bytes (
+        [Text.UTF8Encoding]::new($false).GetBytes($localSearchEventText))
+    $localSearchLevelResults.Add([ordered]@{
+        id = $levelId
+        complete_round_count = $rounds.Count
+        event_count = $localSearchEvents.Count
+        events_sha256 = $localSearchEventHash
+        events = @($localSearchEvents)
+    })
     $levelResults.Add([ordered]@{
         id = $levelId
         evidence = [ordered]@{
@@ -537,3 +647,27 @@ $json = $result | ConvertTo-Json -Depth 10 -Compress
     $json + [Environment]::NewLine,
     [Text.UTF8Encoding]::new($false))
 Write-Host "Recurring timing baseline wrote twelve levels: $OutputPath"
+
+$localSearchResult = [ordered]@{
+    schema_version = 1
+    catalog_id = 'original-crt-random-local-search-timing-v1'
+    content_profile = [string]$startup.content_profile
+    executable_sha256 = [string]$startup.executable_sha256
+    call_site_rvas = $localSearchCallSites
+    evidence = [ordered]@{
+        source = 'complete rounds in original CRT recurring timing evidence'
+        final_incomplete_rounds_omitted = $true
+        input_scope = 'target-window-only'
+    }
+    levels = @($localSearchLevelResults)
+}
+$localSearchParent = Split-Path -Parent $LocalSearchOutputPath
+[IO.Directory]::CreateDirectory($localSearchParent) | Out-Null
+$localSearchJson = $localSearchResult | ConvertTo-Json -Depth 10 -Compress
+[IO.File]::WriteAllText(
+    $LocalSearchOutputPath,
+    $localSearchJson + [Environment]::NewLine,
+    [Text.UTF8Encoding]::new($false))
+Write-Host (
+    "Local-search timing catalog wrote twelve levels: " +
+    $LocalSearchOutputPath)

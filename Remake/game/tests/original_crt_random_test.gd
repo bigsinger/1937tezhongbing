@@ -10,6 +10,12 @@ const ORIGINAL_STARTUP_CATALOG: Script = preload(
 const ORIGINAL_RUNTIME_STATE: Script = preload(
 	"res://scripts/original_crt_random_runtime_state.gd"
 )
+const ORIGINAL_LOCAL_SEARCH_TIMING: Script = preload(
+	"res://scripts/original_crt_random_local_search_timing.gd"
+)
+const AI_IDLE_RANDOM_RULES: Script = preload(
+	"res://scripts/legacy_enemy_ai_rules.gd"
+)
 const LEGACY_AMBIENT_PARTICLE_FIELD: Script = preload(
 	"res://scripts/legacy_ambient_particle_field.gd"
 )
@@ -38,6 +44,7 @@ func _init() -> void:
 	_test_first_gameplay_actor_side_effects()
 	_test_twelve_level_runtime_state_and_pursuit()
 	_test_recurring_secondary_search_runtime()
+	_test_original_local_search_timing()
 	_test_recovered_shared_counter_cadence()
 	_test_original_ambient_particle_stream()
 	_test_imported_actor_profile_and_gate()
@@ -632,6 +639,20 @@ func _test_twelve_level_runtime_state_and_pursuit() -> void:
 	var game = MAIN_SCRIPT.new()
 	game.call("_apply_original_crt_random_startup_checkpoint", "m000")
 	game.legacy_crt_random_trace_enabled = true
+	var counter_actor = SQUAD_UNIT_SCRIPT.new()
+	counter_actor.scene_index = 1415
+	counter_actor.configure_runtime_actor_type({
+		"database_header_values": [0, 0, 5],
+		"original_runtime_profile": {"runtime_index": 0},
+	})
+	counter_actor.bind_original_crt_random_source(game, "m000")
+	_expect(
+		counter_actor.original_ai_idle_tick_counter == 137
+		and counter_actor.original_ai_idle_tick_limit == 162
+		and counter_actor.original_route_update_active,
+		"actor binding restores the captured shared counter and route phase",
+	)
+	counter_actor.free()
 	var target = SQUAD_UNIT_SCRIPT.new()
 	target.scene_index = 1614
 	target.configure_runtime_actor_type({
@@ -701,6 +722,156 @@ func _test_twelve_level_runtime_state_and_pursuit() -> void:
 	restored.free()
 	follower.free()
 	target.free()
+	game.free()
+
+
+func _test_original_local_search_timing() -> void:
+	var catalog: Dictionary = ORIGINAL_LOCAL_SEARCH_TIMING.load_catalog()
+	var levels_value: Variant = catalog.get("levels", [])
+	var event_total := 0
+	if levels_value is Array:
+		for level_value: Variant in levels_value as Array:
+			if level_value is Dictionary:
+				event_total += int(
+					(level_value as Dictionary).get("event_count", 0)
+				)
+	var event: Dictionary = (
+		ORIGINAL_LOCAL_SEARCH_TIMING.event_for_actor_round(
+		"m000",
+		24,
+		126,
+		)
+	)
+	var event_values: Array[int] = []
+	for value: Variant in event.get("values", []) as Array:
+		event_values.append(int(value))
+	_expect(
+		levels_value is Array
+		and (levels_value as Array).size() == 12
+		and event_total == 107
+		and int(event.get("world_x", -1)) == 251
+		and int(event.get("world_y", -1)) == 933
+		and int(event.get("shared_counter_before", -1)) == 61
+		and int(event.get("shared_limit_before", -1)) == 61
+		and event_values == [18727, 8672, 5707, 21496, 17942],
+		"twelve-level catalog exposes all 107 proven local-search events",
+	)
+	_expect(
+		ORIGINAL_LOCAL_SEARCH_TIMING.level_event_count("m007") == 56
+		and ORIGINAL_LOCAL_SEARCH_TIMING.event_for_actor_round(
+			"m001",
+			24,
+			126,
+		).is_empty(),
+		"local-search catalog preserves levels with and without events",
+	)
+
+	var game = MAIN_SCRIPT.new()
+	game.call("_apply_original_crt_random_startup_checkpoint", "m000")
+	game.legacy_crt_recurring_round_index = 24
+	game.legacy_crt_random_trace_enabled = true
+	var diverged_actor = SQUAD_UNIT_SCRIPT.new()
+	diverged_actor.scene_index = 1622
+	diverged_actor.configure_runtime_actor_type({
+		"database_header_values": [0, 0, 33],
+		"original_runtime_profile": {"runtime_index": 126},
+	})
+	diverged_actor.bind_original_crt_random_source(game, "m000")
+	diverged_actor.position = Vector2(260.0, 933.0)
+	diverged_actor.original_ai_idle_tick_counter = 61
+	diverged_actor.original_ai_idle_tick_limit = 61
+	_expect(
+		not bool(diverged_actor.call(
+			"_advance_original_recurring_local_search"
+		))
+		and game.legacy_crt_random_trace.is_empty(),
+		"recorded quiet-state timing never overrides a diverged gameplay state",
+	)
+	diverged_actor.free()
+	var actor = SQUAD_UNIT_SCRIPT.new()
+	actor.scene_index = 1622
+	actor.configure_runtime_actor_type({
+		"database_header_values": [0, 0, 33],
+		"original_runtime_profile": {"runtime_index": 126},
+	})
+	actor.bind_original_crt_random_source(game, "m000")
+	actor.position = Vector2(251.0, 933.0)
+	actor.original_ai_idle_tick_counter = 61
+	actor.original_ai_idle_tick_limit = 61
+	var predicted_state: int = game.legacy_crt_random_state
+	var predicted_values: Array[int] = []
+	for _site_rva: int in actor.ORIGINAL_LOCAL_SEARCH_CALL_SITES:
+		predicted_state = LEGACY_CRT_RANDOM_CATALOG.next_state(
+			predicted_state
+		)
+		predicted_values.append(
+			LEGACY_CRT_RANDOM_CATALOG.random_value(predicted_state)
+		)
+	var predicted_sample: Dictionary = (
+		AI_IDLE_RANDOM_RULES.local_search_point_from_values(
+			predicted_values,
+			actor.position,
+			actor.call("_original_secondary_search_world_bounds") as Rect2,
+		)
+	)
+	var predicted_goal: Vector2 = predicted_sample.get(
+		"point",
+		actor.position,
+	) as Vector2
+	var predicted_limit := int(predicted_sample.get("next_wait_limit", 0))
+	var applied := bool(
+		actor.call("_advance_original_recurring_local_search")
+	)
+	var actual_sites := PackedInt32Array()
+	for record: Dictionary in game.legacy_crt_random_trace:
+		actual_sites.append(int(record.get("call_site_rva", 0)))
+	_expect(
+		applied
+		and actual_sites == PackedInt32Array([
+			0x0005D08F,
+			0x0005D09D,
+			0x0005D0B4,
+			0x0005D0CB,
+			0x0005D15F,
+		])
+		and actor.original_local_search_serial == 1
+		and actor.original_local_search_last_round_index == 24
+		and actor.original_local_search_last_goal == predicted_goal
+		and actor.original_ai_idle_tick_counter == 0
+		and actor.original_ai_idle_tick_limit == predicted_limit
+		and actor.original_local_search_next_wait_limit == predicted_limit
+		and not actor.original_local_search_values_match
+		and not actor.original_route_update_active,
+		"generic runtime consumes and applies one exact five-call search event",
+	)
+	actor.original_local_search_last_physics_frame = -1
+	_expect(
+		not bool(actor.call("_advance_original_recurring_local_search"))
+		and game.legacy_crt_random_trace.size() == 5,
+		"the same actor and round cannot consume a local-search event twice",
+	)
+
+	var snapshot: Dictionary = actor.original_crt_random_timing_snapshot()
+	var restored = SQUAD_UNIT_SCRIPT.new()
+	restored.scene_index = 1622
+	restored.configure_runtime_actor_type({
+		"database_header_values": [0, 0, 33],
+		"original_runtime_profile": {"runtime_index": 126},
+	})
+	restored.bind_original_crt_random_source(game, "m000")
+	var restored_ok: bool = restored.restore_original_crt_random_timing(
+		snapshot
+	)
+	_expect(
+		restored_ok
+		and restored.original_local_search_serial == 1
+		and restored.original_local_search_last_round_index == 24
+		and restored.original_local_search_last_goal == predicted_goal
+		and restored.original_local_search_next_wait_limit == predicted_limit,
+		"local-search evidence phase survives save and restore",
+	)
+	restored.free()
+	actor.free()
 	game.free()
 
 

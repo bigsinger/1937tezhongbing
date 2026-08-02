@@ -327,6 +327,11 @@ static func _capture_world(game: Node) -> Dictionary:
 			if _has_property(game, "legacy_crt_random_draw_index")
 			else 0
 		),
+		"legacy_crt_recurring_round_index": (
+			int(game.get("legacy_crt_recurring_round_index"))
+			if _has_property(game, "legacy_crt_recurring_round_index")
+			else 0
+		),
 		"legacy_ambient_particle": (
 			_json_value(game.call("legacy_ambient_particle_snapshot"))
 			if game.has_method("legacy_ambient_particle_snapshot")
@@ -1094,6 +1099,14 @@ static func _restore_world(game: Node, world: Dictionary, warnings: Array[String
 		game.set(
 			"legacy_crt_random_draw_index",
 			maxi(int(world.get("legacy_crt_random_draw_index", 0)), 0),
+		)
+	if _has_property(game, "legacy_crt_recurring_round_index"):
+		game.set(
+			"legacy_crt_recurring_round_index",
+			maxi(
+				int(world.get("legacy_crt_recurring_round_index", 0)),
+				0,
+			),
 		)
 	var ambient_particle_state: Variant = world.get(
 		"legacy_ambient_particle",
