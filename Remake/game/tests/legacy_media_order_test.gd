@@ -72,6 +72,49 @@ func _test_static_original_media_routes() -> void:
 		and int(MEDIA_ROUTES.ENDING_IMAGES[2].get("target_width", 0)) == 1024,
 		"selector 13 uses the three original resolution-dependent ending images",
 	)
+	_expect(
+		MEDIA_ROUTES.PRESENTATION_STRING_COUNT == 27
+		and MEDIA_ROUTES.IN_MISSION_DIALOGUE_SEQUENCE_COUNT == 0
+		and MEDIA_ROUTES.SCRIPTED_CAMERA_SEQUENCE_COUNT == 0
+		and MEDIA_ROUTES.PER_LEVEL_TUTORIAL_SEQUENCE_COUNT == 0
+		and not MEDIA_ROUTES.MISSION_FLOW_REACHES_MOVIE_OR_CAMERA,
+		"the closed original presentation audit contains no in-mission director sequence",
+	)
+	_expect(
+		str(MEDIA_ROUTES.GLOBAL_HELP.get("resource_name", "")) == "Help.psd"
+		and int(MEDIA_ROUTES.GLOBAL_HELP.get("resource_string_rva", 0)) == 0xCF704
+		and str(MEDIA_ROUTES.GLOBAL_HELP.get("presenter_symbol", ""))
+			== "HelpPresenter"
+		and str(MEDIA_ROUTES.GLOBAL_HELP.get("scope", "")) == "global_f1_help",
+		"F1 help remains a global source-backed presentation route",
+	)
+	_expect(
+		MEDIA_ROUTES.CAMERA_DIRECT_CALL_COUNT == 2
+		and MEDIA_ROUTES.MISSION_SCRIPT_CAMERA_WRITER_COUNT == 0
+		and MEDIA_ROUTES.CAMERA_DIRECT_CALLERS.size() == 2
+		and int(MEDIA_ROUTES.CAMERA_DIRECT_CALLERS[0].get("call_rva", 0))
+			== 0x4CC23
+		and str(MEDIA_ROUTES.CAMERA_DIRECT_CALLERS[0].get("role", ""))
+			== "world_input_recenter"
+		and int(MEDIA_ROUTES.CAMERA_DIRECT_CALLERS[1].get("call_rva", 0))
+			== 0x4CD8B
+		and str(MEDIA_ROUTES.CAMERA_DIRECT_CALLERS[1].get("role", ""))
+			== "explicit_actor_focus",
+		"the only direct camera-set calls are world input and explicit actor focus",
+	)
+	_expect(
+		MEDIA_ROUTES.CAMERA_WRITER_SYMBOLS == [
+			"InitializeViewport",
+			"SetCameraOrigin",
+			"ScrollLeft",
+			"ScrollRight",
+			"ScrollUp",
+			"ScrollDown",
+			"ResizeViewportWorld",
+			"LoadGameFile",
+		],
+		"camera writers close over initialization, input, resize and save loading only",
+	)
 
 
 func _test_startup_queue_order_and_resolution() -> void:

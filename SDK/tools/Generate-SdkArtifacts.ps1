@@ -267,6 +267,9 @@ function New-MediaHeader {
     $startup = @($Catalog.startup_sequence)
     $briefings = @($Catalog.level_briefings)
     $endings = @($Catalog.ending_images)
+    $direction = $Catalog.original_direction_flow
+    $cameraCallers = @($direction.camera.direct_callers)
+    $cameraWriters = @($direction.camera.writer_symbols)
     $lines = [Collections.Generic.List[string]]::new()
     $lines.Add('#pragma once')
     $lines.Add('')
@@ -292,6 +295,64 @@ function New-MediaHeader {
         [int]$Catalog.presentation_flow.ending_selector_level))
     $lines.Add(('inline constexpr int ending_dismissal_next_selector_level = {0};' -f
         [int]$Catalog.presentation_flow.ending_dismissal_next_selector_level))
+    $lines.Add(('inline constexpr int presentation_string_count = {0};' -f
+        [int]$direction.presentation_string_count))
+    $lines.Add(('inline constexpr int in_mission_dialogue_sequence_count = {0};' -f
+        [int]$direction.in_mission_dialogue_sequence_count))
+    $lines.Add(('inline constexpr int scripted_camera_sequence_count = {0};' -f
+        [int]$direction.scripted_camera_sequence_count))
+    $lines.Add(('inline constexpr int per_level_tutorial_sequence_count = {0};' -f
+        [int]$direction.per_level_tutorial_sequence_count))
+    $lines.Add(('inline constexpr bool mission_flow_reaches_movie_or_camera = {0};' -f $(
+        if ([bool]$direction.mission_flow_reaches_movie_or_camera) {
+            'true'
+        } else {
+            'false'
+        })))
+    $lines.Add(('inline constexpr int camera_direct_call_count = {0};' -f
+        [int]$direction.camera.direct_call_count))
+    $lines.Add(('inline constexpr int mission_script_camera_writer_count = {0};' -f
+        [int]$direction.camera.mission_script_writer_count))
+    $lines.Add(('inline constexpr const char* original_profile_policy = "{0}";' -f
+        (Escape-CppString ([string]$direction.original_profile_policy))))
+    $lines.Add('')
+    $lines.Add('struct GlobalHelpRoute final {')
+    $lines.Add('    const char* resource_name;')
+    $lines.Add('    std::uintptr_t resource_string_rva;')
+    $lines.Add('    const char* presenter_symbol;')
+    $lines.Add('    const char* scope;')
+    $lines.Add('};')
+    $lines.Add('')
+    $lines.Add(('inline constexpr GlobalHelpRoute global_help{{"{0}", {1}, "{2}", "{3}"}};' -f
+        (Escape-CppString ([string]$direction.global_help.resource_name)),
+        (Format-Rva ([string]$direction.global_help.resource_string_rva)),
+        (Escape-CppString ([string]$direction.global_help.presenter_symbol)),
+        (Escape-CppString ([string]$direction.global_help.scope))))
+    $lines.Add('')
+    $lines.Add('struct CameraDirectCall final {')
+    $lines.Add('    const char* caller_symbol;')
+    $lines.Add('    const char* call_site_symbol;')
+    $lines.Add('    std::uintptr_t call_rva;')
+    $lines.Add('    const char* role;')
+    $lines.Add('};')
+    $lines.Add('')
+    $lines.Add(('inline constexpr std::array<CameraDirectCall, {0}> camera_direct_callers{{{{' -f
+        $cameraCallers.Count))
+    foreach ($entry in $cameraCallers) {
+        $lines.Add(('    {{"{0}", "{1}", {2}, "{3}"}},' -f
+            (Escape-CppString ([string]$entry.caller_symbol)),
+            (Escape-CppString ([string]$entry.call_site_symbol)),
+            (Format-Rva ([string]$entry.call_rva)),
+            (Escape-CppString ([string]$entry.role))))
+    }
+    $lines.Add('}};')
+    $lines.Add('')
+    $lines.Add(('inline constexpr std::array<const char*, {0}> camera_writer_symbols{{{{' -f
+        $cameraWriters.Count))
+    foreach ($symbol in $cameraWriters) {
+        $lines.Add(('    "{0}",' -f (Escape-CppString ([string]$symbol))))
+    }
+    $lines.Add('}};')
     $lines.Add('')
     $lines.Add('struct StartupMovie final {')
     $lines.Add('    int order;')
@@ -377,6 +438,7 @@ function New-MediaHeader {
 
 function New-GdscriptMediaCatalog {
     param($Catalog)
+    $direction = $Catalog.original_direction_flow
     $lines = [Collections.Generic.List[string]]::new()
     $lines.Add('class_name LegacyMediaRouteCatalog')
     $lines.Add('extends RefCounted')
@@ -400,6 +462,45 @@ function New-GdscriptMediaCatalog {
         [int]$Catalog.presentation_flow.ending_selector_level))
     $lines.Add(('const ENDING_DISMISSAL_NEXT_SELECTOR_LEVEL := {0}' -f
         [int]$Catalog.presentation_flow.ending_dismissal_next_selector_level))
+    $lines.Add(('const PRESENTATION_STRING_COUNT := {0}' -f
+        [int]$direction.presentation_string_count))
+    $lines.Add(('const IN_MISSION_DIALOGUE_SEQUENCE_COUNT := {0}' -f
+        [int]$direction.in_mission_dialogue_sequence_count))
+    $lines.Add(('const SCRIPTED_CAMERA_SEQUENCE_COUNT := {0}' -f
+        [int]$direction.scripted_camera_sequence_count))
+    $lines.Add(('const PER_LEVEL_TUTORIAL_SEQUENCE_COUNT := {0}' -f
+        [int]$direction.per_level_tutorial_sequence_count))
+    $lines.Add(('const MISSION_FLOW_REACHES_MOVIE_OR_CAMERA := {0}' -f $(
+        if ([bool]$direction.mission_flow_reaches_movie_or_camera) {
+            'true'
+        } else {
+            'false'
+        })))
+    $lines.Add(('const CAMERA_DIRECT_CALL_COUNT := {0}' -f
+        [int]$direction.camera.direct_call_count))
+    $lines.Add(('const MISSION_SCRIPT_CAMERA_WRITER_COUNT := {0}' -f
+        [int]$direction.camera.mission_script_writer_count))
+    $lines.Add(('const ORIGINAL_PROFILE_POLICY := "{0}"' -f
+        (Escape-GdString ([string]$direction.original_profile_policy))))
+    $lines.Add(('const GLOBAL_HELP: Dictionary = {{"resource_name": "{0}", "resource_string_rva": {1}, "presenter_symbol": "{2}", "scope": "{3}"}}' -f
+        (Escape-GdString ([string]$direction.global_help.resource_name)),
+        (Format-Rva ([string]$direction.global_help.resource_string_rva)),
+        (Escape-GdString ([string]$direction.global_help.presenter_symbol)),
+        (Escape-GdString ([string]$direction.global_help.scope))))
+    $lines.Add('const CAMERA_DIRECT_CALLERS: Array[Dictionary] = [')
+    foreach ($entry in $direction.camera.direct_callers) {
+        $lines.Add(('    {{"caller_symbol": "{0}", "call_site_symbol": "{1}", "call_rva": {2}, "role": "{3}"}},' -f
+            (Escape-GdString ([string]$entry.caller_symbol)),
+            (Escape-GdString ([string]$entry.call_site_symbol)),
+            (Format-Rva ([string]$entry.call_rva)),
+            (Escape-GdString ([string]$entry.role))))
+    }
+    $lines.Add(']')
+    $lines.Add('const CAMERA_WRITER_SYMBOLS: Array[String] = [')
+    foreach ($symbol in $direction.camera.writer_symbols) {
+        $lines.Add(('    "{0}",' -f (Escape-GdString ([string]$symbol))))
+    }
+    $lines.Add(']')
     $lines.Add('const STARTUP_SEQUENCE: Array[Dictionary] = [')
     foreach ($entry in $Catalog.startup_sequence) {
         $lines.Add(('    {{"order": {0}, "id": "{1}", "role": "{2}", "source_filename": "{3}", "source_disk_filename": "{4}", "source_string_rva": {5}, "call_rva": {6}, "player_argument_1": {7}, "player_argument_2": {8}, "source_width": {9}, "source_height": {10}, "duration_seconds": {11}, "converted_relative_path": "{12}"}},' -f
@@ -879,6 +980,15 @@ $mediaSymbols = @(
     [string]$mediaCatalog.movie_player.startup_sequence_symbol
     [string]$mediaCatalog.presentation_flow.asset_selector_symbol
     [string]$mediaCatalog.presentation_flow.display_and_level_load_symbol
+    [string]$mediaCatalog.original_direction_flow.global_help.presenter_symbol
+    [string]$mediaCatalog.original_direction_flow.camera.setter_symbol
+    @($mediaCatalog.original_direction_flow.camera.direct_callers |
+        ForEach-Object {
+            [string]$_.caller_symbol
+            [string]$_.call_site_symbol
+        })
+    @($mediaCatalog.original_direction_flow.camera.writer_symbols |
+        ForEach-Object { [string]$_ })
 ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
     Sort-Object -Unique
 $missingMediaSymbols = @($mediaSymbols |
@@ -948,6 +1058,67 @@ if ([int]$mediaCatalog.presentation_flow.inter_level_movie_count -ne 0 -or
     [int]$mediaCatalog.presentation_flow.ending_dismissal_next_selector_level -ne 1 -or
     (Compare-Object @(640, 800, 1024) $endingWidths).Count -ne 0) {
     throw 'Original briefing/ending presentation flow is inconsistent.'
+}
+$direction = $mediaCatalog.original_direction_flow
+$cameraCallers = @($direction.camera.direct_callers)
+$cameraWriters = @($direction.camera.writer_symbols)
+$expectedCameraCallers = @(
+    [pscustomobject]@{
+        caller_symbol = 'WorldInputDispatch'
+        call_site_symbol = 'WorldInputCameraSetCall'
+        call_rva = '0x0004CC23'
+        role = 'world_input_recenter'
+    },
+    [pscustomobject]@{
+        caller_symbol = 'FocusActorCamera'
+        call_site_symbol = 'FocusActorCameraSetCall'
+        call_rva = '0x0004CD8B'
+        role = 'explicit_actor_focus'
+    }
+)
+$expectedCameraWriters = @(
+    'InitializeViewport',
+    'SetCameraOrigin',
+    'ScrollLeft',
+    'ScrollRight',
+    'ScrollUp',
+    'ScrollDown',
+    'ResizeViewportWorld',
+    'LoadGameFile'
+)
+if ([int]$direction.presentation_string_count -ne 27 -or
+    [int]$direction.in_mission_dialogue_sequence_count -ne 0 -or
+    [int]$direction.scripted_camera_sequence_count -ne 0 -or
+    [int]$direction.per_level_tutorial_sequence_count -ne 0 -or
+    [bool]$direction.mission_flow_reaches_movie_or_camera -or
+    [int]$direction.camera.direct_call_count -ne 2 -or
+    [int]$direction.camera.mission_script_writer_count -ne 0 -or
+    $cameraCallers.Count -ne 2 -or
+    $cameraWriters.Count -ne $expectedCameraWriters.Count -or
+    [string]$direction.global_help.resource_name -cne 'Help.psd' -or
+    (Format-Rva ([string]$direction.global_help.resource_string_rva)) -cne
+        '0x000CF704' -or
+    [string]$direction.global_help.presenter_symbol -cne 'HelpPresenter' -or
+    [string]$direction.global_help.scope -cne 'global_f1_help' -or
+    [string]::IsNullOrWhiteSpace([string]$direction.original_profile_policy)) {
+    throw 'Original dialogue/camera/tutorial closure is inconsistent.'
+}
+for ($callerIndex = 0; $callerIndex -lt $expectedCameraCallers.Count; $callerIndex++) {
+    $entry = $cameraCallers[$callerIndex]
+    $expected = $expectedCameraCallers[$callerIndex]
+    if ([string]$entry.caller_symbol -cne [string]$expected.caller_symbol -or
+        [string]$entry.call_site_symbol -cne [string]$expected.call_site_symbol -or
+        (Format-Rva ([string]$entry.call_rva)) -cne
+            (Format-Rva ([string]$expected.call_rva)) -or
+        [string]$entry.role -cne [string]$expected.role) {
+        throw "Invalid original camera caller at index $callerIndex."
+    }
+}
+for ($writerIndex = 0; $writerIndex -lt $expectedCameraWriters.Count; $writerIndex++) {
+    if ([string]$cameraWriters[$writerIndex] -cne
+        [string]$expectedCameraWriters[$writerIndex]) {
+        throw "Invalid original camera writer at index $writerIndex."
+    }
 }
 $soundSymbols = @(
     [string]$soundCatalog.request_pipeline.queued.manager_request_symbol

@@ -8,11 +8,14 @@ $remake = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $repository = [IO.Path]::GetFullPath((Join-Path $remake '..'))
 $mod = Join-Path $repository 'Mod'
 $routesPath = Join-Path $repository 'SDK\mission-routes.json'
+$mediaRoutesPath = Join-Path $repository 'SDK\media-routes.json'
 $missionsPath = Join-Path $remake 'game\data\missions.json'
 $contractPath = Join-Path $remake 'game\data\mod_parity_contract.json'
 
 $routes = (Get-Content -LiteralPath $routesPath -Raw -Encoding UTF8 |
     ConvertFrom-Json).routes
+$mediaRoutes = Get-Content -LiteralPath $mediaRoutesPath -Raw -Encoding UTF8 |
+    ConvertFrom-Json
 $selectorCatalog = Get-ChildItem -LiteralPath $mod -Filter '*.json' -File |
     ForEach-Object {
         try {
@@ -99,6 +102,26 @@ foreach ($item in $allTrackedItems) {
 $domainIds = @($contract.feature_domains.id)
 if ($domainIds.Count -ne ($domainIds | Select-Object -Unique).Count) {
     throw 'Parity feature-domain ids must be unique.'
+}
+$directionDomain = @($contract.feature_domains | Where-Object {
+    $_.id -eq 'dialogue_camera_tutorial_and_cutscenes'
+})
+$originalDirection = $mediaRoutes.original_direction_flow
+if ($directionDomain.Count -ne 1 -or
+    $directionDomain[0].status -ne 'verified' -or
+    @($directionDomain[0].gaps).Count -ne 0 -or
+    [int]$originalDirection.in_mission_dialogue_sequence_count -ne 0 -or
+    [int]$originalDirection.scripted_camera_sequence_count -ne 0 -or
+    [int]$originalDirection.per_level_tutorial_sequence_count -ne 0 -or
+    [bool]$originalDirection.mission_flow_reaches_movie_or_camera -or
+    [int]$originalDirection.camera.direct_call_count -ne 2 -or
+    [int]$originalDirection.camera.mission_script_writer_count -ne 0 -or
+    @($originalDirection.camera.direct_callers).Count -ne 2 -or
+    @($originalDirection.camera.writer_symbols).Count -ne 8 -or
+    $originalDirection.global_help.resource_name -ne 'Help.psd') {
+    throw (
+        'Dialogue/camera/tutorial parity must be backed by the closed ' +
+        'SDK original-direction catalog.')
 }
 
 $remaining = @($allTrackedItems |

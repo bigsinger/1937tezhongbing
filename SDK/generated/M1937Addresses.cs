@@ -33,8 +33,17 @@ namespace Mission1937.SDK.Generated
         public const long ActorComponentMovement = 0x00055E30L;
         public const long RightDragSelection = 0x0004C800L;
         public const long SmoothScroll = 0x0004C9B0L;
+        public const long InitializeViewport = 0x0004A780L;
         public const long SetCameraOrigin = 0x0004A870L;
+        public const long ScrollLeft = 0x0004A930L;
+        public const long ScrollRight = 0x0004A9A0L;
+        public const long ScrollUp = 0x0004AA20L;
+        public const long ScrollDown = 0x0004AA90L;
+        public const long ResizeViewportWorld = 0x0004ACF0L;
         public const long WorldInputDispatch = 0x0004CB80L;
+        public const long WorldInputCameraSetCall = 0x0004CC23L;
+        public const long FocusActorCamera = 0x0004CD60L;
+        public const long FocusActorCameraSetCall = 0x0004CD8BL;
         public const long SetScrollVelocityLimit = 0x0004AB10L;
         public const long WorldResolveHoverTarget = 0x0004C050L;
         public const long EnableSightObservationMode = 0x0004CD00L;
@@ -47,6 +56,7 @@ namespace Mission1937.SDK.Generated
         public const long PlayMovieThunk = 0x000011B8L;
         public const long SelectBriefingOrEndingAsset = 0x00002BD0L;
         public const long PresentBriefingAndLoadLevel = 0x000031C0L;
+        public const long HelpPresenter = 0x000045E0L;
         public const long UpdateGameWorld = 0x00006AD0L;
         public const long FalseResourceWarningBranch = 0x0000734AL;
         public const long StartupMovieEnqueue = 0x0000762CL;
@@ -80,6 +90,7 @@ namespace Mission1937.SDK.Generated
         public const long Mission7VwfName = 0x000CF4F8L;
         public const long Intro11ResourceName = 0x000CF3E8L;
         public const long Intro6ResourceName = 0x000CF438L;
+        public const long HelpResourceName = 0x000CF704L;
         public const long GetForegroundWindowIat = 0x000EC124L;
         public const long GetFocusIat = 0x000EC1A8L;
         public const long GetActiveWindowIat = 0x000EC1BCL;

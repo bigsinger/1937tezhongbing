@@ -12,6 +12,46 @@ inline constexpr int direct_movie_call_count = 2;
 inline constexpr int inter_level_movie_count = 0;
 inline constexpr int ending_selector_level = 13;
 inline constexpr int ending_dismissal_next_selector_level = 1;
+inline constexpr int presentation_string_count = 27;
+inline constexpr int in_mission_dialogue_sequence_count = 0;
+inline constexpr int scripted_camera_sequence_count = 0;
+inline constexpr int per_level_tutorial_sequence_count = 0;
+inline constexpr bool mission_flow_reaches_movie_or_camera = false;
+inline constexpr int camera_direct_call_count = 2;
+inline constexpr int mission_script_camera_writer_count = 0;
+inline constexpr const char* original_profile_policy = "The strict original profile has no in-mission editorial director. It keeps recovered startup movies, briefings, global F1 help and the ending; easy/normal/hard may opt into clearly labelled remake_editorial dialogue, camera and tutorial beats.";
+
+struct GlobalHelpRoute final {
+    const char* resource_name;
+    std::uintptr_t resource_string_rva;
+    const char* presenter_symbol;
+    const char* scope;
+};
+
+inline constexpr GlobalHelpRoute global_help{"Help.psd", 0x000CF704, "HelpPresenter", "global_f1_help"};
+
+struct CameraDirectCall final {
+    const char* caller_symbol;
+    const char* call_site_symbol;
+    std::uintptr_t call_rva;
+    const char* role;
+};
+
+inline constexpr std::array<CameraDirectCall, 2> camera_direct_callers{{
+    {"WorldInputDispatch", "WorldInputCameraSetCall", 0x0004CC23, "world_input_recenter"},
+    {"FocusActorCamera", "FocusActorCameraSetCall", 0x0004CD8B, "explicit_actor_focus"},
+}};
+
+inline constexpr std::array<const char*, 8> camera_writer_symbols{{
+    "InitializeViewport",
+    "SetCameraOrigin",
+    "ScrollLeft",
+    "ScrollRight",
+    "ScrollUp",
+    "ScrollDown",
+    "ResizeViewportWorld",
+    "LoadGameFile",
+}};
 
 struct StartupMovie final {
     int order;

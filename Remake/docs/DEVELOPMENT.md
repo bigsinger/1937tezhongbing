@@ -301,6 +301,11 @@ m004 的计划书来源已由物品 101/VWF 携带记录定案为 scene 2637；�
 
 `legacy_media_catalog.gd` 负责安全解析本地/回退元数据，`media_director.gd` 负责简报、声音、Theora 视频、字幕和文字/可选语音对白。主场景已经在切关时显示简报，并把攻击、投射物命中、爆炸、警报、角色选择/确认、死亡和 UI 事件映射到原 WAV；任务运行时进一步按 `media_cues` 在开场、目标、剧情锚点和胜利时调用同一导演。独立音乐/环境声播放器、专用模态对白播放器、按需并发的战场角色语音播放器和 8 路预热 SFX 池分别路由到 `Music`、`Voice`、`Sfx`，影片播放器音轨同样进入 `Music`。战场语音与 SFX 忙满时扩展、结束后复用，不会抢占另一条正在播放的声音；这一点来自原版 `sub_40B080/sub_40B090/sub_40AFB0` 的每声音对象请求计数和 DirectSound 缓冲复制逻辑。简报、对白、视频或结局图打开时，导演暂停任务、AI 和战斗；模态媒体中的 `Esc` 在松开时关闭/跳过，Enter/Space 继续。稳定 MOD 简报的进程私有左键关闭已形成差分基线；Remake 的全屏媒体层吞掉按下并在松开时关闭，禁止同一次点击穿透到世界。十二关补写对白与镜头请求已进入 `MissionDirectionRuntime`，但均保留 `remake_editorial` 来源；视频和经原版逐字核对的对白/镜头仍需继续编排，不能从 WAV 文件名猜造剧情。
 
+取证更新：`SDK/media-routes.json/original_direction_flow` 已通过 27 条演示资源引用、
+两个摄像机直接调用、全部相机写入者和十二个 VWF 对象流证明原版没有关内脚本
+对白、任务镜头或逐关教程。开发时不得再为 `original` 补猜测演出；现有导演只在
+增强难度中作为 `remake_editorial` 使用，也不需要运行或尝试通关第一关来恢复它。
+
 ## Windows 本地试玩包
 
 导入本地资源后，运行 `tools/Build-Playable.cmd` 会在已忽略的 `LocalBuild/1937Remake/` 生成 `Play-1937-Remake.cmd`。默认使用目录联接复用 `LocalAssets`；需要复制到另一台已获授权的电脑时使用 `-AssetMode Copy`。构建会固定 Godot 4.7.1、生成 release 导出或 PCK 回退包，并分别执行 PCK 路径和最终 `1937Remake.exe` 的 headless 冒烟测试。详细目录结构、切关参数和导出模板行为见 [Windows 本地试玩包](PLAYABLE_BUILD.md)。

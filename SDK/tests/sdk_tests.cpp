@@ -117,6 +117,25 @@ void require_ascii(
     checks++;
 }
 
+void require_relative_call_target(
+    const PeFile& file,
+    std::uint32_t call_rva,
+    std::uint32_t expected_target_rva,
+    const char* name,
+    int& checks) {
+    const auto* instruction = reinterpret_cast<const unsigned char*>(
+        file.at_rva(call_rva, 5));
+    if (instruction[0] != 0xE8)
+        throw std::runtime_error(std::string("not a relative call: ") + name);
+    std::int32_t displacement = 0;
+    std::memcpy(&displacement, instruction + 1, sizeof(displacement));
+    const auto target = static_cast<std::uint32_t>(
+        static_cast<std::int64_t>(call_rva) + 5 + displacement);
+    if (target != expected_target_rva)
+        throw std::runtime_error(std::string("call target mismatch: ") + name);
+    checks++;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -186,6 +205,40 @@ int main(int argc, char** argv) {
         static constexpr unsigned char update_movie_frame[] = {
             0x56, 0x8B, 0xF1, 0x6A, 0x00, 0x6A, 0x00, 0x8B,
             0x46, 0x14, 0x6A, 0x00, 0x6A, 0x00, 0x50, 0x8B};
+        static constexpr unsigned char help_presenter[] = {
+            0x6A, 0xFF, 0x68, 0x6B, 0xE3, 0x4B, 0x00, 0x64,
+            0xA1, 0x00, 0x00, 0x00, 0x00, 0x50, 0x64, 0x89};
+        static constexpr unsigned char initialize_viewport[] = {
+            0x53, 0x8B, 0x5C, 0x24, 0x10, 0x55, 0x8B, 0x6C,
+            0x24, 0x0C, 0x8B, 0x54, 0x24, 0x10, 0x56, 0x8B};
+        static constexpr unsigned char set_camera_origin[] = {
+            0x53, 0x55, 0x56, 0x8B, 0x5C, 0x24, 0x10, 0x8B,
+            0xF1, 0x8B, 0x6C, 0x24, 0x14, 0x57, 0x8B, 0x46};
+        static constexpr unsigned char scroll_left[] = {
+            0x56, 0x8B, 0xF1, 0x8B, 0x56, 0x5C, 0x8B, 0x46,
+            0x44, 0x2B, 0xC2, 0x79, 0x09, 0xC7, 0x46, 0x44};
+        static constexpr unsigned char scroll_right[] = {
+            0x56, 0x8B, 0xF1, 0x57, 0x8B, 0x56, 0x5C, 0x8B,
+            0x46, 0x44, 0x8B, 0x7E, 0x28, 0x03, 0xC2, 0x89};
+        static constexpr unsigned char scroll_up[] = {
+            0x56, 0x8B, 0xF1, 0x8B, 0x56, 0x5C, 0x8B, 0x46,
+            0x48, 0x2B, 0xC2, 0x79, 0x09, 0xC7, 0x46, 0x48};
+        static constexpr unsigned char scroll_down[] = {
+            0x56, 0x8B, 0xF1, 0x57, 0x8B, 0x56, 0x5C, 0x8B,
+            0x46, 0x48, 0x8B, 0x7E, 0x2C, 0x03, 0xC2, 0x89};
+        static constexpr unsigned char resize_viewport_world[] = {
+            0x53, 0x8B, 0x5C, 0x24, 0x0C, 0x56, 0x57, 0x8B,
+            0x7C, 0x24, 0x10, 0x8B, 0xF1, 0x89, 0x7E, 0x4C};
+        static constexpr unsigned char load_game_file[] = {
+            0x64, 0xA1, 0x00, 0x00, 0x00, 0x00, 0x6A, 0xFF,
+            0x68, 0xDB, 0xF3, 0x4B, 0x00, 0x50, 0x8B, 0x44};
+        static constexpr unsigned char focus_actor_camera[] = {
+            0x56, 0x8B, 0x74, 0x24, 0x08, 0x85, 0xF6, 0x74,
+            0x27, 0x8B, 0x41, 0x6C, 0x99, 0x2B, 0xC2, 0x8B};
+        static constexpr unsigned char world_input_camera_set_call[] = {
+            0xE8, 0x48, 0xDC, 0xFF, 0xFF};
+        static constexpr unsigned char focus_actor_camera_set_call[] = {
+            0xE8, 0xE0, 0xDA, 0xFF, 0xFF};
         static constexpr unsigned char level[] = {
             0x01, 0x00, 0x00, 0x00};
         static constexpr unsigned char alarm_sound_request[] = {
@@ -232,6 +285,54 @@ int main(int argc, char** argv) {
         require_signature(
             file, m1937::sdk::rva::update_movie_frame,
             update_movie_frame, "UpdateMovieFrame", checks);
+        require_signature(
+            file, m1937::sdk::rva::help_presenter,
+            help_presenter, "HelpPresenter", checks);
+        require_signature(
+            file, m1937::sdk::rva::initialize_viewport,
+            initialize_viewport, "InitializeViewport", checks);
+        require_signature(
+            file, m1937::sdk::rva::set_camera_origin,
+            set_camera_origin, "SetCameraOrigin", checks);
+        require_signature(
+            file, m1937::sdk::rva::scroll_left,
+            scroll_left, "ScrollLeft", checks);
+        require_signature(
+            file, m1937::sdk::rva::scroll_right,
+            scroll_right, "ScrollRight", checks);
+        require_signature(
+            file, m1937::sdk::rva::scroll_up,
+            scroll_up, "ScrollUp", checks);
+        require_signature(
+            file, m1937::sdk::rva::scroll_down,
+            scroll_down, "ScrollDown", checks);
+        require_signature(
+            file, m1937::sdk::rva::resize_viewport_world,
+            resize_viewport_world, "ResizeViewportWorld", checks);
+        require_signature(
+            file, m1937::sdk::rva::load_game_file,
+            load_game_file, "LoadGameFile", checks);
+        require_signature(
+            file, m1937::sdk::rva::focus_actor_camera,
+            focus_actor_camera, "FocusActorCamera", checks);
+        require_signature(
+            file, m1937::sdk::rva::world_input_camera_set_call,
+            world_input_camera_set_call, "WorldInputCameraSetCall", checks);
+        require_signature(
+            file, m1937::sdk::rva::focus_actor_camera_set_call,
+            focus_actor_camera_set_call, "FocusActorCameraSetCall", checks);
+        require_relative_call_target(
+            file,
+            static_cast<std::uint32_t>(
+                m1937::sdk::rva::world_input_camera_set_call),
+            static_cast<std::uint32_t>(m1937::sdk::rva::set_camera_origin),
+            "WorldInputDispatch -> SetCameraOrigin", checks);
+        require_relative_call_target(
+            file,
+            static_cast<std::uint32_t>(
+                m1937::sdk::rva::focus_actor_camera_set_call),
+            static_cast<std::uint32_t>(m1937::sdk::rva::set_camera_origin),
+            "FocusActorCamera -> SetCameraOrigin", checks);
         require_ascii(
             file,
             static_cast<std::uint32_t>(
@@ -248,6 +349,11 @@ int main(int argc, char** argv) {
                 static_cast<std::uint32_t>(ending.resource_string_rva),
                 ending.resource_name, "ending image string", checks);
         }
+        require_ascii(
+            file,
+            static_cast<std::uint32_t>(
+                m1937::sdk::media::global_help.resource_string_rva),
+            "Help.psd", "global F1 help string", checks);
         require_signature(
             file, m1937::sdk::rva::new_game_level_immediate,
             level, "NewGameLevelImmediate", checks);
@@ -275,6 +381,48 @@ int main(int argc, char** argv) {
                 m1937::sdk::media::ending_selector_level == 13 &&
                 m1937::sdk::media::ending_dismissal_next_selector_level == 1,
             "original media-flow constants mismatch", checks);
+        require(
+            m1937::sdk::media::presentation_string_count == 27 &&
+                m1937::sdk::media::in_mission_dialogue_sequence_count == 0 &&
+                m1937::sdk::media::scripted_camera_sequence_count == 0 &&
+                m1937::sdk::media::per_level_tutorial_sequence_count == 0 &&
+                !m1937::sdk::media::mission_flow_reaches_movie_or_camera &&
+                m1937::sdk::media::mission_script_camera_writer_count == 0,
+            "original direction-flow closure mismatch", checks);
+        require(
+            std::strcmp(
+                m1937::sdk::media::global_help.resource_name,
+                "Help.psd") == 0 &&
+                std::strcmp(
+                    m1937::sdk::media::global_help.presenter_symbol,
+                    "HelpPresenter") == 0 &&
+                std::strcmp(
+                    m1937::sdk::media::global_help.scope,
+                    "global_f1_help") == 0,
+            "global F1 help route mismatch", checks);
+        require(
+                m1937::sdk::media::camera_direct_call_count == 2 &&
+                m1937::sdk::media::camera_direct_callers.size() == 2 &&
+                m1937::sdk::media::camera_direct_callers[0].call_rva ==
+                    m1937::sdk::rva::world_input_camera_set_call &&
+                std::strcmp(
+                    m1937::sdk::media::camera_direct_callers[0].role,
+                    "world_input_recenter") == 0 &&
+                m1937::sdk::media::camera_direct_callers[1].call_rva ==
+                    m1937::sdk::rva::focus_actor_camera_set_call &&
+                std::strcmp(
+                    m1937::sdk::media::camera_direct_callers[1].role,
+                    "explicit_actor_focus") == 0,
+            "original camera direct-call closure mismatch", checks);
+        require(
+            m1937::sdk::media::camera_writer_symbols.size() == 8 &&
+                std::strcmp(
+                    m1937::sdk::media::camera_writer_symbols.front(),
+                    "InitializeViewport") == 0 &&
+                std::strcmp(
+                    m1937::sdk::media::camera_writer_symbols.back(),
+                    "LoadGameFile") == 0,
+            "original camera writer closure mismatch", checks);
         require(
             m1937::sdk::media::startup_sequence.size() == 2 &&
                 m1937::sdk::media::startup_sequence[0].order == 0 &&

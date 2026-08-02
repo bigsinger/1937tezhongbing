@@ -51,6 +51,50 @@
     "ending_selector_level": 13,
     "ending_dismissal_next_selector_level": 1
   },
+  "original_direction_flow": {
+    "evidence_scope": "Closed static audit of every executable .SVT/.PSD/.BMP string reference, every direct SetCameraOrigin call, every CameraX/CameraY writer, both mission state functions, and all twelve parsed VWF object streams.",
+    "presentation_string_count": 27,
+    "in_mission_dialogue_sequence_count": 0,
+    "scripted_camera_sequence_count": 0,
+    "per_level_tutorial_sequence_count": 0,
+    "mission_flow_reaches_movie_or_camera": false,
+    "global_help": {
+      "resource_name": "Help.psd",
+      "resource_string_rva": "0x000CF704",
+      "presenter_symbol": "HelpPresenter",
+      "scope": "global_f1_help"
+    },
+    "camera": {
+      "setter_symbol": "SetCameraOrigin",
+      "direct_call_count": 2,
+      "mission_script_writer_count": 0,
+      "direct_callers": [
+        {
+          "caller_symbol": "WorldInputDispatch",
+          "call_site_symbol": "WorldInputCameraSetCall",
+          "call_rva": "0x0004CC23",
+          "role": "world_input_recenter"
+        },
+        {
+          "caller_symbol": "FocusActorCamera",
+          "call_site_symbol": "FocusActorCameraSetCall",
+          "call_rva": "0x0004CD8B",
+          "role": "explicit_actor_focus"
+        }
+      ],
+      "writer_symbols": [
+        "InitializeViewport",
+        "SetCameraOrigin",
+        "ScrollLeft",
+        "ScrollRight",
+        "ScrollUp",
+        "ScrollDown",
+        "ResizeViewportWorld",
+        "LoadGameFile"
+      ]
+    },
+    "original_profile_policy": "The strict original profile has no in-mission editorial director. It keeps recovered startup movies, briefings, global F1 help and the ending; easy/normal/hard may opt into clearly labelled remake_editorial dialogue, camera and tutorial beats."
+  },
   "level_briefings": [
     {"selector_level": 1, "level_id": "m000", "resource_name": "Intro_000.psd", "gfl_index": 1048, "converted_relative_path": "iblock/1048.png"},
     {"selector_level": 2, "level_id": "m001", "resource_name": "Intro_001.psd", "gfl_index": 1049, "converted_relative_path": "iblock/1049.png"},

@@ -622,11 +622,11 @@ type 11 的 faction 1 注意力目标，目标 `+656` 保持与玩家选择能�
 - 对白措辞、镜头时长与缩放、教程文本、AI 策略及难度数值均为 `remake_editorial`；
 - 目录明确声明 `original_dialogue_claimed=false`，验证器拒绝把补写对白伪标为原版逐字稿。
 
-因此当前交付是“十二关可执行导演第一版”，仍需用原版逐关实机录像和复刻完整通关数据校对对白、镜头路径、触发时机、增援与难度曲线。详见 [十二关导演说明](MISSION_DIRECTION.md)。
+因此当前交付同时包含严格原版的“零关内导演”路径和可选的十二关增强导演第一版。后者只需按真人体验调校提示、镜头、增援与难度曲线，不再把补写内容误称为待恢复的原版对白。详见 [十二关导演说明](MISSION_DIRECTION.md)。
 
 ## 仍需的原版对照
 
-1. 用逐关原版录像校对 S/B 的光标像素反馈，以及逐句对白、镜头和教程出现条件；
+1. 用短时目标窗口探针校对 S/B 的光标像素反馈；原版关内对白、任务镜头和逐关教程已经以零序列闭包；
 2. 恢复多层 SPR 每一绘制层的 baseline，建立关键庄稼、建筑和前景遮挡截图回归；
 3. 在已固定的十二关启动检查点上继续迁移其余运行期全局 `rand()` 消费者，
    建立跨系统长时随机调用顺序回放；
@@ -680,5 +680,27 @@ actor 更新都调用 `sub_427CB0(1)`。结合 `sub_40B080/sub_40AFB0/sub_40B090
 selector 13 根据宽度选择 `Intro_012640/800/1024.psd`，展示最终统计并在
 关闭后把 selector 复位为 1。地址、原始参数、尺寸、时长、GFL 索引和转码路径
 已进入 `SDK/media-routes.json`，生成 `Media.hpp` 与 Godot 目录；SDK 机器码
-测试及 22 项无影片状态机测试共同守护。该闭包完全由静态证据得出，不需要启动
+测试及 26 项无影片状态机测试共同守护。该闭包完全由静态证据得出，不需要启动
 第一关，更不需要机器人通关。
+
+## 关内对白、镜头与教程闭包
+
+进一步枚举原程序全部 27 条 `.SVT/.PSD/.BMP` 可打印字符串及其交叉引用，除
+上述两段启动影片、十二张简报、三张结局图外，只剩全局 `Help.psd`、遮罩与
+分辨率界面资源；十二个 VWF 的对象流也没有对白、字幕或教程脚本结构。
+`InitializeMissionBindings` 与 `EvaluateMission` 只处理任务对象和状态，均不
+到达影片播放器或摄像机写入路径。因此原版关内脚本对白、任务镜头和逐关教程的
+确证数量均为 0，而不是“尚未从录像猜出时机”。
+
+摄像机闭包给出了更强的反证：`SetCameraOrigin`（RVA `0x4A870`）只有两个直接
+调用点，分别是 `WorldInputDispatch+0xA3`（RVA `0x4CC23`）的玩家输入重定位，
+以及 `FocusActorCamera+0x2B`（RVA `0x4CD8B`）的显式角色居中。全局
+`CameraX/CameraY` 的写入者只有初始化、该 setter、四向卷屏、viewport resize
+和 `LoadGameFile`；任务初始化器、任务判定器和特殊任务对象处理器都不在集合内。
+F1 帮助则由 `HelpPresenter`（RVA `0x45E0`）读取 RVA `0xCF704` 的
+`Help.psd`，是全局入口而非逐关教程。
+
+这些事实记录在 `SDK/media-routes.json/original_direction_flow`，并生成
+`Media.hpp` 与 `legacy_media_route_catalog.gd`。严格 `original` 不创建
+`MissionDirectionRuntime` 正是原版语义；`easy/normal/hard` 中 43 个节奏节点
+和 45 行对白继续作为清楚标注的 `remake_editorial` 可选增强。

@@ -9,6 +9,29 @@ const DIRECT_MOVIE_CALL_COUNT := 2
 const INTER_LEVEL_MOVIE_COUNT := 0
 const ENDING_SELECTOR_LEVEL := 13
 const ENDING_DISMISSAL_NEXT_SELECTOR_LEVEL := 1
+const PRESENTATION_STRING_COUNT := 27
+const IN_MISSION_DIALOGUE_SEQUENCE_COUNT := 0
+const SCRIPTED_CAMERA_SEQUENCE_COUNT := 0
+const PER_LEVEL_TUTORIAL_SEQUENCE_COUNT := 0
+const MISSION_FLOW_REACHES_MOVIE_OR_CAMERA := false
+const CAMERA_DIRECT_CALL_COUNT := 2
+const MISSION_SCRIPT_CAMERA_WRITER_COUNT := 0
+const ORIGINAL_PROFILE_POLICY := "The strict original profile has no in-mission editorial director. It keeps recovered startup movies, briefings, global F1 help and the ending; easy/normal/hard may opt into clearly labelled remake_editorial dialogue, camera and tutorial beats."
+const GLOBAL_HELP: Dictionary = {"resource_name": "Help.psd", "resource_string_rva": 0x000CF704, "presenter_symbol": "HelpPresenter", "scope": "global_f1_help"}
+const CAMERA_DIRECT_CALLERS: Array[Dictionary] = [
+    {"caller_symbol": "WorldInputDispatch", "call_site_symbol": "WorldInputCameraSetCall", "call_rva": 0x0004CC23, "role": "world_input_recenter"},
+    {"caller_symbol": "FocusActorCamera", "call_site_symbol": "FocusActorCameraSetCall", "call_rva": 0x0004CD8B, "role": "explicit_actor_focus"},
+]
+const CAMERA_WRITER_SYMBOLS: Array[String] = [
+    "InitializeViewport",
+    "SetCameraOrigin",
+    "ScrollLeft",
+    "ScrollRight",
+    "ScrollUp",
+    "ScrollDown",
+    "ResizeViewportWorld",
+    "LoadGameFile",
+]
 const STARTUP_SEQUENCE: Array[Dictionary] = [
     {"order": 0, "id": "logo", "role": "publisher_logo", "source_filename": "GameKingLogo.SVT", "source_disk_filename": "GamekingLogo.svt", "source_string_rva": 0x000CF78C, "call_rva": 0x00007635, "player_argument_1": 0, "player_argument_2": 0, "source_width": 640, "source_height": 480, "duration_seconds": 10.396733, "converted_relative_path": "media/video/logo.ogv"},
     {"order": 1, "id": "historical_intro", "role": "historical_intro", "source_filename": "1937Intro.SVT", "source_disk_filename": "1937Intro.svt", "source_string_rva": 0x000CF77C, "call_rva": 0x00007644, "player_argument_1": 0, "player_argument_2": 100, "source_width": 640, "source_height": 240, "duration_seconds": 139.916667, "converted_relative_path": "media/video/historical_intro.ogv"},

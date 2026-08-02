@@ -23,14 +23,18 @@
 
 ## 来源边界
 
-原资源中没有发现可自动绑定到关内 scene 的逐句对白表或镜头脚本。因此本次严格分两层记录：
+对原程序全部 27 条演示资源字符串引用、摄像机 setter/全局写入者、任务初始化与
+判定调用图，以及十二个 VWF 对象流完成闭包后，已经确认原版不存在可绑定到关内
+scene 的逐句对白、任务脚本镜头或逐关教程序列。F1 `Help.psd` 是全局帮助，
+摄像机只受初始化、输入卷屏、角色定位、窗口变化和读档驱动。因此这里不是等待
+以后猜测时机，而是严格分成“原版零关内导演”和“可选现代增强”两层：
 
 | 数据层 | 来源标签 | 含义 |
 |---|---|---|
 | 任务 ID、目标 ID、scene binding | `recovered_scene_binding` / `mixed` | 引用 `missions.json` 中由 VWF 与原程序控制流恢复的事实 |
 | 对白措辞、镜头时长/缩放、教程文本、AI 策略、难度数值 | `remake_editorial` | 为复刻版可玩性新增，不能视为原版对白或原版平衡参数 |
 
-目录顶层还固定声明 `original_dialogue_claimed=false`。校验器会拒绝把当前补写对白改标成 `recovered_transcript`，也会拒绝镜头引用不存在的目标、objective 或 scene binding。产品默认的 `original` 进一步在运行时完全绕过 `MissionDirectionRuntime` 和 `MissionAiCoordinator`，并屏蔽 `missions.json` 中标成 `remake_editorial` 的 cue；`recovered_media_mapping` 的简报/结局不受影响。这样以后若从原版实机录像恢复到精确对白，可以逐条附证据升级，而不会混淆已经恢复的任务事实与后期创作。
+目录顶层还固定声明 `original_dialogue_claimed=false`。校验器会拒绝把当前补写对白改标成 `recovered_transcript`，也会拒绝镜头引用不存在的目标、objective 或 scene binding。产品默认的 `original` 进一步在运行时完全绕过 `MissionDirectionRuntime` 和 `MissionAiCoordinator`，并屏蔽 `missions.json` 中标成 `remake_editorial` 的 cue；`recovered_media_mapping` 的启动影片、简报、F1 帮助与结局不受影响。`SDK/media-routes.json/original_direction_flow` 和二进制测试守护这条边界，避免以后把后期创作误标为恢复事实。
 
 m000 已完成第一轮人物身份校准：原 VWF 中唯一可控角色是强子 scene 1436，因此开场/胜利补写对白和首次营救确认音均由强子承担；早期误用老赵的接线已经移除。详细数据与窗口探针结果见 [第一关复刻对照与验收](M000_FIDELITY.md)。
 
