@@ -57,6 +57,7 @@ var active_music_index := -1
 var _voice_active_indices: Array[int] = []
 var _sfx_active_indices: Array[int] = []
 var _sfx_cursor := 0
+var _continuous_sfx_requests: Dictionary = {}
 var subtitle_seconds := 0.0
 var dialogue_sequence_id := ""
 var dialogue_lines: Array = []
@@ -124,6 +125,7 @@ func close_for_state_change() -> void:
 		_voice_active_indices[index] = -1
 	for index: int in range(_sfx_active_indices.size()):
 		_sfx_active_indices[index] = -1
+	_continuous_sfx_requests.clear()
 	dialogue_sequence_id = ""
 	dialogue_lines.clear()
 	dialogue_line_index = -1
@@ -189,6 +191,68 @@ func play_audio_index(
 	return _play_audio_index(
 		gfl_index, event_key, caption_override, "", channel_override
 	)
+
+
+func request_sfx_audio_index(
+	gfl_index: int,
+	requester_instance_id: int = 0,
+) -> bool:
+	## sub_41D6F0 requests movement/ambient frame-group sounds on every
+	## actor update. The original sound object counts same-frame requests and
+	## starts only the number of idle DirectSound buffers needed for that count;
+	## it does not restart a buffer that is already playing. Aggregate unique
+	## actor requests by physics frame to preserve that behavior without
+	## allocating a new AudioStreamPlayer every tick.
+	_ensure_nodes()
+	_ensure_catalog()
+	var path := str(catalog.call("sound_path", gfl_index))
+	if path.is_empty():
+		media_unavailable.emit("audio", str(gfl_index))
+		return false
+	var stream := _load_cached_audio_stream(path)
+	if stream == null:
+		media_unavailable.emit("audio", str(gfl_index))
+		return false
+
+	var physics_frame := Engine.get_physics_frames()
+	var state_value: Variant = _continuous_sfx_requests.get(gfl_index, {})
+	var state: Dictionary = (
+		state_value as Dictionary
+		if state_value is Dictionary
+		else {}
+	)
+	if int(state.get("physics_frame", -1)) != physics_frame:
+		state = {
+			"physics_frame": physics_frame,
+			"request_count": 0,
+			"requesters": {},
+		}
+	var requesters := state.get("requesters", {}) as Dictionary
+	if requester_instance_id != 0 and requesters.has(requester_instance_id):
+		return true
+	if requester_instance_id != 0:
+		requesters[requester_instance_id] = true
+	state["requesters"] = requesters
+	var request_count := int(state.get("request_count", 0)) + 1
+	state["request_count"] = request_count
+	_continuous_sfx_requests[gfl_index] = state
+
+	var active_count := 0
+	for slot: int in range(sfx_players.size()):
+		if (
+			_sfx_active_indices[slot] == gfl_index
+			and sfx_players[slot].playing
+		):
+			active_count += 1
+	if active_count >= request_count:
+		return true
+	var slot := _acquire_sfx_slot()
+	var player := sfx_players[slot]
+	player.stream = stream
+	_sfx_active_indices[slot] = gfl_index
+	player.play()
+	audio_started.emit(gfl_index, "sprite_animation_continuous")
+	return true
 
 
 func _play_audio_index(
@@ -401,6 +465,27 @@ func stop_dialogue(skipped: bool = true) -> void:
 
 
 func _exit_tree() -> void:
+	# A headless smoke test or an ordinary application close can destroy the
+	# tree while continuous SPR sounds are still active. Detach every stream
+	# before the audio server shuts down so native playback objects do not
+	# survive the scene tree for one final mix cycle.
+	if video_player != null:
+		video_player.stop()
+		video_player.stream = null
+	if audio_player != null:
+		audio_player.stop()
+		audio_player.stream = null
+	if music_player != null:
+		music_player.stop()
+		music_player.stream = null
+	for player: AudioStreamPlayer in voice_players:
+		player.stop()
+		player.stream = null
+	for player: AudioStreamPlayer in sfx_players:
+		player.stop()
+		player.stream = null
+	_audio_stream_cache.clear()
+	_continuous_sfx_requests.clear()
 	_modal_transition_depth = 0
 	_release_modal_pause()
 

@@ -22,6 +22,47 @@ public sealed class SoundLibrary
 
     public IReadOnlyList<SoundLibraryEntry> Entries { get; }
 
+    /// <summary>
+    /// Resolves the one-based sound identifiers stored in SPR frame-group
+    /// parameter 8 to the matching WAV resource in the GFL archive.
+    /// M1937.exe sub_427C80 subtracts one immediately before indexing the
+    /// loaded SLF sound array, so zero deliberately means "no sound".
+    /// </summary>
+    public IReadOnlyDictionary<int, int> ResolveOneBasedGflIndices(
+        IReadOnlyList<GflEntry> archiveEntries)
+    {
+        ArgumentNullException.ThrowIfNull(archiveEntries);
+
+        var wavGroups = archiveEntries
+            .Where(entry => entry.Type == "WAV")
+            .GroupBy(entry => entry.OriginalName, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var duplicate = wavGroups.FirstOrDefault(group => group.Skip(1).Any());
+        if (duplicate is not null)
+        {
+            throw new InvalidDataException(
+                $"GFL contains more than one WAV named '{duplicate.Key}', so SLF mapping is ambiguous.");
+        }
+
+        var wavByName = wavGroups.ToDictionary(
+            group => group.Key,
+            group => group.Single(),
+            StringComparer.OrdinalIgnoreCase);
+        var result = new Dictionary<int, int>();
+        foreach (var entry in Entries)
+        {
+            if (!wavByName.TryGetValue(entry.FileName, out var wavEntry))
+            {
+                throw new InvalidDataException(
+                    $"SLF entry {entry.Index + 1} ('{entry.FileName}') has no matching GFL WAV resource.");
+            }
+
+            result.Add(checked(entry.Index + 1), wavEntry.Index);
+        }
+
+        return new ReadOnlyDictionary<int, int>(result);
+    }
+
     public static SoundLibrary Open(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);

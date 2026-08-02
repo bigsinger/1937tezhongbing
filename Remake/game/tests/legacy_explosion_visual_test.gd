@@ -41,7 +41,9 @@ func _init() -> void:
 	_test_global_stream_batch_commit()
 	_test_effect_15_missing_type_102()
 	_test_world_object_five_cycle_lifetime()
+	_test_world_object_animation_audio()
 	_test_actor_61_effect_lifecycle()
+	_test_explosion_effect_animation_audio()
 	_test_explosion_snapshot_lifecycles()
 	_test_real_first_match_assets_when_available()
 	if failures.is_empty():
@@ -282,6 +284,58 @@ func _test_world_object_five_cycle_lifetime() -> void:
 	arena.queue_free()
 
 
+func _test_world_object_animation_audio() -> void:
+	var arena := Node2D.new()
+	root.add_child(arena)
+	var world_object = SPECIAL_WORLD_OBJECT.new()
+	arena.add_child(world_object)
+	var events: Array[Dictionary] = []
+	world_object.original_animation_audio_requested.connect(
+		func(
+			_source: Node2D,
+			gfl_index: int,
+			continuous: bool,
+			local_requester_id: int,
+		) -> void:
+			events.append({
+				"gfl_index": gfl_index,
+				"continuous": continuous,
+				"local_requester_id": local_requester_id,
+			})
+	)
+	var catalog := {
+		21: {"action_index": 0, "sound_gfl_index": -1},
+		23: {"action_index": 1, "sound_gfl_index": 1350},
+		25: {"action_index": 1, "sound_gfl_index": 1350},
+	}
+	var profile: Dictionary = SPECIAL_PROFILES.profile_for_attack_type(8)
+	world_object.configure(
+		profile,
+		Vector2(100.0, 100.0),
+		null,
+		3,
+		null,
+		catalog,
+		Vector2(1000.0, 1000.0),
+		RULES.CRT_INITIAL_STATE,
+	)
+	var enemy := MockEnemy.new()
+	enemy.position = Vector2(100.0, 100.0)
+	arena.add_child(enemy)
+	var candidates: Array[Node2D] = [enemy]
+	world_object.set_potential_targets(candidates)
+	world_object.advance_world_ticks(1)
+	world_object.advance_world_ticks(1)
+	_expect(
+		events.size() == 1
+		and int(events[0].get("gfl_index", -1)) == 1350
+		and bool(events[0].get("continuous", false))
+		and int(events[0].get("local_requester_id", 0)) > 0,
+		"actor-62 resolved fire particles request their authored continuous SPR sound",
+	)
+	arena.queue_free()
+
+
 func _test_actor_61_effect_lifecycle() -> void:
 	var arena := Node2D.new()
 	root.add_child(arena)
@@ -321,6 +375,67 @@ func _test_actor_61_effect_lifecycle() -> void:
 	_expect(
 		effect.is_visual_complete(),
 		"actor 61 effect closes after the final fifth-cycle particle at tick 150",
+	)
+	arena.queue_free()
+
+
+func _test_explosion_effect_animation_audio() -> void:
+	var arena := Node2D.new()
+	root.add_child(arena)
+	var effect = EXPLOSION_EFFECT.new()
+	arena.add_child(effect)
+	var events: Array[Dictionary] = []
+	effect.original_animation_audio_requested.connect(
+		func(
+			_source: Node2D,
+			gfl_index: int,
+			continuous: bool,
+			local_requester_id: int,
+		) -> void:
+			events.append({
+				"gfl_index": gfl_index,
+				"continuous": continuous,
+				"local_requester_id": local_requester_id,
+			})
+	)
+	var catalog := {
+		19: {"action_index": 0, "sound_gfl_index": 1267},
+		21: {"action_index": 0, "sound_gfl_index": -1},
+		23: {"action_index": 1, "sound_gfl_index": 1350},
+		25: {"action_index": 1, "sound_gfl_index": 1350},
+	}
+	effect.configure(
+		Vector2(100.0, 100.0),
+		61,
+		catalog,
+		Vector2(1000.0, 1000.0),
+		RULES.CRT_INITIAL_STATE,
+	)
+	effect.advance_world_ticks(3)
+	var primary_events := events.filter(
+		func(event: Dictionary) -> bool:
+			return int(event.get("gfl_index", -1)) == 1267
+	)
+	var fire_events := events.filter(
+		func(event: Dictionary) -> bool:
+			return int(event.get("gfl_index", -1)) == 1350
+	)
+	var fire_events_valid := true
+	for event: Dictionary in fire_events:
+		fire_events_valid = (
+			fire_events_valid
+			and bool(event.get("continuous", false))
+			and int(event.get("local_requester_id", 0)) > 0
+		)
+	_expect(
+		primary_events.size() == 1
+		and not bool(primary_events[0].get("continuous", true))
+		and int(primary_events[0].get("local_requester_id", -1)) == 0,
+		"actor-61 primary explosion requests its authored sound on entry to frame one",
+	)
+	_expect(
+		fire_events.size() == 3 and fire_events_valid,
+		"actor-61 secondary fire requests its authored sound once per active world tick",
 	)
 	arena.queue_free()
 
@@ -450,12 +565,21 @@ func _test_real_first_match_assets_when_available() -> void:
 		"_load_legacy_projectile_visual_catalog"
 	)
 	var actor_61_visual := projectile_catalog.get(19, {}) as Dictionary
+	var actor_62_visual := projectile_catalog.get(20, {}) as Dictionary
 	var dart_visual := projectile_catalog.get(251, {}) as Dictionary
 	_expect(
 		int(actor_61_visual.get("runtime_actor_type", 0)) == 61
 		and (actor_61_visual.get("frames", []) as Array).size() == 10
-		and int(actor_61_visual.get("frame_hold_ticks", 0)) == 3,
+		and int(actor_61_visual.get("frame_hold_ticks", 0)) == 3
+		and int(actor_61_visual.get("sound_gfl_index", -1)) == 1267,
 		"GFL 19 loads the recovered actor-61 primary explosion",
+	)
+	_expect(
+		int(actor_62_visual.get("runtime_actor_type", 0)) == 62
+		and (actor_62_visual.get("frames", []) as Array).size() == 10
+		and int(actor_62_visual.get("frame_hold_ticks", 0)) == 2
+		and int(actor_62_visual.get("sound_gfl_index", -1)) == 1269,
+		"GFL 20 loads the recovered actor-62 primary explosion and exact sound",
 	)
 	_expect(
 		int(dart_visual.get("runtime_actor_type", 0)) == 80

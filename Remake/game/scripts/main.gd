@@ -1125,6 +1125,16 @@ func _prewarm_original_actor_voices() -> void:
 					continue
 				warmed_gfl_indices[gfl_index] = true
 				media_director.prewarm_audio_index(gfl_index)
+	for actor: Node2D in _all_active_runtime_actors():
+		if not actor.has_method("authored_animation_sound_gfl_indices"):
+			continue
+		for gfl_index: int in actor.call(
+			"authored_animation_sound_gfl_indices"
+		) as Array[int]:
+			if warmed_gfl_indices.has(gfl_index):
+				continue
+			warmed_gfl_indices[gfl_index] = true
+			media_director.prewarm_audio_index(gfl_index)
 
 
 func _should_show_startup_level_selector() -> bool:
@@ -4203,6 +4213,9 @@ func _connect_combatant(combatant: Node2D) -> void:
 	combatant.original_disguise_transition_ready.connect(
 		_on_original_disguise_transition_ready
 	)
+	combatant.original_animation_audio_requested.connect(
+		_on_original_animation_audio_requested
+	)
 	if combatant is ENEMY_UNIT:
 		var enemy := combatant as ENEMY_UNIT
 		enemy.legacy_world_item_interaction_requested.connect(
@@ -4224,6 +4237,25 @@ func _on_enemy_original_actor_audio_requested(
 	family: String,
 ) -> void:
 	_play_original_actor_audio(family, enemy)
+
+
+func _on_original_animation_audio_requested(
+	actor: Node2D,
+	gfl_index: int,
+	continuous: bool,
+) -> void:
+	if media_director == null or gfl_index <= 0:
+		return
+	if continuous:
+		media_director.request_sfx_audio_index(
+			gfl_index,
+			actor.get_instance_id() if actor != null else 0,
+		)
+	else:
+		media_director.play_audio_index(
+			gfl_index,
+			"sprite_animation",
+		)
 
 
 func _on_projectile_requested(
@@ -4298,6 +4330,10 @@ func _spawn_legacy_special_world_object(
 			trigger_candidates.append(enemy)
 	world_object.call("set_potential_targets", trigger_candidates)
 	world_object.connect("explosion_requested", Callable(self, "_on_world_explosion_requested"))
+	world_object.connect(
+		"original_animation_audio_requested",
+		Callable(self, "_on_original_world_animation_audio_requested"),
+	)
 	world_object.connect("tree_exited", Callable(self, "_on_legacy_special_world_object_exited").bind(world_object))
 	add_child(world_object)
 	legacy_special_world_objects.append(world_object)
@@ -4366,6 +4402,7 @@ func _load_legacy_special_visual(gfl_index: int) -> Dictionary:
 			var json := JSON.new()
 			if json.parse(file.get_as_text()) == OK and json.data is Dictionary:
 				var manifest := json.data as Dictionary
+				var schema_version := int(manifest.get("schema_version", 1))
 				var groups: Variant = manifest.get("groups", [])
 				if groups is Array and not (groups as Array).is_empty():
 					var raw_group: Variant = (groups as Array)[0]
@@ -4401,7 +4438,22 @@ func _load_legacy_special_visual(gfl_index: int) -> Dictionary:
 								"anchor": anchor,
 								"gfl_index": gfl_index,
 								"runtime_actor_type": runtime_actor_type,
+								"action_index": int(group.get("action_index", -1)),
 							}
+							var sound_metadata: Dictionary = (
+								IMPORTED_SPRITE_ANIMATION.group_sound_metadata(
+									group,
+									schema_version,
+								)
+							)
+							if sound_metadata.is_empty():
+								return {}
+							visual["sound_slf_index"] = int(
+								sound_metadata.get("sound_slf_index", 0)
+							)
+							visual["sound_gfl_index"] = int(
+								sound_metadata.get("sound_gfl_index", -1)
+							)
 							var lookup_tables: Dictionary = (
 								IMPORTED_SPRITE_ANIMATION.normalized_lookup_tables(
 									group
@@ -4435,6 +4487,9 @@ func _load_legacy_special_visual(gfl_index: int) -> Dictionary:
 		"anchor": texture.get_size() * 0.5,
 		"gfl_index": gfl_index,
 		"runtime_actor_type": 0,
+		"action_index": -1,
+		"sound_slf_index": 0,
+		"sound_gfl_index": -1,
 	}
 	imported_animation_cache[cache_key] = fallback
 	return fallback.duplicate()
@@ -4470,6 +4525,7 @@ func _load_legacy_projectile_visual(gfl_index: int) -> Dictionary:
 	if json.parse(file.get_as_text()) != OK or not json.data is Dictionary:
 		return {}
 	var manifest := json.data as Dictionary
+	var schema_version := int(manifest.get("schema_version", 1))
 	var raw_groups: Variant = manifest.get("groups", [])
 	if not raw_groups is Array:
 		return {}
@@ -4498,8 +4554,17 @@ func _load_legacy_projectile_visual(gfl_index: int) -> Dictionary:
 		var anchor := frames[0].get_size() * 0.5
 		if primary.size() == 3:
 			anchor = Vector2(float(primary[0]), float(primary[2]))
+		var sound_metadata: Dictionary = (
+			IMPORTED_SPRITE_ANIMATION.group_sound_metadata(
+				group,
+				schema_version,
+			)
+		)
+		if sound_metadata.is_empty():
+			return {}
 		loaded_groups.append({
 			"group_index": int(group.get("group_index", loaded_groups.size())),
+			"action_index": int(group.get("action_index", -1)),
 			"direction_index": int(group.get("direction_index", 0)),
 			"direction_key": String(group.get("direction_key", "none")),
 			"frames": frames,
@@ -4508,6 +4573,8 @@ func _load_legacy_projectile_visual(gfl_index: int) -> Dictionary:
 				1,
 			),
 			"anchor": anchor,
+			"sound_slf_index": int(sound_metadata.get("sound_slf_index", 0)),
+			"sound_gfl_index": int(sound_metadata.get("sound_gfl_index", -1)),
 		})
 	if loaded_groups.is_empty():
 		return _load_legacy_special_visual(gfl_index)
@@ -4522,6 +4589,9 @@ func _load_legacy_projectile_visual(gfl_index: int) -> Dictionary:
 		"frame_hold_ticks": int(loaded_groups[0].get("frame_hold_ticks", 1)),
 		"anchor": loaded_groups[0].get("anchor", Vector2.ZERO),
 		"gfl_index": gfl_index,
+		"action_index": int(loaded_groups[0].get("action_index", -1)),
+		"sound_slf_index": int(loaded_groups[0].get("sound_slf_index", 0)),
+		"sound_gfl_index": int(loaded_groups[0].get("sound_gfl_index", -1)),
 		"runtime_actor_type": (
 			int(header_values[2]) if header_values.size() >= 3 else 0
 		),
@@ -4532,7 +4602,7 @@ func _load_legacy_projectile_visual(gfl_index: int) -> Dictionary:
 
 func _load_legacy_projectile_visual_catalog() -> Dictionary:
 	var result := _load_legacy_explosion_visual_catalog()
-	for gfl_index: int in [19, 251, 306, 528, 635]:
+	for gfl_index: int in [19, 20, 251, 306, 528, 635]:
 		var visual := _load_legacy_projectile_visual(gfl_index)
 		if not visual.is_empty():
 			result[gfl_index] = visual
@@ -4610,10 +4680,33 @@ func _spawn_legacy_explosion_effect(
 			effect.queue_free()
 			return null
 	legacy_explosion_effects.append(effect)
+	effect.connect(
+		"original_animation_audio_requested",
+		Callable(self, "_on_original_world_animation_audio_requested"),
+	)
 	effect.tree_exited.connect(
 		Callable(self, "_on_legacy_explosion_effect_exited").bind(effect)
 	)
 	return effect
+
+
+func _on_original_world_animation_audio_requested(
+	source: Node2D,
+	gfl_index: int,
+	continuous: bool,
+	local_requester_id: int,
+) -> void:
+	if media_director == null or gfl_index <= 0:
+		return
+	if continuous:
+		var source_id := source.get_instance_id() if source != null else 0
+		var requester_id := int(hash([source_id, local_requester_id]))
+		media_director.request_sfx_audio_index(gfl_index, requester_id)
+	else:
+		media_director.play_audio_index(
+			gfl_index,
+			"world_animation",
+		)
 
 
 func _spawn_legacy_explosion_effect_from_snapshot(
@@ -4888,7 +4981,12 @@ func _on_attack_started(
 		6: "attack_dart",
 		7: "attack_slingshot",
 	}.get(attack_type, ""))
-	if not attack_event.is_empty():
+	var has_authored_animation_sound := (
+		attacker != null
+		and attacker.has_method("has_authored_attack_animation_sound")
+		and bool(attacker.call("has_authored_attack_animation_sound"))
+	)
+	if not attack_event.is_empty() and not has_authored_animation_sound:
 		_play_media_audio(attack_event)
 	if LEGACY_DISGUISE_RULES.attack_can_break_disguise(
 		int(attacker.get("runtime_actor_type")),
@@ -5780,7 +5878,13 @@ func _on_combatant_died(unit: Node2D, killer: Node2D) -> void:
 	var death_actor := (
 		"enemy" if unit is ENEMY_UNIT else ("civilian" if unit is ESCORT_UNIT else "ally")
 	)
-	_play_media_audio("death", death_actor)
+	var has_authored_death_sound := (
+		unit != null
+		and unit.has_method("has_authored_death_animation_sound")
+		and bool(unit.call("has_authored_death_animation_sound"))
+	)
+	if not has_authored_death_sound:
+		_play_media_audio("death", death_actor)
 	var death_alert_radius: float = COMBAT_PROFILES.alert_radius("ally_death")
 	if unit is ENEMY_UNIT:
 		# sub_4585F0 sends a 256-radius coordinate pulse for a faction-1 death.

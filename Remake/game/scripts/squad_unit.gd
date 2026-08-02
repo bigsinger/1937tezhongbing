@@ -34,6 +34,9 @@ const LEGACY_COMBAT_RULES: Script = preload("res://scripts/legacy_combat_rules.g
 const SPR_ANIMATION_RULES: Script = preload(
 	"res://scripts/imported_sprite_animation.gd"
 )
+const LEGACY_ANIMATION_AUDIO_RULES: Script = preload(
+	"res://scripts/legacy_animation_audio_rules.gd"
+)
 const AI_IDLE_RANDOM_RULES: Script = preload(
 	"res://scripts/legacy_enemy_ai_rules.gd"
 )
@@ -68,6 +71,11 @@ signal original_disguise_attack_committed(
 	attack_type: int,
 )
 signal original_disguise_transition_ready(unit: Node2D, item_id: int)
+signal original_animation_audio_requested(
+	actor: Node2D,
+	gfl_index: int,
+	continuous: bool,
+)
 signal damage_received(unit: Node2D, attacker: Node2D, damage: int, remaining_hit_points: int)
 signal died(unit: Node2D, killer: Node2D)
 signal ammo_changed(unit: Node2D, magazine: int, reserve: int)
@@ -2880,6 +2888,7 @@ func _start_one_shot(action: int, groups: Array[Dictionary]) -> void:
 	if action_finished:
 		return
 	_apply_action_frame(groups)
+	_request_continuous_animation_audio(_active_action_group(groups))
 	if action == CombatAction.ATTACK and _action_frame_count(groups) == 1:
 		_resolve_pending_hit()
 
@@ -2904,6 +2913,7 @@ func _advance_combat_action(delta: float) -> void:
 	if group.is_empty():
 		action_finished = true
 		return
+	_request_continuous_animation_audio(group)
 	var frame_seconds := animation_frame_seconds(group)
 	action_frame_elapsed += delta
 	while action_frame_elapsed >= frame_seconds and not action_finished:
@@ -2916,8 +2926,14 @@ func _advance_combat_action(delta: float) -> void:
 				_sync_equipped_weapon_after_consumption()
 				apply_idle_frame()
 			return
+		var previous_frame_index := action_frame_index
 		action_frame_index += 1
 		_apply_action_frame(groups)
+		_request_transition_animation_audio(
+			group,
+			previous_frame_index,
+			action_frame_index,
+		)
 		if combat_action == CombatAction.ATTACK and action_frame_index == frame_count - 1:
 			_resolve_pending_hit()
 
@@ -2946,6 +2962,90 @@ func _action_frame_count(groups: Array[Dictionary]) -> int:
 	if group.is_empty():
 		return 0
 	return (group.get("frames", []) as Array[Texture2D]).size()
+
+
+func _active_action_group(groups: Array[Dictionary]) -> Dictionary:
+	if groups.size() < 8:
+		return {}
+	return groups[clampi(animation_group_index, 0, 7)]
+
+
+func has_authored_attack_animation_sound() -> bool:
+	return (
+		LEGACY_ANIMATION_AUDIO_RULES.sound_gfl_index(
+			_active_action_group(attack_groups)
+		) > 0
+	)
+
+
+func has_authored_death_animation_sound() -> bool:
+	return (
+		LEGACY_ANIMATION_AUDIO_RULES.sound_gfl_index(
+			_active_action_group(death_groups)
+		) > 0
+	)
+
+
+func authored_animation_sound_gfl_indices() -> Array[int]:
+	var result: Array[int] = []
+	var group_sets: Array = [
+		run_groups,
+		walk_groups,
+		crawl_groups,
+		idle_groups,
+		standing_idle_groups,
+		stand_action_groups,
+		attack_groups,
+		death_groups,
+	]
+	for stored_groups: Variant in attack_groups_by_action.values():
+		if stored_groups is Array:
+			group_sets.append(stored_groups)
+	for groups_value: Variant in group_sets:
+		if not groups_value is Array:
+			continue
+		for group_value: Variant in groups_value as Array:
+			if not group_value is Dictionary:
+				continue
+			var gfl_index: int = (
+				LEGACY_ANIMATION_AUDIO_RULES.sound_gfl_index(
+					group_value as Dictionary
+				)
+			)
+			if gfl_index > 0 and not result.has(gfl_index):
+				result.append(gfl_index)
+	result.sort()
+	return result
+
+
+func _request_continuous_animation_audio(group: Dictionary) -> bool:
+	if not LEGACY_ANIMATION_AUDIO_RULES.requests_continuously(group):
+		return false
+	original_animation_audio_requested.emit(
+		self,
+		LEGACY_ANIMATION_AUDIO_RULES.sound_gfl_index(group),
+		true,
+	)
+	return true
+
+
+func _request_transition_animation_audio(
+	group: Dictionary,
+	previous_frame_index: int,
+	current_frame_index: int,
+) -> bool:
+	if not LEGACY_ANIMATION_AUDIO_RULES.transition_requests_sound(
+		group,
+		previous_frame_index,
+		current_frame_index,
+	):
+		return false
+	original_animation_audio_requested.emit(
+		self,
+		LEGACY_ANIMATION_AUDIO_RULES.sound_gfl_index(group),
+		false,
+	)
+	return true
 
 
 func _resolve_pending_hit() -> void:
@@ -3279,6 +3379,7 @@ func _apply_current_idle_visual(advance_delta: float) -> bool:
 	var frames := group.get("frames", []) as Array[Texture2D]
 	if frames.is_empty():
 		return false
+	_request_continuous_animation_audio(group)
 	if original_ai_idle_action_active and not is_crawling:
 		original_ai_idle_frame_index = clampi(
 			original_ai_idle_frame_index,
@@ -3336,6 +3437,7 @@ func advance_animation(delta: float) -> void:
 	var group := movement_groups[animation_group_index]
 	if group.is_empty():
 		return
+	_request_continuous_animation_audio(group)
 	var frames := group["frames"] as Array[Texture2D]
 	if frames.size() <= 1:
 		return
@@ -3380,6 +3482,7 @@ func apply_idle_frame() -> bool:
 	var frames := group["frames"] as Array[Texture2D]
 	if frames.is_empty():
 		return false
+	_request_continuous_animation_audio(group)
 	sprite_texture = frames[0]
 	sprite_anchor = group["anchor"] as Vector2
 	_apply_dynamic_sprite_footprint(group)

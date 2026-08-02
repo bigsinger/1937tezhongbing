@@ -299,6 +299,29 @@ func _run() -> void:
 	)
 	director.call("close_for_state_change")
 	await process_frame
+	expect(
+		bool(director.call("request_sfx_audio_index", 9400, 101))
+		and bool(director.call("request_sfx_audio_index", 9400, 101))
+		and bool(director.call("request_sfx_audio_index", 9400, 202)),
+		"continuous frame-group audio accepts duplicate and distinct actor requests",
+		failures,
+	)
+	await process_frame
+	var continuous_sound_players := 0
+	for slot: int in range(director.sfx_players.size()):
+		if (
+			director._sfx_active_indices[slot] == 9400
+			and director.sfx_players[slot].playing
+		):
+			continuous_sound_players += 1
+	expect(
+		continuous_sound_players == 2
+		and director.sfx_players.size() == 9,
+		"same-frame frame-group requests deduplicate one actor and allocate one buffer per distinct actor",
+		failures,
+	)
+	director.call("close_for_state_change")
+	await process_frame
 	director.set_audio_stream_loader(Callable())
 	director.call("configure", missing_root)
 	var unavailable_count := [0]
@@ -492,11 +515,23 @@ func _run() -> void:
 	expect(paused, "final exit-tree fixture owns a modal pause", failures)
 	root.remove_child(director)
 	expect(not paused, "exiting the tree restores a media-owned pause", failures)
+	if director.audio_player != null:
+		director.audio_player.stream = null
+	if director.music_player != null:
+		director.music_player.stream = null
+	for player: AudioStreamPlayer in director.voice_players:
+		player.stream = null
+	for player: AudioStreamPlayer in director.sfx_players:
+		player.stream = null
+	director._audio_stream_cache.clear()
+	cached_stream_a = null
+	cached_stream_b = null
+	cached_stream_after_state_change = null
 	director.free()
 	# AudioServer releases stopped playback objects on its following mix/update
 	# cycles. Give those deferred releases time to finish so the test does not
 	# report false-positive ObjectDB leaks on fast headless runners.
-	for _frame: int in range(4):
+	for _frame: int in range(8):
 		await process_frame
 
 	if failures.is_empty():

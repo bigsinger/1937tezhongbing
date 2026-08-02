@@ -126,6 +126,7 @@ D:\Godot\Godot_v4.7.1-stable_win64_console.exe --headless `
 
 - 34 个 IBLOCK PNG、45 个 TLG atlas、128 个 WAV；
 - 980 个 SPR 预览、980 份动画清单、2,775 个动画组和 11,898 帧；
+- 所有动画清单均为 schema 4；其中 1,137 个组的一基 SLF 引用必须唯一解析为 52 个 GFL WAV 绑定；
 - `m000`—`m011` 十二关地形与 JSON，共 19,199 个实体；
 - 每关经过数量校验的任务标记、爆破检测、出口、敌人出生和入口锚点。
 - 每个实体的 `database_header_values` 必须被 `ImportedLevelData` 保留，并通过“字段为数组、各元素为整数”的校验；m000 应有 22 个 DBL 336/337 queue 1 庄稼底图和 70 个 DBL 335 queue 0 稻谷。当前检查计数以验证日志为准。
@@ -220,9 +221,11 @@ serial_id = action_index * 9 + direction_index
 
 `load_action_groups(preview_path, action_key)` 是通用入口。正式关卡实体使用可保留空方向槽的 sparse 模式：204 套角色动作具有完整八方向，轿车/卡车另有 8 套原生四方向动作；请求不存在的 serial 时保留当前动作和朝向，与 `IEngineSprite::SetCurrentSerial` 的失败路径一致，不能擅自镜像或用“最近方向”补图。增加战斗动作时，应让角色状态机请求已有动作 key，并由明确的玩法事件切换动画；不要为每种武器重新写资源解析器。玩家与敌人的 `run`/`walk`、`stand`、对应武器攻击和 `death` 已接入。0.085 秒是基础 sprite tick，每组每帧实际保持 `0.085 × (parameters[2] + 1)` 秒；例如已导入强子的跑、走、匍匐分别保持 1、2、3 个 tick。真实资源门禁把 772 名运行时角色关联到 39 个原 SPR，并逐方向解码 212 套动作、1,664 组、9,896 帧，核对 serial、源组顺序、三组 triplet、绘制锚点、帧保持和帧数。
 
-SPR 清单必须使用 schema 3 的运行时命名：文件 triplet 1/2/3 分别对应
-primary/tertiary/secondary；schema 1/2 只能由加载器迁移，不得在调用处
-猜测交换。secondary 的第 0/2 分量是每个 60 Hz actor tick 的 X/Y 上限，
+SPR 清单必须使用 schema 4：文件 triplet 1/2/3 分别对应
+primary/tertiary/secondary，并把 `parameters[8]` 的一基 SLF 序号解析为
+唯一的 GFL WAV 索引；schema 1/2 只能由加载器迁移，schema 3 只能作为关闭
+精确动画音效的旧本地导入兼容，调用处不得猜测交换或按文件名猜声音。secondary
+的第 0/2 分量是每个 60 Hz actor tick 的 X/Y 上限，
 run 再乘 3。每 tick 最多推进一个路径点并丢弃该 tick 未用余量；但若本次
 2/1 分量恰好到点，必须同 tick 推进游标，不能因浮点比较多停一帧。更改这些
 规则必须同时通过组件边界测试和四条 m000 MOD 差分轨迹。

@@ -180,7 +180,7 @@ frame_group[frame_group_count]
 | 2 | 266 |
 | 3 | 228 |
 
-全部文件共 2,775 个 frame group、11,898 帧，980/980 精确解析到文件末尾；其中 194 帧带独立 LZO alpha 平面，其余帧按黑色透明键处理。导入器为每个 SPR 输出一张首帧预览、一份 `schema_version: 3` 的 `sprite.json`，并为每组输出横向 `atlas.png` 和全部逐帧 PNG。
+全部文件共 2,775 个 frame group、11,898 帧，980/980 精确解析到文件末尾；其中 194 帧带独立 LZO alpha 平面，其余帧按黑色透明键处理。导入器为每个 SPR 输出一张首帧预览、一份 `schema_version: 4` 的 `sprite.json`，并为每组输出横向 `atlas.png` 和全部逐帧 PNG。
 
 frame group 的三个序列化 triplet 顺序已经由文件布局、运行时字段写入和
 实际移动轨迹交叉确认：
@@ -192,9 +192,11 @@ frame group 的三个序列化 triplet 顺序已经由文件布局、运行时�
 ```
 
 早期 `sprite.json` schema 1/2 曾把后两组名称对调。schema 3 修正转换器
-字段名；Godot 加载器仍会对 schema 1/2 做显式交换迁移，避免旧的本地导入
-静默改变语义。合成解析测试用三组互不相同的值固定文件顺序，真实资源门禁
-还要求所有运行时可达的 walk/crawl 方向都能取得合法 secondary 运动分量。
+字段名；schema 4 保留该修正，并增加帧组的 `sound_slf_index` 与
+`sound_gfl_index`。Godot 加载器仍会对 schema 1/2 做显式交换迁移；schema
+1—3 仍可加载，但因没有可验证的 GFL 声音身份而禁用精确帧音效，不能靠文件名
+猜测。合成解析测试用三组互不相同的值固定文件顺序，真实资源门禁还要求所有
+运行时可达的 walk/crawl 方向都能取得合法 secondary 运动分量。
 
 ### 三套 lookup 的原版语义
 
@@ -477,6 +479,18 @@ char gbk_name[256]
 ```
 
 126 条记录的 `unknown_flag` 当前均为 1，但语义未知，因此代码保留为 `UnknownFlag`。126 个 GBK 名称全部映射到 GFL WAV；GFL 另有 `燃烧开始.wav` 和 `燃烧停止.wav` 两个未列入 SLF 的声音。
+
+SPR frame group 的 `parameters[8]` 是一基的 SLF 序号，0 表示没有声音。
+`sub_427C80` 在调用 `sub_40B800` 前将正数减 1，因此转换器必须先按 SLF
+文件名与 GFL WAV 做唯一匹配，再把一基 SLF 序号和实际 GFL 索引同时写入
+schema 4；缺失或同名歧义会直接令导入失败。已知 2,775 个组中 1,137 个组
+引用声音，共覆盖 52 个不同的 SLF/GFL 对。
+
+帧触发时机来自 `sub_41D6F0`：action 0 进入第 2 帧时请求一次；action
+5/6/9/10/12/13/14/15 进入末帧时请求一次；其余非零 action 在每个 actor
+更新中请求。后者并非反复重启声音，原声音对象会按同一帧请求数启动足够的空闲
+DirectSound buffer。Remake 对人物、爆炸主体和每个燃烧粒子采用相同规则，并
+按请求实例聚合，避免每帧重新分配播放器或抢占仍在播放的音效。
 
 ## 非正式关卡与污染文件
 

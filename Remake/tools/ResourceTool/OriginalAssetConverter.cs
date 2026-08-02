@@ -115,6 +115,10 @@ internal static class OriginalAssetConverter
             entriesByType,
             "WAV",
             ExpectedWaveCount);
+        var soundLibrary = SoundLibrary.Open(
+            System.IO.Path.Combine(gameRoot, "1937Sound.slf"));
+        var soundGflIndices = soundLibrary.ResolveOneBasedGflIndices(
+            archive.Entries);
 
         var databasePath = System.IO.Path.Combine(gameRoot, "1937Database.dbl");
         var database = DblDatabase.Open(databasePath);
@@ -161,7 +165,8 @@ internal static class OriginalAssetConverter
                 SpriteOutputPath(spriteDirectory, entry),
                 spriteFramesDirectory,
                 convertedRoot,
-                entry));
+                entry,
+                soundGflIndices));
         }
 
         var spriteFrameCount = spriteSummaries.Sum(sprite => sprite.FrameCount);
@@ -231,8 +236,9 @@ internal static class OriginalAssetConverter
         });
 
         var mediaCatalogPath = System.IO.Path.Combine(convertedRoot, "legacy-media-catalog.json");
-        var soundNames = SoundLibrary.Open(System.IO.Path.Combine(gameRoot, "1937Sound.slf"))
-            .Entries.Select(entry => entry.FileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var soundNames = soundLibrary.Entries
+            .Select(entry => entry.FileName)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         WriteJson(mediaCatalogPath, LegacyMediaCatalogBuilder.Build(archive.Entries, gameRoot, soundNames));
 
         return new OriginalAssetConversionResult(
@@ -590,7 +596,8 @@ internal static class OriginalAssetConverter
         string previewDestinationPath,
         string spriteFramesRoot,
         string convertedRoot,
-        GflEntry entry)
+        GflEntry entry,
+        IReadOnlyDictionary<int, int> soundGflIndices)
     {
         var sprite = SprSprite.Open(sourcePath);
         if (sprite.Groups.Count == 0 || sprite.Groups[0].Frames.Count == 0)
@@ -621,6 +628,21 @@ internal static class OriginalAssetConverter
                     $"has a negative frame tick threshold {frameTickThreshold}.");
             }
             var frameHoldTicks = checked(frameTickThreshold + 1);
+            var soundSlfIndex = group.Parameters[8];
+            if (soundSlfIndex < 0)
+            {
+                throw new InvalidDataException(
+                    $"SPR1 resource '{entry.OriginalName}' group {groupIndex} " +
+                    $"has a negative SLF sound index {soundSlfIndex}.");
+            }
+            var soundGflIndex = -1;
+            if (soundSlfIndex > 0 &&
+                !soundGflIndices.TryGetValue(soundSlfIndex, out soundGflIndex))
+            {
+                throw new InvalidDataException(
+                    $"SPR1 resource '{entry.OriginalName}' group {groupIndex} " +
+                    $"references missing one-based SLF sound index {soundSlfIndex}.");
+            }
             var groupName = $"g{groupIndex:D3}";
             var groupDirectory = ResolveContainedPath(spriteDirectory, groupName);
             Directory.CreateDirectory(groupDirectory);
@@ -694,6 +716,8 @@ internal static class OriginalAssetConverter
                 parameters = group.Parameters,
                 frame_tick_threshold = frameTickThreshold,
                 frame_hold_ticks = frameHoldTicks,
+                sound_slf_index = soundSlfIndex,
+                sound_gfl_index = soundGflIndex,
                 first_lookup = group.MovementLookup,
                 second_lookup = group.LineOfSightLookup,
                 row_lookup = group.DrawOrderRowLookup,
@@ -716,7 +740,7 @@ internal static class OriginalAssetConverter
         var manifestPath = ResolveContainedPath(spriteDirectory, "sprite.json");
         WriteJson(manifestPath, new
         {
-            schema_version = 3,
+            schema_version = 4,
             gfl_index = entry.Index,
             resource_name = entry.OriginalName,
             internal_name = sprite.InternalName,

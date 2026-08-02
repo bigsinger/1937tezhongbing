@@ -8,6 +8,16 @@ const EXPLOSION_RULES: Script = preload(
 const VISUAL_RULES: Script = preload(
 	"res://scripts/legacy_explosion_visual_rules.gd"
 )
+const ANIMATION_AUDIO_RULES: Script = preload(
+	"res://scripts/legacy_animation_audio_rules.gd"
+)
+
+signal original_animation_audio_requested(
+	source: Node2D,
+	gfl_index: int,
+	continuous: bool,
+	local_requester_id: int,
+)
 
 var runtime_actor_type := 0
 var original_gfl_index := 0
@@ -18,12 +28,15 @@ var primary_frame_hold_ticks := 1
 var primary_frame_index := 0
 var primary_frame_elapsed_ticks := 0
 var primary_complete := false
+var primary_action_index := -1
+var primary_sound_gfl_index := -1
 var particles: Array[Dictionary] = []
 var visual_catalog: Dictionary = {}
 var world_size := Vector2.ZERO
 var random_state := VISUAL_RULES.CRT_INITIAL_STATE
 var crt_random_draws: Array[Dictionary] = []
 var configured := false
+var next_particle_audio_requester_id := 1
 
 
 func configure(
@@ -63,10 +76,13 @@ func configure(
 		int(profile.get("frame_hold_ticks", 1)),
 		1,
 	)
+	primary_action_index = int(visual.get("action_index", -1))
+	primary_sound_gfl_index = int(visual.get("sound_gfl_index", -1))
 	primary_frame_index = 0
 	primary_frame_elapsed_ticks = 0
 	primary_complete = false
 	particles.clear()
+	next_particle_audio_requester_id = 1
 	if special_bursts.is_empty():
 		_add_burst(11, world_position)
 	else:
@@ -176,6 +192,7 @@ func restore_runtime_state(snapshot_value: Dictionary) -> bool:
 	)
 	primary_complete = bool(snapshot_value.get("primary_complete", false))
 	particles.clear()
+	next_particle_audio_requester_id = 1
 	var raw_particles: Variant = snapshot_value.get("particles", [])
 	if not raw_particles is Array:
 		return false
@@ -233,6 +250,9 @@ func restore_runtime_state(snapshot_value: Dictionary) -> bool:
 			),
 			"completed_loops": completed_loops,
 			"repeat_count": repeat_count,
+			"action_index": int(visual.get("action_index", -1)),
+			"sound_gfl_index": int(visual.get("sound_gfl_index", -1)),
+			"audio_requester_id": _allocate_particle_audio_requester_id(),
 		})
 	z_index = WORLD_DEPTH.normal_z(global_position.y, 5)
 	queue_redraw()
@@ -308,12 +328,28 @@ func _add_burst(effect_family: int, center_world_position: Vector2) -> void:
 				int(particle_plan.get("repeat_count", 1)),
 				1,
 			),
+			"action_index": int(visual.get("action_index", -1)),
+			"sound_gfl_index": int(visual.get("sound_gfl_index", -1)),
+			"audio_requester_id": _allocate_particle_audio_requester_id(),
 		})
 
 
 func _advance_primary() -> void:
 	if primary_complete:
 		return
+	var audio_group := {
+		"action_index": primary_action_index,
+		"sound_gfl_index": primary_sound_gfl_index,
+		"frame_count": primary_frame_count,
+	}
+	if ANIMATION_AUDIO_RULES.requests_continuously(audio_group):
+		original_animation_audio_requested.emit(
+			self,
+			primary_sound_gfl_index,
+			true,
+			0,
+		)
+	var previous_frame_index := primary_frame_index
 	primary_frame_elapsed_ticks += 1
 	if primary_frame_elapsed_ticks < primary_frame_hold_ticks:
 		return
@@ -322,11 +358,35 @@ func _advance_primary() -> void:
 	if primary_frame_index >= primary_frame_count:
 		primary_frame_index = maxi(primary_frame_count - 1, 0)
 		primary_complete = true
+	if ANIMATION_AUDIO_RULES.transition_requests_sound(
+		audio_group,
+		previous_frame_index,
+		primary_frame_index,
+	):
+		original_animation_audio_requested.emit(
+			self,
+			primary_sound_gfl_index,
+			false,
+			0,
+		)
 
 
 func _advance_particles() -> void:
 	for particle_index: int in range(particles.size() - 1, -1, -1):
 		var particle := particles[particle_index]
+		var audio_group := {
+			"action_index": int(particle.get("action_index", -1)),
+			"sound_gfl_index": int(particle.get("sound_gfl_index", -1)),
+			"frame_count": int(particle.get("frame_count", 0)),
+		}
+		if ANIMATION_AUDIO_RULES.requests_continuously(audio_group):
+			original_animation_audio_requested.emit(
+				self,
+				int(particle.get("sound_gfl_index", -1)),
+				true,
+				int(particle.get("audio_requester_id", 0)),
+			)
+		var previous_frame_index := int(particle.get("frame_index", 0))
 		particle["frame_elapsed_ticks"] = (
 			int(particle.get("frame_elapsed_ticks", 0)) + 1
 		)
@@ -344,11 +404,29 @@ func _advance_particles() -> void:
 				particle["completed_loops"] = (
 					int(particle.get("completed_loops", 0)) + 1
 				)
+		var current_frame_index := int(particle.get("frame_index", 0))
+		if ANIMATION_AUDIO_RULES.transition_requests_sound(
+			audio_group,
+			previous_frame_index,
+			current_frame_index,
+		):
+			original_animation_audio_requested.emit(
+				self,
+				int(particle.get("sound_gfl_index", -1)),
+				false,
+				int(particle.get("audio_requester_id", 0)),
+			)
 		if (
 			int(particle.get("completed_loops", 0))
 			>= int(particle.get("repeat_count", 1))
 		):
 			particles.remove_at(particle_index)
+
+
+func _allocate_particle_audio_requester_id() -> int:
+	var result := next_particle_audio_requester_id
+	next_particle_audio_requester_id += 1
+	return result
 
 
 func _draw() -> void:

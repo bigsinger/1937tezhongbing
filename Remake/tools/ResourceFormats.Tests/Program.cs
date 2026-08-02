@@ -325,6 +325,28 @@ internal static class Program
         Equal(2, library.Entries.Count, "SLF entry count");
         Equal("警报.wav", library.Entries[1].FileName, "SLF GBK name decoding");
         Equal(1u, library.Entries[0].UnknownFlag, "SLF unknown flag preservation");
+
+        var soundMap = library.ResolveOneBasedGflIndices(
+        [
+            new GflEntry(1401, "脚步.wav", 0, 0, 0, 1, "WAV", ".wav"),
+            new GflEntry(1425, "警报.wav", 0, 0, 0, 1, "WAV", ".wav")
+        ]);
+        Equal(1401, soundMap[1], "SPR one-based SLF index one maps to GFL");
+        Equal(1425, soundMap[2], "SPR one-based SLF index two maps to GFL");
+        Throws<InvalidDataException>(
+            () => library.ResolveOneBasedGflIndices(
+            [
+                new GflEntry(1401, "脚步.wav", 0, 0, 0, 1, "WAV", ".wav")
+            ]),
+            "missing SLF-to-GFL WAV rejection");
+        Throws<InvalidDataException>(
+            () => library.ResolveOneBasedGflIndices(
+            [
+                new GflEntry(1401, "脚步.wav", 0, 0, 0, 1, "WAV", ".wav"),
+                new GflEntry(1402, "脚步.wav", 0, 0, 0, 1, "WAV", ".wav"),
+                new GflEntry(1425, "警报.wav", 0, 0, 0, 1, "WAV", ".wav")
+            ]),
+            "ambiguous SLF-to-GFL WAV rejection");
     }
 
     private static void ReadsSyntheticVwfHeader(string directory)

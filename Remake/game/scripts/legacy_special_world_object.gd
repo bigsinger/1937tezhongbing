@@ -10,6 +10,9 @@ const SPECIAL_PROFILES: Script = preload("res://scripts/legacy_special_action_pr
 const EXPLOSION_VISUAL_RULES: Script = preload(
 	"res://scripts/legacy_explosion_visual_rules.gd"
 )
+const ANIMATION_AUDIO_RULES: Script = preload(
+	"res://scripts/legacy_animation_audio_rules.gd"
+)
 
 signal state_changed(world_object: Node2D, old_state: int, new_state: int)
 signal triggered(world_object: Node2D, target: Node2D)
@@ -24,6 +27,12 @@ signal explosion_requested(
 )
 signal resolved(world_object: Node2D)
 signal disarmed(world_object: Node2D)
+signal original_animation_audio_requested(
+	source: Node2D,
+	gfl_index: int,
+	continuous: bool,
+	local_requester_id: int,
+)
 
 enum State { INACTIVE, ACTIVE, TRIGGERED, RESOLVED, DISARMED }
 
@@ -54,6 +63,8 @@ var original_anchor := Vector2.ZERO
 var original_frame_hold_ticks := 1
 var original_frame_index := 0
 var original_animation_ticks := 0
+var original_action_index := -1
+var original_sound_gfl_index := -1
 var original_draw_order_rows: Array = []
 var original_row_slice_renderer: Node2D
 var original_drawn_by_row_slices := false
@@ -64,6 +75,7 @@ var resolved_visual_burst_count := 0
 var visual_random_state := 1
 var crt_random_draws: Array[Dictionary] = []
 var visual_world_size := Vector2.ZERO
+var next_particle_audio_requester_id := 1
 
 
 func configure(
@@ -110,6 +122,9 @@ func configure(
 	original_frames.clear()
 	original_anchor = Vector2.ZERO
 	original_frame_hold_ticks = 1
+	original_action_index = -1
+	original_sound_gfl_index = -1
+	next_particle_audio_requester_id = 1
 	original_draw_order_rows.clear()
 	original_drawn_by_row_slices = false
 	if (
@@ -133,6 +148,12 @@ func configure(
 		original_frame_hold_ticks = maxi(
 			int((visual as Dictionary).get("frame_hold_ticks", 1)),
 			1,
+		)
+		original_action_index = int(
+			(visual as Dictionary).get("action_index", -1)
+		)
+		original_sound_gfl_index = int(
+			(visual as Dictionary).get("sound_gfl_index", -1)
 		)
 		var raw_draw_order_rows: Variant = (visual as Dictionary).get(
 			"draw_order_row_lookup",
@@ -307,6 +328,9 @@ func add_recovered_visual_burst(
 				int(particle_plan.get("repeat_count", 1)),
 				1,
 			),
+			"action_index": int(visual.get("action_index", -1)),
+			"sound_gfl_index": int(visual.get("sound_gfl_index", -1)),
+			"audio_requester_id": _allocate_particle_audio_requester_id(),
 		})
 	queue_redraw()
 	return visual_random_state
@@ -410,6 +434,7 @@ func restore_runtime_state(snapshot_value: Dictionary) -> bool:
 		0,
 	)
 	resolved_particles.clear()
+	next_particle_audio_requester_id = 1
 	var raw_particles: Variant = snapshot_value.get(
 		"resolved_particles",
 		[],
@@ -472,6 +497,9 @@ func restore_runtime_state(snapshot_value: Dictionary) -> bool:
 				repeat_count - 1,
 			),
 			"repeat_count": repeat_count,
+			"action_index": int(visual.get("action_index", -1)),
+			"sound_gfl_index": int(visual.get("sound_gfl_index", -1)),
+			"audio_requester_id": _allocate_particle_audio_requester_id(),
 		})
 	original_animation_ticks = age_world_ticks
 	if not original_frames.is_empty():
@@ -543,12 +571,39 @@ func _transition_to(new_state: State) -> void:
 
 
 func _advance_original_animation(ticks: int) -> void:
-	if original_frames.size() <= 1:
+	if original_frames.is_empty():
 		return
-	original_animation_ticks += ticks
-	original_frame_index = (
-		original_animation_ticks / original_frame_hold_ticks
-	) % original_frames.size()
+	var group := {
+		"action_index": original_action_index,
+		"sound_gfl_index": original_sound_gfl_index,
+		"frame_count": original_frames.size(),
+	}
+	for unused_tick: int in range(maxi(ticks, 0)):
+		if ANIMATION_AUDIO_RULES.requests_continuously(group):
+			original_animation_audio_requested.emit(
+				self,
+				original_sound_gfl_index,
+				true,
+				0,
+			)
+		if original_frames.size() <= 1:
+			continue
+		var previous_frame_index := original_frame_index
+		original_animation_ticks += 1
+		original_frame_index = (
+			original_animation_ticks / original_frame_hold_ticks
+		) % original_frames.size()
+		if ANIMATION_AUDIO_RULES.transition_requests_sound(
+			group,
+			previous_frame_index,
+			original_frame_index,
+		):
+			original_animation_audio_requested.emit(
+				self,
+				original_sound_gfl_index,
+				false,
+				0,
+			)
 	_apply_original_draw_order()
 
 
@@ -619,6 +674,21 @@ func _advance_resolved_particles(ticks: int) -> void:
 			and int(particle.get("completed_loops", 0))
 			< int(particle.get("repeat_count", 1))
 		):
+			var audio_group := {
+				"action_index": int(particle.get("action_index", -1)),
+				"sound_gfl_index": int(
+					particle.get("sound_gfl_index", -1)
+				),
+				"frame_count": int(particle.get("frame_count", 0)),
+			}
+			if ANIMATION_AUDIO_RULES.requests_continuously(audio_group):
+				original_animation_audio_requested.emit(
+					self,
+					int(particle.get("sound_gfl_index", -1)),
+					true,
+					int(particle.get("audio_requester_id", 0)),
+				)
+			var previous_frame_index := int(particle.get("frame_index", 0))
 			particle["frame_elapsed_ticks"] = (
 				int(particle.get("frame_elapsed_ticks", 0)) + 1
 			)
@@ -636,12 +706,30 @@ func _advance_resolved_particles(ticks: int) -> void:
 					particle["completed_loops"] = (
 						int(particle.get("completed_loops", 0)) + 1
 					)
+			var current_frame_index := int(particle.get("frame_index", 0))
+			if ANIMATION_AUDIO_RULES.transition_requests_sound(
+				audio_group,
+				previous_frame_index,
+				current_frame_index,
+			):
+				original_animation_audio_requested.emit(
+					self,
+					int(particle.get("sound_gfl_index", -1)),
+					false,
+					int(particle.get("audio_requester_id", 0)),
+				)
 			remaining_ticks -= 1
 		if (
 			int(particle.get("completed_loops", 0))
 			>= int(particle.get("repeat_count", 1))
 		):
 			resolved_particles.remove_at(particle_index)
+
+
+func _allocate_particle_audio_requester_id() -> int:
+	var result := next_particle_audio_requester_id
+	next_particle_audio_requester_id += 1
+	return result
 
 
 func _nearest_recovered_trigger_target() -> Node2D:

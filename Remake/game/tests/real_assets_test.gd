@@ -57,6 +57,9 @@ const EXPECTED_SPRITE_COUNT := 980
 const EXPECTED_ENTITY_SPRITE_COUNT := 704
 const EXPECTED_GROUP_COUNT := 2775
 const EXPECTED_FRAME_COUNT := 11898
+const EXPECTED_SOUND_GROUP_COUNT := 1137
+const EXPECTED_SOUND_INDEX_COUNT := 52
+const EXPECTED_USED_SOUND_SPRITE_COUNT := 40
 const EXPECTED_MANUAL_CORRECTION_COUNT := 17858
 const EXPECTED_FIDELITY_KEY_SCENE_COUNT := 258
 const WORLD_PICKUP_DATABASE_IDS: Array[int] = [
@@ -217,6 +220,7 @@ func _init() -> void:
 		"all 17,858 Layer 5 editor correction markers are preserved",
 	)
 	validate_sprite_manifests()
+	validate_twelve_level_animation_audio_coverage()
 	validate_all_entity_sprite_anchors()
 	validate_runtime_actor_sprite_actions()
 	validate_original_cursor_asset()
@@ -248,6 +252,10 @@ func validate_sprite_manifests() -> void:
 	var primary_middle_zero_count := 0
 	var tertiary_middle_zero_count := 0
 	var secondary_middle_counts: Dictionary = {}
+	var sound_group_count := 0
+	var sound_slf_indices: Dictionary = {}
+	var sound_gfl_indices: Dictionary = {}
+	var known_sound_bindings: Dictionary = {}
 	for directory_name: String in directories:
 		var manifest_path: String = sprite_root.path_join(directory_name).path_join("sprite.json")
 		if not FileAccess.file_exists(manifest_path):
@@ -265,7 +273,7 @@ func validate_sprite_manifests() -> void:
 				and int(manifest.get("gfl_index", -1)) == int(directory_name)
 				and int(manifest.get("group_count", -1)) == manifest_groups.size()
 			),
-			"sprite %s uses corrected schema 3, GFL identity, and group count" % directory_name,
+			"sprite %s uses schema 4, GFL identity, and group count" % directory_name,
 		)
 		var preview_path := (
 			sprite_root
@@ -449,6 +457,54 @@ func validate_sprite_manifests() -> void:
 					% [directory_name, int(group.get("group_index", -1))]
 				),
 			)
+			var sound_metadata: Dictionary = (
+				IMPORTED_SPRITE_ANIMATION.group_sound_metadata(
+					group,
+					int(manifest.get("schema_version", 0)),
+				)
+			)
+			var sound_slf_index := int(
+				sound_metadata.get("sound_slf_index", -1)
+			)
+			var sound_gfl_index := int(
+				sound_metadata.get("sound_gfl_index", -2)
+			)
+			expect(
+				(
+					not sound_metadata.is_empty()
+					and parameters.size() >= 9
+					and sound_slf_index == int(parameters[8])
+					and (
+						(sound_slf_index == 0 and sound_gfl_index == -1)
+						or (sound_slf_index > 0 and sound_gfl_index > 0)
+					)
+				),
+				(
+					"sprite %s group %d resolves its exact one-based SLF sound identity"
+					% [directory_name, int(group.get("group_index", -1))]
+				),
+			)
+			if sound_slf_index > 0:
+				sound_group_count += 1
+				sound_slf_indices[sound_slf_index] = true
+				sound_gfl_indices[sound_gfl_index] = true
+				var sound_key := "%d#%d" % [
+					int(directory_name),
+					int(group.get("group_index", -1)),
+				]
+				if sound_key in [
+					"19#0",
+					"20#0",
+					"23#0",
+					"25#0",
+					"25#1",
+					"25#2",
+					"345#0",
+				]:
+					known_sound_bindings[sound_key] = [
+						sound_slf_index,
+						sound_gfl_index,
+					]
 		expect(
 			manifest_frame_count == int(manifest.get("frame_count", -1)),
 			"sprite %s total frame count matches its manifest" % directory_name,
@@ -456,6 +512,25 @@ func validate_sprite_manifests() -> void:
 	expect(manifest_count == EXPECTED_SPRITE_COUNT, "all 980 sprite manifests validate")
 	expect(group_count == EXPECTED_GROUP_COUNT, "all 2,775 animation groups validate")
 	expect(frame_count == EXPECTED_FRAME_COUNT, "all 11,898 animation frames validate")
+	expect(
+		sound_group_count == EXPECTED_SOUND_GROUP_COUNT
+		and sound_slf_indices.size() == EXPECTED_SOUND_INDEX_COUNT
+		and sound_gfl_indices.size() == EXPECTED_SOUND_INDEX_COUNT,
+		"all 1,137 sounded frame groups resolve 52 unique SLF entries to 52 exact GFL WAV resources",
+	)
+	expect(
+		known_sound_bindings
+			== {
+				"19#0": [59, 1267],
+				"20#0": [3, 1269],
+				"23#0": [38, 1350],
+				"25#0": [38, 1350],
+				"25#1": [38, 1350],
+				"25#2": [38, 1350],
+				"345#0": [126, 1324],
+			},
+		"explosion, fire and alarm sprites retain the recovered SLF-to-GFL bindings",
+	)
 	expect(
 		movement_triplet_count == 373
 		and usable_movement_triplet_count == movement_triplet_count,
@@ -477,6 +552,53 @@ func validate_sprite_manifests() -> void:
 			"all 2,775 groups preserve middle values while the twelve-level "
 			+ "content has no primary/tertiary vertical offset"
 		),
+	)
+
+
+func validate_twelve_level_animation_audio_coverage() -> void:
+	var used_sprite_indices: Dictionary = {}
+	for level_id: String in LEVEL_IDS:
+		var level: Dictionary = IMPORTED_LEVEL_DATA.load_level(level_id)
+		for entity_value: Variant in level.get("entities", []) as Array:
+			if not entity_value is Dictionary:
+				continue
+			var preview_name := str(
+				(entity_value as Dictionary).get("sprite_preview", "")
+			).get_file().get_basename()
+			if preview_name.length() == 4 and preview_name.is_valid_int():
+				used_sprite_indices[int(preview_name)] = true
+	var sounded_sprite_count := 0
+	var sounded_group_count := 0
+	var sprite_root := ProjectSettings.globalize_path(
+		"res://../LocalAssets/converted/sprite-frames"
+	)
+	for gfl_value: Variant in used_sprite_indices.keys():
+		var gfl_index := int(gfl_value)
+		var manifest := load_json_dictionary(
+			sprite_root.path_join("%04d/sprite.json" % gfl_index)
+		)
+		if manifest.is_empty():
+			continue
+		var sprite_has_sound := false
+		for group_value: Variant in manifest.get("groups", []) as Array:
+			if not group_value is Dictionary:
+				continue
+			var sound_metadata: Dictionary = (
+				IMPORTED_SPRITE_ANIMATION.group_sound_metadata(
+					group_value as Dictionary,
+					int(manifest.get("schema_version", 0)),
+				)
+			)
+			if int(sound_metadata.get("sound_gfl_index", -1)) <= 0:
+				continue
+			sprite_has_sound = true
+			sounded_group_count += 1
+		if sprite_has_sound:
+			sounded_sprite_count += 1
+	expect(
+		sounded_sprite_count == EXPECTED_USED_SOUND_SPRITE_COUNT
+		and sounded_group_count > 0,
+		"the twelve formal levels retain all 40 actually used sounded sprite families",
 	)
 
 

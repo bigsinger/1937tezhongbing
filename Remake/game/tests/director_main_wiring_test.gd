@@ -30,6 +30,35 @@ class ActivationRuntime extends Node:
 		return []
 
 
+class AudioRecorder extends CanvasLayer:
+	var continuous_requests: Array[Dictionary] = []
+	var exact_plays: Array[int] = []
+	var event_plays: Array[String] = []
+
+	func request_sfx_audio_index(gfl_index: int, requester_id: int = 0) -> bool:
+		continuous_requests.append({"gfl_index": gfl_index, "requester_id": requester_id})
+		return true
+
+	func play_audio_index(
+		gfl_index: int,
+		_event_key: String = "direct",
+		_caption: String = "",
+		_channel: String = "",
+	) -> bool:
+		exact_plays.append(gfl_index)
+		return true
+
+	func play_audio_event(
+		event_key: String,
+		_actor_key: String = "",
+		_variant_seed: int = 0,
+		_caption: String = "",
+		_channel: String = "",
+	) -> bool:
+		event_plays.append(event_key)
+		return true
+
+
 func _init() -> void:
 	call_deferred("_run")
 
@@ -92,6 +121,66 @@ func _run() -> void:
 	_expect(
 		main._direction_binding_positions("target", "") == [Vector2(333, 444)],
 		"director bindings prefer a live actor position over the imported spawn point",
+		failures,
+	)
+
+	var audio_recorder := AudioRecorder.new()
+	main.add_child(audio_recorder)
+	main.media_director = audio_recorder
+	var audio_actor = SQUAD_UNIT.new()
+	audio_actor.configure("audio actor", Color.WHITE, Vector2.ZERO)
+	main.add_child(audio_actor)
+	main.call("_connect_combatant", audio_actor)
+	audio_actor.original_animation_audio_requested.emit(audio_actor, 1386, true)
+	audio_actor.original_animation_audio_requested.emit(audio_actor, 1363, false)
+	_expect(
+		audio_recorder.continuous_requests.size() == 1
+		and int(audio_recorder.continuous_requests[0]["gfl_index"]) == 1386
+		and int(audio_recorder.continuous_requests[0]["requester_id"])
+			== audio_actor.get_instance_id()
+		and audio_recorder.exact_plays == [1363],
+		"Main routes continuous and transition SPR sounds through their exact-index paths",
+		failures,
+	)
+	main.call(
+		"_on_original_world_animation_audio_requested",
+		audio_actor,
+		1350,
+		true,
+		7,
+	)
+	main.call(
+		"_on_original_world_animation_audio_requested",
+		audio_actor,
+		1267,
+		false,
+		0,
+	)
+	_expect(
+		audio_recorder.continuous_requests.size() == 2
+		and int(audio_recorder.continuous_requests[1]["gfl_index"]) == 1350
+		and int(audio_recorder.continuous_requests[1]["requester_id"])
+			== int(hash([audio_actor.get_instance_id(), 7]))
+		and audio_recorder.exact_plays == [1363, 1267],
+		"Main preserves per-particle request identity for authored world-animation audio",
+		failures,
+	)
+	var authored_attack_groups: Array[Dictionary] = []
+	for unused_direction: int in range(8):
+		authored_attack_groups.append({"sound_gfl_index": 1363})
+	audio_actor.attack_groups.assign(authored_attack_groups)
+	audio_actor.animation_group_index = 0
+	main.call("_on_attack_started", audio_actor, null, 1, 0.0)
+	_expect(
+		audio_recorder.event_plays.is_empty(),
+		"generic attack-event audio is suppressed when the SPR supplies an exact sound",
+		failures,
+	)
+	audio_actor.attack_groups.clear()
+	main.call("_on_attack_started", audio_actor, null, 1, 0.0)
+	_expect(
+		audio_recorder.event_plays == ["attack_pistol"],
+		"generic attack-event audio remains available for synthetic or old-schema sprites",
 		failures,
 	)
 

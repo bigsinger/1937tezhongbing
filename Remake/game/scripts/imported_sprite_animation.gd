@@ -2,7 +2,7 @@ class_name ImportedSpriteAnimation
 extends RefCounted
 
 const MIN_SCHEMA_VERSION := 1
-const MAX_SCHEMA_VERSION := 3
+const MAX_SCHEMA_VERSION := 4
 const DIRECTION_GROUP_COUNT := 8
 const MAX_FRAME_TICK_THRESHOLD := 2147483646
 const ACTION_KEYS: Array[String] = [
@@ -188,6 +188,9 @@ static func load_action_groups(
 		var timing := group_timing(group)
 		if timing.is_empty():
 			return []
+		var sound_metadata := group_sound_metadata(group, schema_version)
+		if sound_metadata.is_empty():
+			return []
 		var frames := load_group_atlas(
 			group,
 			raw_frames as Array,
@@ -200,7 +203,9 @@ static func load_action_groups(
 		groups[legacy_group_index] = {
 			"group_index": int(group.get("group_index", -1)),
 			"serial_id": int(semantic["serial_id"]),
+			"action_index": int(semantic["action_index"]),
 			"action_key": str(semantic["action_key"]),
+			"direction_index": int(semantic["direction_index"]),
 			"direction_key": str(semantic["direction_key"]),
 			"anchor": Vector2(float((primary as Array)[0]), float((primary as Array)[2])),
 			# IEngineSprite::SetCurrentSerial copies the SPR frame-group
@@ -233,6 +238,8 @@ static func load_action_groups(
 			],
 			"frame_tick_threshold": int(timing["frame_tick_threshold"]),
 			"frame_hold_ticks": int(timing["frame_hold_ticks"]),
+			"sound_slf_index": int(sound_metadata["sound_slf_index"]),
+			"sound_gfl_index": int(sound_metadata["sound_gfl_index"]),
 			"frames": frames,
 		}
 		found_count += 1
@@ -332,6 +339,46 @@ static func group_timing(group: Dictionary) -> Dictionary:
 	return {
 		"frame_tick_threshold": threshold,
 		"frame_hold_ticks": hold_ticks,
+	}
+
+
+static func group_sound_metadata(
+	group: Dictionary,
+	schema_version: int,
+) -> Dictionary:
+	if schema_version < MIN_SCHEMA_VERSION or schema_version > MAX_SCHEMA_VERSION:
+		return {}
+	var parameters: Variant = group.get("parameters")
+	if not parameters is Array or (parameters as Array).size() < 9:
+		return {}
+	var raw_slf_index: Variant = (parameters as Array)[8]
+	if not is_integral_number(raw_slf_index):
+		return {}
+	var slf_index := int(raw_slf_index)
+	if slf_index < 0:
+		return {}
+
+	# Schema 1-3 did not retain the filename-resolved GFL identity. Keep those
+	# local imports loadable but disable exact playback until they are rebuilt.
+	if schema_version < 4:
+		return {
+			"sound_slf_index": slf_index,
+			"sound_gfl_index": -1,
+		}
+	var explicit_slf: Variant = group.get("sound_slf_index")
+	var explicit_gfl: Variant = group.get("sound_gfl_index")
+	if (
+		not is_integral_number(explicit_slf)
+		or int(explicit_slf) != slf_index
+		or not is_integral_number(explicit_gfl)
+	):
+		return {}
+	var gfl_index := int(explicit_gfl)
+	if (slf_index == 0 and gfl_index != -1) or (slf_index > 0 and gfl_index <= 0):
+		return {}
+	return {
+		"sound_slf_index": slf_index,
+		"sound_gfl_index": gfl_index,
 	}
 
 
