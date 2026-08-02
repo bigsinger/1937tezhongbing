@@ -47,7 +47,11 @@ class FakeEnemy extends Node2D:
 	var weapon_profile: Dictionary = {"damage": 10}
 	var sense_profile: Dictionary = {"horizontal_radius": 100.0, "vertical_radius": 50.0}
 	var alert_count := 0
+	var fallback_live_alert_count := 0
 	var last_alert_position := Vector2.ZERO
+	var editorial_search_roles: Array[String] = []
+	var editorial_search_positions: Array[Vector2] = []
+	var editorial_search_serials: Array[int] = []
 	var current_target: Node2D
 	var configured_coordinator: Node
 	var configured_values: Dictionary = {}
@@ -57,7 +61,26 @@ class FakeEnemy extends Node2D:
 
 	func receive_alert(_target: Node2D, world_position: Vector2) -> bool:
 		alert_count += 1
+		fallback_live_alert_count += 1
 		last_alert_position = world_position
+		return true
+
+	func receive_editorial_search_order(
+		_target: Node2D,
+		raw_candidates: Variant,
+		role: String,
+		command_serial: int,
+	) -> bool:
+		if not raw_candidates is Array or (raw_candidates as Array).is_empty():
+			return false
+		var first: Variant = (raw_candidates as Array)[0]
+		if not first is Vector2:
+			return false
+		alert_count += 1
+		last_alert_position = first as Vector2
+		editorial_search_roles.append(role)
+		editorial_search_positions.append(first as Vector2)
+		editorial_search_serials.append(command_serial)
 		return true
 
 	func configure_editorial_ai(
@@ -72,6 +95,45 @@ class FakeEnemy extends Node2D:
 	func apply_editorial_ai_posture(posture: String, tags: Array[String]) -> void:
 		applied_posture = posture
 		applied_tags = tags.duplicate()
+
+
+class FakeCombatTarget extends Node2D:
+	var faction_id := 1
+	var runtime_actor_type := 4
+	var scene_index := 901
+
+	func is_combat_alive() -> bool:
+		return true
+
+
+class FakeSearchOccupancy extends RefCounted:
+	var requested_destinations: Array[Vector2] = []
+	var committed_path := PackedVector2Array()
+
+	func preview_path_for_scene(
+		_scene_index: int,
+		_start: Vector2,
+		destination: Vector2,
+	) -> PackedVector2Array:
+		requested_destinations.append(destination)
+		if destination.x >= 250.0:
+			# Simulate a partial route stopped far from a blocked wide slot.
+			return PackedVector2Array([Vector2(16.0, 0.0)])
+		return PackedVector2Array([destination])
+
+	func find_path_for_scene(
+		scene: int,
+		start: Vector2,
+		destination: Vector2,
+	) -> PackedVector2Array:
+		return preview_path_for_scene(scene, start, destination)
+
+	func reserve_path_goal_for_scene(
+		_scene_index: int,
+		path: PackedVector2Array,
+	) -> bool:
+		committed_path = path.duplicate()
+		return not committed_path.is_empty()
 
 
 func _init() -> void:
@@ -468,13 +530,69 @@ func _run() -> void:
 		failures,
 	)
 	expect(int(coordinator.call("advance_time", 0.10)) == 0, "shared alert honors its authored delay", failures)
+	# Movement after the shot must not leak through the delayed alert as an
+	# omniscient live-target coordinate.
+	fake_target.position = Vector2(640.0, 0.0)
 	expect(int(coordinator.call("advance_time", 0.20)) == 3, "shared alert reaches the selected group after delay", failures)
+	fake_target.position = Vector2(64.0, 0.0)
 	expect(
 		(fake_enemies[1] as FakeEnemy).alert_count == 1
 		and (fake_enemies[2] as FakeEnemy).alert_count == 1
 		and (fake_enemies[3] as FakeEnemy).alert_count == 1
 		and (fake_enemies[4] as FakeEnemy).alert_count == 0,
 		"only the bounded AI cooperation group receives the propagated alert",
+		failures,
+	)
+	var lead_enemy := fake_enemies[1] as FakeEnemy
+	var left_enemy := fake_enemies[2] as FakeEnemy
+	var right_enemy := fake_enemies[3] as FakeEnemy
+	expect(
+		lead_enemy.editorial_search_roles == ["lead"]
+		and left_enemy.editorial_search_roles == ["left_flank"]
+		and right_enemy.editorial_search_roles == ["right_flank"]
+		and lead_enemy.editorial_search_serials == [1]
+		and left_enemy.editorial_search_serials == [1]
+		and right_enemy.editorial_search_serials == [1],
+		"shared alert assigns deterministic lead/left/right search roles",
+		failures,
+	)
+	expect(
+		lead_enemy.fallback_live_alert_count == 0
+		and left_enemy.fallback_live_alert_count == 0
+		and right_enemy.fallback_live_alert_count == 0
+		and lead_enemy.last_alert_position.x < 200.0
+		and left_enemy.last_alert_position.x < 200.0
+		and right_enemy.last_alert_position.x < 200.0
+		and not lead_enemy.last_alert_position.is_equal_approx(left_enemy.last_alert_position)
+		and not left_enemy.last_alert_position.is_equal_approx(right_enemy.last_alert_position),
+		"delayed cooperation uses distinct frozen coordinates without live-target fallback",
+		failures,
+	)
+	var solo_order: Dictionary = AI_COORDINATOR_SCRIPT.build_editorial_search_order(
+		Vector2(96.0, 48.0),
+		Vector2.ZERO,
+		Vector2.ZERO,
+		0,
+		1,
+		true,
+	)
+	expect(
+		str(solo_order.get("role", "")) == "lead"
+		and ((solo_order.get("candidates", []) as Array)[0] as Vector2).is_equal_approx(Vector2(96.0, 48.0)),
+		"a one-guard tutorial alert investigates the exact evidence coordinate",
+		failures,
+	)
+	var moving_order: Dictionary = AI_COORDINATOR_SCRIPT.build_editorial_search_order(
+		Vector2(64.0, 64.0),
+		Vector2(64.0, 64.0),
+		Vector2(0.0, 12.0),
+		0,
+		3,
+		false,
+	)
+	expect(
+		((moving_order.get("candidates", []) as Array)[0] as Vector2).is_equal_approx(Vector2(64.0, 112.0)),
+		"the frozen movement direction projects the lead search slot without reading a later target position",
 		failures,
 	)
 	var selected_attackers: Array[Node2D] = coordinator.call("select_attackers", fake_target)
@@ -573,6 +691,42 @@ func _run() -> void:
 		"a sampled editorial miss is consumed by the real attack hit resolver",
 		failures,
 	)
+	var search_target := FakeCombatTarget.new()
+	root.add_child(search_target)
+	var search_enemy = ENEMY_UNIT_SCRIPT.new()
+	search_enemy.scene_index = 78
+	search_enemy.faction_id = 3
+	search_enemy.position = Vector2.ZERO
+	var search_occupancy := FakeSearchOccupancy.new()
+	search_enemy.dynamic_occupancy = search_occupancy
+	root.add_child(search_enemy)
+	expect(
+		bool(search_enemy.receive_editorial_search_order(
+			search_target,
+			[Vector2(300.0, 80.0), Vector2(96.0, 48.0), Vector2(64.0, 0.0)],
+			"left_flank",
+			7,
+		))
+		and search_occupancy.requested_destinations.size() == 2
+		and not search_occupancy.committed_path.is_empty()
+		and search_occupancy.committed_path[-1].is_equal_approx(Vector2(96.0, 48.0))
+		and search_enemy.current_target == null
+		and search_enemy.behavior_state == ENEMY_UNIT_SCRIPT.BehaviorState.SEARCH
+		and search_enemy.editorial_search_role == "left_flank"
+		and search_enemy.editorial_search_command_serial == 7
+		and search_enemy.last_known_target_position.is_equal_approx(Vector2(96.0, 48.0)),
+		"an enemy rejects a wall-stopped wide slot and follows the next reachable coordinate without retaining a live target",
+		failures,
+	)
+	var search_snapshot: Dictionary = search_enemy.editorial_ai_state_snapshot()
+	search_enemy.call("_clear_editorial_search_order")
+	expect(
+		bool(search_enemy.restore_editorial_ai_state(search_snapshot))
+		and search_enemy.editorial_search_role == "left_flank"
+		and search_enemy.editorial_search_command_serial == 7,
+		"an in-progress editorial search role survives save-state round trips",
+		failures,
+	)
 	editorial_enemy.current_target = fake_target
 	editorial_enemy.call("_enter_regroup")
 	var regroup_start := float(editorial_enemy.regroup_remaining)
@@ -587,6 +741,10 @@ func _run() -> void:
 		failures,
 	)
 	editorial_enemy.free()
+	root.remove_child(search_enemy)
+	search_enemy.free()
+	root.remove_child(search_target)
+	search_target.free()
 	expect(
 		AI_COORDINATOR_SCRIPT.deterministic_chance(101, 7, 0.35)
 		== AI_COORDINATOR_SCRIPT.deterministic_chance(101, 7, 0.35),

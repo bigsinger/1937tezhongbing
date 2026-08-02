@@ -124,6 +124,32 @@ if ($directionDomain.Count -ne 1 -or
         'SDK original-direction catalog.')
 }
 
+$aiDomain = @($contract.feature_domains | Where-Object {
+    $_.id -eq 'vision_hearing_and_ai'
+})
+$coordinatorSource = Get-Content -LiteralPath (
+    Join-Path $remake 'game\scripts\mission_ai_coordinator.gd'
+) -Raw -Encoding UTF8
+$enemySource = Get-Content -LiteralPath (
+    Join-Path $remake 'game\scripts\enemy_unit.gd'
+) -Raw -Encoding UTF8
+$sessionSource = Get-Content -LiteralPath (
+    Join-Path $remake 'game\scripts\game_session_state.gd'
+) -Raw -Encoding UTF8
+if ($aiDomain.Count -ne 1 -or
+    $aiDomain[0].status -ne 'verified' -or
+    @($aiDomain[0].gaps).Count -ne 0 -or
+    $coordinatorSource -notmatch 'build_editorial_search_order' -or
+    $coordinatorSource -notmatch 'last_known_position' -or
+    $enemySource -notmatch 'receive_editorial_search_order' -or
+    $enemySource -notmatch 'EDITORIAL_SEARCH_ENDPOINT_TOLERANCE' -or
+    $sessionSource -notmatch 'editorial_ai_state_snapshot' -or
+    $sessionSource -notmatch 'resume_restored_editorial_search') {
+    throw (
+        'Vision/hearing/AI parity must retain strict original isolation and ' +
+        'the tested coordinate-only, reachable editorial search closure.')
+}
+
 $remaining = @($allTrackedItems |
     Where-Object { $_.status -ne 'verified' })
 if ($RequireComplete -and $remaining.Count -ne 0) {

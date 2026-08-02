@@ -171,6 +171,12 @@ Godot 从 `res://../LocalAssets/converted/` 读取本地数据：
 
 `ImportedLevelData` 保留并校验转换结果中的 `database_header_values`；`WorldDepth` 据 DBL `header[0]` 把地面/固定背景、正常深度、固定前景和顶层映射到四个互不重叠的 z 区间。正常队列再由 `LegacyRowSliceSprite` 复现原版 32 像素列：非均匀 RowLookup 才拆成缓存的 AtlasTexture，均匀表保留单 draw item，并以 `reference_y - primary.z + row_lookup[column]` 计算绝对深度。它覆盖静态场景、移动 actor、门两态、拾取物、爆炸物和特殊世界对象；动态 actor 每次动作、朝向或帧变化都会原子刷新锚点、足印与列基线。m000 真实资源回归已确认 22 个 DBL 336/337 庄稼底图在 queue 1，70 个 DBL 335 稻谷在 queue 0；因此前者固定在人物后，后者才参与人物基线排序。玩家身份不再只按姓名猜测，而由 `original_initial_weapon_inventory.json` 的 level + scene ID 确定；`original_runtime_actor_catalog.json` 还固化 772 个已解析运行时角色、5 个 VWF/运行时阵营差异和 656 条稳定 MOD 巡逻时间线。十二关 660 个精确动态角色都持有原版直接数量语义的 `CombatInventory`，共恢复 761 个 `+0x22C` 有序武器条目和 67 个空容器，其中 27 名玩家占 83 条；敌军的“不消耗”只改变扣除规则，不删除其精确容器。另由 `original_initial_item_inventory.json` 和独立 `BackpackInventory` 固化同一批 660 个角色、539 条 actor `+0x228` 物品记录，绝不再与武器或全队公共物资混用。`InventoryGridView` 以右侧 276×421 五列方格分别呈现 W 武器/A 物品；`ProjectileWorld` 负责 type 1/2/3/6/7/9 的原版坐标弹路、命中火花与爆炸，`LegacySpecialWorldObject` 和 `LegacyAiControlEffect` 负责 type 8/10/11。`FieldPickup` 读取 DBL `header[2]` 的真实 item ID，并按原程序 `sub_45AE10` 路由到拾取角色自己的武器或物品容器；DBL 1003 则保留为可受伤汽油桶，绝不按名称猜成普通物品。`LandMine` 和 `ExplosiveProp` 通过统一椭圆爆炸请求支持地雷、油桶和连锁伤害。世界命令不绘制黄色目标线。
 
+增强难度下的 `MissionAiCoordinator` 只分发警报产生时冻结的坐标快照，按稳定
+顺序建立前压/左右侧翼搜索槽位；`EnemyUnit` 再通过共享
+`DynamicOccupancyGrid` 选择可达候选，拒绝被墙截断的远端 partial route。
+接收者不保留活目标引用，搜索槽位可随 `GameSessionState` 恢复。严格
+`original` 根本不创建该协调器，仍走恢复出的坐标广播与原生仲裁路径。
+
 `GameShell` 管理暂停菜单、十槽选择器、按键重映射、四通道音量、窗口/桌面全屏/无边框最大化、减少自动镜头运动、2 倍原版光标、失败灰化和五列背包。显示模式只改变游戏窗口，不捕获、裁剪或移动系统光标。世界左键提交选择/移动/攻击/使用，左 `Ctrl` 或 `↑` 按住时进入强制目标；世界右键只拖框，菜单右键松开返回。右下角地图属于独立 HUD，不暂停 SceneTree；它优先显示原版逐关静态目标图，并增加实时敌我/任务点、镜头框和点击卷屏。`MediaDirector` 在切关时显示原简报图；音乐/环境声和影片音轨进入 `Music`，模态对白与可并发角色语音进入 `Voice`，攻击、命中、非语音警报和 UI WAV 进入 `Sfx`，媒体 `Esc` 在松开时关闭/跳过。角色语音只在现有槽都忙时按需扩展，不抢占正在播放的声音；当前关卡队员的全部移动应答 WAV 会在世界构造阶段静默解码进持久缓存，不启动播放、不推进变体种子，因此第一次地面命令不会把冷音频解码、分配和 A* 同时压到一个显示帧。导演节拍/教程/持久事件和 AI 姿态/增援预算、已掩埋敌人的 scene 索引及特殊对象等可变状态均随 `GameSessionState` 保存恢复。仍未完成的是通用中立角色行为、原版 S/B 命令细节、经证据核对的逐关演出、真人完整通关差分和跨 Windows 机器验收。
 
 严格 `original` 的关内演出闭包已经完成：原程序没有脚本对白、任务镜头或逐关

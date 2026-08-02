@@ -56,6 +56,10 @@ const ATTACK_RECHECK_MAX_SECONDS := 39.0 * ORIGINAL_ATTACK_REACTION_TICK_SECONDS
 ## moving third-party sight blockers, so drawing remains a cheap polyline.
 const TACTICAL_RANGE_CACHE_REFRESH_SECONDS := 0.50
 const TACTICAL_RANGE_CELL_SIZE := Vector2(32.0, 16.0)
+## A preferred editorial flank is only accepted when the navigation endpoint
+## lands within roughly one original isometric cell of it. A partial A* route
+## stopped by a wall then falls through to the next compact candidate.
+const EDITORIAL_SEARCH_ENDPOINT_TOLERANCE := 48.0
 ## Editorial accuracy model. The original executable's exact miss formula has
 ## not been recovered; this bounded base chance makes the authored per-level
 ## aim-error curve affect real hit resolution without pretending otherwise.
@@ -175,6 +179,8 @@ var editorial_regroup_multiplier := 1.0
 var editorial_posture_reaction_multiplier := 1.0
 var editorial_posture := ""
 var editorial_ai_tags: Array[String] = []
+var editorial_search_role := ""
+var editorial_search_command_serial := 0
 var regroup_remaining := 0.0
 var last_editorial_aim_miss := false
 var _pending_editorial_aim_miss := false
@@ -362,6 +368,7 @@ func configure_enemy(
 	pending_original_coordinate_alert_active = false
 	pending_original_coordinate_alert_position = Vector2.ZERO
 	original_actor_command_serial = 0
+	_clear_editorial_search_order()
 	_clear_legacy_coordinate_search()
 	legacy_corpse_discovered = false
 	legacy_corpse_buried = false
@@ -741,6 +748,7 @@ func _acquire_visible_live_target(target: Node2D) -> bool:
 		return false
 	_clear_legacy_world_item_target()
 	_clear_legacy_corpse_attention()
+	_clear_editorial_search_order()
 	_release_special_control_for_combat()
 	var already_tracking := (
 		current_target == target
@@ -1218,6 +1226,7 @@ func _enter_patrol() -> void:
 	_clear_legacy_world_item_target()
 	_clear_legacy_corpse_attention()
 	_clear_legacy_coordinate_search()
+	_clear_editorial_search_order()
 	behavior_state = BehaviorState.PATROL
 	search_elapsed = 0.0
 	regroup_remaining = 0.0
@@ -1288,6 +1297,7 @@ func receive_alert(target: Node2D, world_position: Vector2) -> bool:
 	_clear_legacy_world_item_target()
 	_clear_legacy_corpse_attention()
 	_clear_legacy_coordinate_search()
+	_clear_editorial_search_order()
 	_release_special_control_for_combat()
 	current_target = target
 	last_known_target_position = world_position
@@ -1302,6 +1312,93 @@ func receive_alert(target: Node2D, world_position: Vector2) -> bool:
 	if behavior_state == BehaviorState.REGROUP:
 		return true
 	behavior_state = BehaviorState.CHASE
+	return true
+
+
+## Enhanced difficulty modes receive a frozen last-known coordinate and an
+## ordered set of formation slots from MissionAiCoordinator. This method uses
+## the same authoritative dynamic-occupancy A* as normal movement, accepts the
+## first slot whose endpoint is actually nearby, and deliberately discards the
+## live target pointer. Strict original mode never constructs a coordinator and
+## therefore never enters this remake-editorial path.
+func receive_editorial_search_order(
+	target: Node2D,
+	raw_candidates: Variant,
+	role: String,
+	command_serial: int,
+) -> bool:
+	if not is_alive or not _is_hostile_target(target) or not raw_candidates is Array:
+		return false
+	var candidates := raw_candidates as Array
+	if candidates.is_empty():
+		return false
+	var selected_destination := position
+	var selected_path := PackedVector2Array()
+	var found_reachable := false
+	for raw_candidate: Variant in candidates:
+		if not raw_candidate is Vector2:
+			continue
+		var candidate := raw_candidate as Vector2
+		if position.distance_squared_to(candidate) <= 1.0:
+			selected_destination = candidate
+			found_reachable = true
+			break
+		if dynamic_occupancy == null or scene_index < 0:
+			continue
+		var path: PackedVector2Array
+		if dynamic_occupancy.has_method("preview_path_for_scene"):
+			path = dynamic_occupancy.call(
+				"preview_path_for_scene",
+				scene_index,
+				position,
+				candidate,
+			) as PackedVector2Array
+		else:
+			path = dynamic_occupancy.find_path_for_scene(
+				scene_index,
+				position,
+				candidate,
+			)
+		if path.is_empty():
+			continue
+		var endpoint := path[-1]
+		if endpoint.distance_to(candidate) > EDITORIAL_SEARCH_ENDPOINT_TOLERANCE:
+			continue
+		var has_actionable_point := false
+		for waypoint: Vector2 in path:
+			if position.distance_squared_to(waypoint) > 1.0:
+				has_actionable_point = true
+				break
+		if not has_actionable_point:
+			continue
+		selected_destination = endpoint
+		selected_path = path
+		found_reachable = true
+		break
+	if not found_reachable:
+		return false
+	_clear_legacy_world_item_target()
+	_clear_legacy_corpse_attention()
+	_clear_legacy_coordinate_search()
+	_release_special_control_for_combat()
+	current_target = null
+	clear_combat_target()
+	last_known_target_position = selected_destination
+	search_elapsed = 0.0
+	chase_replan_elapsed = CHASE_REPLAN_SECONDS
+	editorial_search_role = role if not role.is_empty() else "lead"
+	editorial_search_command_serial = maxi(command_serial, 0)
+	behavior_state = BehaviorState.SEARCH
+	if selected_path.is_empty():
+		cancel_path()
+	else:
+		if dynamic_occupancy.has_method("reserve_path_goal_for_scene"):
+			dynamic_occupancy.call(
+				"reserve_path_goal_for_scene",
+				scene_index,
+				selected_path,
+			)
+		issue_path(selected_path)
 	return true
 
 func investigate_position(world_position: Vector2) -> bool:
@@ -1365,6 +1462,7 @@ func _begin_legacy_coordinate_search(
 		return false
 	_clear_legacy_world_item_target()
 	_clear_legacy_corpse_attention()
+	_clear_editorial_search_order()
 	_release_special_control_for_combat()
 	current_target = null
 	clear_combat_target()
@@ -1482,6 +1580,11 @@ func _clear_legacy_coordinate_search() -> void:
 	legacy_search_wait_counter = 0
 	legacy_search_wait_limit = 0
 	legacy_search_tick_elapsed = 0.0
+
+
+func _clear_editorial_search_order() -> void:
+	editorial_search_role = ""
+	editorial_search_command_serial = 0
 
 
 func _legacy_search_world_bounds() -> Rect2:
@@ -1852,6 +1955,24 @@ func legacy_enemy_ai_state_snapshot() -> Dictionary:
 	}
 
 
+func editorial_ai_state_snapshot() -> Dictionary:
+	return {
+		"search_role": editorial_search_role,
+		"search_command_serial": editorial_search_command_serial,
+	}
+
+
+func restore_editorial_ai_state(state: Dictionary) -> bool:
+	if state.is_empty():
+		return false
+	editorial_search_role = str(state.get("search_role", ""))
+	editorial_search_command_serial = maxi(
+		int(state.get("search_command_serial", 0)),
+		0,
+	)
+	return true
+
+
 func restore_legacy_enemy_ai_state(state: Dictionary) -> bool:
 	if state.is_empty():
 		return false
@@ -1906,6 +2027,18 @@ func resume_restored_legacy_search() -> bool:
 		not is_alive
 		or behavior_state != BehaviorState.SEARCH
 		or (not legacy_search_active and not legacy_search_finishing)
+	):
+		return false
+	return _issue_path_to(last_known_target_position)
+
+
+func resume_restored_editorial_search() -> bool:
+	if (
+		not is_alive
+		or behavior_state != BehaviorState.SEARCH
+		or editorial_search_role.is_empty()
+		or legacy_search_active
+		or legacy_search_finishing
 	):
 		return false
 	return _issue_path_to(last_known_target_position)

@@ -171,6 +171,18 @@ func queue_shared_alert(
 		candidates.size(),
 	)
 	var recipients: Array[Node2D] = []
+	var target_velocity := Vector2.ZERO
+	if _has_property(target, "velocity"):
+		var velocity_value: Variant = target.get("velocity")
+		if velocity_value is Vector2:
+			target_velocity = velocity_value as Vector2
+	if target_velocity.is_zero_approx() and _has_property(target, "target_position"):
+		var intended_position: Variant = target.get("target_position")
+		if intended_position is Vector2:
+			target_velocity = (intended_position as Vector2) - target.position
+	var source_position := world_position
+	if source != null and is_instance_valid(source):
+		source_position = source.position
 	_command_serial += 1
 	for index: int in range(group_size):
 		var enemy := candidates[index]
@@ -184,7 +196,12 @@ func queue_shared_alert(
 				),
 				"recipients": recipients,
 				"target": target,
-				"world_position": world_position,
+				# Freeze all search geometry when the alert is raised. Recipients
+				# may receive it a fraction of a second later, but they must not
+				# gain an omniscient reference to the target's newer position.
+				"last_known_position": target.position,
+				"source_position": source_position,
+				"target_velocity": target_velocity,
 				"command_serial": _command_serial,
 			}
 		)
@@ -202,30 +219,47 @@ func advance_time(delta_seconds: float) -> int:
 			continue
 		var target: Node2D = pending["target"]
 		if target != null and is_instance_valid(target):
-			for enemy: Node2D in pending["recipients"] as Array[Node2D]:
-				var alert_position := pending["world_position"] as Vector2
+			var recipients := pending["recipients"] as Array[Node2D]
+			for recipient_index: int in range(recipients.size()):
+				var enemy := recipients[recipient_index]
+				if enemy == null or not is_instance_valid(enemy) or not bool(enemy.get("is_alive")):
+					continue
 				var serial := int(pending.get("command_serial", 0))
 				var scene_index := int(enemy.get("scene_index"))
-				if should_flank(scene_index, serial):
-					var approach := target.position - alert_position
-					if approach.length_squared() > 1.0:
-						var flank := approach.normalized().orthogonal()
-						if posmod(scene_index, 2) == 0:
-							flank = -flank
-						alert_position += flank * 72.0
+				var search_order := build_editorial_search_order(
+					pending["last_known_position"] as Vector2,
+					pending["source_position"] as Vector2,
+					pending["target_velocity"] as Vector2,
+					recipient_index,
+					recipients.size(),
+					should_flank(scene_index, serial),
+				)
 				if (
 					should_use_suppressive_fire(scene_index, serial)
 					and _has_property(enemy, "attack_recheck_elapsed")
 					and _has_property(enemy, "attack_recheck_seconds")
 				):
 					enemy.set("attack_recheck_elapsed", float(enemy.get("attack_recheck_seconds")))
-				if (
-					enemy != null
-					and is_instance_valid(enemy)
-					and bool(enemy.get("is_alive"))
-					and enemy.has_method("receive_alert")
-					and bool(enemy.call("receive_alert", target, alert_position))
-				):
+				var accepted := false
+				if enemy.has_method("receive_editorial_search_order"):
+					accepted = bool(
+						enemy.call(
+							"receive_editorial_search_order",
+							target,
+							search_order.get("candidates", []),
+							str(search_order.get("role", "lead")),
+							serial,
+						)
+					)
+				elif enemy.has_method("receive_alert"):
+					# Compatibility for non-EnemyUnit consumers. Real enemies use the
+					# coordinate-only order above and discard the live target pointer.
+					var fallback_position := pending["last_known_position"] as Vector2
+					var raw_candidates: Variant = search_order.get("candidates", [])
+					if raw_candidates is Array and not (raw_candidates as Array).is_empty():
+						fallback_position = (raw_candidates as Array)[0] as Vector2
+					accepted = bool(enemy.call("receive_alert", target, fallback_position))
+				if accepted:
 					delivered += 1
 					cooperation_alert_delivered.emit(enemy, target)
 		_pending_alerts.remove_at(index)
@@ -370,6 +404,64 @@ func should_use_suppressive_fire(enemy_scene_index: int, command_serial: int) ->
 		command_serial,
 		float(cooperation_profile.get("suppressive_fire_chance", 0.0)),
 	)
+
+
+## Builds a deterministic formation around the coordinate observed when an
+## alert was raised. EnemyUnit tries these positions through the authoritative
+## navigation/occupancy grid in order, so walls and narrow corridors collapse
+## a wide flank to a compact reachable slot instead of producing stuck guards.
+## This is deliberately remake_editorial and is never constructed in strict
+## original mode, where Main retains the recovered coordinate broadcast path.
+static func build_editorial_search_order(
+	last_known_position: Vector2,
+	source_position: Vector2,
+	target_velocity: Vector2,
+	recipient_index: int,
+	recipient_count: int,
+	wide_flank: bool,
+) -> Dictionary:
+	var forward := target_velocity.normalized()
+	if forward.is_zero_approx():
+		forward = (last_known_position - source_position).normalized()
+	if forward.is_zero_approx():
+		forward = Vector2.RIGHT
+	var side := forward.orthogonal()
+	var role := "lead"
+	var offset := forward * 48.0
+	var spacing := 80.0 if wide_flank else 40.0
+	match recipient_index:
+		0:
+			role = "lead"
+		1:
+			role = "left_flank"
+			offset = side * spacing - forward * 12.0
+		2:
+			role = "right_flank"
+			offset = -side * spacing - forward * 12.0
+		_:
+			role = "rear_block"
+			var side_sign := -1.0 if posmod(recipient_index, 2) == 0 else 1.0
+			offset = (
+				-forward * (48.0 + float(recipient_index - 3) * 24.0)
+				+ side * side_sign * spacing * 0.5
+			)
+	# A single-recipient tutorial alert should investigate the exact evidence
+	# coordinate instead of overshooting it as though a formation existed.
+	if maxi(recipient_count, 1) == 1:
+		role = "lead"
+		offset = Vector2.ZERO
+	var preferred := last_known_position + offset
+	var candidates: Array[Vector2] = [preferred]
+	var compact := last_known_position + offset * 0.5
+	if not compact.is_equal_approx(preferred):
+		candidates.append(compact)
+	if not last_known_position.is_equal_approx(candidates[-1]):
+		candidates.append(last_known_position)
+	return {
+		"role": role,
+		"candidates": candidates,
+		"last_known_position": last_known_position,
+	}
 
 
 func capture_state() -> Dictionary:

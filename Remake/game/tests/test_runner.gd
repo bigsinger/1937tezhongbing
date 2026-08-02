@@ -1935,6 +1935,27 @@ func _init() -> void:
 		"a planned actor path reserves its complete destination footprint",
 		failures,
 	)
+	var reserved_goal_snapshot: Dictionary = crossing_grid.goal_owners.duplicate(true)
+	var reserved_origin_snapshot: Variant = crossing_grid.goal_origin_by_scene.get(10)
+	var preview_path: PackedVector2Array = crossing_grid.preview_path_for_scene(
+		10,
+		crossing_navigation.cell_to_world(Vector2i(1, 1)),
+		crossing_navigation.cell_to_world(Vector2i(0, 0)),
+	)
+	expect(
+		not preview_path.is_empty()
+		and crossing_grid.goal_owners == reserved_goal_snapshot
+		and crossing_grid.goal_origin_by_scene.get(10) == reserved_origin_snapshot,
+		"a speculative formation path leaves the actor's committed goal untouched",
+		failures,
+	)
+	expect(
+		crossing_grid.reserve_path_goal_for_scene(10, preview_path)
+		and crossing_grid.goal_origin_by_scene.get(10)
+			== crossing_navigation.world_to_cell(preview_path[-1]),
+		"a selected formation path reserves its goal only at explicit commit",
+		failures,
+	)
 	crossing_grid.release_goal(10)
 	expect(
 		crossing_grid.goal_owners.is_empty(),

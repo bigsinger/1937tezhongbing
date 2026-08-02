@@ -387,11 +387,13 @@ func find_path_for_scene(
 	world_start: Vector2,
 	world_destination: Vector2,
 	ignore_dynamic_actors: bool = false,
+	reserve_goal: bool = true,
 ) -> PackedVector2Array:
 	if navigation == null or not actors.has(scene_index):
 		return PackedVector2Array()
 	var query_started := Time.get_ticks_usec()
-	_clear_goal(scene_index)
+	if reserve_goal:
+		_clear_goal(scene_index)
 	var actor := actors[scene_index] as Dictionary
 	var movement_offsets := actor["movement_offsets"] as Array[Vector2i]
 	var query_start_cell: Vector2i = navigation.world_to_cell(world_start)
@@ -435,7 +437,8 @@ func find_path_for_scene(
 				)
 			):
 				cached_path[-1] = world_destination
-		_reserve_path_goal(scene_index, movement_offsets, cached_path)
+		if reserve_goal:
+			_reserve_path_goal(scene_index, movement_offsets, cached_path)
 		_record_path_query(
 			scene_index,
 			movement_offsets.size(),
@@ -570,7 +573,8 @@ func find_path_for_scene(
 			world_destination,
 			path,
 		)
-	_reserve_path_goal(scene_index, movement_offsets, path)
+	if reserve_goal:
+		_reserve_path_goal(scene_index, movement_offsets, path)
 	_record_path_query(
 		scene_index,
 		movement_offsets.size(),
@@ -582,6 +586,39 @@ func find_path_for_scene(
 		last_prewarmed_path_nearest_distance,
 	)
 	return path
+
+
+## Candidate evaluation for editorial formation slots must not erase an
+## actor's current goal or reserve a speculative cell. The returned geometry
+## is identical to a normal query; callers explicitly commit the chosen path.
+func preview_path_for_scene(
+	scene_index: int,
+	world_start: Vector2,
+	world_destination: Vector2,
+) -> PackedVector2Array:
+	return find_path_for_scene(
+		scene_index,
+		world_start,
+		world_destination,
+		false,
+		false,
+	)
+
+
+func reserve_path_goal_for_scene(
+	scene_index: int,
+	path: PackedVector2Array,
+) -> bool:
+	if navigation == null or not actors.has(scene_index) or path.is_empty():
+		return false
+	_clear_goal(scene_index)
+	var actor := actors[scene_index] as Dictionary
+	_reserve_path_goal(
+		scene_index,
+		actor["movement_offsets"] as Array[Vector2i],
+		path,
+	)
+	return true
 
 
 func _record_path_query(

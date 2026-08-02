@@ -94,6 +94,14 @@ static func apply_after_level_loaded(game: Node, session: Dictionary) -> Diction
 			)
 		):
 			(enemy_value as Node).call("resume_restored_legacy_search")
+		if (
+			enemy_value is Node
+			and is_instance_valid(enemy_value)
+			and (enemy_value as Node).has_method(
+				"resume_restored_editorial_search"
+			)
+		):
+			(enemy_value as Node).call("resume_restored_editorial_search")
 	var world_restore: Dictionary = _restore_world(
 		game, session.get("world", {}) as Dictionary, warnings
 	)
@@ -227,6 +235,10 @@ static func _capture_actor(actor: Node2D, group_name: String) -> Dictionary:
 		if actor.has_method("legacy_enemy_ai_state_snapshot"):
 			(record["ai"] as Dictionary)["legacy_enemy_ai"] = _json_value(
 				actor.call("legacy_enemy_ai_state_snapshot")
+			)
+		if actor.has_method("editorial_ai_state_snapshot"):
+			(record["ai"] as Dictionary)["editorial_ai"] = _json_value(
+				actor.call("editorial_ai_state_snapshot")
 			)
 		if actor.has_method("stable_mod_patrol_state_snapshot"):
 			var stable_mod_patrol: Variant = actor.call(
@@ -834,6 +846,18 @@ static func _restore_actor(game: Node, actor: Node2D, record: Dictionary, group_
 			actor.call(
 				"restore_legacy_enemy_ai_state",
 				legacy_enemy_ai_value as Dictionary,
+			)
+		var editorial_ai_value: Variant = ai.get(
+			"editorial_ai",
+			{},
+		)
+		if (
+			editorial_ai_value is Dictionary
+			and actor.has_method("restore_editorial_ai_state")
+		):
+			actor.call(
+				"restore_editorial_ai_state",
+				editorial_ai_value as Dictionary,
 			)
 		var stable_mod_patrol_value: Variant = ai.get(
 			"stable_mod_patrol",
