@@ -160,6 +160,15 @@ func prewarm_audio_event(event_key: String, actor_key: String = "") -> int:
 	return available_count
 
 
+func prewarm_audio_index(gfl_index: int) -> bool:
+	## Decode one exact original archive entry without changing playback state.
+	## Actor voice selectors recovered from the executable address records by
+	## SLF position, so event-level variant lists are intentionally bypassed.
+	_ensure_catalog()
+	var path := str(catalog.call("sound_path", gfl_index))
+	return not path.is_empty() and _load_cached_audio_stream(path) != null
+
+
 func play_audio_index(
 	gfl_index: int,
 	event_key: String = "direct",

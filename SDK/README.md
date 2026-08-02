@@ -208,5 +208,12 @@ F2—F6 在按下沿提交，Esc/F1/F7/W/A/B/R/S/C/M 在松开沿提交，Ctrl/�
 每更新 `velocity_limit / 8` 的卷屏加减速。相关函数和独立全局字段均来自
 地址目录，补丁可复用而无需复制裸地址。
 
+`CrtRandom.hpp` 中 `sub_45D610/sub_45D7B0/sub_45D900/sub_45DA60` 的
+17 个唯一 `rand()` 调用点已按最终声音数组调用链纠正为 `audio_media`：分别
+表示玩家选中、命令确认、敌方首次喝止和后续追喊的双变体选择，而不是早期误标
+的角色动画 serial。精确 runtime type、SLF 序号和 GFL 映射由 Remake 的
+`legacy_actor_audio_rules.gd` 与无资源测试固化；SDK 调用点目录继续作为
+C++/Godot 生成物的唯一 RVA/semantic 来源。
+
 任务定义、事件、原子状态和原生插件开发详见
 [`docs/任务Sidecar与原生插件开发指南.md`](docs/任务Sidecar与原生插件开发指南.md)。

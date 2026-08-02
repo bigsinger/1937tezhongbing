@@ -55,6 +55,9 @@ const LEGACY_EXPLOSION_VISUAL_RULES: Script = preload(
 const LEGACY_CRT_RANDOM_CATALOG: Script = preload(
 	"res://scripts/generated/legacy_crt_random_catalog.gd"
 )
+const LEGACY_ACTOR_AUDIO_RULES: Script = preload(
+	"res://scripts/legacy_actor_audio_rules.gd"
+)
 const LEGACY_AMBIENT_PARTICLE_RANDOM_CALL_SITES := {
 	0x0005FD2C: true,
 	0x0005FD41: true,
@@ -1053,7 +1056,7 @@ func switch_level(
 		Time.get_ticks_usec() - level_load_phase_started_usec
 	)
 	level_load_phase_started_usec = Time.get_ticks_usec()
-	_prewarm_squad_acknowledgements()
+	_prewarm_squad_actor_voices()
 	last_level_load_phase_usec["squad_audio"] = (
 		Time.get_ticks_usec() - level_load_phase_started_usec
 	)
@@ -1092,16 +1095,23 @@ func switch_level(
 	)
 
 
-func _prewarm_squad_acknowledgements() -> void:
+func _prewarm_squad_actor_voices() -> void:
 	if media_director == null:
 		return
-	var warmed_actor_keys: Dictionary = {}
+	var warmed_gfl_indices: Dictionary = {}
 	for unit: SQUAD_UNIT in units:
-		var actor_key := _media_actor_key(unit.display_name)
-		if actor_key.is_empty() or warmed_actor_keys.has(actor_key):
-			continue
-		warmed_actor_keys[actor_key] = true
-		media_director.prewarm_audio_event("acknowledge", actor_key)
+		for family: String in [
+			LEGACY_ACTOR_AUDIO_RULES.FAMILY_SELECTED,
+			LEGACY_ACTOR_AUDIO_RULES.FAMILY_ACKNOWLEDGE,
+		]:
+			for gfl_index: int in LEGACY_ACTOR_AUDIO_RULES.gfl_indices_for(
+				family,
+				unit.runtime_actor_type,
+			):
+				if warmed_gfl_indices.has(gfl_index):
+					continue
+				warmed_gfl_indices[gfl_index] = true
+				media_director.prewarm_audio_index(gfl_index)
 
 
 func _should_show_startup_level_selector() -> bool:
@@ -3304,7 +3314,10 @@ func handle_selection(world_point: Vector2, additive: bool) -> void:
 		level_camera.position = hit.position
 		clamp_level_camera()
 	if selected_units.has(hit):
-		_play_media_audio("selected", _media_actor_key(hit.display_name))
+		_play_original_actor_audio(
+			LEGACY_ACTOR_AUDIO_RULES.FAMILY_SELECTED,
+			hit,
+		)
 
 
 func _select_units_in_screen_rect(screen_rect: Rect2, additive: bool) -> void:
@@ -3977,7 +3990,10 @@ func issue_formation_move(destination: Vector2) -> void:
 	_clear_original_pickup_order()
 	_clear_original_drop_order()
 	var audio_started_usec := Time.get_ticks_usec()
-	_play_media_audio("acknowledge", _media_actor_key(selected_units[0].display_name))
+	_play_original_actor_audio(
+		LEGACY_ACTOR_AUDIO_RULES.FAMILY_ACKNOWLEDGE,
+		selected_units[0],
+	)
 	last_formation_move_audio_usec = (
 		Time.get_ticks_usec() - audio_started_usec
 	)
@@ -8711,6 +8727,45 @@ func _play_media_audio(event_key: String, actor_key: String = "") -> bool:
 		return false
 	media_event_seed += 1
 	return bool(media_director.play_audio_event(event_key, actor_key, media_event_seed))
+
+
+func _play_original_actor_audio(
+	family: String,
+	actor: Node,
+	activation_flag: int = 1,
+) -> bool:
+	if actor == null:
+		return false
+	var runtime_actor_type := int(actor.get("runtime_actor_type"))
+	var profile: Dictionary = LEGACY_ACTOR_AUDIO_RULES.selector_profile(
+		family,
+		runtime_actor_type,
+		activation_flag,
+	)
+	if profile.is_empty():
+		return false
+	var random_value := -1
+	if bool(profile.get("random_required", false)):
+		var draw := next_legacy_crt_random(
+			int(profile.get("call_site_rva", 0))
+		)
+		if draw.is_empty():
+			return false
+		random_value = int(draw.get("value", -1))
+	var selection: Dictionary = LEGACY_ACTOR_AUDIO_RULES.select(
+		family,
+		runtime_actor_type,
+		random_value,
+		activation_flag,
+	)
+	if selection.is_empty() or media_director == null:
+		return false
+	return bool(media_director.play_audio_index(
+		int(selection.get("gfl_index", -1)),
+		str(selection.get("event_key", "original_actor_voice")),
+		"",
+		str(selection.get("channel", "voice")),
+	))
 
 
 func _media_actor_key(actor_name: String) -> String:

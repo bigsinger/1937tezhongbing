@@ -129,6 +129,11 @@ function Contact-OnsetIndex {
 
 $reference = Read-Trace $ReferenceTrace
 $candidate = Read-Trace $CandidateTrace
+$runtimeActorCatalogPath = Join-Path `
+    ([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))) `
+    'game\data\original_runtime_actor_catalog.json'
+$runtimeActorCatalog = Read-Trace $runtimeActorCatalogPath
+$runtimeActorProfiles = $runtimeActorCatalog.levels.m000.actors
 $mismatches = [Collections.Generic.List[object]]::new()
 if ($reference.runtime -ne 'mod' -or
     $reference.scenario.id -ne 'm000-natural-contact-v1' -or
@@ -162,11 +167,28 @@ foreach ($sceneIndex in $referenceActors.Keys) {
     }
     $expected = $referenceActors[[int]$sceneIndex]
     $actual = $candidateActors[[int]$sceneIndex]
-    foreach ($field in @('role', 'database_entry_id', 'faction_id')) {
+    foreach ($field in @('role', 'database_entry_id')) {
         if ([string]$actual.$field -cne [string]$expected.$field) {
             Add-Mismatch $mismatches "actors.scene:$sceneIndex.$field" `
                 $expected.$field $actual.$field 'exact audited identity'
         }
+    }
+    # The early natural-contact trace predates the live-faction catalog and
+    # recorded the authored VWF faction for scene 1427.  The independent
+    # RuntimeActorV1 gameplay-entry capture is authoritative for live faction
+    # identity, including all five catalogued VWF/runtime overrides.
+    $runtimeProfileProperty = $runtimeActorProfiles.PSObject.Properties[
+        [string]$sceneIndex]
+    $expectedFaction = if ($null -ne $runtimeProfileProperty) {
+        [int]$runtimeProfileProperty.Value.runtime_faction_id
+    }
+    else {
+        [int]$expected.faction_id
+    }
+    if ([int]$actual.faction_id -ne $expectedFaction) {
+        Add-Mismatch $mismatches "actors.scene:$sceneIndex.faction_id" `
+            $expectedFaction ([int]$actual.faction_id) `
+            'exact process-captured runtime faction identity'
     }
     foreach ($field in @('current', 'maximum')) {
         if (-not (Property-Exists $expected 'hit_points') -or
@@ -398,6 +420,7 @@ $result = [pscustomobject][ordered]@{
     level_id = 'm000'
     scenario_id = 'm000-natural-contact-v1'
     audited_actor_count = $referenceActors.Count
+    runtime_faction_catalog_id = $runtimeActorCatalog.catalog_id
     player_scene_index = $playerSceneIndex
     required_contact_scenes = $referenceFinalContacts
     recovered_optional_contact_scenes =

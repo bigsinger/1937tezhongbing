@@ -121,15 +121,17 @@ func _run() -> void:
 	var repeated_prewarm_count := int(
 		director.call("prewarm_audio_event", "acknowledge", "fixture")
 	)
+	var direct_prewarm_ok := bool(director.call("prewarm_audio_index", 9001))
 	expect(
 		prewarmed_audio_count == 2
 		and repeated_prewarm_count == 2
+		and direct_prewarm_ok
 		and director.audio_stream_load_count() == 3
 		and int(synthetic_audio_load_calls[0]) == 3
 		and director.audio_stream_cache_size() == 3
 		and director.active_audio_index == -1
 		and not director.audio_player.playing,
-		"audio-event prewarming decodes each variant once without starting playback",
+		"event and exact-index prewarming decode each variant once without playback",
 		failures,
 	)
 	director.set_audio_stream_loader(Callable())

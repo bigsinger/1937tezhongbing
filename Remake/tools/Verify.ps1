@@ -172,6 +172,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "Godot legacy enemy-AI tests failed with exit code $LASTEXITCODE."
 }
 
+& $GodotExecutable --headless --path $game --script 'res://tests/legacy_actor_audio_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot legacy actor-audio selector tests failed with exit code $LASTEXITCODE."
+}
+
 & $GodotExecutable --headless --path $game --script 'res://tests/original_crt_random_test.gd'
 if ($LASTEXITCODE -ne 0) {
     throw "Godot original CRT random-stream tests failed with exit code $LASTEXITCODE."
