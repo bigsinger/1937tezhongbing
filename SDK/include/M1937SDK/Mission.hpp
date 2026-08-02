@@ -50,7 +50,7 @@ struct RecoveredInteractionRule final {
     std::int32_t required_dead_runtime_type_b;
 };
 
-inline constexpr std::array<RecoveredInteractionRule, 6>
+inline constexpr std::array<RecoveredInteractionRule, 7>
     recovered_interaction_rules{{
         {2, TargetPredicate::hit_points_nonpositive, 98, 0, 0, false,
          100, 128, false, character_gu_ming | character_driver, 91,
@@ -66,6 +66,9 @@ inline constexpr std::array<RecoveredInteractionRule, 6>
         {5, TargetPredicate::hit_points_nonpositive, 98, 0, 0, false,
          0, 0, false, character_none, 0,
          character_gu_ming | character_daniu, 0, 0},
+        {6, TargetPredicate::hit_points_nonpositive, 24, 0, 0, false,
+         0, 0, false, character_none, 0,
+         character_old_zhao | character_qiangzi | character_gu_ming, 0, 0},
         {7, TargetPredicate::none, 0, 0, 0, false,
          0, 0, false, character_none, 0, character_qiangzi, 15, 22},
         {9, TargetPredicate::timed_explosive_within_radius, 98, 85, 128,
@@ -151,12 +154,13 @@ static_assert(
 static_assert(
     offsetof(RuntimeControllerStateV1, result_state) == 0x0C0);
 static_assert(sizeof(RuntimeControllerStateV1) == 0x0C4);
-static_assert(recovered_interaction_rules.size() == 6);
+static_assert(recovered_interaction_rules.size() == 7);
 static_assert(
     find_interaction_rule(2)->required_exit_actor_runtime_type == 91);
 static_assert(
     find_interaction_rule(4)->target_predicate ==
     TargetPredicate::timed_explosive_within_radius);
+static_assert(find_interaction_rule(6)->target_runtime_type == 24);
 static_assert(find_interaction_rule(9)->exit_radius_exclusive);
 static_assert(distance_matches(127, 0, 128, true));
 static_assert(!distance_matches(128, 0, 128, true));

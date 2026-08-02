@@ -293,6 +293,7 @@ func _perform_checkpoint_world_action(main: Node, level_id: String) -> void:
 		"m004":
 			_rescue_scene(main, 2700)
 		"m005":
+			_expect_scene_runtime_actor_type(main, 736, 24)
 			_eliminate_scene(main, 736)
 		"m006":
 			if str(main.current_mission.get("rule_mode", "")) == "repaired":
@@ -346,6 +347,11 @@ func _complete_level_after_checkpoint(main: Node, level_id: String) -> void:
 			_place_all_charges(main)
 		"m005":
 			_collect_role_item(main, "m005_document", "acquire_document")
+			_expect_any_actor_backpack_item(
+				main,
+				["老赵", "强子", "古明"],
+				101,
+			)
 		"m006":
 			if str(main.current_mission.get("rule_mode", "")) == "repaired":
 				_eliminate_scene(main, 1457)
@@ -471,6 +477,50 @@ func _expect_actor_backpack_item(
 		actor != null and quantity > 0,
 		"%s owns original backpack item %d after world pickup"
 			% [display_name, item_id],
+	)
+
+
+func _expect_any_actor_backpack_item(
+	main: Node,
+	display_names: Array[String],
+	item_id: int,
+) -> void:
+	var owner_name := ""
+	for unit_value: Variant in main.units:
+		var candidate := unit_value as Node
+		if (
+			not display_names.has(str(candidate.get("display_name")))
+			or candidate.get("backpack_inventory") == null
+			or int(
+				candidate.get("backpack_inventory").call("item_count", item_id)
+			) <= 0
+		):
+			continue
+		owner_name = str(candidate.get("display_name"))
+		break
+	_expect(
+		not owner_name.is_empty(),
+		"one of %s owns original backpack item %d after world pickup"
+			% [", ".join(display_names), item_id],
+	)
+
+
+func _expect_scene_runtime_actor_type(
+	main: Node,
+	scene_index: int,
+	runtime_actor_type: int,
+) -> void:
+	var actor = null
+	for enemy_value: Variant in main.enemies:
+		var candidate := enemy_value as Node
+		if int(candidate.get("scene_index")) == scene_index:
+			actor = candidate
+			break
+	_expect(
+		actor != null
+		and int(actor.get("runtime_actor_type")) == runtime_actor_type,
+		"scene %d resolves to recovered runtime actor type %d"
+			% [scene_index, runtime_actor_type],
 	)
 
 

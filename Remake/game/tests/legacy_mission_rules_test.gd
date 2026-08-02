@@ -26,7 +26,7 @@ func _run_tests() -> void:
 
 
 func _test_rule_table() -> void:
-	for level_id: String in ["m001", "m002", "m003", "m004", "m006", "m008"]:
+	for level_id: String in ["m001", "m002", "m003", "m004", "m005", "m006", "m008"]:
 		var rule: Dictionary = RULES.rule_for(level_id)
 		_expect(
 			RULES.is_valid_rule(level_id, rule)
@@ -35,7 +35,7 @@ func _test_rule_table() -> void:
 			"%s exposes a valid source-backed evaluator subset" % level_id,
 		)
 	_expect(
-		RULES.rule_for("m005").is_empty(),
+		RULES.rule_for("m007").is_empty(),
 		"levels without a recovered special predicate receive no invented rule",
 	)
 	_expect(
@@ -117,6 +117,20 @@ func _test_item_holders() -> void:
 		RULES.item_holder_is_eligible("m006", "m006_name_list", "强子")
 		and not RULES.item_holder_is_eligible("m006", "m006_name_list", "老赵"),
 		"m006 item 101 is accepted only in Qiangzi's original container",
+	)
+	_expect(
+		RULES.item_holder_is_eligible("m005", "m005_document", "老赵")
+		and RULES.item_holder_is_eligible("m005", "m005_document", "强子")
+		and RULES.item_holder_is_eligible("m005", "m005_document", "古明")
+		and not RULES.item_holder_is_eligible("m005", "m005_document", "大牛"),
+		"m005 item 101 is accepted only in Old Zhao, Qiangzi, or Gu Ming's container",
+	)
+	_expect(
+		int(RULES.role_target_rule_for("m005").get("runtime_actor_type", 0)) == 24
+		and RULES.role_elimination_is_eligible("m005", "m005_agui", 24)
+		and not RULES.role_elimination_is_eligible("m005", "m005_agui", 25)
+		and RULES.role_elimination_is_eligible("m005", "other_role", 25),
+		"m005 narrative role is bound to the recovered runtime type-24 actor",
 	)
 	_expect(
 		RULES.item_holder_is_eligible("m000", "ordinary_item", "任何人"),

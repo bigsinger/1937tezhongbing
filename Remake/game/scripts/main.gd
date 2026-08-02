@@ -5883,6 +5883,12 @@ func _publish_role_eliminations(unit: Node2D) -> void:
 		var role_id := str(where.get("role_id", ""))
 		if role_id.is_empty() or not _binding_scenes(role_id).has(scene_index):
 			continue
+		if not LEGACY_MISSION_RULES.role_elimination_is_eligible(
+			str(current_mission.get("id", "")),
+			role_id,
+			int(unit.get("runtime_actor_type")),
+		):
+			continue
 		_publish_mission_event(
 			"role_eliminated", {"scene_index": scene_index, "role_id": role_id}
 		)

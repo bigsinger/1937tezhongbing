@@ -43,8 +43,8 @@ PE 指纹和原始指令字节。
   `evaluation_active +0xBC`、`result_state +0xC0` 布局，以及原 evaluator
   的失败值 2、胜利值 3；`address-catalog.json` 同时固定初始化、求值、
   thunk 和世界更新四个签名地址，供只读任务结果观察与跨实现差分；头文件
-  还以 `constexpr RecoveredInteractionRule` 固定 m001/m002/m003/m004/m006/
-  m008 的 type 98/85/100、严格/包含 128 边界、角色位掩码和物品 101
+  还以 `constexpr RecoveredInteractionRule` 固定 m001/m002/m003/m004/m005/
+  m006/m008 的 type 24/98/85/100、严格/包含 128 边界、角色位掩码和物品 101
   持有人约束，避免补丁与 Remake 各自复制魔数；
 - `address-catalog.json` 是地址的唯一机器源；生成器同时产出 C++ 头文件
   和 C# 探针常量；

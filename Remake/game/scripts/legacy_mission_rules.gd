@@ -71,6 +71,17 @@ const RULES := {
 		},
 		"item_holders": {"m004_plan_document": ["古明", "大牛"]},
 	},
+	"m005": {
+		"mission_number": 6,
+		"role_target": {
+			"binding": "m005_agui",
+			"runtime_actor_type": 24,
+			"completion": TARGET_HIT_POINTS_NONPOSITIVE,
+		},
+		"item_holders": {
+			"m005_document": ["古明", "老赵", "强子"],
+		},
+	},
 	"m006": {
 		"mission_number": 7,
 		"required_dead_bindings": ["m006_sun_damazi", "m006_kato"],
@@ -116,6 +127,23 @@ static func exit_rule_for(level_id: String) -> Dictionary:
 	var rule := rule_for(level_id)
 	var raw_exit: Variant = rule.get("exit", {})
 	return (raw_exit as Dictionary).duplicate(true) if raw_exit is Dictionary else {}
+
+
+static func role_target_rule_for(level_id: String) -> Dictionary:
+	var rule := rule_for(level_id)
+	var raw_target: Variant = rule.get("role_target", {})
+	return (raw_target as Dictionary).duplicate(true) if raw_target is Dictionary else {}
+
+
+static func role_elimination_is_eligible(
+	level_id: String,
+	role_id: String,
+	runtime_actor_type: int,
+) -> bool:
+	var target := role_target_rule_for(level_id)
+	if target.is_empty() or str(target.get("binding", "")) != role_id:
+		return true
+	return runtime_actor_type == int(target.get("runtime_actor_type", 0))
 
 
 static func item_holder_is_eligible(
@@ -207,6 +235,16 @@ static func is_valid_rule(level_id: String, rule: Dictionary) -> bool:
 			or not exit.get("exclusive_boundary") is bool
 			or not exit.get("player_names") is Array
 			or (exit.get("player_names") as Array).is_empty()
+		):
+			return false
+	var raw_role_target: Variant = rule.get("role_target", {})
+	if raw_role_target is Dictionary and not (raw_role_target as Dictionary).is_empty():
+		var role_target := raw_role_target as Dictionary
+		if (
+			str(role_target.get("binding", "")).is_empty()
+			or int(role_target.get("runtime_actor_type", 0)) <= 0
+			or str(role_target.get("completion", ""))
+				!= TARGET_HIT_POINTS_NONPOSITIVE
 		):
 			return false
 	return true

@@ -899,7 +899,6 @@ func _test_m008_manual_explosion_sequence(failures: Array[String]) -> void:
 	main.free()
 	runtime.free()
 
-
 func _test_m010_simultaneous_high_ground(failures: Array[String]) -> void:
 	var mission: Dictionary = MISSION_DATA.load_mission("m010")
 	var rule := mission.get("simultaneous_zone_rule", {}) as Dictionary
@@ -1235,6 +1234,68 @@ func _test_native_mission_item_holder_scan(failures: Array[String]) -> void:
 		and main._evaluate_native_item_holder_conditions() == 1
 		and state.is_objective_complete("acquire_plan"),
 		"m004 current-container evaluator advances after item 101 transfers to Gu Ming",
+		failures,
+	)
+	main.mission_runtime = null
+	main.free()
+	runtime.free()
+
+	mission = MISSION_DATA.load_mission("m005")
+	state = MISSION_STATE.new(mission)
+	runtime = MISSION_RUNTIME_SCRIPT.new()
+	root.add_child(runtime)
+	_expect(
+		runtime.configure(mission, _build_mission_level_fixture(mission), state),
+		"m005 native holder fixture configures its real scene binding",
+		failures,
+	)
+	runtime.publish_world_event(
+		"role_eliminated",
+		{"role_id": "m005_agui", "scene_index": 736},
+	)
+	main = MAIN_SCRIPT.new()
+	main.current_mission = mission
+	main.current_mission_state = state
+	main.mission_runtime = runtime
+	wrong_holder = SQUAD_UNIT_SCRIPT.new()
+	wrong_holder.configure(
+		"大牛",
+		Color.WHITE,
+		Vector2.ZERO,
+		null,
+		empty_groups,
+		empty_groups,
+	)
+	wrong_holder.add_backpack_item(101, 1, 0)
+	eligible_holder = SQUAD_UNIT_SCRIPT.new()
+	eligible_holder.configure(
+		"老赵",
+		Color.WHITE,
+		Vector2.ZERO,
+		null,
+		empty_groups,
+		empty_groups,
+	)
+	main.add_child(wrong_holder)
+	main.add_child(eligible_holder)
+	main.units.assign([wrong_holder, eligible_holder])
+	_expect(
+		main._evaluate_native_item_holder_conditions() == 0
+		and not state.is_objective_complete("acquire_document"),
+		"m005 current-container evaluator rejects item 101 in Daniu's backpack",
+		failures,
+	)
+	transferred = wrong_holder.backpack_inventory.take_for_drop(101, 1)
+	eligible_holder.add_backpack_item(
+		101,
+		int(transferred.get("quantity", 0)),
+		int(transferred.get("quantity_mode", 0)),
+	)
+	_expect(
+		not transferred.is_empty()
+		and main._evaluate_native_item_holder_conditions() == 1
+		and state.is_victory(),
+		"m005 closes after item 101 transfers to Old Zhao following the type-24 target death",
 		failures,
 	)
 	main.mission_runtime = null
