@@ -39,6 +39,7 @@ var expected_width := 1024
 var expected_height := 768
 var world_only := true
 var overlay := "none"
+var isolate_overlay := false
 
 
 func _init() -> void:
@@ -56,6 +57,8 @@ func _run_probe() -> void:
 		"none", "weapons", "items", "minimap", "help", "pause", "failure"
 	]:
 		failures.append("unsupported overlay: %s" % overlay)
+	if isolate_overlay and overlay == "none":
+		failures.append("--isolate-overlay requires an overlay")
 	if not failures.is_empty():
 		_finish(failures, Vector2.ZERO, Vector2i.ZERO, 0, 0)
 		return
@@ -93,6 +96,8 @@ func _run_probe() -> void:
 		main.media_director.close_for_state_change()
 	if overlay != "none":
 		world_only = false
+		if isolate_overlay:
+			_add_overlay_isolation_backdrop()
 		if overlay in ["weapons", "items"]:
 			main._on_original_hud_actor_requested(
 				str(ORIGINAL_INVENTORY_ACTOR_BY_LEVEL[level_id])
@@ -197,6 +202,7 @@ func _finish(
 			"output": output_path,
 			"world_only": world_only,
 			"overlay": overlay,
+			"isolated_backdrop": isolate_overlay,
 			"failures": failures,
 			"passed": failures.is_empty(),
 		}
@@ -239,3 +245,21 @@ func _parse_arguments(arguments: PackedStringArray) -> void:
 			world_only = false
 		elif argument.begins_with("--overlay="):
 			overlay = argument.trim_prefix("--overlay=").to_lower()
+		elif argument == "--isolate-overlay":
+			isolate_overlay = true
+
+
+func _add_overlay_isolation_backdrop() -> void:
+	# Put a deterministic surface immediately below GameShell's layer 180.
+	# This lets native overlay pixels be compared across viewport sizes without
+	# differences from the world region underneath transparent/colorkey pixels.
+	var canvas := CanvasLayer.new()
+	canvas.name = "OverlayIsolationBackdrop"
+	canvas.layer = 179
+	var backdrop := ColorRect.new()
+	backdrop.name = "SolidBlackBackdrop"
+	backdrop.color = Color.BLACK
+	backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	canvas.add_child(backdrop)
+	root.add_child(canvas)

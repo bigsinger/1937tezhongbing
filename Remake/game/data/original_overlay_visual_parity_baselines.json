@@ -136,5 +136,139 @@
       "passed": true
     }
   ],
+  "modern_viewport_calibration": {
+    "schema_version": 1,
+    "captured_utc": "2026-08-03T05:14:53.4589080Z",
+    "representative_level": "m000",
+    "reference_viewport": [1024, 768],
+    "target_viewport": [1920, 1080],
+    "method": "same Remake build and fixed world state at both native viewport sizes; exact transparent overlays use a deterministic black layer immediately below GameShell; minimap retains its intentionally larger target-camera extent",
+    "source_chain": "the six stable-MOD comparisons above establish original native pixels at 1024x768; this second hop proves that the restored native overlay layer and versioned anchors survive the 1920x1080 target viewport",
+    "input_isolation": "target viewport texture only; no desktop capture; no global mouse, keyboard, focus, pointer capture or mission playthrough",
+    "original_binary_images_committed": false,
+    "samples": [
+      {
+        "overlay": "items",
+        "isolated_backdrop": true,
+        "comparison_scope": "native_overlay_crop",
+        "dimensions": [276, 421],
+        "reference_origin": [748, 285],
+        "target_origin": [1644, 597],
+        "threshold_profile": "exact_isolated_native_overlay",
+        "metrics": {
+          "mean_absolute_error": 0.0,
+          "near_match_ratio": 1.0,
+          "edge_correlation": 1.0,
+          "black_hole_ratio": 0.0
+        },
+        "thresholds": {
+          "maximum_mean_absolute_error": 0.0,
+          "minimum_near_match_ratio": 1.0,
+          "minimum_edge_correlation": 1.0,
+          "maximum_black_hole_ratio": 0.0
+        },
+        "reference_sha256": "343FE2EABF425E1FE015532CF06FCFB79290C7F4D23AFCA314827D461A92AF2A",
+        "target_sha256": "343FE2EABF425E1FE015532CF06FCFB79290C7F4D23AFCA314827D461A92AF2A",
+        "passed": true
+      },
+      {
+        "overlay": "weapons",
+        "isolated_backdrop": true,
+        "comparison_scope": "native_overlay_crop",
+        "dimensions": [276, 421],
+        "reference_origin": [748, 285],
+        "target_origin": [1644, 597],
+        "threshold_profile": "exact_isolated_native_overlay",
+        "metrics": {
+          "mean_absolute_error": 0.0,
+          "near_match_ratio": 1.0,
+          "edge_correlation": 1.0,
+          "black_hole_ratio": 0.0
+        },
+        "thresholds": {
+          "maximum_mean_absolute_error": 0.0,
+          "minimum_near_match_ratio": 1.0,
+          "minimum_edge_correlation": 1.0,
+          "maximum_black_hole_ratio": 0.0
+        },
+        "reference_sha256": "B8F40BDAB79ECEE4B798ADF3C63E16C2EEC5660D9A19C579667C9E6E6198E229",
+        "target_sha256": "B8F40BDAB79ECEE4B798ADF3C63E16C2EEC5660D9A19C579667C9E6E6198E229",
+        "passed": true
+      },
+      {
+        "overlay": "minimap",
+        "isolated_backdrop": false,
+        "comparison_scope": "native_overlay_crop",
+        "dimensions": [336, 166],
+        "reference_origin": [688, 540],
+        "target_origin": [1584, 852],
+        "threshold_profile": "modern_minimap_camera_extent",
+        "metrics": {
+          "mean_absolute_error": 0.819994,
+          "near_match_ratio": 0.993402,
+          "edge_correlation": 0.958307,
+          "black_hole_ratio": 0.00001793
+        },
+        "thresholds": {
+          "maximum_mean_absolute_error": 1.25,
+          "minimum_near_match_ratio": 0.99,
+          "minimum_edge_correlation": 0.95,
+          "maximum_black_hole_ratio": 0.0001
+        },
+        "reference_sha256": "9558F5BA91BB014503F20C5655E3F44CF7F47D08CCD2851227883B77B0443FA2",
+        "target_sha256": "F7DC79350746AC9C44BE56680386FAD02543DF8B68948E04856AC5F1DE10659E",
+        "passed": true
+      },
+      {
+        "overlay": "help",
+        "isolated_backdrop": false,
+        "comparison_scope": "native_overlay_crop",
+        "dimensions": [640, 480],
+        "reference_origin": [192, 144],
+        "target_origin": [640, 300],
+        "threshold_profile": "exact_opaque_native_overlay",
+        "metrics": {
+          "mean_absolute_error": 0.0,
+          "near_match_ratio": 1.0,
+          "edge_correlation": 1.0,
+          "black_hole_ratio": 0.0
+        },
+        "thresholds": {
+          "maximum_mean_absolute_error": 0.0,
+          "minimum_near_match_ratio": 1.0,
+          "minimum_edge_correlation": 1.0,
+          "maximum_black_hole_ratio": 0.0
+        },
+        "reference_sha256": "30D263D73CEA58BCDC18563862FE7FD01231216584455FA92DE3CFE0E4B884B6",
+        "target_sha256": "30D263D73CEA58BCDC18563862FE7FD01231216584455FA92DE3CFE0E4B884B6",
+        "passed": true
+      },
+      {
+        "overlay": "failure",
+        "isolated_backdrop": true,
+        "comparison_scope": "native_overlay_crop",
+        "dimensions": [282, 94],
+        "reference_origin": [354, 325],
+        "target_origin": [802, 481],
+        "threshold_profile": "exact_isolated_native_overlay",
+        "metrics": {
+          "mean_absolute_error": 0.0,
+          "near_match_ratio": 1.0,
+          "edge_correlation": 1.0,
+          "black_hole_ratio": 0.0
+        },
+        "thresholds": {
+          "maximum_mean_absolute_error": 0.0,
+          "minimum_near_match_ratio": 1.0,
+          "minimum_edge_correlation": 1.0,
+          "maximum_black_hole_ratio": 0.0
+        },
+        "reference_sha256": "2C64AE7E711BF25056B2B36F17272BC6F87B88FEEC7FE4CA2E0A44D4136DE074",
+        "target_sha256": "2C64AE7E711BF25056B2B36F17272BC6F87B88FEEC7FE4CA2E0A44D4136DE074",
+        "passed": true
+      }
+    ],
+    "passed": true
+  },
   "passed": true
 }
