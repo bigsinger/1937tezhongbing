@@ -18,6 +18,29 @@ const ORIGINAL_LOCAL_SEARCH_CALL_SITES: Array[int] = [
 	0x0005D0CB,
 	0x0005D15F,
 ]
+const ORIGINAL_PRIMARY_SEARCH_CALL_SITES: Array[int] = [
+	0x00055216,
+	0x0005528C,
+	0x000552A3,
+	0x000552BA,
+	0x000552D1,
+]
+const ORIGINAL_BLOCKED_RETRY_CALL_SITES: Array[int] = [
+	0x00055BFB,
+	0x00055C0F,
+	0x00055C23,
+	0x00055C3A,
+]
+const ORIGINAL_TRACKED_REACTION_CALL_SITES: Array[int] = [
+	0x0005CB2B,
+]
+const ORIGINAL_SECONDARY_SEARCH_CALL_SITES: Array[int] = [
+	0x0005CEA6,
+	0x0005CF33,
+	0x0005CF4A,
+	0x0005CF61,
+	0x0005CF78,
+]
 ## RuntimeActor movement is advanced by M1937's 60 Hz actor update.  The
 ## secondary SPR triplet supplies the maximum X and Y displacement per tick
 ## (components 0 and 2); run mode uses three times the walk values.
@@ -151,8 +174,18 @@ var original_pursuit_last_command_variant := 0
 var original_pursuit_last_navigation_applied := false
 var original_recurring_pursuit_last_round_index := 0
 var original_recurring_shared_last_round_index := 0
+var original_recurring_primary_last_round_index := 0
+var original_recurring_secondary_last_round_index := 0
+var original_recurring_blocked_last_round_index := 0
+var original_recurring_reaction_last_round_index := 0
 var original_recurring_actor_event_serial := 0
 var original_recurring_actor_event_values_match := true
+var original_recurring_blocked_retry_serial := 0
+var original_recurring_blocked_retry_last_goal := Vector2.ZERO
+var original_recurring_blocked_retry_last_navigation_applied := false
+var original_recurring_tracked_reaction_serial := 0
+var original_crt_primary_candidate_last_goal := Vector2.ZERO
+var original_crt_primary_candidate_last_navigation_applied := false
 var original_local_search_last_physics_frame := -1
 var original_local_search_last_round_index := 0
 var original_local_search_serial := 0
@@ -339,8 +372,18 @@ func configure(
 	original_pursuit_last_navigation_applied = false
 	original_recurring_pursuit_last_round_index = 0
 	original_recurring_shared_last_round_index = 0
+	original_recurring_primary_last_round_index = 0
+	original_recurring_secondary_last_round_index = 0
+	original_recurring_blocked_last_round_index = 0
+	original_recurring_reaction_last_round_index = 0
 	original_recurring_actor_event_serial = 0
 	original_recurring_actor_event_values_match = true
+	original_recurring_blocked_retry_serial = 0
+	original_recurring_blocked_retry_last_goal = Vector2.ZERO
+	original_recurring_blocked_retry_last_navigation_applied = false
+	original_recurring_tracked_reaction_serial = 0
+	original_crt_primary_candidate_last_goal = Vector2.ZERO
+	original_crt_primary_candidate_last_navigation_applied = false
 	original_local_search_last_physics_frame = -1
 	original_local_search_last_round_index = 0
 	original_local_search_serial = 0
@@ -930,6 +973,15 @@ func original_crt_random_timing_snapshot() -> Dictionary:
 		"primary_candidate_scan_serial": (
 			original_crt_primary_candidate_scan_serial
 		),
+		"primary_candidate_last_goal_x": (
+			original_crt_primary_candidate_last_goal.x
+		),
+		"primary_candidate_last_goal_y": (
+			original_crt_primary_candidate_last_goal.y
+		),
+		"primary_candidate_last_navigation_applied": (
+			original_crt_primary_candidate_last_navigation_applied
+		),
 		"secondary_search": original_secondary_search_snapshot(),
 		"pursuit": original_pursuit_snapshot(),
 		"recurring_actor_events": {
@@ -939,9 +991,36 @@ func original_crt_random_timing_snapshot() -> Dictionary:
 			"shared_last_round_index": (
 				original_recurring_shared_last_round_index
 			),
+			"primary_last_round_index": (
+				original_recurring_primary_last_round_index
+			),
+			"secondary_last_round_index": (
+				original_recurring_secondary_last_round_index
+			),
+			"blocked_last_round_index": (
+				original_recurring_blocked_last_round_index
+			),
+			"reaction_last_round_index": (
+				original_recurring_reaction_last_round_index
+			),
 			"serial": original_recurring_actor_event_serial,
 			"values_match": (
 				original_recurring_actor_event_values_match
+			),
+			"blocked_retry_serial": (
+				original_recurring_blocked_retry_serial
+			),
+			"blocked_retry_last_goal_x": (
+				original_recurring_blocked_retry_last_goal.x
+			),
+			"blocked_retry_last_goal_y": (
+				original_recurring_blocked_retry_last_goal.y
+			),
+			"blocked_retry_last_navigation_applied": (
+				original_recurring_blocked_retry_last_navigation_applied
+			),
+			"tracked_reaction_serial": (
+				original_recurring_tracked_reaction_serial
 			),
 		},
 		"local_search": original_local_search_snapshot(),
@@ -1021,6 +1100,16 @@ func restore_original_crt_random_timing(state: Dictionary) -> bool:
 	original_crt_primary_candidate_scan_serial = maxi(
 		int(state.get("primary_candidate_scan_serial", 0)),
 		0,
+	)
+	original_crt_primary_candidate_last_goal = Vector2(
+		float(state.get("primary_candidate_last_goal_x", 0.0)),
+		float(state.get("primary_candidate_last_goal_y", 0.0)),
+	)
+	original_crt_primary_candidate_last_navigation_applied = bool(
+		state.get(
+			"primary_candidate_last_navigation_applied",
+			false,
+		)
 	)
 	var secondary_search_value: Variant = state.get(
 		"secondary_search",
@@ -1127,12 +1216,70 @@ func restore_original_crt_random_timing(state: Dictionary) -> bool:
 			)),
 			0,
 		)
+		original_recurring_primary_last_round_index = maxi(
+			int(recurring_actor_events_state.get(
+				"primary_last_round_index",
+				0,
+			)),
+			0,
+		)
+		original_recurring_secondary_last_round_index = maxi(
+			int(recurring_actor_events_state.get(
+				"secondary_last_round_index",
+				0,
+			)),
+			0,
+		)
+		original_recurring_blocked_last_round_index = maxi(
+			int(recurring_actor_events_state.get(
+				"blocked_last_round_index",
+				0,
+			)),
+			0,
+		)
+		original_recurring_reaction_last_round_index = maxi(
+			int(recurring_actor_events_state.get(
+				"reaction_last_round_index",
+				0,
+			)),
+			0,
+		)
 		original_recurring_actor_event_serial = maxi(
 			int(recurring_actor_events_state.get("serial", 0)),
 			0,
 		)
 		original_recurring_actor_event_values_match = bool(
 			recurring_actor_events_state.get("values_match", true)
+		)
+		original_recurring_blocked_retry_serial = maxi(
+			int(recurring_actor_events_state.get(
+				"blocked_retry_serial",
+				0,
+			)),
+			0,
+		)
+		original_recurring_blocked_retry_last_goal = Vector2(
+			float(recurring_actor_events_state.get(
+				"blocked_retry_last_goal_x",
+				0.0,
+			)),
+			float(recurring_actor_events_state.get(
+				"blocked_retry_last_goal_y",
+				0.0,
+			)),
+		)
+		original_recurring_blocked_retry_last_navigation_applied = bool(
+			recurring_actor_events_state.get(
+				"blocked_retry_last_navigation_applied",
+				false,
+			)
+		)
+		original_recurring_tracked_reaction_serial = maxi(
+			int(recurring_actor_events_state.get(
+				"tracked_reaction_serial",
+				0,
+			)),
+			0,
 		)
 	var local_search_value: Variant = state.get("local_search", {})
 	if local_search_value is Dictionary:
@@ -1229,13 +1376,132 @@ func restore_original_crt_random_timing(state: Dictionary) -> bool:
 
 func _advance_original_crt_actor_random_tick(delta: float) -> void:
 	_advance_original_crt_observation_gate(delta)
-	_advance_original_recurring_pursuit_events()
+	_advance_original_recurring_tracked_reaction_events()
 	if original_secondary_search_enabled:
 		_advance_original_secondary_search(delta)
 	else:
 		_advance_original_pursuit(delta)
+	_advance_original_recurring_pursuit_events()
 	_advance_original_crt_primary_candidate_scan(delta)
 	_advance_original_recurring_local_search()
+
+
+func _consume_original_recurring_actor_events(
+	accepted_call_sites: Array[int],
+) -> Array[Dictionary]:
+	var consumed: Array[Dictionary] = []
+	for event: Dictionary in _original_recurring_actor_events(
+		accepted_call_sites
+	):
+		var call_site_rva := int(event.get("call_site_rva", 0))
+		var actual_value := next_original_crt_random_value(call_site_rva)
+		if actual_value < 0:
+			break
+		original_recurring_actor_event_serial += 1
+		original_recurring_actor_event_values_match = (
+			original_recurring_actor_event_values_match
+			and actual_value == int(event.get("value", -1))
+		)
+		var applied_event := event.duplicate(true)
+		applied_event["actual_value"] = actual_value
+		consumed.append(applied_event)
+	return consumed
+
+
+func _advance_original_recurring_tracked_reaction_events() -> bool:
+	var round_index := _original_recurring_evidence_round_index()
+	if (
+		round_index <= 0
+		or round_index <= original_recurring_reaction_last_round_index
+		or not is_alive
+	):
+		return false
+	original_recurring_reaction_last_round_index = round_index
+	var events := _consume_original_recurring_actor_events(
+		ORIGINAL_TRACKED_REACTION_CALL_SITES
+	)
+	if events.is_empty():
+		return false
+	var handled := false
+	for event: Dictionary in events:
+		if int(event.get("call_site_rva", 0)) != 0x0005CB2B:
+			original_recurring_actor_event_values_match = false
+			continue
+		original_recurring_tracked_reaction_serial += 1
+		handled = (
+			_apply_original_tracked_target_reaction_value(
+				int(event.get("actual_value", -1))
+			)
+			or handled
+		)
+	return handled
+
+
+func _apply_original_tracked_target_reaction_value(
+	random_value: int,
+) -> bool:
+	if random_value < 0:
+		return false
+	original_ai_idle_tick_counter = 0
+	original_ai_idle_tick_limit = (
+		random_value % AI_IDLE_RANDOM_RULES.REACTION_RANDOM_SPAN
+		+ AI_IDLE_RANDOM_RULES.REACTION_MINIMUM_LIMIT
+	)
+	original_ai_idle_tick_elapsed = 0.0
+	return true
+
+
+func _advance_original_recurring_blocked_retry_events() -> bool:
+	var round_index := _original_recurring_evidence_round_index()
+	if (
+		round_index <= 0
+		or round_index <= original_recurring_blocked_last_round_index
+		or not is_alive
+	):
+		return false
+	original_recurring_blocked_last_round_index = round_index
+	var events := _consume_original_recurring_actor_events(
+		ORIGINAL_BLOCKED_RETRY_CALL_SITES
+	)
+	if events.is_empty():
+		return false
+	if events.size() != ORIGINAL_BLOCKED_RETRY_CALL_SITES.size():
+		original_recurring_actor_event_values_match = false
+		return true
+	var origin := position
+	var values: Array[int] = []
+	for event_index: int in range(events.size()):
+		var event := events[event_index]
+		if (
+			int(event.get("call_site_rva", 0))
+			!= ORIGINAL_BLOCKED_RETRY_CALL_SITES[event_index]
+		):
+			original_recurring_actor_event_values_match = false
+			return true
+		if event_index == 0:
+			var evidence_x := int(event.get("world_x", -1))
+			var evidence_y := int(event.get("world_y", -1))
+			if evidence_x >= 0 and evidence_y >= 0:
+				origin = Vector2(evidence_x, evidence_y)
+		values.append(int(event.get("actual_value", -1)))
+	original_recurring_blocked_retry_serial += 1
+	original_recurring_blocked_retry_last_goal = (
+		AI_IDLE_RANDOM_RULES.blocked_retry_point_from_values(
+			values,
+			origin,
+			_original_secondary_search_world_bounds(),
+		)
+	)
+	original_recurring_blocked_retry_last_navigation_applied = false
+	if _should_apply_original_first_gameplay_navigation(
+		"blocked_retry_destination"
+	):
+		original_recurring_blocked_retry_last_navigation_applied = (
+			_issue_original_first_gameplay_path(
+				original_recurring_blocked_retry_last_goal
+			)
+		)
+	return true
 
 
 func original_local_search_snapshot() -> Dictionary:
@@ -1374,6 +1640,10 @@ func _advance_original_secondary_search(delta: float) -> void:
 		or not is_instance_valid(original_crt_random_source)
 	):
 		return
+	if _original_recurring_evidence_round_index() > 0:
+		original_secondary_search_elapsed = 0.0
+		_advance_original_recurring_secondary_search_events()
+		return
 	original_secondary_search_elapsed += maxf(delta, 0.0)
 	while (
 		original_secondary_search_elapsed
@@ -1383,6 +1653,81 @@ func _advance_original_secondary_search(delta: float) -> void:
 			ORIGINAL_ACTOR_RANDOM_TICK_SECONDS
 		)
 		_advance_original_secondary_search_once()
+
+
+func _advance_original_recurring_secondary_search_events() -> bool:
+	var round_index := _original_recurring_evidence_round_index()
+	if (
+		round_index <= 0
+		or round_index <= original_recurring_secondary_last_round_index
+		or not is_alive
+	):
+		return false
+	original_recurring_secondary_last_round_index = round_index
+	var events := _consume_original_recurring_actor_events(
+		ORIGINAL_SECONDARY_SEARCH_CALL_SITES
+	)
+	if events.is_empty():
+		# Native sub_45CE90 clears an arrived contact without drawing, then
+		# resumes its gate on the following actor update.
+		if (
+			original_secondary_search_contact_state
+			and movement_path_index >= movement_path.size()
+		):
+			original_secondary_search_contact_state = false
+		return false
+	var gate_seen := false
+	var offset_values: Array[int] = []
+	for event: Dictionary in events:
+		var call_site_rva := int(event.get("call_site_rva", 0))
+		var actual_value := int(event.get("actual_value", -1))
+		if call_site_rva == 0x0005CEA6:
+			gate_seen = true
+			original_secondary_search_contact_state = false
+			original_secondary_search_gate_serial += 1
+			original_secondary_search_last_gate_value = actual_value
+		elif call_site_rva in ORIGINAL_SECONDARY_SEARCH_CALL_SITES:
+			offset_values.append(actual_value)
+		else:
+			original_recurring_actor_event_values_match = false
+	if offset_values.is_empty():
+		return gate_seen
+	if not gate_seen or offset_values.size() != 4:
+		original_recurring_actor_event_values_match = false
+		return true
+	original_secondary_search_last_goal = (
+		AI_IDLE_RANDOM_RULES.secondary_search_point_from_values(
+			offset_values,
+			position,
+			_original_secondary_search_world_bounds(),
+		)
+	)
+	original_secondary_search_contact_state = true
+	original_secondary_search_trigger_serial += 1
+	original_secondary_search_last_candidate_runtime_index = -1
+	if (
+		original_crt_random_source.has_method(
+			"first_original_secondary_search_candidate"
+		)
+	):
+		var candidate_value: Variant = original_crt_random_source.call(
+			"first_original_secondary_search_candidate",
+			self,
+			AI_IDLE_RANDOM_RULES.SECONDARY_SEARCH_CANDIDATE_RADIUS,
+		)
+		if (
+			candidate_value is Node2D
+			and is_instance_valid(candidate_value as Node2D)
+		):
+			original_secondary_search_last_candidate_runtime_index = int(
+				(candidate_value as Node2D).get("original_runtime_index")
+			)
+	original_secondary_search_last_navigation_applied = (
+		_issue_original_first_gameplay_path(
+			original_secondary_search_last_goal
+		)
+	)
+	return true
 
 
 func _advance_original_secondary_search_once() -> bool:
@@ -1706,6 +2051,10 @@ func _advance_original_crt_primary_candidate_scan(delta: float) -> void:
 		or not is_instance_valid(original_crt_random_source)
 	):
 		return
+	if _original_recurring_evidence_round_index() > 0:
+		original_crt_primary_candidate_scan_elapsed = 0.0
+		_advance_original_recurring_primary_search_events()
+		return
 	original_crt_primary_candidate_scan_elapsed += maxf(delta, 0.0)
 	while (
 		original_crt_primary_candidate_scan_elapsed
@@ -1722,6 +2071,57 @@ func _advance_original_crt_primary_candidate_scan(delta: float) -> void:
 		apply_original_crt_primary_candidate_scan_value(
 			random_value
 		)
+
+
+func _advance_original_recurring_primary_search_events() -> bool:
+	var round_index := _original_recurring_evidence_round_index()
+	if (
+		round_index <= 0
+		or round_index <= original_recurring_primary_last_round_index
+		or not is_alive
+	):
+		return false
+	original_recurring_primary_last_round_index = round_index
+	var events := _consume_original_recurring_actor_events(
+		ORIGINAL_PRIMARY_SEARCH_CALL_SITES
+	)
+	if events.is_empty():
+		return false
+	var gate_seen := false
+	var origin := position
+	var offset_values: Array[int] = []
+	for event: Dictionary in events:
+		var call_site_rva := int(event.get("call_site_rva", 0))
+		var actual_value := int(event.get("actual_value", -1))
+		if call_site_rva == 0x00055216:
+			gate_seen = true
+			var evidence_x := int(event.get("world_x", -1))
+			var evidence_y := int(event.get("world_y", -1))
+			if evidence_x >= 0 and evidence_y >= 0:
+				origin = Vector2(evidence_x, evidence_y)
+			apply_original_crt_primary_candidate_scan_value(actual_value)
+		elif call_site_rva in ORIGINAL_PRIMARY_SEARCH_CALL_SITES:
+			offset_values.append(actual_value)
+		else:
+			original_recurring_actor_event_values_match = false
+	if offset_values.is_empty():
+		return gate_seen
+	if not gate_seen or offset_values.size() != 4:
+		original_recurring_actor_event_values_match = false
+		return true
+	original_crt_primary_candidate_last_goal = (
+		AI_IDLE_RANDOM_RULES.primary_search_point_from_values(
+			offset_values,
+			origin,
+			_original_secondary_search_world_bounds(),
+		)
+	)
+	original_crt_primary_candidate_last_navigation_applied = (
+		_issue_original_first_gameplay_path(
+			original_crt_primary_candidate_last_goal
+		)
+	)
+	return true
 
 
 func apply_original_crt_primary_candidate_scan_value(
@@ -1845,6 +2245,27 @@ func apply_original_first_gameplay_update_outcome(
 		original_ai_idle_frame_elapsed = 0.0
 		original_route_update_active = false
 		original_ai_route_reset_serial += 1
+	if (
+		effects.has("secondary_candidate_scan")
+		or effects.has("secondary_search_destination")
+	):
+		# Types 18 and 26 reach sub_45CE90 through a second native dispatch
+		# path that is not described by the six-type direct switch. The exact
+		# first-update record is the authoritative per-actor enablement proof.
+		original_secondary_search_enabled = true
+		for random_record: Dictionary in random_records:
+			if (
+				str(random_record.get("call_site_rva", "0x0"))
+				.hex_to_int() == 0x0005CEA6
+			):
+				original_secondary_search_gate_serial = maxi(
+					original_secondary_search_gate_serial,
+					1,
+				)
+				original_secondary_search_last_gate_value = int(
+					random_record.get("value", -1)
+				)
+				break
 	var navigation_effect := ""
 	var destination := Vector2.ZERO
 	if effects.has("secondary_search_destination"):
@@ -2984,6 +3405,7 @@ func _physics_process(delta: float) -> void:
 	var safe_delta := maxf(delta, 0.0)
 	_advance_original_crt_actor_random_tick(safe_delta)
 	_advance_original_ai_shared_counter(safe_delta)
+	_advance_original_recurring_blocked_retry_events()
 	attack_cooldown_remaining = maxf(attack_cooldown_remaining - safe_delta, 0.0)
 	if combat_action != CombatAction.NONE:
 		_suspend_original_ai_idle_action()

@@ -208,8 +208,33 @@ $localSearchCallSites = @(
     '0x0005D0CB',
     '0x0005D15F')
 $actorEventCallSites = @(
+    '0x00055216',
+    '0x0005528C',
+    '0x000552A3',
+    '0x000552BA',
+    '0x000552D1',
+    '0x00055BFB',
+    '0x00055C0F',
+    '0x00055C23',
+    '0x00055C3A',
     '0x00056105',
     '0x0005614F',
+    '0x00058946',
+    '0x0005CB2B',
+    '0x0005CEA6',
+    '0x0005CF33',
+    '0x0005CF4A',
+    '0x0005CF61',
+    '0x0005CF78',
+    '0x0005D394',
+    '0x0005D47E')
+$actorEventSnapshotRequiredSites = @(
+    '0x00055216',
+    '0x00055BFB',
+    '0x00055C0F',
+    '0x00055C23',
+    '0x00055C3A',
+    '0x00056105',
     '0x00058946',
     '0x0005D394',
     '0x0005D47E')
@@ -482,7 +507,7 @@ for ($levelIndex = 0; $levelIndex -lt 12; $levelIndex++) {
                         $record.PSObject.Properties['actor_snapshot'])
                     if (
                         $null -eq $snapshotProperty -and
-                        $site -ne '0x0005614F'
+                        $site -in $actorEventSnapshotRequiredSites
                     ) {
                         throw (
                             "Actor-event snapshot is missing in " +
@@ -800,8 +825,8 @@ Write-Host (
     $LocalSearchOutputPath)
 
 $actorEventResult = [ordered]@{
-    schema_version = 1
-    catalog_id = 'original-crt-random-actor-event-timing-v1'
+    schema_version = 2
+    catalog_id = 'original-crt-random-actor-event-timing-v2'
     content_profile = [string]$startup.content_profile
     executable_sha256 = [string]$startup.executable_sha256
     event_fields = @(
@@ -830,6 +855,9 @@ $actorEventResult = [ordered]@{
         source = 'complete rounds in original CRT recurring timing evidence'
         final_incomplete_rounds_omitted = $true
         input_scope = 'target-window-only'
+        event_scope = (
+            'all proven conditional actor calls except observation gates ' +
+            'and the separately grouped five-draw local-search routine')
     }
     levels = @($actorEventLevelResults)
 }

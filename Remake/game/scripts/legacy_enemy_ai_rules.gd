@@ -251,3 +251,39 @@ static func secondary_search_point_from_values(
 	elif point.y >= world_bounds.end.y:
 		point.y = world_bounds.end.y - WORLD_MARGIN
 	return point
+
+
+static func primary_search_point_from_values(
+	values: Array[int],
+	origin: Vector2,
+	world_bounds: Rect2,
+) -> Vector2:
+	# sub_455200 uses the same four magnitude/sign operations as sub_45CE90.
+	return secondary_search_point_from_values(values, origin, world_bounds)
+
+
+static func blocked_retry_point_from_values(
+	values: Array[int],
+	origin: Vector2,
+	world_bounds: Rect2,
+) -> Vector2:
+	if values.size() != 4:
+		return origin
+	var offset_x := values[0] % SECONDARY_SEARCH_HORIZONTAL_SPAN
+	var offset_y := values[1] % SECONDARY_SEARCH_VERTICAL_SPAN
+	if values[2] % 2 > 0:
+		offset_x = -offset_x
+	if values[3] % 2 > 0:
+		offset_y = -offset_y
+	var point := origin + Vector2(offset_x, offset_y)
+	# sub_455930 applies the same outer-edge correction as the two search
+	# routines, but its retry magnitudes do not include the 64/32 minimum.
+	if point.x <= world_bounds.position.x:
+		point.x = world_bounds.position.x + WORLD_MARGIN
+	elif point.x >= world_bounds.end.x:
+		point.x = world_bounds.end.x - WORLD_MARGIN
+	if point.y <= world_bounds.position.y:
+		point.y = world_bounds.position.y + WORLD_MARGIN
+	elif point.y >= world_bounds.end.y:
+		point.y = world_bounds.end.y - WORLD_MARGIN
+	return point

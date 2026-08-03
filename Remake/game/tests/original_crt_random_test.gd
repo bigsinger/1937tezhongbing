@@ -542,6 +542,86 @@ func _test_first_gameplay_actor_side_effects() -> void:
 	candidate_actor.free()
 	candidate_game.free()
 
+	# Runtime types 18 and 26 enter the secondary-search routine through a
+	# second native dispatch path.  The first-update catalog proves the exact
+	# actors which use that path, so keep that evidence-driven enablement under
+	# a standalone test that also runs in CI without original assets.
+	var indirect_secondary_specs: Array[Dictionary] = [
+		{
+			"level_id": "m005",
+			"runtime_index": 120,
+			"scene_index": 742,
+			"runtime_type": 18,
+		},
+		{
+			"level_id": "m006",
+			"runtime_index": 69,
+			"scene_index": 1464,
+			"runtime_type": 26,
+		},
+	]
+	for spec: Dictionary in indirect_secondary_specs:
+		var level_id := str(spec.get("level_id", ""))
+		var runtime_index := int(spec.get("runtime_index", -1))
+		var indirect_outcome: Dictionary = {}
+		for outcome: Dictionary in (
+			ORIGINAL_STARTUP_CATALOG.first_gameplay_update_outcomes(
+				level_id
+			)
+		):
+			if int(outcome.get("runtime_index", -1)) == runtime_index:
+				indirect_outcome = outcome
+				break
+		var expected_sites_value: Variant = indirect_outcome.get(
+			"call_site_rvas",
+			[],
+		)
+		var indirect_records: Array[Dictionary] = []
+		if expected_sites_value is Array:
+			for record: Dictionary in (
+				ORIGINAL_STARTUP_CATALOG.first_gameplay_update_records(
+					level_id
+				)
+			):
+				if (
+					int(record.get("runtime_index", -1))
+						== runtime_index
+					and (expected_sites_value as Array).has(
+						str(record.get("call_site_rva", ""))
+					)
+				):
+					indirect_records.append(record)
+		var indirect_actor = SQUAD_UNIT_SCRIPT.new()
+		indirect_actor.scene_index = int(spec.get("scene_index", -1))
+		indirect_actor.configure_runtime_actor_type({
+			"database_header_values": [
+				0,
+				0,
+				int(spec.get("runtime_type", -1)),
+			],
+			"original_runtime_profile": {
+				"runtime_index": runtime_index,
+			},
+		})
+		var indirect_applied: bool = (
+			indirect_actor
+			. apply_original_first_gameplay_update_outcome(
+				indirect_outcome,
+				indirect_records,
+			)
+		)
+		_expect(
+			indirect_applied
+			and indirect_actor.original_secondary_search_enabled
+			and indirect_actor.original_secondary_search_gate_serial == 1
+			and indirect_actor.original_secondary_search_last_gate_value >= 0,
+			(
+				"runtime type %d keeps its catalog-proven indirect secondary "
+				+ "search dispatch"
+			) % int(spec.get("runtime_type", -1)),
+		)
+		indirect_actor.free()
+
 	var timeline_enemy = ENEMY_UNIT_SCRIPT.new()
 	var timeline: Array[Dictionary] = [
 		{"elapsed_seconds": 0.0, "position": Vector2.ZERO},
@@ -893,6 +973,27 @@ func _test_original_actor_event_timing() -> void:
 	var levels_value: Variant = catalog.get("levels", [])
 	var route_call_sites: Array[int] = [0x00058946]
 	var pursuit_call_sites: Array[int] = [0x0005D47E]
+	var primary_call_sites: Array[int] = [
+		0x00055216,
+		0x0005528C,
+		0x000552A3,
+		0x000552BA,
+		0x000552D1,
+	]
+	var blocked_call_sites: Array[int] = [
+		0x00055BFB,
+		0x00055C0F,
+		0x00055C23,
+		0x00055C3A,
+	]
+	var secondary_call_sites: Array[int] = [
+		0x0005CEA6,
+		0x0005CF33,
+		0x0005CF4A,
+		0x0005CF61,
+		0x0005CF78,
+	]
+	var reaction_call_sites: Array[int] = [0x0005CB2B]
 	var event_total := 0
 	if levels_value is Array:
 		for level_value: Variant in levels_value as Array:
@@ -916,16 +1017,48 @@ func _test_original_actor_event_timing() -> void:
 			pursuit_call_sites,
 		)
 	)
+	var primary_events: Array[Dictionary] = (
+		ORIGINAL_ACTOR_EVENT_TIMING.events_for_actor_round(
+			"m007",
+			2,
+			109,
+			primary_call_sites,
+		)
+	)
+	var blocked_events: Array[Dictionary] = (
+		ORIGINAL_ACTOR_EVENT_TIMING.events_for_actor_round(
+			"m004",
+			1,
+			69,
+			blocked_call_sites,
+		)
+	)
+	var secondary_events: Array[Dictionary] = (
+		ORIGINAL_ACTOR_EVENT_TIMING.events_for_actor_round(
+			"m004",
+			1,
+			141,
+			secondary_call_sites,
+		)
+	)
+	var reaction_events: Array[Dictionary] = (
+		ORIGINAL_ACTOR_EVENT_TIMING.events_for_actor_round(
+			"m007",
+			480,
+			78,
+			reaction_call_sites,
+		)
+	)
 	_expect(
 		levels_value is Array
 		and (levels_value as Array).size() == 12
-		and event_total == 17190
+		and event_total == 29662
 		and ORIGINAL_ACTOR_EVENT_TIMING.level_complete_round_count(
 			"m000"
 		) == 563
 		and ORIGINAL_ACTOR_EVENT_TIMING.level_event_count("m000")
-			== 1947,
-		"actor-event catalog covers all 17,190 conditional calls in 12 levels",
+			== 3073,
+		"actor-event catalog covers all 29,662 conditional calls in 12 levels",
 	)
 	_expect(
 		route_events.size() == 1
@@ -937,6 +1070,22 @@ func _test_original_actor_event_timing() -> void:
 		and int(pursuit_events[0].get("pursuit_runtime_index", -1))
 			== 118,
 		"catalog lookup retains exact route and pursuit actor identity",
+	)
+	_expect(
+		primary_events.size() == 5
+		and int(primary_events[0].get("call_site_rva", 0))
+			== 0x00055216
+		and int(primary_events[4].get("value", -1)) == 3808
+		and int(primary_events[0].get("world_x", -1)) == 3996
+		and blocked_events.size() == 4
+		and int(blocked_events[0].get("world_x", -1)) == 2446
+		and int(blocked_events[3].get("value", -1)) == 6363
+		and secondary_events.size() == 5
+		and int(secondary_events[0].get("value", -1)) == 23843
+		and int(secondary_events[4].get("value", -1)) == 26735
+		and reaction_events.size() == 1
+		and int(reaction_events[0].get("value", -1)) == 29043,
+		"catalog retains exact primary, blocked, secondary and reaction groups",
 	)
 
 	var lifecycle_game = MAIN_SCRIPT.new()

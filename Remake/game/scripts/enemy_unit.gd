@@ -427,6 +427,20 @@ func apply_original_alert_source_reaction(random_value: int) -> bool:
 	return true
 
 
+func _apply_original_tracked_target_reaction_value(
+	random_value: int,
+) -> bool:
+	if not super._apply_original_tracked_target_reaction_value(random_value):
+		return false
+	legacy_search_wait_counter = 0
+	legacy_search_wait_limit = (
+		random_value % LEGACY_ENEMY_AI_RULES.REACTION_RANDOM_SPAN
+		+ LEGACY_ENEMY_AI_RULES.REACTION_MINIMUM_LIMIT
+	)
+	legacy_search_tick_elapsed = 0.0
+	return true
+
+
 func _should_apply_original_first_gameplay_navigation(
 	effect: String,
 ) -> bool:
@@ -2394,7 +2408,8 @@ func _sample_original_attack_interval() -> float:
 	# already MOD-differential-verified timing until every earlier runtime
 	# consumer has migrated to the shared stream. Using a shifted partial-stream
 	# value here can make a visible target leave before its second rifle shot.
-	next_original_crt_random_value(0x0005CD01)
+	if _original_recurring_evidence_round_index() <= 0:
+		next_original_crt_random_value(0x0005CD01)
 	return _deterministic_attack_interval()
 
 

@@ -4,7 +4,7 @@ extends RefCounted
 const CATALOG_PATH := (
 	"res://data/original_crt_random_actor_event_timing.json"
 )
-const CATALOG_ID := "original-crt-random-actor-event-timing-v1"
+const CATALOG_ID := "original-crt-random-actor-event-timing-v2"
 const CONTENT_PROFILE := "repository-mod-12-level-20260729"
 const EVENT_FIELD_COUNT := 20
 const SHARED_COUNTER_CALL_SITES: Array[int] = [
@@ -35,7 +35,7 @@ static func load_catalog() -> Dictionary:
 		return {}
 	var catalog := parsed as Dictionary
 	if (
-		int(catalog.get("schema_version", 0)) != 1
+		int(catalog.get("schema_version", 0)) != 2
 		or str(catalog.get("catalog_id", "")) != CATALOG_ID
 		or str(catalog.get("content_profile", "")) != CONTENT_PROFILE
 	):

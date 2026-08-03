@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
-    [string]$GodotExecutable
+    [string]$GodotExecutable,
+    [switch]$SkipRealAssetChecks,
+    [switch]$SkipWindowedChecks
 )
 
 $ErrorActionPreference = 'Stop'
@@ -38,7 +40,8 @@ if ($LASTEXITCODE -ne 0) {
 & (Join-Path $PSScriptRoot 'Test-CrtRandomLocalSearchTimingBaseline.ps1')
 & (Join-Path $PSScriptRoot 'Test-CrtRandomActorEventTimingBaseline.ps1')
 & (Join-Path $PSScriptRoot 'Test-CrtRandomRuntimeStateBaseline.ps1')
-if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
+if ((-not $SkipRealAssetChecks) -and
+    (Test-Path -LiteralPath $realAssetManifest -PathType Leaf)) {
     & (Join-Path $PSScriptRoot 'Test-ModRuntimeIdentityCatalog.ps1') `
         -LevelManifest $realAssetManifest
 }
@@ -278,8 +281,21 @@ if ($LASTEXITCODE -ne 0) {
     -GodotExecutable $GodotExecutable `
     -NoBuild
 
-if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
+if ((-not $SkipRealAssetChecks) -and
+    (Test-Path -LiteralPath $realAssetManifest -PathType Leaf)) {
     & (Join-Path $PSScriptRoot 'Build-LevelFidelityBaselines.ps1') -Verify
+
+    # This is a quiet, headless state check. It never sends input or attempts
+    # to play through a mission; each level advances only through the bounded
+    # complete actor-update rounds recovered from the native telemetry.
+    & $GodotExecutable --headless --path $game `
+        --max-fps 60 --disable-vsync `
+        --script 'res://tests/recurring_crt_random_parity_probe.gd'
+    if ($LASTEXITCODE -ne 0) {
+        throw (
+            'Godot twelve-level recurring CRT random parity probe failed ' +
+            "with exit code $LASTEXITCODE.")
+    }
 
     $parityProbeOutput = Join-Path $remakeRoot 'LocalAssets\qa\verify-parity'
     New-Item -ItemType Directory -Force -Path $parityProbeOutput | Out-Null
@@ -658,43 +674,48 @@ if (Test-Path -LiteralPath $realAssetManifest -PathType Leaf) {
         throw "Godot dense navigation stress test failed with exit code $LASTEXITCODE."
     }
 
-    $campaignPerformanceOutput = Join-Path $remakeRoot (
-        'LocalAssets\qa\verify-campaign-performance')
-    & (Join-Path $PSScriptRoot 'Run-CampaignPerformance.ps1') `
-        -GodotExecutable $GodotExecutable `
-        -DurationSeconds 48 `
-        -Passes 1 `
-        -OutputDirectory $campaignPerformanceOutput `
-        -ProfileId 'verify-twelve-level-windowed-short-v1'
-
-    $productUiProbeOutput = Join-Path $remakeRoot 'LocalAssets\qa\verify-product-ui'
-    New-Item -ItemType Directory -Force -Path $productUiProbeOutput | Out-Null
-    foreach ($productUiViewport in @('1024x768', '1920x1080')) {
-        $viewportOutput = Join-Path $productUiProbeOutput $productUiViewport
-        New-Item -ItemType Directory -Force -Path $viewportOutput | Out-Null
-        & $GodotExecutable --windowed --path $game `
-            --resolution $productUiViewport `
-            --position '30000,30000' `
-            --max-fps 60 `
-            --disable-vsync `
-            --log-file (Join-Path $viewportOutput 'godot.log') `
-            --script 'res://tests/product_ui_probe.gd' -- `
-            "--output-dir=$viewportOutput"
-        if ($LASTEXITCODE -ne 0) {
-            throw (
-                "Godot $productUiViewport product UI screenshot probe failed " +
-                "with exit code $LASTEXITCODE.")
-        }
+    if ($SkipWindowedChecks) {
+        Write-Host 'Windowed performance and screenshot probes skipped by request.'
     }
-    if (Test-Path -LiteralPath $localOcrScript -PathType Leaf) {
-        Get-ChildItem -LiteralPath $productUiProbeOutput -Filter '*.jpg' -File -Recurse |
-            ForEach-Object {
-                & powershell.exe -NoProfile -ExecutionPolicy Bypass `
-                    -File $localOcrScript -ImagePath $_.FullName
-                if ($LASTEXITCODE -ne 0) {
-                    Write-Warning "Local OCR was unavailable for $($_.Name)."
-                }
+    else {
+        $campaignPerformanceOutput = Join-Path $remakeRoot (
+            'LocalAssets\qa\verify-campaign-performance')
+        & (Join-Path $PSScriptRoot 'Run-CampaignPerformance.ps1') `
+            -GodotExecutable $GodotExecutable `
+            -DurationSeconds 48 `
+            -Passes 1 `
+            -OutputDirectory $campaignPerformanceOutput `
+            -ProfileId 'verify-twelve-level-windowed-short-v1'
+
+        $productUiProbeOutput = Join-Path $remakeRoot 'LocalAssets\qa\verify-product-ui'
+        New-Item -ItemType Directory -Force -Path $productUiProbeOutput | Out-Null
+        foreach ($productUiViewport in @('1024x768', '1920x1080')) {
+            $viewportOutput = Join-Path $productUiProbeOutput $productUiViewport
+            New-Item -ItemType Directory -Force -Path $viewportOutput | Out-Null
+            & $GodotExecutable --windowed --path $game `
+                --resolution $productUiViewport `
+                --position '30000,30000' `
+                --max-fps 60 `
+                --disable-vsync `
+                --log-file (Join-Path $viewportOutput 'godot.log') `
+                --script 'res://tests/product_ui_probe.gd' -- `
+                "--output-dir=$viewportOutput"
+            if ($LASTEXITCODE -ne 0) {
+                throw (
+                    "Godot $productUiViewport product UI screenshot probe failed " +
+                    "with exit code $LASTEXITCODE.")
             }
+        }
+        if (Test-Path -LiteralPath $localOcrScript -PathType Leaf) {
+            Get-ChildItem -LiteralPath $productUiProbeOutput -Filter '*.jpg' -File -Recurse |
+                ForEach-Object {
+                    & powershell.exe -NoProfile -ExecutionPolicy Bypass `
+                        -File $localOcrScript -ImagePath $_.FullName
+                    if ($LASTEXITCODE -ne 0) {
+                        Write-Warning "Local OCR was unavailable for $($_.Name)."
+                    }
+                }
+        }
     }
 }
 

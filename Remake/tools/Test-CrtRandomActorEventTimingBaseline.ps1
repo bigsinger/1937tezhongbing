@@ -54,9 +54,9 @@ $catalog = Read-Utf8Json -Path $catalogPath
 $recurring = Read-Utf8Json -Path $recurringPath
 $startup = Read-Utf8Json -Path $startupPath
 if (
-    [int]$catalog.schema_version -ne 1 -or
+    [int]$catalog.schema_version -ne 2 -or
     [string]$catalog.catalog_id -ne
-        'original-crt-random-actor-event-timing-v1' -or
+        'original-crt-random-actor-event-timing-v2' -or
     [string]$catalog.content_profile -ne [string]$startup.content_profile -or
     [string]$catalog.executable_sha256 -ne [string]$startup.executable_sha256 -or
     [string]$recurring.content_profile -ne [string]$catalog.content_profile
@@ -86,9 +86,24 @@ $expectedFields = @(
     'pursuit_delay_counter',
     'target_runtime_index')
 $expectedSites = @(
+    '0x00055216',
+    '0x0005528C',
+    '0x000552A3',
+    '0x000552BA',
+    '0x000552D1',
+    '0x00055BFB',
+    '0x00055C0F',
+    '0x00055C23',
+    '0x00055C3A',
     '0x00056105',
     '0x0005614F',
     '0x00058946',
+    '0x0005CB2B',
+    '0x0005CEA6',
+    '0x0005CF33',
+    '0x0005CF4A',
+    '0x0005CF61',
+    '0x0005CF78',
     '0x0005D394',
     '0x0005D47E')
 if (
@@ -100,17 +115,17 @@ if (
 
 $expectedByLevel = @{}
 $expectedText = @'
-m000|563|1947|49F2B8DB6303A43026D44FB51475E38BB36E7F7FD5C9EFAA27BEE7784A19D9F3
+m000|563|3073|C9D357AE643303BBFD77B21E88421904105C96BD54D69CC85F60A8E450ECF44C
 m001|567|1797|E5DD4E4EC57ECA1DDCB0A05087D7739862B7DD2C475BBB8A0F40755FEC686ABD
 m002|205|92|55FAEE39671445C404BF0ADD8CCB91B67904622A0A05594130476CB2797F5812
 m003|560|1707|FBD1191C95D8E10517C18F189B6EAD5108C204A1C65B774EFE175ECF8CD5DA28
-m004|397|2101|3440EC0E7213BBEBA462A3B30B5C78E07847B334082B47C5ADE076CDBC606009
-m005|187|1244|586DC3FAD592D80CA2525616B43BD7667A4A98424970CAD97300A0F881B51648
-m006|561|617|849BB2FE69F29C719ABAD5676961ED2258B630C1C733063D65F132373799E033
-m007|562|3399|2D160276D045020CDC61FB4F73A5B4E7981483E6ED8DCC00830C2F4302266A85
+m004|397|3878|2A1E1E72B29E3011ED86A112040F642C6DC4526DC53F4BB9F98DFF562763C4DB
+m005|187|2069|FA7FE8598BF53DA8CC59AD77CB5C5DD9B9EABC77F813E4F2C1699C99F3401D16
+m006|561|3171|375A2FBDEFEDC61CE85FE35955BD9676042DFE9E9A818AADBBCCF2E106A5D3D1
+m007|562|9473|2F0AE448FD459DDCC17CBF19C494B26AE1A1BC7CAD064A170573D36615D3B8FC
 m008|561|1228|D7730CBBBC4290F1266EF9476A1E53337BE315AA9610F4112FCC543FE5F917EB
 m009|562|584|BAF079759156F0167FAAEB4C99E2B25DD1C5AA0834B4F365196770E3380093A3
-m010|560|960|10460153902DEFB1A22F67BA548FF2EACC2045EE3B5DEC564E1857194AE50B88
+m010|560|1076|445AEE6D0454AD7C6A6B0A4AF2A916D04AC72F6FF4E31D10D6223C058EA48BE6
 m011|560|1514|60F0D1414AA126C9466DB8BDCB48FF74D68875BA4A02701AB9C44215DD1AF8BB
 '@
 foreach ($line in $expectedText.Trim().Split("`n")) {
@@ -137,6 +152,18 @@ $siteTotals = @{}
 foreach ($site in $expectedSites) {
     $siteTotals[$site] = 0
 }
+$unsnapshottedSites = @(
+    '0x0005528C',
+    '0x000552A3',
+    '0x000552BA',
+    '0x000552D1',
+    '0x0005614F',
+    '0x0005CB2B',
+    '0x0005CEA6',
+    '0x0005CF33',
+    '0x0005CF4A',
+    '0x0005CF61',
+    '0x0005CF78')
 for ($levelIndex = 0; $levelIndex -lt 12; $levelIndex++) {
     $levelId = 'm{0:D3}' -f $levelIndex
     $level = $levels[$levelIndex]
@@ -168,6 +195,7 @@ for ($levelIndex = 0; $levelIndex -lt 12; $levelIndex++) {
 
     $previousRound = 0
     $eventLines = [Collections.Generic.List[string]]::new()
+    $eventsByRoundActor = @{}
     $levelSiteCounts = @{}
     foreach ($site in $expectedSites) {
         $levelSiteCounts[$site] = 0
@@ -192,10 +220,12 @@ for ($levelIndex = 0; $levelIndex -lt 12; $levelIndex++) {
         ) {
             throw "Actor-event ordering or identity is invalid for $levelId."
         }
-        if ($site -eq '0x0005614F') {
+        if ($site -in $unsnapshottedSites) {
             for ($fieldIndex = 4; $fieldIndex -lt $event.Count; $fieldIndex++) {
                 if ([int]$event[$fieldIndex] -ne -1) {
-                    throw "Unsnapshotted path-state event gained invented fields."
+                    throw (
+                        "Unsnapshotted actor event gained invented fields " +
+                        "for $levelId $site.")
                 }
             }
         }
@@ -234,6 +264,44 @@ for ($levelIndex = 0; $levelIndex -lt 12; $levelIndex++) {
         $siteTotals[$site] = [int]$siteTotals[$site] + 1
         $previousRound = $round
         $eventLines.Add(($event -join '|'))
+        $groupKey = "${round}|${runtimeIndex}"
+        if (-not $eventsByRoundActor.ContainsKey($groupKey)) {
+            $eventsByRoundActor[$groupKey] = (
+                [Collections.Generic.List[string]]::new())
+        }
+        $eventsByRoundActor[$groupKey].Add($site)
+    }
+    $primarySites = @($expectedSites[0..4])
+    $blockedSites = @($expectedSites[5..8])
+    $secondarySites = @($expectedSites[13..17])
+    foreach ($groupSitesValue in $eventsByRoundActor.Values) {
+        $groupSites = @($groupSitesValue)
+        $primary = @($groupSites | Where-Object { $_ -in $primarySites })
+        if (
+            $primary.Count -gt 0 -and
+            ($primary -join ',') -notin @(
+                '0x00055216',
+                ($primarySites -join ','))
+        ) {
+            throw "Primary-search event group is incomplete for $levelId."
+        }
+        $blocked = @($groupSites | Where-Object { $_ -in $blockedSites })
+        if (
+            $blocked.Count -gt 0 -and
+            ($blocked -join ',') -ne ($blockedSites -join ',')
+        ) {
+            throw "Blocked-retry event group is incomplete for $levelId."
+        }
+        $secondary = @(
+            $groupSites | Where-Object { $_ -in $secondarySites })
+        if (
+            $secondary.Count -gt 0 -and
+            ($secondary -join ',') -notin @(
+                '0x0005CEA6',
+                ($secondarySites -join ','))
+        ) {
+            throw "Secondary-search event group is incomplete for $levelId."
+        }
     }
     $eventText = [string]::Join("`n", $eventLines)
     if ($events.Count -gt 0) {
@@ -262,13 +330,28 @@ for ($levelIndex = 0; $levelIndex -lt 12; $levelIndex++) {
 }
 
 $expectedTotals = @{
+    '0x00055216' = 7143
+    '0x0005528C' = 11
+    '0x000552A3' = 11
+    '0x000552BA' = 11
+    '0x000552D1' = 11
+    '0x00055BFB' = 43
+    '0x00055C0F' = 43
+    '0x00055C23' = 43
+    '0x00055C3A' = 43
     '0x00056105' = 1464
     '0x0005614F' = 11
     '0x00058946' = 1024
+    '0x0005CB2B' = 1
+    '0x0005CEA6' = 4776
+    '0x0005CF33' = 84
+    '0x0005CF4A' = 84
+    '0x0005CF61' = 84
+    '0x0005CF78' = 84
     '0x0005D394' = 0
     '0x0005D47E' = 14691
 }
-if ($totalEvents -ne 17190) {
+if ($totalEvents -ne 29662) {
     throw "Actor-event timing total drifted: $totalEvents."
 }
 foreach ($site in $expectedSites) {
