@@ -2511,6 +2511,8 @@ func spawn_squad() -> void:
 		navigation_grid,
 		dynamic_occupancy,
 		_load_legacy_projectile_visual_catalog(),
+		Callable(self, "_commit_original_dynamic_actor_factory"),
+		Callable(self, "_commit_original_dynamic_actor_destructor"),
 	)
 	projectile_world.projectile_damage_applied.connect(_on_projectile_damage_applied)
 	projectile_world.projectile_impact_created.connect(_on_projectile_impact_created)
@@ -4137,12 +4139,21 @@ func _finish_burial() -> void:
 		_cancel_burial_command()
 		return
 	var scene_index := int(burial_target.scene_index)
+	# sub_456CD0 marks the corpse for removal, creates actor 78 through the
+	# successful sub_44A350 path, and only then lets the manager run the old
+	# corpse's derived/base destructor. Keep that nine-draw transaction atomic.
+	if not _commit_original_dynamic_actor_factory("actor 78 藏尸处"):
+		_cancel_burial_command()
+		return
 	_spawn_legacy_burial_cache(
 		burial_target.position,
 		scene_index,
 		burial_target.inventory_snapshot(),
 		burial_target.backpack_snapshot(),
 	)
+	if not _commit_original_dynamic_actor_destructor("被掩埋尸体"):
+		_cancel_burial_command()
+		return
 	if scene_index >= 0:
 		buried_enemy_scene_indices[scene_index] = true
 	burial_target.mark_legacy_corpse_buried(true)
@@ -4458,6 +4469,11 @@ func _place_or_move_sight_beacon(world_point: Vector2) -> Node2D:
 		sight_beacon.call("move_marker", world_point, seed)
 		sight_beacon.call("set_potential_observers", _living_enemy_observers())
 		return sight_beacon
+	# The original empty-ground S command creates the unique type-90 actor via
+	# sub_44A350. Repositioning an existing marker mutates it in place and must
+	# not repeat these five constructor/load-facing draws.
+	if not _commit_original_dynamic_actor_factory("actor 90 观察标记"):
+		return null
 	var marker: Node2D = LEGACY_OBSERVATION_BEACON_SCRIPT.new()
 	marker.name = "LegacyObservationBeacon"
 	marker.call(
@@ -4472,6 +4488,7 @@ func _place_or_move_sight_beacon(world_point: Vector2) -> Node2D:
 	marker.connect("observed", Callable(self, "_on_sight_beacon_observed"))
 	marker.connect("tree_exited", Callable(self, "_on_sight_beacon_exited").bind(marker))
 	add_child(marker)
+	marker.set("original_factory_random_consumed", true)
 	sight_beacon = marker
 	return marker
 
@@ -4505,6 +4522,13 @@ func _living_enemy_observers() -> Array[Node2D]:
 
 
 func _on_sight_beacon_observed(marker: Node2D, observer: Node2D) -> void:
+	if (
+		marker != null
+		and is_instance_valid(marker)
+		and not bool(marker.get("original_destructor_random_consumed"))
+		and _commit_original_dynamic_actor_destructor("actor 90 观察标记")
+	):
+		marker.set("original_destructor_random_consumed", true)
 	if marker == sight_beacon:
 		sight_beacon = null
 	if observer is ENEMY_UNIT:
@@ -5023,7 +5047,18 @@ func _spawn_legacy_special_world_object(
 	world_position: Vector2,
 	attacker: Node2D,
 	new_source_faction_id: int = -1,
+	consume_factory_random: bool = true,
 ) -> Node2D:
+	# sub_456DF0 creates actor 84/85 through sub_44A350. Both known actor
+	# resources exist in the stable product, so this is the successful factory
+	# path: four constructor draws followed by sub_45B950's loaded-facing draw.
+	# Restoring a save passes false because the persisted process-global state
+	# already includes this transaction.
+	if (
+		consume_factory_random
+		and not _commit_original_dynamic_actor_factory("actor 84/85")
+	):
+		return null
 	var world_object: Node2D = LEGACY_SPECIAL_WORLD_OBJECT_SCRIPT.new()
 	var attack_type := int(evidence_profile.get("attack_type", 0))
 	var source_faction_id := new_source_faction_id
@@ -5054,6 +5089,14 @@ func _spawn_legacy_special_world_object(
 	world_object.call("set_potential_targets", trigger_candidates)
 	world_object.connect("explosion_requested", Callable(self, "_on_world_explosion_requested"))
 	world_object.connect(
+		"resolved",
+		Callable(self, "_on_legacy_special_world_object_retired"),
+	)
+	world_object.connect(
+		"disarmed",
+		Callable(self, "_on_legacy_special_world_object_retired"),
+	)
+	world_object.connect(
 		"original_animation_audio_requested",
 		Callable(self, "_on_original_world_animation_audio_requested"),
 	)
@@ -5061,6 +5104,7 @@ func _spawn_legacy_special_world_object(
 	add_child(world_object)
 	if world_object.has_method("bind_original_crt_random_source"):
 		world_object.call("bind_original_crt_random_source", self)
+	world_object.set("original_factory_random_consumed", true)
 	legacy_special_world_objects.append(world_object)
 	_record_native_timed_explosive_presence(world_object)
 	return world_object
@@ -5094,6 +5138,62 @@ func _apply_legacy_ai_control(
 
 func _on_legacy_special_world_object_exited(world_object: Node2D) -> void:
 	legacy_special_world_objects.erase(world_object)
+
+
+func _on_legacy_special_world_object_retired(world_object: Node2D) -> void:
+	if (
+		world_object == null
+		or not is_instance_valid(world_object)
+		or bool(world_object.get("original_destructor_random_consumed"))
+	):
+		return
+	# The actor-62 request is emitted synchronously before resolved/disarmed, so
+	# the derived sub_453650 pair and base sub_450AC0 pair are consumed only
+	# after the replacement/effect factory, matching manager removal order.
+	if not _commit_original_dynamic_actor_destructor("actor 84/85"):
+		return
+	world_object.set("original_destructor_random_consumed", true)
+	if world_object.is_inside_tree():
+		world_object.queue_free()
+
+
+func _commit_original_dynamic_actor_factory(context: String) -> bool:
+	var plan: Dictionary = (
+		LEGACY_EXPLOSION_VISUAL_RULES.build_dynamic_actor_factory_plan(
+			legacy_crt_random_state,
+			true,
+		)
+	)
+	if (
+		plan.is_empty()
+		or not commit_legacy_crt_random_draws(
+			plan.get("random_draws", []) as Array
+		)
+		or legacy_crt_random_state
+			!= int(plan.get("next_random_state", -1))
+	):
+		push_error("%s 工厂的全局 CRT rand 批次不连续" % context)
+		return false
+	return true
+
+
+func _commit_original_dynamic_actor_destructor(context: String) -> bool:
+	var plan: Dictionary = (
+		LEGACY_EXPLOSION_VISUAL_RULES.build_dynamic_actor_destructor_plan(
+			legacy_crt_random_state
+		)
+	)
+	if (
+		plan.is_empty()
+		or not commit_legacy_crt_random_draws(
+			plan.get("random_draws", []) as Array
+		)
+		or legacy_crt_random_state
+			!= int(plan.get("next_random_state", -1))
+	):
+		push_error("%s 析构的全局 CRT rand 批次不连续" % context)
+		return false
+	return true
 
 
 func _consume_legacy_deployment_target(target: Node2D) -> void:
@@ -5540,9 +5640,14 @@ func _on_world_explosion_requested(
 	elif (
 		source != null
 		and source.get_script() == LEGACY_SPECIAL_WORLD_OBJECT_SCRIPT
-		and special_visual_bursts.is_empty()
 	):
-		_add_legacy_special_visual_burst(source, 11, world_position)
+		_spawn_legacy_explosion_effect(
+			world_position,
+			int(source.get("explosion_actor_type")),
+			special_visual_bursts,
+			legacy_crt_random_state,
+			true,
+		)
 	var recovered_alert_radius := _legacy_special_alert_radius(source)
 	if (
 		recovered_alert_radius > 0.0
@@ -5626,11 +5731,6 @@ func _apply_legacy_special_damage_bands(
 				"take_damage",
 				band_damage,
 				instigator if instigator != null else source,
-			)
-			_add_legacy_special_visual_burst(
-				source,
-				int(band.get("original_visual_effect_type", 11)),
-				candidate.global_position,
 			)
 			bursts.append({
 				"effect_family": int(
@@ -5977,6 +6077,14 @@ func _complete_original_drop_order() -> bool:
 	):
 		_clear_original_drop_order()
 		return false
+	# sub_4583F0 creates runtime type == item ID with sub_44A350 before removing
+	# the item from the actor container. Known droppable item SPRs use the five-
+	# draw success path; the pickup later consumes the four destructor resets.
+	if not _commit_original_dynamic_actor_factory(
+		"丢弃物品 actor %d" % item_id
+	):
+		_clear_original_drop_order()
+		return false
 	var dropped: Dictionary = actor.backpack_inventory.take_for_drop(item_id, 1)
 	if dropped.is_empty():
 		_clear_original_drop_order()
@@ -5989,6 +6097,9 @@ func _complete_original_drop_order() -> bool:
 		destination,
 		{
 			"original_inventory_kind": "backpack",
+			"original_dynamic_actor_lifecycle": true,
+			"original_factory_random_consumed": true,
+			"original_destructor_random_consumed": false,
 			"item_id": item_id,
 			"item_name": item_name,
 			"quantity": int(dropped.get("quantity", 1)),
@@ -6097,6 +6208,18 @@ func _register_mission_pickup(pickup: MISSION_PICKUP) -> void:
 
 
 func _unregister_mission_pickup(pickup: MISSION_PICKUP) -> void:
+	if (
+		pickup != null
+		and is_instance_valid(pickup)
+		and pickup.collected
+		and pickup.original_dynamic_actor_lifecycle
+		and not pickup.original_destructor_random_consumed
+	):
+		if _commit_original_dynamic_actor_destructor(
+			"世界物品 actor %d" % pickup.original_actor_type
+		):
+			pickup.original_destructor_random_consumed = true
+			pickup.item_payload["original_destructor_random_consumed"] = true
 	mission_pickups.erase(pickup)
 	_refresh_enemy_world_items()
 
@@ -6301,6 +6424,7 @@ func prepare_legacy_reinforcements_for_restore(records: Array) -> int:
 					-1,
 				)
 			),
+			false,
 		)
 		if reinforcement == null:
 			continue
@@ -6327,6 +6451,7 @@ func _spawn_legacy_reinforcement(
 	source_marker_scene_index: int,
 	serial: int,
 	leader_scene_index: int,
+	consume_factory_random: bool = true,
 ) -> ENEMY_UNIT:
 	if dynamic_occupancy == null or template.is_empty():
 		return null
@@ -6377,9 +6502,14 @@ func _spawn_legacy_reinforcement(
 		attack_groups,
 		death_groups,
 	)
-	_bind_original_crt_random_actor(reinforcement, 1)
-	reinforcement.initialize_dynamic_original_crt_random()
-	reinforcement.apply_original_crt_enemy_startup_profile()
+	if not _bind_original_crt_random_actor(reinforcement, 1):
+		reinforcement.queue_free()
+		return null
+	if consume_factory_random:
+		if not reinforcement.initialize_dynamic_original_crt_random():
+			reinforcement.queue_free()
+			return null
+		reinforcement.apply_original_crt_enemy_startup_profile()
 	reinforcement.configure_original_ai_idle_animation(stand_action_groups)
 	reinforcement.original_mission_number = int(
 		current_mission.get("number", current_level_index + 1)

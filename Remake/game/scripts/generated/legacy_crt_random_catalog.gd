@@ -259,10 +259,10 @@ const CALL_SITES := {
     0x0005BFAC: {
         "caller_rva": 0x0005BD40,
         "engine_symbol": "sub_45BD40",
-        "semantic_name": "reload_actor_runtime_state",
+        "semantic_name": "dormant_unreferenced_actor_reload_state",
         "domain": "actor_initialization",
         "purpose": "reload_facing_rand_mod_9_clamped_to_at_least_1",
-        "formal_missions": true,
+        "formal_missions": false,
     },
     0x0005C81C: {
         "caller_rva": 0x0005C710,
@@ -819,18 +819,18 @@ const CALL_SITES := {
     0x00061DFC: {
         "caller_rva": 0x00061D10,
         "engine_symbol": "sub_461D10",
-        "semantic_name": "choose_matching_sprite_relation",
-        "domain": "scene_visuals",
+        "semantic_name": "editor_choose_matching_sprite_relation",
+        "domain": "map_authoring",
         "purpose": "matching_candidate_index_rand_mod_count",
-        "formal_missions": true,
+        "formal_missions": false,
     },
     0x00061E3A: {
         "caller_rva": 0x00061D10,
         "engine_symbol": "sub_461D10",
-        "semantic_name": "choose_matching_sprite_relation",
-        "domain": "scene_visuals",
+        "semantic_name": "editor_choose_matching_sprite_relation",
+        "domain": "map_authoring",
         "purpose": "equal_relation_orientation_rand_mod_4",
-        "formal_missions": true,
+        "formal_missions": false,
     },
     0x00064138: {
         "caller_rva": 0x00064120,

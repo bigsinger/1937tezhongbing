@@ -143,6 +143,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "Godot projectile and inventory tests failed with exit code $LASTEXITCODE."
 }
 
+& $GodotExecutable --headless --path $game --script 'res://tests/projectile_actor_lifecycle_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot projectile actor lifecycle tests failed with exit code $LASTEXITCODE."
+}
+
 & $GodotExecutable --headless --path $game --script 'res://tests/original_inventory_test.gd'
 if ($LASTEXITCODE -ne 0) {
     throw "Godot original inventory parity tests failed with exit code $LASTEXITCODE."

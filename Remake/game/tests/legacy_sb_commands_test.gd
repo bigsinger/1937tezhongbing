@@ -117,6 +117,7 @@ func _test_observation_marker_is_singleton_and_one_shot(
 	failures: Array[String],
 ) -> void:
 	var game: Node2D = MAIN.new()
+	game.legacy_crt_random_trace_enabled = true
 	var enemy := _make_enemy(102, Vector2(96.0, 0.0))
 	enemy.original_direction_index = 3
 	enemy.sense_profile = {
@@ -134,18 +135,34 @@ func _test_observation_marker_is_singleton_and_one_shot(
 		"_place_or_move_sight_beacon", Vector2(112.0, 0.0)
 	)
 	_expect(
-		first == second and second.position == Vector2(112.0, 0.0),
-		"S empty-ground clicks move one global actor-90 marker instead of accumulating markers",
+		first == second
+		and second.position == Vector2(112.0, 0.0)
+		and game.legacy_crt_random_trace.size() == 5,
+		"S creates actor 90 once through the five-draw factory, then moves it in place",
 		failures,
 	)
 	second.call("force_poll_result_for_tests", 1)
 	second.call("advance_world_ticks", 1)
+	var marker_sites: Array[int] = []
+	for draw: Dictionary in game.legacy_crt_random_trace:
+		marker_sites.append(int(draw.get("call_site_rva", 0)))
 	_expect(
 		game.sight_beacon == null
 		and game.sight_observation_target == enemy
 		and enemy.selected
-		and enemy.tactical_ranges_visible,
-		"the first valid observer consumes actor 90 and becomes the persistent observed enemy",
+		and enemy.tactical_ranges_visible
+		and marker_sites == [
+			0x00050967,
+			0x00050980,
+			0x0005340B,
+			0x0005358B,
+			0x0005BBBC,
+			0x00053655,
+			0x000537A3,
+			0x00050B64,
+			0x00050B7D,
+		],
+		"the first valid observer consumes actor 90 through the exact four-draw destructor",
 		failures,
 	)
 	game.free()
@@ -171,6 +188,7 @@ func _test_burial_tick_limit_cache_and_inventory_copy(
 	failures: Array[String],
 ) -> void:
 	var game: Node2D = MAIN.new()
+	game.legacy_crt_random_trace_enabled = true
 	var worker: Node2D = SQUAD_UNIT.new()
 	worker.scene_index = 11
 	worker.position = Vector2.ZERO
@@ -213,11 +231,25 @@ func _test_burial_tick_limit_cache_and_inventory_copy(
 		failures,
 	)
 	game.call("_advance_burial_command_world_tick")
+	var burial_sites: Array[int] = []
+	for draw: Dictionary in game.legacy_crt_random_trace:
+		burial_sites.append(int(draw.get("call_site_rva", 0)))
 	_expect(
 		not corpse.visible
 		and game.buried_enemy_scene_indices.has(212)
-		and game.legacy_burial_caches.size() == 1,
-		"B completes only on the 101st command tick and replaces the corpse",
+		and game.legacy_burial_caches.size() == 1
+		and burial_sites == [
+			0x00050967,
+			0x00050980,
+			0x0005340B,
+			0x0005358B,
+			0x0005BBBC,
+			0x00053655,
+			0x000537A3,
+			0x00050B64,
+			0x00050B7D,
+		],
+		"B creates actor 78 before retiring the corpse with the exact nine-draw order",
 		failures,
 	)
 	var cache: Node2D = game.legacy_burial_caches[0]

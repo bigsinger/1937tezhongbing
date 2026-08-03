@@ -22,6 +22,8 @@ var externally_polled := false
 var original_frames: Array[Texture2D] = []
 var original_frame_hold_ticks := 1
 var original_frame_index := 0
+var original_factory_random_consumed := false
+var original_destructor_random_consumed := false
 
 
 func configure(
@@ -39,6 +41,8 @@ func configure(
 		poll_state = 1
 	age_world_ticks = 0
 	consumed = false
+	original_factory_random_consumed = false
+	original_destructor_random_consumed = false
 	externally_polled = false
 	visible = true
 	_set_visual(visual)

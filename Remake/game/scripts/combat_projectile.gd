@@ -66,6 +66,10 @@ var visual_group_index := 0
 var visual_frame_index := 0
 var visual_frame_elapsed_ticks := 0
 var impact_visual: Dictionary = {}
+var dynamic_actor_factory_commit := Callable()
+var dynamic_actor_destructor_commit := Callable()
+var travelling_actor_active := false
+var impact_actor_active := false
 
 
 func configure(
@@ -79,6 +83,9 @@ func configure(
 	new_dynamic_occupancy: Variant = null,
 	new_projectile_visual: Dictionary = {},
 	new_start_world_position: Variant = null,
+	new_dynamic_actor_factory_commit: Callable = Callable(),
+	new_dynamic_actor_destructor_commit: Callable = Callable(),
+	consume_factory_random: bool = true,
 ) -> bool:
 	if (
 		new_source == null
@@ -94,8 +101,22 @@ func configure(
 	navigation_grid = new_navigation_grid
 	dynamic_occupancy = new_dynamic_occupancy
 	projectile_visual = new_projectile_visual.duplicate()
+	dynamic_actor_factory_commit = new_dynamic_actor_factory_commit
+	dynamic_actor_destructor_commit = new_dynamic_actor_destructor_commit
 	attack_type = int(projectile_profile.get("attack_type", 0))
 	delivery_mode = int(projectile_profile.get("delivery_mode", 0))
+	travelling_actor_active = false
+	impact_actor_active = false
+	var travelling_actor_type := int(
+		projectile_profile.get("runtime_actor_type", 0)
+	)
+	if travelling_actor_type > 0:
+		if (
+			consume_factory_random
+			and not _commit_dynamic_actor_factory(travelling_actor_type)
+		):
+			return false
+		travelling_actor_active = true
 	world_step_pixels = maxi(
 		int(projectile_profile.get("world_step_pixels", 1)),
 		1,
@@ -220,7 +241,7 @@ func is_blast_projectile() -> bool:
 
 func snapshot_runtime_state() -> Dictionary:
 	return {
-		"schema_version": 2,
+		"schema_version": 3,
 		"path_index": path_index,
 		"arc_tick": arc_tick,
 		"physics_tick_accumulator": physics_tick_accumulator,
@@ -230,11 +251,14 @@ func snapshot_runtime_state() -> Dictionary:
 		"visual_group_index": visual_group_index,
 		"visual_frame_index": visual_frame_index,
 		"visual_frame_elapsed_ticks": visual_frame_elapsed_ticks,
+		"travelling_actor_active": travelling_actor_active,
+		"impact_actor_active": impact_actor_active,
 	}
 
 
 func restore_runtime_state(snapshot: Dictionary) -> bool:
-	if int(snapshot.get("schema_version", 0)) != 2 or path_points.is_empty():
+	var schema_version := int(snapshot.get("schema_version", 0))
+	if schema_version not in [2, 3] or path_points.is_empty():
 		return false
 	path_index = clampi(
 		int(snapshot.get("path_index", 0)),
@@ -253,6 +277,27 @@ func restore_runtime_state(snapshot: Dictionary) -> bool:
 		State.FLYING,
 		State.RESOLVED,
 	) as State
+	if schema_version >= 3:
+		travelling_actor_active = bool(snapshot.get(
+			"travelling_actor_active",
+			state == State.FLYING
+				and int(projectile_profile.get("runtime_actor_type", 0)) > 0,
+		))
+		impact_actor_active = bool(snapshot.get(
+			"impact_actor_active",
+			state == State.LANDED,
+		))
+	else:
+		# Schema 2 predates explicit actor ownership. Infer the sole live native
+		# actor from the projectile state without replaying either factory.
+		travelling_actor_active = (
+			state == State.FLYING
+			and int(projectile_profile.get("runtime_actor_type", 0)) > 0
+		)
+		impact_actor_active = (
+			state == State.LANDED
+			and int(projectile_profile.get("impact_actor_type", 0)) > 0
+		)
 	if state == State.LANDED:
 		_configure_impact_visual_groups()
 	source_vertical_baseline = float(snapshot.get(
@@ -396,6 +441,10 @@ func _current_layer2_cell_is_blocked() -> bool:
 func _detonate_actor_61() -> void:
 	if state == State.RESOLVED:
 		return
+	# sub_463A00 removes actor 57 before it queues effect 4, whose handler then
+	# creates actor 61. Preserve that destructor-before-factory stream order.
+	if not _retire_travelling_actor():
+		return
 	var explosion_profile: Dictionary = (
 		LEGACY_EXPLOSION_RULES.profile_for_actor(61)
 	)
@@ -503,8 +552,22 @@ func _cell_to_world(cell: Vector2i) -> Vector2:
 func _begin_linear_impact() -> void:
 	if state != State.FLYING:
 		return
+	# Visible actor 80/81 is removed before effect 8 creates actor 60. Ordinary
+	# bullets have no travelling actor and enter the same impact factory here.
+	if not _retire_travelling_actor():
+		return
 	state = State.LANDED
 	visual_height = 0.0
+	var impact_actor_type := int(
+		projectile_profile.get("impact_actor_type", 0)
+	)
+	if (
+		impact_actor_type <= 0
+		or not _commit_dynamic_actor_factory(impact_actor_type)
+	):
+		_finish_resolution()
+		return
+	impact_actor_active = true
 	_configure_impact_visual_groups()
 	impact_created.emit(
 		self,
@@ -620,10 +683,52 @@ func _restored_visual_height() -> float:
 func _finish_resolution() -> void:
 	if state == State.RESOLVED:
 		return
+	if not _retire_travelling_actor() or not _retire_impact_actor():
+		return
 	state = State.RESOLVED
 	resolved_visual_remaining = RESOLVED_VISUAL_SECONDS
 	resolved.emit(self)
 	queue_redraw()
+
+
+func _commit_dynamic_actor_factory(runtime_actor_type: int) -> bool:
+	if runtime_actor_type <= 0 or not dynamic_actor_factory_commit.is_valid():
+		return true
+	return bool(dynamic_actor_factory_commit.call(
+		"projectile actor %d" % runtime_actor_type
+	))
+
+
+func _commit_dynamic_actor_destructor(runtime_actor_type: int) -> bool:
+	if runtime_actor_type <= 0 or not dynamic_actor_destructor_commit.is_valid():
+		return true
+	return bool(dynamic_actor_destructor_commit.call(
+		"projectile actor %d" % runtime_actor_type
+	))
+
+
+func _retire_travelling_actor() -> bool:
+	if not travelling_actor_active:
+		return true
+	var runtime_actor_type := int(
+		projectile_profile.get("runtime_actor_type", 0)
+	)
+	if not _commit_dynamic_actor_destructor(runtime_actor_type):
+		return false
+	travelling_actor_active = false
+	return true
+
+
+func _retire_impact_actor() -> bool:
+	if not impact_actor_active:
+		return true
+	var runtime_actor_type := int(
+		projectile_profile.get("impact_actor_type", 0)
+	)
+	if not _commit_dynamic_actor_destructor(runtime_actor_type):
+		return false
+	impact_actor_active = false
+	return true
 
 
 static func _node_scene_index(node: Node) -> int:

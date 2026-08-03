@@ -2664,13 +2664,23 @@ func _deterministic_attack_interval() -> float:
 
 
 func _sample_original_attack_interval() -> float:
-	# Consume the recovered call at the exact state transition, but retain the
-	# already MOD-differential-verified timing until every earlier runtime
-	# consumer has migrated to the shared stream. Using a shifted partial-stream
-	# value here can make a visible target leave before its second rifle shot.
-	if _original_recurring_evidence_round_index() <= 0:
-		next_original_crt_random_value(0x0005CD01)
-	return _deterministic_attack_interval()
+	# sub_45C710 stores rand()%20+20 as the next tracked-target reaction
+	# deadline.  The formal call-site audit is now closed, so use that value
+	# instead of the former deterministic compatibility surrogate.  A captured
+	# recurring round is complete and contains no 0x5CD01 event; reaching this
+	# branch while such a round is active would be a replay-state divergence, so
+	# retain its no-draw fallback rather than corrupting the proven stream.
+	if _original_recurring_evidence_round_index() > 0:
+		return _deterministic_attack_interval()
+	var random_value := next_original_crt_random_value(0x0005CD01)
+	if random_value < 0:
+		return _deterministic_attack_interval()
+	return (
+		float(20 + random_value % 20)
+		* ORIGINAL_ATTACK_REACTION_TICK_SECONDS
+		* editorial_reaction_multiplier
+		* editorial_posture_reaction_multiplier
+	)
 
 
 func _resolve_pending_hit() -> void:

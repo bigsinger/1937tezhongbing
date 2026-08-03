@@ -15,8 +15,8 @@
     "exact_runtime_callers": 25,
     "checkpoint_exact_callers": 1,
     "partial_runtime_callers": 2,
-    "unimplemented_runtime_callers": 2,
-    "nonformal_callers": 2
+    "unimplemented_runtime_callers": 0,
+    "nonformal_callers": 4
   },
   "callers": [
     {
@@ -49,7 +49,7 @@
       "implementation_markers": [
         {"path": "Remake/game/scripts/squad_unit.gd", "contains": "func consume_retired_original_crt_random"}
       ],
-      "timing_gap": "Gu Ming replacement plus actor-61/62 fire and debris retirement are connected; other native actor-deletion lifecycles still need evidence-backed hooks."
+      "timing_gap": "Gu Ming replacement, actor-84/85 placement, actor-90 observation markers, actor-78 burial replacement, manually dropped world items, actor-57/80/81 travelling visuals, actor-60 impacts, plus actor-61/62 primary, fire and debris retirement are connected; mission actor-101 and any remaining native manager-removal lifecycles still need evidence-backed hooks."
     },
     {
       "caller_rva": "0x000533F0",
@@ -66,7 +66,7 @@
       "implementation_markers": [
         {"path": "Remake/game/scripts/squad_unit.gd", "contains": "func consume_retired_original_crt_random"}
       ],
-      "timing_gap": "Gu Ming replacement plus actor-61/62 fire and debris retirement are connected; other native actor-deletion lifecycles still need evidence-backed hooks."
+      "timing_gap": "Gu Ming replacement, actor-84/85 placement, actor-90 observation markers, actor-78 burial replacement, manually dropped world items, actor-57/80/81 travelling visuals, actor-60 impacts, plus actor-61/62 primary, fire and debris retirement are connected; mission actor-101 and any remaining native manager-removal lifecycles still need evidence-backed hooks."
     },
     {
       "caller_rva": "0x00055200",
@@ -134,9 +134,9 @@
     },
     {
       "caller_rva": "0x0005BD40",
-      "status": "unimplemented_runtime",
-      "missing_sites": ["0x0005BFAC"],
-      "note": "Native actor reload randomizes facing; Remake save restoration currently preserves its own exact facing instead."
+      "status": "nonformal",
+      "missing_sites": [],
+      "note": "The dormant reload helper has no reachable caller or entry point in the supported executable; preserving the exact Remake save-facing state therefore does not omit a formal-mission random draw."
     },
     {
       "caller_rva": "0x0005C710",
@@ -239,9 +239,9 @@
     },
     {
       "caller_rva": "0x00061D10",
-      "status": "unimplemented_runtime",
-      "missing_sites": ["0x00061DFC", "0x00061E3A"],
-      "note": "Random matching-sprite relation selection is catalogued but not reproduced by a live scene consumer."
+      "status": "nonformal",
+      "missing_sites": [],
+      "note": "The two draws belong to dormant terrain-fill/autotile authoring thunks with no executable caller or entry point, not to VWF playback in the twelve formal missions."
     },
     {
       "caller_rva": "0x00064120",

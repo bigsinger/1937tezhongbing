@@ -10,6 +10,9 @@ var original_sprite: Sprite2D
 var original_actor_type := 0
 var original_target_status := 3
 var world_item_serial := 0
+var original_dynamic_actor_lifecycle := false
+var original_factory_random_consumed := false
+var original_destructor_random_consumed := false
 
 
 func configure(
@@ -34,6 +37,15 @@ func configure(
 	world_item_serial = maxi(
 		int(item_payload.get("world_item_serial", 0)),
 		0,
+	)
+	original_dynamic_actor_lifecycle = bool(
+		item_payload.get("original_dynamic_actor_lifecycle", false)
+	)
+	original_factory_random_consumed = bool(
+		item_payload.get("original_factory_random_consumed", false)
+	)
+	original_destructor_random_consumed = bool(
+		item_payload.get("original_destructor_random_consumed", false)
 	)
 	if original_actor_type > 0:
 		item_payload["original_actor_type"] = original_actor_type
@@ -73,6 +85,15 @@ func snapshot() -> Dictionary:
 		"original_actor_type": original_actor_type,
 		"original_target_status": original_target_status,
 		"world_item_serial": world_item_serial,
+		"original_dynamic_actor_lifecycle": (
+			original_dynamic_actor_lifecycle
+		),
+		"original_factory_random_consumed": (
+			original_factory_random_consumed
+		),
+		"original_destructor_random_consumed": (
+			original_destructor_random_consumed
+		),
 	}
 
 

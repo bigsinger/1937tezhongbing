@@ -414,6 +414,7 @@ func _test_enemy_challenge_trigger_wiring() -> void:
 	enemy.attack_recheck_elapsed = enemy.attack_recheck_seconds
 	enemy.chase_replan_elapsed = 0.0
 	var deadline_state: int = CRT_CATALOG.next_state(initial_state)
+	var deadline_value: int = CRT_CATALOG.random_value(deadline_state)
 	var followup_state: int = CRT_CATALOG.next_state(deadline_state)
 	var followup_value: int = CRT_CATALOG.random_value(followup_state)
 	enemy.call("_update_behavior", 0.0)
@@ -436,6 +437,14 @@ func _test_enemy_challenge_trigger_wiring() -> void:
 				enemy.attack_recheck_seconds,
 			]
 		),
+	)
+	_expect(
+		is_equal_approx(
+			enemy.attack_recheck_seconds,
+			float(20 + deadline_value % 20)
+				* enemy.ORIGINAL_ATTACK_REACTION_TICK_SECONDS,
+		),
+		"0x45CD01 now drives the exact 20..39 tick follow-up deadline",
 	)
 
 	enemy.call("_update_behavior", 0.0)

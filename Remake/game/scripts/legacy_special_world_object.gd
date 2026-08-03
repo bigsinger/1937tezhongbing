@@ -40,6 +40,7 @@ var state := State.INACTIVE
 var attack_type := 0
 var original_actor_type := 0
 var original_gfl_index := 0
+var explosion_actor_type := 0
 var consumed_item_id := 0
 var owner_actor: Node2D
 var faction_id := 0
@@ -75,6 +76,8 @@ var resolved_visual_burst_count := 0
 var visual_random_state := 1
 var crt_random_draws: Array[Dictionary] = []
 var original_crt_random_source: Node
+var original_factory_random_consumed := false
+var original_destructor_random_consumed := false
 var visual_world_size := Vector2.ZERO
 var next_particle_audio_requester_id := 1
 
@@ -98,6 +101,7 @@ func configure(
 	evidence_profile = profile.duplicate(true)
 	original_actor_type = int(profile.get("original_actor_type", 0))
 	original_gfl_index = int(profile.get("original_gfl_index", 0))
+	explosion_actor_type = int(profile.get("explosion_actor_type", 0))
 	consumed_item_id = int(profile.get("ammo_item_id", 0))
 	owner_actor = new_owner
 	faction_id = new_faction_id
@@ -121,6 +125,8 @@ func configure(
 	visual_random_state = new_visual_random_state
 	crt_random_draws.clear()
 	original_crt_random_source = null
+	original_factory_random_consumed = false
+	original_destructor_random_consumed = false
 	original_frames.clear()
 	original_anchor = Vector2.ZERO
 	original_frame_hold_ticks = 1
@@ -395,7 +401,7 @@ func snapshot() -> Dictionary:
 			"repeat_count": int(particle.get("repeat_count", 1)),
 		})
 	return {
-		"schema_version": 2,
+		"schema_version": 3,
 		"attack_type": attack_type,
 		"state": state,
 		"x": position.x,
@@ -413,6 +419,12 @@ func snapshot() -> Dictionary:
 		"visual_random_state": visual_random_state,
 		"resolved_visual_burst_count": resolved_visual_burst_count,
 		"resolved_particles": particle_snapshots,
+		"original_factory_random_consumed": (
+			original_factory_random_consumed
+		),
+		"original_destructor_random_consumed": (
+			original_destructor_random_consumed
+		),
 	}
 
 
@@ -439,6 +451,18 @@ func restore_runtime_state(snapshot_value: Dictionary) -> bool:
 		int(snapshot_value.get("resolved_visual_burst_count", 0)),
 		0,
 	)
+	# Every persistable record represents an actor that already passed the
+	# native sub_44A350 factory before the save was written. Schema-1/2 saves
+	# predate this diagnostic flag, so true is their only non-duplicating
+	# migration value.
+	original_factory_random_consumed = bool(snapshot_value.get(
+		"original_factory_random_consumed",
+		true,
+	))
+	original_destructor_random_consumed = bool(snapshot_value.get(
+		"original_destructor_random_consumed",
+		false,
+	))
 	resolved_particles.clear()
 	next_particle_audio_requester_id = 1
 	var raw_particles: Variant = snapshot_value.get(
@@ -563,8 +587,9 @@ func _trigger_and_detonate(candidate: Node2D) -> void:
 		blast_vertical_radius,
 		faction_id,
 	)
-	if resolved_visual_burst_count == 0:
-		add_recovered_visual_burst(11, global_position, visual_random_state)
+	# actor 84/85 does not turn into its own particle container. It requests a
+	# separate actor 62 through sub_44CDB0, then the manager retires the original
+	# object. Main owns that actor-62 factory and the following destructor order.
 	resolved.emit(self)
 
 

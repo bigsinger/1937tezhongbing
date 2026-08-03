@@ -43,8 +43,7 @@ func _init() -> void:
 	_test_effect_15_missing_type_102()
 	_test_persistent_scorch_and_debris_plans()
 	_test_native_bresenham_ties()
-	_test_world_object_five_cycle_lifetime()
-	_test_world_object_animation_audio()
+	_test_world_object_hands_off_actor_62()
 	_test_actor_61_effect_lifecycle()
 	_test_explosion_effect_animation_audio()
 	_test_explosion_snapshot_lifecycles()
@@ -450,7 +449,7 @@ func _test_native_bresenham_ties() -> void:
 	)
 
 
-func _test_world_object_five_cycle_lifetime() -> void:
+func _test_world_object_hands_off_actor_62() -> void:
 	var arena := Node2D.new()
 	root.add_child(arena)
 	var world_object = SPECIAL_WORLD_OBJECT.new()
@@ -481,83 +480,9 @@ func _test_world_object_five_cycle_lifetime() -> void:
 	world_object.advance_world_ticks(1)
 	_expect(
 		world_object.is_resolved()
-		and world_object.resolved_particle_count() == 2
-		and world_object.maximum_resolved_visual_lifetime_ticks() == 150,
-		"the asset-free world object still uses the recovered particle plan",
-	)
-	world_object.advance_world_ticks(89)
-	_expect(
-		world_object.resolved_particle_count() == 2,
-		"both type-71 particles remain before their 150-tick boundary",
-	)
-	world_object.advance_world_ticks(1)
-	_expect(
-		world_object.resolved_particle_count() == 2,
-		"factory draws shift the second variant without shortening either lifetime",
-	)
-	world_object.advance_world_ticks(59)
-	_expect(
-		world_object.resolved_particle_count() == 2,
-		"both ten-frame type-71 particles remain through tick 149",
-	)
-	world_object.advance_world_ticks(1)
-	_expect(
-		world_object.resolved_particle_count() == 0,
-		"the final particle ends after its fifth cycle at tick 150",
-	)
-	arena.queue_free()
-
-
-func _test_world_object_animation_audio() -> void:
-	var arena := Node2D.new()
-	root.add_child(arena)
-	var world_object = SPECIAL_WORLD_OBJECT.new()
-	arena.add_child(world_object)
-	var events: Array[Dictionary] = []
-	world_object.original_animation_audio_requested.connect(
-		func(
-			_source: Node2D,
-			gfl_index: int,
-			continuous: bool,
-			local_requester_id: int,
-		) -> void:
-			events.append({
-				"gfl_index": gfl_index,
-				"continuous": continuous,
-				"local_requester_id": local_requester_id,
-			})
-	)
-	var catalog := {
-		21: {"action_index": 0, "sound_gfl_index": -1},
-		23: {"action_index": 1, "sound_gfl_index": 1350},
-		25: {"action_index": 1, "sound_gfl_index": 1350},
-	}
-	var profile: Dictionary = SPECIAL_PROFILES.profile_for_attack_type(8)
-	world_object.configure(
-		profile,
-		Vector2(100.0, 100.0),
-		null,
-		3,
-		null,
-		catalog,
-		Vector2(1000.0, 1000.0),
-		RULES.CRT_INITIAL_STATE,
-	)
-	var enemy := MockEnemy.new()
-	enemy.position = Vector2(100.0, 100.0)
-	arena.add_child(enemy)
-	var candidates: Array[Node2D] = [enemy]
-	world_object.set_potential_targets(candidates)
-	world_object.advance_world_ticks(1)
-	world_object.advance_world_ticks(1)
-	_expect(
-		events.size() == 2
-		and int(events[0].get("gfl_index", -1)) == 1350
-		and int(events[1].get("gfl_index", -1)) == 1350
-		and bool(events[0].get("continuous", false))
-		and bool(events[1].get("continuous", false))
-		and int(events[0].get("local_requester_id", 0)) > 0,
-		"both actor-62 fire particles request their authored continuous SPR sound",
+		and world_object.resolved_particle_count() == 0
+		and world_object.maximum_resolved_visual_lifetime_ticks() == 0,
+		"actor 84 resolves without impersonating the separately created actor 62",
 	)
 	arena.queue_free()
 
@@ -775,14 +700,14 @@ func _test_explosion_snapshot_lifecycles() -> void:
 	var restored_snapshot := restored_object.snapshot() as Dictionary
 	_expect(
 		restored_ok and restored_snapshot == object_snapshot,
-		"actor 62 world-object save/load preserves every resolved particle",
+		"legacy resolved actor-84 snapshots remain schema-compatible without actor-62 particles",
 	)
 	source_object.advance_world_ticks(113)
 	restored_object.advance_world_ticks(113)
 	_expect(
 		source_object.resolved_particle_count() == 0
 		and restored_object.resolved_particle_count() == 0,
-		"restored actor 62 particles finish on the same tick",
+		"legacy resolved actor-84 snapshots remain particle-free",
 	)
 	arena.queue_free()
 

@@ -26,16 +26,22 @@ var combatants: Array[Node2D] = []
 var navigation_grid: Variant
 var dynamic_occupancy: Variant
 var visual_catalog: Dictionary = {}
+var dynamic_actor_factory_commit := Callable()
+var dynamic_actor_destructor_commit := Callable()
 
 
 func configure_runtime(
 	new_navigation_grid: Variant,
 	new_dynamic_occupancy: Variant,
 	new_visual_catalog: Dictionary = {},
+	new_dynamic_actor_factory_commit: Callable = Callable(),
+	new_dynamic_actor_destructor_commit: Callable = Callable(),
 ) -> void:
 	navigation_grid = new_navigation_grid
 	dynamic_occupancy = new_dynamic_occupancy
 	visual_catalog = new_visual_catalog.duplicate()
+	dynamic_actor_factory_commit = new_dynamic_actor_factory_commit
+	dynamic_actor_destructor_commit = new_dynamic_actor_destructor_commit
 
 
 func set_combatants(new_combatants: Array[Node2D]) -> void:
@@ -57,6 +63,7 @@ func launch_for_weapon(
 	weapon_profile: Dictionary,
 	target_world_position: Variant = null,
 	start_world_position: Variant = null,
+	consume_factory_random: bool = true,
 ) -> Node2D:
 	var attack_type := int(weapon_profile.get("attack_type", 0))
 	var projectile_profile: Dictionary = PROJECTILE_PROFILES.profile_for_attack_type(attack_type)
@@ -96,6 +103,9 @@ func launch_for_weapon(
 		dynamic_occupancy,
 		projectile_visual,
 		start_world_position,
+		dynamic_actor_factory_commit,
+		dynamic_actor_destructor_commit,
+		consume_factory_random,
 	):
 		projectile.queue_free()
 		return null

@@ -627,6 +627,7 @@ func _test_main_special_action_lifecycle_without_assets(failures: Array[String])
 	# Its child graph and signal wiring still exercise the complete no-asset path.
 	var game = MAIN_SCRIPT.new()
 	game.converted_root = ""
+	game.legacy_crt_random_trace_enabled = true
 	var attacker := MockActor.new()
 	attacker.configure(3, Vector2.ZERO, 500)
 	game.add_child(attacker)
@@ -648,12 +649,49 @@ func _test_main_special_action_lifecycle_without_assets(failures: Array[String])
 	)
 	_expect(
 		game.legacy_special_world_objects.size() == 1
-		and not bool(game.legacy_special_world_objects[0].call("has_original_texture")),
-		"Main creates a type 8 fallback world object when converted assets are absent",
+		and not bool(game.legacy_special_world_objects[0].call("has_original_texture"))
+		and game.legacy_crt_random_draw_index == 5
+		and bool(game.legacy_special_world_objects[0].get(
+			"original_factory_random_consumed"
+		)),
+		"Main creates actor 84 through the exact five-draw dynamic factory",
 		failures,
 	)
-	game.legacy_special_world_objects[0].call("advance_world_ticks", 1)
-	_expect(enemy.current_hit_points == 172, "Main receives the recovered 128-damage type 8 blast", failures)
+	var triggered_object: Node2D = game.legacy_special_world_objects[0]
+	triggered_object.call("advance_world_ticks", 1)
+	var trace_sites: Array[int] = []
+	for draw: Dictionary in game.legacy_crt_random_trace:
+		trace_sites.append(int(draw.get("call_site_rva", 0)))
+	_expect(
+		enemy.current_hit_points == 172
+		and game.legacy_explosion_effects.size() == 1
+		and bool(triggered_object.get("original_destructor_random_consumed"))
+		and trace_sites.slice(0, 5) == [
+			0x00050967,
+			0x00050980,
+			0x0005340B,
+			0x0005358B,
+			0x0005BBBC,
+		]
+		and trace_sites.slice(trace_sites.size() - 4) == [
+			0x00053655,
+			0x000537A3,
+			0x00050B64,
+			0x00050B7D,
+		],
+		(
+			"actor 84 requests a separate actor 62 before its derived/base destructor "
+			+ "(hp=%d effects=%d destructor=%s draws=%d enabled=%s sites=%s)"
+		) % [
+			enemy.current_hit_points,
+			game.legacy_explosion_effects.size(),
+			str(triggered_object.get("original_destructor_random_consumed")),
+			game.legacy_crt_random_draw_index,
+			str(game.legacy_crt_random_trace_enabled),
+			str(trace_sites),
+		],
+		failures,
+	)
 
 	game.call(
 		"_on_legacy_special_action_requested",

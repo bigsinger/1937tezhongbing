@@ -180,10 +180,11 @@
     {
       "caller_rva": "0x0005BD40",
       "engine_symbol": "sub_45BD40",
-      "semantic_name": "reload_actor_runtime_state",
+      "semantic_name": "dormant_unreferenced_actor_reload_state",
       "domain": "actor_initialization",
-      "formal_missions": true,
+      "formal_missions": false,
       "confidence": "decompiled",
+      "reachability_evidence": "The only direct callers are sub_449FA0 and sub_44A090; neither function has an incoming code/data xref or PE entry point in the supported executable, and the site is absent from all twelve process-local formal-level traces.",
       "operations": [
         {"purpose": "reload_facing_rand_mod_9_clamped_to_at_least_1", "sites": ["0x0005BFAC"]}
       ]
@@ -367,10 +368,11 @@
     {
       "caller_rva": "0x00061D10",
       "engine_symbol": "sub_461D10",
-      "semantic_name": "choose_matching_sprite_relation",
-      "domain": "scene_visuals",
-      "formal_missions": true,
+      "semantic_name": "editor_choose_matching_sprite_relation",
+      "domain": "map_authoring",
+      "formal_missions": false,
       "confidence": "decompiled",
+      "reachability_evidence": "The function is reachable only through the unused terrain-fill/autotile authoring thunks at 0x0044ACA0 and 0x0044ACC0; those thunks have no incoming code/data xref or PE entry point, and neither site occurs in any of the twelve process-local formal-level traces.",
       "operations": [
         {"purpose": "matching_candidate_index_rand_mod_count", "sites": ["0x00061DFC"]},
         {"purpose": "equal_relation_orientation_rand_mod_4", "sites": ["0x00061E3A"]}

@@ -34,6 +34,12 @@ actor 60；首匹配 GFL 306 `火花效果.spr` 的 4 帧各保持 2 world tick�
 每帧 3 tick。投射物命中、爆炸警报、战斗状态文字和原版音效事件均接入主
 战斗事件链；未结算路径索引、弧线 tick、SPR 高度和视觉帧会进入存档。
 
+投射物本体仍是原版 `sub_464DF0` 的独立 `0x44` 字节结构，但 actor 57/80/81
+及命中 actor 60 都走动态 actor 管理器。运行时现按反编译顺序提交共享 CRT
+随机流：飞行 actor 成功工厂五次，碰撞/终点先析构四次，再创建 actor 60 或
+请求 actor 61；actor 60 动画结束后再析构四次。schema 3 快照保存飞行/命中
+actor 的归属，物理读档只恢复归属和动画进度，不重复消费存档前的工厂取数。
+
 以上 delivery mode、步长、actor/GFL、直接伤害、碰撞顺序、抛物线公式、
 actor 61 爆炸伤害/几何/警报和 SPR 发射锚点都来自原程序恢复结果，不再是
 速度、碰撞半径、弧高或延时等重制默认。攻击类型 8/10 另有持久世界对象，
@@ -158,7 +164,7 @@ type 8/10 世界对象和汽油桶走统一的世界爆炸结算，可伤害单�
 - actor 62：在 `128 × 64` 等距椭圆内造成 128 点主伤害并发布 800 半径警报；runtime type 34/86/87/88/94/95/96/97 在 `384 × 192` 椭圆内、type 66/67/68/77/93 在严格小于 256 的欧氏半径内，各另受一次 128 点伤害。两组原视觉效果编号分别为 11 和 15；每组尝试 1—2 个 64×32 散布粒子，使用原 MSVCRT 随机序列并完整播放 5 轮。可生成粒子的实际寿命为 90 或 150 world tick。
 - 汽油桶：DBL 1003 的 35 个关卡实例都是 runtime actor 53、初始生命 8。任意一次有效伤害令生命偏离 8 后，actor 53 在自己的下一次 world tick 按 `sub_4551B0` 置结束动作 1，并通过效果类型 5 创建 actor 62；因此它不是“扣至 0 才爆”。爆炸完整复用上述 actor 62 的 128 点主伤害、`128 × 64` 椭圆、特殊伤害带、800 警报和 GFL 20 动画。
 
-项目 43/45、actor 84/85/62、GFL 470/900、type 8 的 faction 1 与 `32 × 16` 触发、type 10 的 100 tick，以及上述伤害/几何/警报/粒子寿命均来自恢复路径。汽油桶的 actor 53、生命哨兵 8、效果类型 5 和 actor 62 链路也已由 35 条 VWF 状态与 `sub_4551B0`/`sub_4656C0`/`sub_4554A0` 闭合。早期秒制通用 `LandMine` 重制状态机及其默认数据已经删除；项目 43 只走原版 type 8 / actor 84 路径。
+项目 43/45、actor 84/85/62、GFL 470/900、type 8 的 faction 1 与 `32 × 16` 触发、type 10 的 100 tick，以及上述伤害/几何/警报/粒子寿命均来自恢复路径。actor 84/85 通过五次取数的成功动态工厂建立；触发后另建 actor 62，最后才消费原部署物四次派生/基类析构取数，不能把两者合并为同一粒子节点。汽油桶的 actor 53、生命哨兵 8、效果类型 5 和 actor 62 链路也已由 35 条 VWF 状态与 `sub_4551B0`/`sub_4656C0`/`sub_4554A0` 闭合。早期秒制通用 `LandMine` 重制状态机及其默认数据已经删除；项目 43 只走原版 type 8 / actor 84 路径。
 
 ## 5. 实现边界
 
@@ -195,14 +201,15 @@ type 8/10 世界对象和汽油桶走统一的世界爆炸结算，可伤害单�
 | `../SDK/include/M1937SDK/Inventory.hpp` | MOD/工具可共用的原版物品容器路由与拾取物常量 |
 | `../SDK/include/M1937SDK/Projectiles.hpp` | 0x44 投射物布局、六类规则、路径/弧线/SPR 锚点公式及 RVA 配套接口 |
 | `game/scripts/field_pickup.gd` | 一次性场景拾取物 |
-| `game/scripts/legacy_special_world_object.gd` | type 8/10 部署、触发/计时、爆炸、清理和快照 |
+| `game/scripts/legacy_special_world_object.gd` | type 8/10 部署物、触发/计时、所有者和快照；触发后交给独立 actor 62 |
+| `game/scripts/legacy_explosion_effect.gd` | actor 61/62 主动画、伤害帧子效果、析构和独立快照 |
 | `game/scripts/legacy_ai_control_effect.gd` | type 11 应用、刷新、解除和快照 |
 | `game/scripts/inventory_grid_view.gd` | 276×421 右侧五列武器/物品栏 |
 | `game/scripts/explosive_prop.gd` | actor 53 生命哨兵更新、actor 62 爆炸请求和存档状态 |
 | `game/scripts/main.gd` | 输入、原 scene 生成、背包 UI、任务与警报接线 |
 
-仍待恢复或校准的相邻内容包括：actor 61/62 与其他系统共享的完整全局随机
-调用顺序，以及爆炸对地形/遮挡的原规则。汽油桶数值、触发时序和 actor 62 动画已经恢复。六类投射规则自身
+仍待恢复或校准的相邻内容包括爆炸对地形/遮挡的原规则，以及未归类动态
+actor 的剩余管理器删除分支。汽油桶数值、触发时序和 actor 62 动画已经恢复。六类投射规则自身
 的路径、步长、碰撞、伤害、普通命中 actor 60、终点爆炸和 SPR 发射锚点已经恢复。原版物品容器
 `actor+552`、武器容器 `actor+556` 的布局、
 数量模式和十二关开局内容已经恢复，不再把不存在的弹匣/装填时间或已确认的
@@ -213,7 +220,10 @@ type 8/10 世界对象和汽油桶走统一的世界爆炸结算，可伤害单�
 `projectile_inventory_test.gd` 覆盖六类投射规则、11 个物品 ID、兼容背包切换/
 快照、最后攻击帧发射、整数路径、逐 tick 步长、L3→L2 顺序、友军拦截、
 SPR primary/tertiary 发射锚点、手榴弹终点 tick、actor 60 火花存读档、
-actor 61 的 128 伤害和 `ProjectileWorld` 分流。`original_inventory_test.gd` 覆盖武器 mode
+actor 61 的 128 伤害和 `ProjectileWorld` 分流。
+`projectile_actor_lifecycle_test.gd` 另行固定 actor 57/80/81/60 的创建、切换、
+析构和 schema 3 恢复，并核对主场景共享流中 actor 80→60 的 18 个调用点。
+`original_inventory_test.gd` 覆盖武器 mode
 0/1/2、空枪保留、无换弹和 schema 1→2 迁移；`backpack_inventory_test.gd`
 与 `original_item_runtime_test.gd` 覆盖独立物品容器、真实治疗/补给、A 页、
 丢弃、敌人拾取和死亡掉落；`real_original_inventory_test.gd` 在真实十二关

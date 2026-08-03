@@ -402,9 +402,14 @@ func _test_drop_enemy_pickup_and_death_loot(main: Node) -> void:
 	var drop_destination := main.get(
 		"original_drop_order_destination"
 	) as Vector2
+	main.legacy_crt_random_trace_enabled = true
+	main.legacy_crt_random_trace.clear()
 	source.position = drop_destination
 	source.call("cancel_path")
 	main.call("_advance_original_drop_order")
+	var drop_sites: Array[int] = []
+	for draw: Dictionary in main.legacy_crt_random_trace:
+		drop_sites.append(int(draw.get("call_site_rva", 0)))
 	_expect(
 		(main.mission_pickups as Array).size() == before_pickup_count + 1,
 		"ground pickup is created when the actor reaches the destination",
@@ -421,6 +426,18 @@ func _test_drop_enemy_pickup_and_death_loot(main: Node) -> void:
 		main.mission_pickups as Array
 	)[before_pickup_count] as Node2D
 	_expect(
+		bool(dropped_pickup.get("original_dynamic_actor_lifecycle"))
+		and bool(dropped_pickup.get("original_factory_random_consumed"))
+		and drop_sites == [
+			0x00050967,
+			0x00050980,
+			0x0005340B,
+			0x0005358B,
+			0x0005BBBC,
+		],
+		"manual drop creates the item actor through the exact five-draw factory",
+	)
+	_expect(
 		bool(
 			carrier.call(
 				"_begin_legacy_world_item_investigation",
@@ -429,8 +446,22 @@ func _test_drop_enemy_pickup_and_death_loot(main: Node) -> void:
 		),
 		"eligible enemy begins original world-item route",
 	)
+	main.legacy_crt_random_trace.clear()
 	carrier.call("_update_legacy_world_item_investigation", 0.0)
-	_expect((main.mission_pickups as Array).is_empty(), "enemy consumes ground pickup")
+	var pickup_sites: Array[int] = []
+	for draw: Dictionary in main.legacy_crt_random_trace:
+		pickup_sites.append(int(draw.get("call_site_rva", 0)))
+	_expect(
+		(main.mission_pickups as Array).is_empty()
+		and bool(dropped_pickup.get("original_destructor_random_consumed"))
+		and pickup_sites == [
+			0x00053655,
+			0x000537A3,
+			0x00050B64,
+			0x00050B7D,
+		],
+		"enemy pickup retires the world-item actor through the exact four-draw destructor",
+	)
 	_expect(
 		int(carrier_inventory.call("item_count", 48)) == before_count + 1,
 		"enemy carries the picked-up original item",

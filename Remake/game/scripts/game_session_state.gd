@@ -1448,6 +1448,7 @@ static func _restore_legacy_special_world_objects(
 			Vector2(float(record.get("x", 0.0)), float(record.get("y", 0.0))),
 			owner,
 			int(record.get("source_faction_id", 3)),
+			false,
 		)
 		if (
 			not world_object is Node2D
@@ -1704,6 +1705,7 @@ static func _restore_projectiles(game: Node, records: Array, warnings: Array[Str
 			record.get("weapon_profile", {}) as Dictionary,
 			destination,
 			saved_start,
+			false,
 		)
 		if not projectile is Node2D:
 			warnings.append("an in-flight projectile could not be restored")
