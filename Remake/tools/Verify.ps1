@@ -37,6 +37,7 @@ if ($LASTEXITCODE -ne 0) {
 & (Join-Path $PSScriptRoot 'Test-CrtRandomStartupBaseline.ps1')
 & (Join-Path $PSScriptRoot 'Test-CrtRandomRuntimeTimingBaseline.ps1')
 & (Join-Path $PSScriptRoot 'Test-CrtRandomRecurringTimingBaseline.ps1')
+& (Join-Path $PSScriptRoot 'Test-CrtRandomInputBranchTimingBaseline.ps1')
 & (Join-Path $PSScriptRoot 'Test-CrtRandomLocalSearchTimingBaseline.ps1')
 & (Join-Path $PSScriptRoot 'Test-CrtRandomActorEventTimingBaseline.ps1')
 & (Join-Path $PSScriptRoot 'Test-CrtRandomRuntimeStateBaseline.ps1')
@@ -294,6 +295,18 @@ if ((-not $SkipRealAssetChecks) -and
     if ($LASTEXITCODE -ne 0) {
         throw (
             'Godot twelve-level recurring CRT random parity probe failed ' +
+            "with exit code $LASTEXITCODE.")
+    }
+
+    # A second bounded, headless probe replays only the recovered m000
+    # selection/movement branch. It never controls the desktop pointer or tries
+    # to finish the mission; two ground commands close 413 actor-update rounds.
+    & $GodotExecutable --headless --path $game `
+        --max-fps 60 --disable-vsync `
+        --script 'res://tests/input_crt_random_parity_probe.gd'
+    if ($LASTEXITCODE -ne 0) {
+        throw (
+            'Godot input-branch CRT random parity probe failed ' +
             "with exit code $LASTEXITCODE.")
     }
 

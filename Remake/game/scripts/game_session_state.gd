@@ -352,6 +352,16 @@ static func _capture_world(game: Node) -> Dictionary:
 			)
 			else ""
 		),
+		"legacy_crt_input_branch_id": (
+			str(game.get("legacy_crt_input_branch_id"))
+			if _has_property(game, "legacy_crt_input_branch_id")
+			else ""
+		),
+		"legacy_crt_input_branch_active": (
+			bool(game.get("legacy_crt_input_branch_active"))
+			if _has_property(game, "legacy_crt_input_branch_active")
+			else false
+		),
 		"legacy_ambient_particle": (
 			_json_value(game.call("legacy_ambient_particle_snapshot"))
 			if game.has_method("legacy_ambient_particle_snapshot")
@@ -1160,6 +1170,36 @@ static func _restore_world(game: Node, world: Dictionary, warnings: Array[String
 				"",
 			)),
 		)
+	var input_branch_id := str(world.get(
+		"legacy_crt_input_branch_id",
+		"",
+	))
+	var input_branch_active := bool(world.get(
+		"legacy_crt_input_branch_active",
+		false,
+	))
+	if game.has_method("restore_legacy_crt_input_branch"):
+		if not bool(game.call(
+			"restore_legacy_crt_input_branch",
+			input_branch_id,
+			input_branch_active,
+		)):
+			game.set(
+				"legacy_crt_recurring_evidence_replay_active",
+				false,
+			)
+			game.set(
+				"legacy_crt_recurring_evidence_invalidation_reason",
+				"invalid_input_branch_restore",
+			)
+	else:
+		if _has_property(game, "legacy_crt_input_branch_id"):
+			game.set("legacy_crt_input_branch_id", input_branch_id)
+		if _has_property(game, "legacy_crt_input_branch_active"):
+			game.set(
+				"legacy_crt_input_branch_active",
+				input_branch_active,
+			)
 	var ambient_particle_state: Variant = world.get(
 		"legacy_ambient_particle",
 		{},

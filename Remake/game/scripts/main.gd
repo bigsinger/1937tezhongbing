@@ -105,6 +105,9 @@ const ORIGINAL_CRT_RANDOM_LOCAL_SEARCH_TIMING: Script = preload(
 const ORIGINAL_CRT_RANDOM_ACTOR_EVENT_TIMING: Script = preload(
 	"res://scripts/original_crt_random_actor_event_timing.gd"
 )
+const ORIGINAL_CRT_RANDOM_INPUT_BRANCH_TIMING: Script = preload(
+	"res://scripts/original_crt_random_input_branch_timing.gd"
+)
 const LEGACY_AMBIENT_PARTICLE_FIELD_SCRIPT: Script = preload(
 	"res://scripts/legacy_ambient_particle_field.gd"
 )
@@ -408,6 +411,8 @@ var legacy_crt_recurring_first_gate_runtime_index := -1
 var legacy_crt_recurring_evidence_replay_active := false
 var legacy_crt_recurring_evidence_max_round := 0
 var legacy_crt_recurring_evidence_invalidation_reason := ""
+var legacy_crt_input_branch_id := ""
+var legacy_crt_input_branch_active := false
 var legacy_crt_random_trace_enabled := false
 var legacy_crt_random_trace: Array[Dictionary] = []
 var legacy_crt_random_parity_trace_enabled := false
@@ -552,6 +557,15 @@ func original_recurring_local_search_event(
 		or runtime_index < 0
 	):
 		return {}
+	if legacy_crt_input_branch_active:
+		return (
+			ORIGINAL_CRT_RANDOM_INPUT_BRANCH_TIMING
+			. local_search_event_for_actor_round(
+				legacy_crt_input_branch_id,
+				legacy_crt_recurring_round_index,
+				runtime_index,
+			)
+		)
 	return (
 		ORIGINAL_CRT_RANDOM_LOCAL_SEARCH_TIMING
 		. event_for_actor_round(
@@ -573,6 +587,16 @@ func original_recurring_actor_events(
 		or runtime_index < 0
 	):
 		return []
+	if legacy_crt_input_branch_active:
+		return (
+			ORIGINAL_CRT_RANDOM_INPUT_BRANCH_TIMING
+			. events_for_actor_round(
+				legacy_crt_input_branch_id,
+				legacy_crt_recurring_round_index,
+				runtime_index,
+				accepted_call_sites,
+			)
+		)
 	return (
 		ORIGINAL_CRT_RANDOM_ACTOR_EVENT_TIMING.events_for_actor_round(
 			legacy_crt_recurring_level_id,
@@ -595,11 +619,98 @@ func original_recurring_evidence_round_index() -> int:
 	)
 
 
+func begin_legacy_crt_input_branch(branch_id: String) -> bool:
+	if (
+		not legacy_crt_recurring_evidence_replay_active
+		or branch_id.is_empty()
+	):
+		return false
+	var profile: Dictionary = (
+		ORIGINAL_CRT_RANDOM_INPUT_BRANCH_TIMING.branch_profile(branch_id)
+	)
+	var quiet_prefix_round_count := int(
+		profile.get("quiet_prefix_round_count", 0)
+	)
+	var profile_rounds: Array = profile.get("rounds", []) as Array
+	if (
+		profile.is_empty()
+		or str(profile.get("level_id", ""))
+			!= legacy_crt_recurring_level_id
+		or int(profile.get("complete_round_count", 0)) <= 0
+		or legacy_crt_recurring_round_index > quiet_prefix_round_count
+		or legacy_crt_recurring_round_index > profile_rounds.size()
+	):
+		return false
+	var expected_draw_index := (
+		int(profile.get("first_gameplay_sequence", 0)) - 1
+		if legacy_crt_recurring_round_index == 0
+		else int((
+			profile_rounds[legacy_crt_recurring_round_index - 1]
+			as Dictionary
+		).get("last_sequence", -1))
+	)
+	if expected_draw_index != legacy_crt_random_draw_index:
+		return false
+	legacy_crt_input_branch_id = branch_id
+	legacy_crt_input_branch_active = true
+	legacy_crt_recurring_evidence_max_round = int(
+		profile.get("complete_round_count", 0)
+	)
+	legacy_crt_recurring_evidence_invalidation_reason = ""
+	return true
+
+
+func restore_legacy_crt_input_branch(
+	branch_id: String,
+	active: bool,
+) -> bool:
+	legacy_crt_input_branch_id = ""
+	legacy_crt_input_branch_active = false
+	if not active:
+		return true
+	var profile: Dictionary = (
+		ORIGINAL_CRT_RANDOM_INPUT_BRANCH_TIMING.branch_profile(branch_id)
+	)
+	if (
+		profile.is_empty()
+		or not legacy_crt_recurring_evidence_replay_active
+		or str(profile.get("level_id", ""))
+			!= legacy_crt_recurring_level_id
+	):
+		return false
+	var profile_rounds: Array = profile.get("rounds", []) as Array
+	var round_index := legacy_crt_recurring_round_index
+	if round_index < 0 or round_index > profile_rounds.size():
+		return false
+	var minimum_draw_index := int(profile.get(
+		"first_gameplay_sequence",
+		0,
+	)) - 1
+	var maximum_draw_index := minimum_draw_index
+	if round_index > 0:
+		var round := profile_rounds[round_index - 1] as Dictionary
+		minimum_draw_index = int(round.get("first_sequence", 0))
+		maximum_draw_index = int(round.get("last_sequence", -1))
+	if (
+		legacy_crt_random_draw_index < minimum_draw_index
+		or legacy_crt_random_draw_index > maximum_draw_index
+	):
+		return false
+	legacy_crt_input_branch_id = branch_id
+	legacy_crt_input_branch_active = true
+	legacy_crt_recurring_evidence_max_round = int(
+		profile.get("complete_round_count", 0)
+	)
+	return legacy_crt_recurring_evidence_max_round > 0
+
+
 func invalidate_original_recurring_evidence(reason: String) -> void:
 	if not legacy_crt_recurring_evidence_replay_active:
 		return
 	legacy_crt_recurring_evidence_replay_active = false
 	legacy_crt_recurring_evidence_invalidation_reason = reason
+	legacy_crt_input_branch_active = false
+	legacy_crt_input_branch_id = ""
 
 
 func commit_legacy_crt_random_draws(draws: Array) -> bool:
@@ -888,6 +999,8 @@ func _reset_legacy_crt_random_for_level_load() -> void:
 	legacy_crt_recurring_evidence_replay_active = false
 	legacy_crt_recurring_evidence_max_round = 0
 	legacy_crt_recurring_evidence_invalidation_reason = ""
+	legacy_crt_input_branch_id = ""
+	legacy_crt_input_branch_active = false
 	legacy_crt_random_trace.clear()
 	if legacy_crt_random_parity_trace_enabled:
 		_restart_legacy_crt_random_parity_trace()
@@ -996,6 +1109,8 @@ func _apply_original_crt_random_startup_checkpoint(
 		legacy_crt_recurring_evidence_max_round > 0
 	)
 	legacy_crt_recurring_evidence_invalidation_reason = ""
+	legacy_crt_input_branch_id = ""
+	legacy_crt_input_branch_active = false
 	var startup_profile: Dictionary = (
 		ORIGINAL_CRT_RANDOM_STARTUP_CATALOG.level_profile(level_id)
 	)
@@ -4490,10 +4605,11 @@ func issue_formation_move(destination: Vector2) -> void:
 	_clear_original_pickup_order()
 	_clear_original_drop_order()
 	var audio_started_usec := Time.get_ticks_usec()
-	_play_original_actor_audio(
-		LEGACY_ACTOR_AUDIO_RULES.FAMILY_ACKNOWLEDGE,
-		selected_units[0],
-	)
+	# The original trace consumes sub_45D7B0 in the addressed actor's update
+	# slot (runtime index 18 in the recovered m000 movement branch), between
+	# the neighbouring actor-17 and actor-19 observation calls. Queue the
+	# request so this click cannot reorder the process-global CRT stream.
+	selected_units[0].queue_original_acknowledgement()
 	last_formation_move_audio_usec = (
 		Time.get_ticks_usec() - audio_started_usec
 	)
@@ -4693,6 +4809,9 @@ func _connect_combatant(combatant: Node2D) -> void:
 	combatant.original_animation_audio_requested.connect(
 		_on_original_animation_audio_requested
 	)
+	combatant.original_command_audio_requested.connect(
+		_on_original_command_audio_requested
+	)
 	if combatant is ENEMY_UNIT:
 		var enemy := combatant as ENEMY_UNIT
 		enemy.legacy_world_item_interaction_requested.connect(
@@ -4714,6 +4833,13 @@ func _on_enemy_original_actor_audio_requested(
 	family: String,
 ) -> void:
 	_play_original_actor_audio(family, enemy)
+
+
+func _on_original_command_audio_requested(
+	actor: Node2D,
+	family: String,
+) -> void:
+	_play_original_actor_audio(family, actor)
 
 
 func _on_original_animation_audio_requested(

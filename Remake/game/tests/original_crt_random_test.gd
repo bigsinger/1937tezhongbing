@@ -16,6 +16,9 @@ const ORIGINAL_LOCAL_SEARCH_TIMING: Script = preload(
 const ORIGINAL_ACTOR_EVENT_TIMING: Script = preload(
 	"res://scripts/original_crt_random_actor_event_timing.gd"
 )
+const ORIGINAL_INPUT_BRANCH_TIMING: Script = preload(
+	"res://scripts/original_crt_random_input_branch_timing.gd"
+)
 const AI_IDLE_RANDOM_RULES: Script = preload(
 	"res://scripts/legacy_enemy_ai_rules.gd"
 )
@@ -49,6 +52,7 @@ func _init() -> void:
 	_test_recurring_secondary_search_runtime()
 	_test_original_local_search_timing()
 	_test_original_actor_event_timing()
+	_test_original_input_branch_timing()
 	_test_recovered_shared_counter_cadence()
 	_test_original_ambient_particle_stream()
 	_test_imported_actor_profile_and_gate()
@@ -1479,6 +1483,79 @@ func _test_original_ambient_particle_stream() -> void:
 	fast_game.free()
 	restored.free()
 	field.free()
+	game.free()
+
+
+func _test_original_input_branch_timing() -> void:
+	const BRANCH_ID := "m000-basic-movement-v1"
+	var profile: Dictionary = ORIGINAL_INPUT_BRANCH_TIMING.branch_profile(
+		BRANCH_ID
+	)
+	_expect(
+		str(profile.get("level_id", "")) == "m000"
+		and int(profile.get("complete_round_count", 0)) == 413
+		and int(profile.get("quiet_prefix_round_count", 0)) == 297
+		and int(profile.get("accepted_draw_count", 0)) == 24_586
+		and int(profile.get("accepted_actor_draw_count", 0)) == 24_585
+		and int(profile.get("actor_event_count", 0)) == 2_281
+		and int(profile.get("final_draw_index", 0)) == 33_075
+		and str(profile.get("final_state_hex", "")) == "0xE9B3096A",
+		"the bounded m000 movement branch retains its complete trace profile",
+	)
+	var input_events: Array[Dictionary] = (
+		ORIGINAL_INPUT_BRANCH_TIMING.input_events(BRANCH_ID)
+	)
+	_expect(
+		input_events.size() == 2
+		and int(input_events[0].get("round_index", 0)) == 298
+		and int(input_events[0].get("runtime_index", -1)) == 18
+		and str(input_events[0].get("call_site_rva", ""))
+			== "0x0005D7CF"
+		and int(input_events[0].get("value", -1)) == 6_223
+		and int(input_events[1].get("round_index", 0)) == 358
+		and int(input_events[1].get("runtime_index", -1)) == 18
+		and int(input_events[1].get("value", -1)) == 8_747,
+		"the two movement acknowledgements remain in actor 18's update slot",
+	)
+	var accepted_sites: Array[int] = [0x00055216]
+	var round_events: Array[Dictionary] = (
+		ORIGINAL_INPUT_BRANCH_TIMING.events_for_actor_round(
+			BRANCH_ID,
+			298,
+			125,
+			accepted_sites,
+		)
+	)
+	_expect(
+		round_events.size() == 1
+		and int(round_events[0].get("value", -1)) == 31_082,
+		"input-branch actor events are indexed by round, actor and call site",
+	)
+
+	var game = MAIN_SCRIPT.new()
+	game.call("_apply_original_crt_random_startup_checkpoint", "m000")
+	game.call("_replay_original_first_gameplay_random_update", "m000", false)
+	_expect(
+		game.legacy_crt_recurring_round_index == 1
+		and game.legacy_crt_random_draw_index == 8_548
+		and game.begin_legacy_crt_input_branch(BRANCH_ID)
+		and game.legacy_crt_input_branch_active
+		and game.legacy_crt_recurring_evidence_max_round == 413,
+		"the bounded branch can replace the verified quiet prefix in-place",
+	)
+	game.legacy_crt_recurring_round_index = 298
+	game.legacy_crt_random_draw_index = 26_050
+	_expect(
+		game.restore_legacy_crt_input_branch(BRANCH_ID, true)
+		and game.legacy_crt_input_branch_active,
+		"save/load accepts a draw position inside the active input round",
+	)
+	game.legacy_crt_random_draw_index = 26_079
+	_expect(
+		not game.restore_legacy_crt_input_branch(BRANCH_ID, true)
+		and not game.legacy_crt_input_branch_active,
+		"save/load fails closed when the branch draw position is impossible",
+	)
 	game.free()
 
 

@@ -5,6 +5,7 @@ const CRT_CATALOG: Script = preload(
 	"res://scripts/generated/legacy_crt_random_catalog.gd"
 )
 const MAIN_SCRIPT: Script = preload("res://scripts/main.gd")
+const SQUAD_UNIT_SCRIPT: Script = preload("res://scripts/squad_unit.gd")
 
 const EXPECTED := [
 	["selected", 1, 0, [103], [1344]],
@@ -109,6 +110,7 @@ class RecordingMediaDirector extends CanvasLayer:
 func _init() -> void:
 	_test_exact_selector_tables()
 	_test_shared_random_stream_wiring()
+	_test_deferred_acknowledgement_update_slot()
 	_test_enemy_challenge_trigger_wiring()
 	if failures.is_empty():
 		print(
@@ -290,6 +292,73 @@ func _test_shared_random_stream_wiring() -> void:
 		and game.legacy_crt_random_draw_index == draw_count,
 		"fixed corpse-alert selector plays GFL 1355 without consuming rand()",
 	)
+	actor.free()
+	director.free()
+	game.free()
+
+
+func _test_deferred_acknowledgement_update_slot() -> void:
+	var game = MAIN_SCRIPT.new()
+	var director := RecordingMediaDirector.new()
+	game.media_director = director
+	game.call("_apply_original_crt_random_startup_checkpoint", "m000")
+	game.legacy_crt_random_trace_enabled = true
+	var actor = SQUAD_UNIT_SCRIPT.new()
+	actor.runtime_actor_type = 1
+	actor.original_runtime_index = 18
+	actor.original_crt_level_id = "m000"
+	actor.original_command_audio_requested.connect(
+		Callable(game, "_on_original_command_audio_requested")
+	)
+	var state_before := int(game.legacy_crt_random_state)
+	var draw_index_before := int(game.legacy_crt_random_draw_index)
+	actor.queue_original_acknowledgement()
+	var queued_snapshot: Dictionary = actor.original_crt_random_timing_snapshot()
+	_expect(
+		game.legacy_crt_random_state == state_before
+		and game.legacy_crt_random_draw_index == draw_index_before
+		and actor.original_pending_acknowledgement_count == 1
+		and director.requests.is_empty(),
+		"ground input queues acknowledgement without advancing the shared stream",
+	)
+
+	var restored = SQUAD_UNIT_SCRIPT.new()
+	restored.runtime_actor_type = 1
+	restored.original_runtime_index = 18
+	restored.original_crt_level_id = "m000"
+	restored.original_command_audio_requested.connect(
+		Callable(game, "_on_original_command_audio_requested")
+	)
+	_expect(
+		restored.restore_original_crt_random_timing(queued_snapshot)
+		and restored.original_pending_acknowledgement_count == 1
+		and restored.original_acknowledgement_serial == 0,
+		"pending actor-slot acknowledgement survives save and restore",
+	)
+	var expected_state: int = CRT_CATALOG.next_state(state_before)
+	var expected_value: int = CRT_CATALOG.random_value(expected_state)
+	restored.call("_physics_process", 0.0)
+	_expect(
+		game.legacy_crt_random_state == expected_state
+		and game.legacy_crt_random_draw_index == draw_index_before + 1
+		and restored.original_pending_acknowledgement_count == 0
+		and restored.original_acknowledgement_serial == 1
+		and game.legacy_crt_random_trace.size() == 1
+		and int(game.legacy_crt_random_trace[0].get("call_site_rva", 0))
+			== 0x0005D7CF
+		and int(game.legacy_crt_random_trace[0].get("runtime_index", -1)) == 18
+		and director.requests.size() == 1
+		and int(director.requests[0].get("gfl_index", -1))
+			== (1346 if expected_value % 2 == 0 else 1345),
+		"actor update consumes one m000 acknowledgement at runtime index 18",
+	)
+	restored.call("_physics_process", 0.0)
+	_expect(
+		game.legacy_crt_random_draw_index == draw_index_before + 1
+		and director.requests.size() == 1,
+		"an actor update cannot replay an already consumed acknowledgement",
+	)
+	restored.free()
 	actor.free()
 	director.free()
 	game.free()

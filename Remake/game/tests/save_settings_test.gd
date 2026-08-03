@@ -105,6 +105,8 @@ class MockGame:
 	var legacy_crt_recurring_round_index := 0
 	var legacy_crt_recurring_evidence_replay_active := false
 	var legacy_crt_recurring_evidence_invalidation_reason := ""
+	var legacy_crt_input_branch_id := ""
+	var legacy_crt_input_branch_active := false
 	var legacy_global_alarm_active := false
 	var legacy_global_alarm_counter := 0
 	var legacy_ambient_particle_state: Dictionary = {}
@@ -1102,6 +1104,14 @@ func _test_mid_mission_capture_and_apply(failures: Array[String]) -> void:
 				"legacy_crt_recurring_evidence_invalidation_reason",
 				"missing",
 			)) == ""
+			and str((session["world"] as Dictionary).get(
+				"legacy_crt_input_branch_id",
+				"",
+			)) == "m000-basic-movement-v1"
+			and bool((session["world"] as Dictionary).get(
+				"legacy_crt_input_branch_active",
+				false,
+			))
 			and int(
 				(
 					(session["world"] as Dictionary).get(
@@ -1212,6 +1222,9 @@ func _test_mid_mission_capture_and_apply(failures: Array[String]) -> void:
 				.legacy_crt_recurring_evidence_replay_active)
 			and target_game
 				.legacy_crt_recurring_evidence_invalidation_reason.is_empty()
+			and target_game.legacy_crt_input_branch_id
+				== "m000-basic-movement-v1"
+			and target_game.legacy_crt_input_branch_active
 			and int(
 				target_game.legacy_ambient_particle_state.get(
 					"update_serial",
@@ -1554,6 +1567,8 @@ func _make_mock_game(populated: bool) -> MockGame:
 		game.legacy_crt_recurring_round_index = 83
 		game.legacy_crt_recurring_evidence_replay_active = true
 		game.legacy_crt_recurring_evidence_invalidation_reason = ""
+		game.legacy_crt_input_branch_id = "m000-basic-movement-v1"
+		game.legacy_crt_input_branch_active = true
 		game.legacy_ambient_particle_state = {
 			"level_id": "m002",
 			"update_serial": 37,

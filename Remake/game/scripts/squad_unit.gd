@@ -106,6 +106,10 @@ signal original_animation_audio_requested(
 	gfl_index: int,
 	continuous: bool,
 )
+## sub_45D7B0 is reached from the addressed actor's runtime update slot.
+## Ground-command input therefore queues the acknowledgement here instead of
+## consuming the process-global CRT stream synchronously in the input handler.
+signal original_command_audio_requested(actor: Node2D, family: String)
 signal damage_received(unit: Node2D, attacker: Node2D, damage: int, remaining_hit_points: int)
 signal died(unit: Node2D, killer: Node2D)
 signal ammo_changed(unit: Node2D, magazine: int, reserve: int)
@@ -184,6 +188,8 @@ var original_recurring_blocked_retry_serial := 0
 var original_recurring_blocked_retry_last_goal := Vector2.ZERO
 var original_recurring_blocked_retry_last_navigation_applied := false
 var original_recurring_tracked_reaction_serial := 0
+var original_pending_acknowledgement_count := 0
+var original_acknowledgement_serial := 0
 var original_crt_primary_candidate_last_goal := Vector2.ZERO
 var original_crt_primary_candidate_last_navigation_applied := false
 var original_local_search_last_physics_frame := -1
@@ -982,6 +988,10 @@ func original_crt_random_timing_snapshot() -> Dictionary:
 		"primary_candidate_last_navigation_applied": (
 			original_crt_primary_candidate_last_navigation_applied
 		),
+		"pending_acknowledgement_count": (
+			original_pending_acknowledgement_count
+		),
+		"acknowledgement_serial": original_acknowledgement_serial,
 		"secondary_search": original_secondary_search_snapshot(),
 		"pursuit": original_pursuit_snapshot(),
 		"recurring_actor_events": {
@@ -1110,6 +1120,14 @@ func restore_original_crt_random_timing(state: Dictionary) -> bool:
 			"primary_candidate_last_navigation_applied",
 			false,
 		)
+	)
+	original_pending_acknowledgement_count = maxi(
+		int(state.get("pending_acknowledgement_count", 0)),
+		0,
+	)
+	original_acknowledgement_serial = maxi(
+		int(state.get("acknowledgement_serial", 0)),
+		0,
 	)
 	var secondary_search_value: Variant = state.get(
 		"secondary_search",
@@ -3104,6 +3122,19 @@ func issue_move(destination: Vector2) -> void:
 	issue_path(PackedVector2Array([destination]))
 
 
+func queue_original_acknowledgement() -> void:
+	original_pending_acknowledgement_count += 1
+
+
+func _consume_original_pending_acknowledgement() -> bool:
+	if original_pending_acknowledgement_count <= 0:
+		return false
+	original_pending_acknowledgement_count -= 1
+	original_acknowledgement_serial += 1
+	original_command_audio_requested.emit(self, "acknowledge")
+	return true
+
+
 func issue_path(path: PackedVector2Array) -> void:
 	movement_path = path.duplicate()
 	movement_path_index = 0
@@ -3406,6 +3437,7 @@ func _physics_process(delta: float) -> void:
 	_advance_original_crt_actor_random_tick(safe_delta)
 	_advance_original_ai_shared_counter(safe_delta)
 	_advance_original_recurring_blocked_retry_events()
+	_consume_original_pending_acknowledgement()
 	attack_cooldown_remaining = maxf(attack_cooldown_remaining - safe_delta, 0.0)
 	if combat_action != CombatAction.NONE:
 		_suspend_original_ai_idle_action()
