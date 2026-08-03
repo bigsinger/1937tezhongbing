@@ -26,14 +26,29 @@ class FakeNavigation:
 		pass
 
 
+class UnavailableWorldItem:
+	extends Node2D
+
+	var original_actor_type := 19
+	var world_item_serial := 1937
+
+	func is_available_original_world_item() -> bool:
+		return false
+
+
 var failures: Array[String] = []
 var checks := 0
 
 
 func _init() -> void:
+	call_deferred("_run_tests")
+
+
+func _run_tests() -> void:
 	_test_exact_alert_geometry_and_eligibility()
 	_test_coordinate_search_lifecycle_and_snapshot()
 	_test_original_coordinate_broadcast()
+	_test_remaining_original_update_random_branches()
 	if failures.is_empty():
 		print("Legacy enemy-AI tests passed (%d checks)." % checks)
 		quit(0)
@@ -516,6 +531,118 @@ func _test_original_coordinate_broadcast() -> void:
 	route_wins.free()
 	for recipient: ENEMY_UNIT in recipients:
 		recipient.free()
+
+
+func _test_remaining_original_update_random_branches() -> void:
+	var navigation := FakeNavigation.new()
+
+	var face_stream = MAIN.new()
+	face_stream.legacy_crt_random_trace_enabled = true
+	var face_enemy = _enemy(30, Vector2.ZERO, navigation)
+	var face_target = _enemy(31, Vector2(100.0, 0.0), navigation)
+	get_root().add_child(face_target)
+	face_enemy.original_crt_random_source = face_stream
+	face_enemy.original_runtime_index = 30
+	face_enemy.current_target = face_target
+	face_enemy.behavior_state = ENEMY_UNIT.BehaviorState.CHASE
+	face_enemy.call(
+		"_advance_original_tracked_target_face_gate",
+		ENEMY_UNIT.ORIGINAL_ATTACK_REACTION_TICK_SECONDS * 3.01,
+	)
+	_expect(
+		face_enemy.legacy_tracked_face_gate_serial == 3
+		and face_enemy.legacy_tracked_face_gate_last_value == 6334
+		and not face_enemy.legacy_tracked_face_gate_last_passed,
+		"tracked-target facing gate consumes the exact 50-percent native sequence",
+	)
+	var face_sites_match: bool = (
+		face_stream.legacy_crt_random_trace.size() == 3
+	)
+	for record: Dictionary in face_stream.legacy_crt_random_trace:
+		face_sites_match = (
+			face_sites_match
+			and int(record.get("call_site_rva", 0)) == 0x0005CCCD
+		)
+	_expect(
+		face_sites_match,
+		"tracked-target facing draws remain attributed to native site 0x5CCCD",
+	)
+	var face_snapshot: Dictionary = face_enemy.legacy_enemy_ai_state_snapshot()
+	var restored_face = _enemy(32, Vector2.ZERO, navigation)
+	_expect(
+		restored_face.restore_legacy_enemy_ai_state(face_snapshot)
+		and restored_face.legacy_tracked_face_gate_serial == 3
+		and restored_face.legacy_tracked_face_gate_last_value == 6334,
+		"tracked-target facing cadence survives save restoration",
+	)
+
+	var search_stream = MAIN.new()
+	search_stream.legacy_crt_random_trace_enabled = true
+	var finished_search = _enemy(33, Vector2.ZERO, navigation)
+	finished_search.original_crt_random_source = search_stream
+	finished_search.original_runtime_index = 33
+	finished_search.behavior_state = ENEMY_UNIT.BehaviorState.SEARCH
+	finished_search.legacy_search_active = false
+	finished_search.legacy_search_finishing = true
+	finished_search.call("_update_legacy_coordinate_search", 0.0)
+	_expect(
+		finished_search.behavior_state == ENEMY_UNIT.BehaviorState.PATROL
+		and finished_search.legacy_idle_search_completion_serial == 1
+		and finished_search.legacy_search_wait_counter == 0
+		and finished_search.legacy_search_wait_limit == 41
+		and search_stream.legacy_crt_random_trace.size() == 1
+		and int(search_stream.legacy_crt_random_trace[0].get(
+			"call_site_rva",
+			0,
+		)) == 0x0005C998,
+		"fifth local-search completion consumes 0x5C998 and stores its next 40..79 delay",
+	)
+
+	var item_stream = MAIN.new()
+	item_stream.legacy_crt_random_trace_enabled = true
+	var item_enemy = _enemy(34, Vector2.ZERO, navigation)
+	var unavailable_item := UnavailableWorldItem.new()
+	item_enemy.original_crt_random_source = item_stream
+	item_enemy.original_runtime_index = 34
+	item_enemy.behavior_state = ENEMY_UNIT.BehaviorState.WORLD_ITEM
+	item_enemy.legacy_world_item_target = unavailable_item
+	item_enemy.legacy_search_wait_counter = 40
+	item_enemy.legacy_search_wait_limit = 40
+	item_enemy.call(
+		"_update_legacy_world_item_investigation",
+		ENEMY_UNIT.ORIGINAL_ATTACK_REACTION_TICK_SECONDS * 1.01,
+	)
+	_expect(
+		item_enemy.behavior_state == ENEMY_UNIT.BehaviorState.PATROL
+		and item_enemy.legacy_world_item_abandon_serial == 1
+		and not item_enemy.legacy_world_item_abandoning
+		and item_enemy.legacy_search_wait_counter == 0
+		and item_enemy.legacy_search_wait_limit == 21
+		and item_stream.legacy_crt_random_trace.size() == 1
+		and int(item_stream.legacy_crt_random_trace[0].get(
+			"call_site_rva",
+			0,
+		)) == 0x0005CC69,
+		"unavailable bait waits through the shared counter before consuming the native 20..59 return delay",
+	)
+	var item_snapshot: Dictionary = item_enemy.legacy_world_item_state_snapshot()
+	var restored_item = _enemy(35, Vector2.ZERO, navigation)
+	_expect(
+		restored_item.restore_legacy_world_item_state(item_snapshot)
+		and restored_item.legacy_world_item_abandon_serial == 1,
+		"world-item abandonment serial survives save restoration",
+	)
+
+	face_stream.free()
+	face_enemy.free()
+	face_target.free()
+	restored_face.free()
+	search_stream.free()
+	finished_search.free()
+	item_stream.free()
+	item_enemy.free()
+	unavailable_item.free()
+	restored_item.free()
 
 
 func _enemy(

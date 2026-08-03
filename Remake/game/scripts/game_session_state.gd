@@ -360,6 +360,13 @@ static func _capture_world(game: Node) -> Dictionary:
 			if _has_property(game, "legacy_crt_input_branch_active")
 			else false
 		),
+		"legacy_crt_random_stream": (
+			_json_value(
+				game.call("legacy_crt_random_stream_snapshot")
+			)
+			if game.has_method("legacy_crt_random_stream_snapshot")
+			else {}
+		),
 		"legacy_ambient_particle": (
 			_json_value(game.call("legacy_ambient_particle_snapshot"))
 			if game.has_method("legacy_ambient_particle_snapshot")
@@ -1178,6 +1185,26 @@ static func _restore_world(game: Node, world: Dictionary, warnings: Array[String
 				"legacy_crt_input_branch_active",
 				input_branch_active,
 			)
+	var stream_snapshot_value: Variant = world.get(
+		"legacy_crt_random_stream",
+		{},
+	)
+	if (
+		stream_snapshot_value is Dictionary
+		and not (stream_snapshot_value as Dictionary).is_empty()
+		and (
+			not game.has_method(
+				"restore_legacy_crt_random_stream_snapshot"
+			)
+			or not bool(game.call(
+				"restore_legacy_crt_random_stream_snapshot",
+				stream_snapshot_value as Dictionary,
+			))
+		)
+	):
+		warnings.append(
+			"legacy CRT random stream envelope could not be restored"
+		)
 	var ambient_particle_state: Variant = world.get(
 		"legacy_ambient_particle",
 		{},

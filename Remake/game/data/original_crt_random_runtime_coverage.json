@@ -1,0 +1,286 @@
+{
+  "schema_version": 1,
+  "coverage_id": "original-crt-random-runtime-coverage-v1",
+  "content_profile": "repository-mod-12-level-20260729",
+  "sdk_catalog": "SDK/crt-rand-call-sites.json",
+  "status_definitions": {
+    "exact_runtime": "All registered call sites in this caller have a live shared-stream consumer.",
+    "checkpoint_exact": "The one-shot result and stream position are restored from captured startup evidence.",
+    "partial_runtime": "A live consumer exists, but registered branches or native lifecycle timings are still missing.",
+    "unimplemented_runtime": "Formal-mission call sites are catalogued but have no equivalent consumer yet.",
+    "nonformal": "The native caller is unreachable from the twelve formal missions."
+  },
+  "summary": {
+    "caller_count": 32,
+    "exact_runtime_callers": 25,
+    "checkpoint_exact_callers": 1,
+    "partial_runtime_callers": 2,
+    "unimplemented_runtime_callers": 2,
+    "nonformal_callers": 2
+  },
+  "callers": [
+    {
+      "caller_rva": "0x000031C0",
+      "status": "nonformal",
+      "missing_sites": [],
+      "note": "Invalid-mission debug statistics are outside formal gameplay."
+    },
+    {
+      "caller_rva": "0x00006A50",
+      "status": "checkpoint_exact",
+      "missing_sites": [],
+      "implementation_markers": [
+        {"path": "Remake/game/scripts/main.gd", "contains": "_replay_original_first_gameplay_random_update"}
+      ],
+      "note": "The one load-time music draw is part of every level's captured first gameplay update."
+    },
+    {
+      "caller_rva": "0x00050910",
+      "status": "exact_runtime",
+      "missing_sites": [],
+      "implementation_markers": [
+        {"path": "Remake/game/scripts/squad_unit.gd", "contains": "func initialize_dynamic_original_crt_random"}
+      ]
+    },
+    {
+      "caller_rva": "0x00050AC0",
+      "status": "partial_runtime",
+      "missing_sites": [],
+      "implementation_markers": [
+        {"path": "Remake/game/scripts/squad_unit.gd", "contains": "func consume_retired_original_crt_random"}
+      ],
+      "timing_gap": "Gu Ming replacement plus actor-61/62 fire and debris retirement are connected; other native actor-deletion lifecycles still need evidence-backed hooks."
+    },
+    {
+      "caller_rva": "0x000533F0",
+      "status": "exact_runtime",
+      "missing_sites": [],
+      "implementation_markers": [
+        {"path": "Remake/game/scripts/squad_unit.gd", "contains": "func initialize_dynamic_original_crt_random"}
+      ]
+    },
+    {
+      "caller_rva": "0x00053650",
+      "status": "partial_runtime",
+      "missing_sites": [],
+      "implementation_markers": [
+        {"path": "Remake/game/scripts/squad_unit.gd", "contains": "func consume_retired_original_crt_random"}
+      ],
+      "timing_gap": "Gu Ming replacement plus actor-61/62 fire and debris retirement are connected; other native actor-deletion lifecycles still need evidence-backed hooks."
+    },
+    {
+      "caller_rva": "0x00055200",
+      "status": "exact_runtime",
+      "missing_sites": [],
+      "implementation_markers": [
+        {"path": "Remake/game/scripts/squad_unit.gd", "contains": "ORIGINAL_PRIMARY_SEARCH_CALL_SITES"}
+      ]
+    },
+    {
+      "caller_rva": "0x00055930",
+      "status": "exact_runtime",
+      "missing_sites": [],
+      "implementation_markers": [
+        {"path": "Remake/game/scripts/squad_unit.gd", "contains": "ORIGINAL_BLOCKED_RETRY_CALL_SITES"}
+      ]
+    },
+    {
+      "caller_rva": "0x00056070",
+      "status": "exact_runtime",
+      "missing_sites": [],
+      "implementation_markers": [
+        {"path": "Remake/game/scripts/squad_unit.gd", "contains": "func _advance_original_ai_shared_counter"}
+      ]
+    },
+    {
+      "caller_rva": "0x00058270",
+      "status": "exact_runtime",
+      "missing_sites": [],
+      "implementation_markers": [
+        {"path": "Remake/game/scripts/enemy_unit.gd", "contains": "0x000582BC"}
+      ]
+    },
+    {
+      "caller_rva": "0x000587E0",
+      "status": "exact_runtime",
+      "missing_sites": [],
+      "implementation_markers": [
+        {"path": "Remake/game/scripts/squad_unit.gd", "contains": "func _on_original_route_wait_completed"}
+      ]
+    },
+    {
+      "caller_rva": "0x00059290",
+      "status": "exact_runtime",
+      "missing_sites": [],
+      "implementation_markers": [
+        {"path": "Remake/game/scripts/squad_unit.gd", "contains": "0x00059343"}
+      ]
+    },
+    {
+      "caller_rva": "0x00059370",
+      "status": "exact_runtime",
+      "missing_sites": [],
+      "implementation_markers": [
+        {"path": "Remake/game/scripts/squad_unit.gd", "contains": "0x000593E1"}
+      ]
+    },
+    {
+      "caller_rva": "0x0005B950",
+      "status": "exact_runtime",
+      "missing_sites": [],
+      "implementation_markers": [
+        {"path": "Remake/game/scripts/squad_unit.gd", "contains": "0x0005BBBC"}
+      ]
+    },
+    {
+      "caller_rva": "0x0005BD40",
+      "status": "unimplemented_runtime",
+      "missing_sites": ["0x0005BFAC"],
+      "note": "Native actor reload randomizes facing; Remake save restoration currently preserves its own exact facing instead."
+    },
+    {
+      "caller_rva": "0x0005C710",
+      "status": "exact_runtime",
+      "missing_sites": [],
+      "implementation_markers": [
+        {"path": "Remake/game/scripts/squad_unit.gd", "contains": "0x0005CB2B"},
+        {"path": "Remake/game/scripts/enemy_unit.gd", "contains": "0x0005C998"},
+        {"path": "Remake/game/scripts/enemy_unit.gd", "contains": "0x0005CC69"},
+        {"path": "Remake/game/scripts/enemy_unit.gd", "contains": "0x0005CCCD"},
+        {"path": "Remake/game/scripts/enemy_unit.gd", "contains": "0x0005CD01"}
+      ],
+      "note": "Observation, pursuit reaction, five-point search completion, unavailable-item return, tracked-target facing and attack transition all consume the shared native stream at their recovered branches."
+    },
+    {
+      "caller_rva": "0x0005CE90",
+      "status": "exact_runtime",
+      "missing_sites": [],
+      "implementation_markers": [
+        {"path": "Remake/game/scripts/squad_unit.gd", "contains": "ORIGINAL_SECONDARY_SEARCH_CALL_SITES"}
+      ]
+    },
+    {
+      "caller_rva": "0x0005D060",
+      "status": "exact_runtime",
+      "missing_sites": [],
+      "implementation_markers": [
+        {"path": "Remake/game/scripts/enemy_unit.gd", "contains": "0x0005D08F"}
+      ]
+    },
+    {
+      "caller_rva": "0x0005D330",
+      "status": "exact_runtime",
+      "missing_sites": [],
+      "implementation_markers": [
+        {"path": "Remake/game/scripts/squad_unit.gd", "contains": "func _advance_original_pursuit_once"}
+      ]
+    },
+    {
+      "caller_rva": "0x0005D610",
+      "status": "exact_runtime",
+      "missing_sites": [],
+      "implementation_markers": [
+        {"path": "Remake/game/scripts/legacy_actor_audio_rules.gd", "contains": "FAMILY_SELECTED"}
+      ]
+    },
+    {
+      "caller_rva": "0x0005D7B0",
+      "status": "exact_runtime",
+      "missing_sites": [],
+      "implementation_markers": [
+        {"path": "Remake/game/scripts/legacy_actor_audio_rules.gd", "contains": "FAMILY_ACKNOWLEDGE"}
+      ]
+    },
+    {
+      "caller_rva": "0x0005D900",
+      "status": "exact_runtime",
+      "missing_sites": [],
+      "implementation_markers": [
+        {"path": "Remake/game/scripts/legacy_actor_audio_rules.gd", "contains": "FAMILY_HOSTILE_INITIAL"}
+      ]
+    },
+    {
+      "caller_rva": "0x0005DA60",
+      "status": "exact_runtime",
+      "missing_sites": [],
+      "implementation_markers": [
+        {"path": "Remake/game/scripts/legacy_actor_audio_rules.gd", "contains": "FAMILY_HOSTILE_FOLLOWUP"}
+      ]
+    },
+    {
+      "caller_rva": "0x0005DDA0",
+      "status": "exact_runtime",
+      "missing_sites": [],
+      "implementation_markers": [
+        {"path": "Remake/game/scripts/main.gd", "contains": "0x0005DF71"}
+      ]
+    },
+    {
+      "caller_rva": "0x0005DFC0",
+      "status": "nonformal",
+      "missing_sites": [],
+      "note": "The native caller has no references and is outside formal missions."
+    },
+    {
+      "caller_rva": "0x0005FD10",
+      "status": "exact_runtime",
+      "missing_sites": [],
+      "implementation_markers": [
+        {"path": "Remake/game/scripts/legacy_ambient_particle_field.gd", "contains": "0x0005FD2C"}
+      ]
+    },
+    {
+      "caller_rva": "0x0005FF20",
+      "status": "exact_runtime",
+      "missing_sites": [],
+      "implementation_markers": [
+        {"path": "Remake/game/scripts/legacy_ambient_particle_field.gd", "contains": "0x0005FF45"}
+      ]
+    },
+    {
+      "caller_rva": "0x00061D10",
+      "status": "unimplemented_runtime",
+      "missing_sites": ["0x00061DFC", "0x00061E3A"],
+      "note": "Random matching-sprite relation selection is catalogued but not reproduced by a live scene consumer."
+    },
+    {
+      "caller_rva": "0x00064120",
+      "status": "exact_runtime",
+      "missing_sites": [],
+      "implementation_markers": [
+        {"path": "Remake/game/scripts/legacy_explosion_visual_rules.gd", "contains": "func build_debris_cluster_plan"},
+        {"path": "Remake/game/scripts/main.gd", "contains": "commit_legacy_crt_random_draws"}
+      ],
+      "note": "Effect-12 debris construction consumes the exact rand()%3+2 style draw on the shared stream."
+    },
+    {
+      "caller_rva": "0x00064580",
+      "status": "exact_runtime",
+      "missing_sites": [],
+      "implementation_markers": [
+        {"path": "Remake/game/scripts/legacy_explosion_visual_rules.gd", "contains": "func build_debris_bounce_plan"},
+        {"path": "Remake/game/scripts/legacy_explosion_effect.gd", "contains": "func _advance_debris_particles"}
+      ],
+      "note": "Initial angle and branch-specific x/y jitter are live; later bounces retain the angle and consume only their two jitter draws."
+    },
+    {
+      "caller_rva": "0x00064730",
+      "status": "exact_runtime",
+      "missing_sites": [],
+      "implementation_markers": [
+        {"path": "Remake/game/scripts/legacy_explosion_visual_rules.gd", "contains": "func build_burst_plan"},
+        {"path": "Remake/game/scripts/main.gd", "contains": "commit_legacy_crt_random_draws"}
+      ]
+    },
+    {
+      "caller_rva": "0x000653B0",
+      "status": "exact_runtime",
+      "missing_sites": [],
+      "implementation_markers": [
+        {"path": "Remake/game/scripts/legacy_explosion_visual_rules.gd", "contains": "func build_debris_cluster_plan"},
+        {"path": "Remake/game/scripts/legacy_explosion_effect.gd", "contains": "func _add_debris_cluster"}
+      ],
+      "note": "Actor-61/62 explosions create the exact 1..7 type-72..76 debris cluster on the shared stream."
+    }
+  ]
+}

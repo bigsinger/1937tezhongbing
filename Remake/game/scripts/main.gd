@@ -547,6 +547,132 @@ func next_legacy_crt_random(
 	return draw
 
 
+func legacy_crt_random_stream_snapshot() -> Dictionary:
+	# Keep the whole process-global stream transaction together.  Older saves
+	# stored only state/draw index plus a subset of the evidence scheduler;
+	# this versioned envelope also retains the level identity, bounded replay
+	# window and active input branch so the next call after loading cannot be
+	# silently assigned to a different actor/update round.
+	var snapshot_level_id := legacy_crt_recurring_level_id
+	if snapshot_level_id.is_empty() and current_mission is Dictionary:
+		snapshot_level_id = str(current_mission.get("id", ""))
+	# Synthetic unit-test worlds and the product shell before a formal level is
+	# selected have no native stream identity.  Omitting the envelope preserves
+	# their legacy save behavior instead of creating an unrestorable empty level.
+	if not FORMAL_LEVEL_IDS.has(snapshot_level_id):
+		return {}
+	return {
+		"schema_version": 1,
+		"content_profile": (
+			ORIGINAL_CRT_RANDOM_STARTUP_CATALOG.CONTENT_PROFILE
+		),
+		"level_id": snapshot_level_id,
+		"state": legacy_crt_random_state,
+		"draw_index": legacy_crt_random_draw_index,
+		"recurring_round_index": legacy_crt_recurring_round_index,
+		"recurring_first_gate_runtime_index": (
+			legacy_crt_recurring_first_gate_runtime_index
+		),
+		"evidence_replay_active": (
+			legacy_crt_recurring_evidence_replay_active
+		),
+		"evidence_max_round": legacy_crt_recurring_evidence_max_round,
+		"evidence_invalidation_reason": (
+			legacy_crt_recurring_evidence_invalidation_reason
+		),
+		"input_branch_id": legacy_crt_input_branch_id,
+		"input_branch_active": legacy_crt_input_branch_active,
+	}
+
+
+func restore_legacy_crt_random_stream_snapshot(
+	snapshot: Dictionary,
+) -> bool:
+	if (
+		int(snapshot.get("schema_version", 0)) != 1
+		or str(snapshot.get("content_profile", ""))
+			!= ORIGINAL_CRT_RANDOM_STARTUP_CATALOG.CONTENT_PROFILE
+	):
+		return false
+	var snapshot_level_id := str(snapshot.get("level_id", ""))
+	if (
+		snapshot_level_id.is_empty()
+		or not FORMAL_LEVEL_IDS.has(snapshot_level_id)
+		or (
+			not legacy_crt_recurring_level_id.is_empty()
+			and snapshot_level_id != legacy_crt_recurring_level_id
+		)
+	):
+		return false
+	var restored_state := int(snapshot.get("state", -1))
+	var restored_draw_index := int(snapshot.get("draw_index", -1))
+	var restored_round_index := int(
+		snapshot.get("recurring_round_index", -1)
+	)
+	var restored_first_gate := int(
+		snapshot.get("recurring_first_gate_runtime_index", -2)
+	)
+	var restored_max_round := int(
+		snapshot.get("evidence_max_round", -1)
+	)
+	if (
+		restored_state < 0
+		or restored_state > LEGACY_CRT_RANDOM_CATALOG.UINT32_MASK
+		or restored_draw_index < 0
+		or restored_round_index < 0
+		or restored_first_gate < -1
+		or restored_max_round < 0
+	):
+		return false
+
+	legacy_crt_recurring_level_id = snapshot_level_id
+	legacy_crt_random_state = restored_state
+	legacy_crt_random_draw_index = restored_draw_index
+	legacy_crt_recurring_round_index = restored_round_index
+	legacy_crt_recurring_first_gate_runtime_index = restored_first_gate
+	legacy_crt_recurring_evidence_max_round = restored_max_round
+	legacy_crt_recurring_evidence_invalidation_reason = str(
+		snapshot.get("evidence_invalidation_reason", "")
+	)
+	legacy_crt_recurring_evidence_replay_active = bool(
+		snapshot.get("evidence_replay_active", false)
+	)
+	if (
+		legacy_crt_recurring_evidence_replay_active
+		and legacy_crt_recurring_round_index
+			> legacy_crt_recurring_evidence_max_round
+	):
+		legacy_crt_recurring_evidence_replay_active = false
+		legacy_crt_recurring_evidence_invalidation_reason = (
+			"catalog_complete"
+		)
+
+	var restored_branch_id := str(snapshot.get("input_branch_id", ""))
+	var restored_branch_active := bool(
+		snapshot.get("input_branch_active", false)
+	)
+	if not restore_legacy_crt_input_branch(
+		restored_branch_id,
+		restored_branch_active,
+	):
+		# The gameplay state remains loadable, but a stale/mismatched bounded
+		# evidence branch must never force future commands onto the wrong trace.
+		legacy_crt_recurring_evidence_replay_active = false
+		legacy_crt_recurring_evidence_invalidation_reason = (
+			"invalid_input_branch_restore"
+		)
+		legacy_crt_input_branch_id = ""
+		legacy_crt_input_branch_active = false
+
+	# Diagnostic traces describe calls after the restore boundary.  Carrying
+	# pre-save records forward would make their local order disagree with the
+	# restored global draw index even though gameplay state is correct.
+	legacy_crt_random_trace.clear()
+	if legacy_crt_random_parity_trace_enabled:
+		_restart_legacy_crt_random_parity_trace()
+	return true
+
+
 func original_recurring_local_search_event(
 	runtime_index: int,
 ) -> Dictionary:
@@ -3363,6 +3489,20 @@ func _on_original_disguise_transition_ready(
 	):
 		actor.cancel_original_disguise_transition()
 		return
+	# The original type 10 <-> 91 transition allocates a fresh actor through
+	# sub_44A350/sub_45B950 before copying the retained inventory/state fields.
+	# Reproduce the exact five-draw factory sequence and the four derived/base
+	# destructor draws for the retired actor when this is a level-bound runtime
+	# actor; isolated fixtures keep their deterministic fallback.
+	if (
+		not actor.original_crt_level_id.is_empty()
+		and (
+			not actor.initialize_dynamic_original_crt_random()
+			or not actor.consume_retired_original_crt_random()
+		)
+	):
+		actor.cancel_original_disguise_transition()
+		return
 	var consumed_item_id := int(
 		transition.get("consume_backpack_item_id", 0)
 	)
@@ -4919,6 +5059,8 @@ func _spawn_legacy_special_world_object(
 	)
 	world_object.connect("tree_exited", Callable(self, "_on_legacy_special_world_object_exited").bind(world_object))
 	add_child(world_object)
+	if world_object.has_method("bind_original_crt_random_source"):
+		world_object.call("bind_original_crt_random_source", self)
 	legacy_special_world_objects.append(world_object)
 	_record_native_timed_explosive_presence(world_object)
 	return world_object
@@ -5264,6 +5406,8 @@ func _spawn_legacy_explosion_effect(
 			push_error("actor 62 爆炸效果的全局 CRT rand 批次不连续")
 			effect.queue_free()
 			return null
+	if effect.has_method("bind_original_crt_random_source"):
+		effect.call("bind_original_crt_random_source", self)
 	legacy_explosion_effects.append(effect)
 	effect.connect(
 		"original_animation_audio_requested",

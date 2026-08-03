@@ -816,18 +816,26 @@ func initialize_dynamic_original_crt_random() -> bool:
 	var facing_value := next_original_crt_random_value(0x00050980)
 	var phase_value := next_original_crt_random_value(0x0005340B)
 	var reaction_value := next_original_crt_random_value(0x0005358B)
+	# sub_44A350 creates a runtime actor through the normal constructor and then
+	# sub_45B950(..., 0) replaces its facing with max(rand() % 9, 1).  Keep that
+	# fifth draw in the shared stream; authored startup actors remain checkpointed.
+	var loaded_facing_value := next_original_crt_random_value(0x0005BBBC)
 	if (
 		idle_value < 0
 		or facing_value < 0
 		or phase_value < 0
 		or reaction_value < 0
+		or loaded_facing_value < 0
 	):
 		return false
+	var constructor_facing := mini((facing_value % 9) + 1, 8)
+	var loaded_facing := maxi(loaded_facing_value % 9, 1)
 	original_crt_initialization_profile = {
 		"runtime_index": original_runtime_index,
 		"scene_index": scene_index,
 		"initial_idle_limit": idle_value % 160,
-		"initial_facing_direction": mini((facing_value % 9) + 1, 8),
+		"constructor_facing_direction": constructor_facing,
+		"initial_facing_direction": loaded_facing,
 		"initial_ai_phase": phase_value % 60,
 		"initial_reaction_limit": (reaction_value % 40) + 40,
 	}
@@ -836,6 +844,42 @@ func initialize_dynamic_original_crt_random() -> bool:
 	original_ai_idle_tick_elapsed = 0.0
 	original_ai_previous_world_position = position
 	original_ai_shared_counter_last_physics_frame = -1
+	set_animation_group(loaded_facing - 1)
+	apply_idle_frame()
+	return true
+
+
+func consume_retired_original_crt_random() -> bool:
+	if (
+		original_crt_random_source == null
+		or not is_instance_valid(original_crt_random_source)
+		or not original_crt_random_source.has_method(
+			"next_legacy_crt_random"
+		)
+	):
+		return false
+	# Actor removal reaches the derived sub_4538A0 destructor first.  Its
+	# sub_453650 reset consumes the AI phase/reaction pair; the base sub_450CE0
+	# destructor then calls sub_450AC0 for the idle/facing pair.  The values are
+	# written only to the retired native object, so preserve their stream order
+	# and diagnostics without mutating the surviving Remake node.
+	var reset_ai_phase := next_original_crt_random_value(0x00053655)
+	var reset_reaction := next_original_crt_random_value(0x000537A3)
+	var reset_idle := next_original_crt_random_value(0x00050B64)
+	var reset_facing := next_original_crt_random_value(0x00050B7D)
+	if (
+		reset_ai_phase < 0
+		or reset_reaction < 0
+		or reset_idle < 0
+		or reset_facing < 0
+	):
+		return false
+	original_crt_initialization_profile["retired_actor_reset"] = {
+		"ai_phase": reset_ai_phase % 60,
+		"reaction_limit": (reset_reaction % 40) + 40,
+		"idle_limit": reset_idle % 160,
+		"facing_direction": mini((reset_facing % 9) + 1, 8),
+	}
 	return true
 
 
@@ -2942,6 +2986,28 @@ func advance_original_disguise_transition(delta: float) -> bool:
 			disguise_transition_tick_counter
 			> LEGACY_DISGUISE_RULES.CHANGE_TICK_LIMIT
 		):
+			# sub_459290/sub_459370 consumes one rand() before it raises the
+			# actor-replacement flag.  The resulting 20..59 limit belongs to the
+			# old actor and is discarded when sub_450200 installs the new one, but
+			# the shared-stream draw and its type-specific call site are observable.
+			if (
+				original_crt_random_source != null
+				and is_instance_valid(original_crt_random_source)
+			):
+				var completion_call_site := (
+					0x000593E1
+					if runtime_actor_type
+						== LEGACY_DISGUISE_RULES.DISGUISED_RUNTIME_ACTOR_TYPE
+					else 0x00059343
+				)
+				var completion_value := next_original_crt_random_value(
+					completion_call_site
+				)
+				if completion_value < 0:
+					disguise_transition_tick_counter = (
+						LEGACY_DISGUISE_RULES.CHANGE_TICK_LIMIT
+					)
+					return false
 			var completed_item_id := disguise_transition_item_id
 			disguise_transition_item_id = 0
 			disguise_transition_tick_counter = 0

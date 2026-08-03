@@ -4,6 +4,9 @@ const LEGACY_CRT_RANDOM_CATALOG: Script = preload(
 	"res://scripts/generated/legacy_crt_random_catalog.gd"
 )
 const MAIN_SCRIPT: Script = preload("res://scripts/main.gd")
+const GAME_SESSION_STATE: Script = preload(
+	"res://scripts/game_session_state.gd"
+)
 const ORIGINAL_STARTUP_CATALOG: Script = preload(
 	"res://scripts/original_crt_random_startup_catalog.gd"
 )
@@ -37,6 +40,9 @@ const NAVIGATION_GRID_DATA: Script = preload(
 const DYNAMIC_OCCUPANCY_GRID: Script = preload(
 	"res://scripts/dynamic_occupancy_grid.gd"
 )
+const BACKPACK_INVENTORY: Script = preload(
+	"res://scripts/backpack_inventory.gd"
+)
 
 var failures: Array[String] = []
 var checks := 0
@@ -53,10 +59,12 @@ func _init() -> void:
 	_test_original_local_search_timing()
 	_test_original_actor_event_timing()
 	_test_original_input_branch_timing()
+	_test_stream_snapshot_continuity()
 	_test_recovered_shared_counter_cadence()
 	_test_original_ambient_particle_stream()
 	_test_imported_actor_profile_and_gate()
 	_test_dynamic_actor_constructor_sequence()
+	_test_disguise_replacement_random_sequence()
 	_test_timing_snapshot_round_trip()
 	_test_corrected_enemy_ai_call_site_semantics()
 	if failures.is_empty():
@@ -1559,6 +1567,119 @@ func _test_original_input_branch_timing() -> void:
 	game.free()
 
 
+func _test_stream_snapshot_continuity() -> void:
+	# Round 297 is the last quiet-prefix round immediately before the first
+	# recorded m000 movement acknowledgement.  Its state/index pair therefore
+	# exercises both ordinary stream continuity and restoration of an active,
+	# versioned input branch without driving a window or a complete mission.
+	var source = MAIN_SCRIPT.new()
+	source.current_mission = {"id": "m000"}
+	source.legacy_crt_recurring_level_id = "m000"
+	source.legacy_crt_random_state = "BD23C536".hex_to_int()
+	source.legacy_crt_random_draw_index = 26015
+	source.legacy_crt_recurring_round_index = 297
+	source.legacy_crt_recurring_first_gate_runtime_index = 0
+	source.legacy_crt_recurring_evidence_replay_active = true
+	source.legacy_crt_recurring_evidence_max_round = 413
+	source.legacy_crt_input_branch_id = "m000-basic-movement-v1"
+	source.legacy_crt_input_branch_active = true
+	var snapshot: Dictionary = (
+		source.legacy_crt_random_stream_snapshot()
+	)
+	var serialized := JSON.stringify(snapshot)
+	var parsed_value: Variant = JSON.parse_string(serialized)
+	_expect(
+		parsed_value is Dictionary
+		and int(snapshot.get("schema_version", 0)) == 1
+		and str(snapshot.get("level_id", "")) == "m000"
+		and int(snapshot.get("state", 0)) == "BD23C536".hex_to_int()
+		and int(snapshot.get("draw_index", 0)) == 26015
+		and bool(snapshot.get("input_branch_active", false)),
+		"global random stream snapshot is a versioned JSON-safe transaction",
+	)
+
+	var call_sites := PackedInt32Array([
+		0x0005D7CF,
+		0x000582FA,
+		0x0005CD01,
+		0x0005DF71,
+		0x00064744,
+	])
+	var expected_draws: Array[Dictionary] = []
+	for call_site_rva: int in call_sites:
+		expected_draws.append(
+			source.next_legacy_crt_random(call_site_rva, 18)
+		)
+	var expected_final_state: int = source.legacy_crt_random_state
+	var expected_final_index: int = source.legacy_crt_random_draw_index
+
+	var restored = MAIN_SCRIPT.new()
+	restored.current_mission = {"id": "m000"}
+	restored.legacy_crt_recurring_level_id = "m000"
+	restored.legacy_crt_random_trace_enabled = true
+	restored.legacy_crt_random_trace.append({"stale": true})
+	var accepted: bool = restored.restore_legacy_crt_random_stream_snapshot(
+		parsed_value as Dictionary
+	)
+	var actual_draws: Array[Dictionary] = []
+	for call_site_rva: int in call_sites:
+		actual_draws.append(
+			restored.next_legacy_crt_random(call_site_rva, 18)
+		)
+	var same_draws := actual_draws.size() == expected_draws.size()
+	for draw_index: int in range(actual_draws.size()):
+		same_draws = (
+			same_draws
+			and int(actual_draws[draw_index].get("call_site_rva", 0))
+				== int(expected_draws[draw_index].get("call_site_rva", 0))
+			and int(actual_draws[draw_index].get("value", -1))
+				== int(expected_draws[draw_index].get("value", -1))
+			and int(actual_draws[draw_index].get("state", -1))
+				== int(expected_draws[draw_index].get("state", -1))
+		)
+	_expect(
+		accepted
+		and restored.legacy_crt_input_branch_active
+		and restored.legacy_crt_input_branch_id
+			== "m000-basic-movement-v1"
+		and same_draws
+		and restored.legacy_crt_random_state == expected_final_state
+		and restored.legacy_crt_random_draw_index == expected_final_index
+		and restored.legacy_crt_random_trace.size() == call_sites.size(),
+		(
+			"representative selection/world-item/combat/alert/effect call sites "
+			+ "continue with identical values after a JSON save boundary"
+		),
+	)
+
+	var session: Dictionary = GAME_SESSION_STATE.capture(restored)
+	var world: Dictionary = session.get("world", {}) as Dictionary
+	var session_stream: Dictionary = world.get(
+		"legacy_crt_random_stream",
+		{},
+	) as Dictionary
+	_expect(
+		int(session_stream.get("state", -1)) == expected_final_state
+		and int(session_stream.get("draw_index", -1))
+			== expected_final_index
+		and str(session_stream.get("input_branch_id", ""))
+			== "m000-basic-movement-v1",
+		"GameSessionState embeds the complete stream envelope alongside legacy fields",
+	)
+
+	var wrong_level := (parsed_value as Dictionary).duplicate(true)
+	wrong_level["level_id"] = "m001"
+	var state_before_rejection: int = restored.legacy_crt_random_state
+	_expect(
+		not restored.restore_legacy_crt_random_stream_snapshot(wrong_level)
+		and restored.legacy_crt_random_state == state_before_rejection,
+		"stream restore rejects a cross-level envelope without mutating state",
+	)
+
+	source.free()
+	restored.free()
+
+
 func _test_imported_actor_profile_and_gate() -> void:
 	var game = MAIN_SCRIPT.new()
 	game.call("_apply_original_crt_random_startup_checkpoint", "m000")
@@ -1635,7 +1756,7 @@ func _test_dynamic_actor_constructor_sequence() -> void:
 	game.legacy_crt_random_trace_enabled = true
 	var expected := _draw_values(
 		game.legacy_crt_random_state,
-		4,
+		5,
 	)
 	var actor = SQUAD_UNIT_SCRIPT.new()
 	actor.scene_index = 9000
@@ -1644,8 +1765,8 @@ func _test_dynamic_actor_constructor_sequence() -> void:
 	var values: Array = expected.get("values", [])
 	_expect(
 		initialized
-		and game.legacy_crt_random_draw_index == 8493,
-		"dynamic actor construction appends four draws to the global stream",
+		and game.legacy_crt_random_draw_index == 8494,
+		"dynamic actor construction appends five draws to the global stream",
 	)
 	_expect(
 		int(actor.original_crt_initialization_profile.get(
@@ -1654,6 +1775,10 @@ func _test_dynamic_actor_constructor_sequence() -> void:
 		)) == int(values[0]) % 160
 		and int(actor.original_crt_initialization_profile.get(
 			"initial_facing_direction",
+			-1,
+		)) == maxi(int(values[4]) % 9, 1)
+		and int(actor.original_crt_initialization_profile.get(
+			"constructor_facing_direction",
 			-1,
 		)) == mini((int(values[1]) % 9) + 1, 8)
 		and int(actor.original_crt_initialization_profile.get(
@@ -1664,15 +1789,16 @@ func _test_dynamic_actor_constructor_sequence() -> void:
 			"initial_reaction_limit",
 			-1,
 		)) == (int(values[3]) % 40) + 40,
-		"dynamic actor uses the four recovered constructor transforms",
+		"dynamic actor uses the five recovered factory/load transforms",
 	)
 	var expected_sites := [
 		0x00050967,
 		0x00050980,
 		0x0005340B,
 		0x0005358B,
+		0x0005BBBC,
 	]
-	var sites_match: bool = game.legacy_crt_random_trace.size() == 4
+	var sites_match: bool = game.legacy_crt_random_trace.size() == 5
 	for index: int in range(game.legacy_crt_random_trace.size()):
 		sites_match = (
 			sites_match
@@ -1691,6 +1817,63 @@ func _test_dynamic_actor_constructor_sequence() -> void:
 	)
 	actor.free()
 	game.free()
+
+
+func _test_disguise_replacement_random_sequence() -> void:
+	for actor_type: int in [10, 91]:
+		var game = MAIN_SCRIPT.new()
+		game.call("_apply_original_crt_random_startup_checkpoint", "m000")
+		game.legacy_crt_random_trace_enabled = true
+		var actor = SQUAD_UNIT_SCRIPT.new()
+		actor.runtime_actor_type = actor_type
+		actor.backpack_inventory = BACKPACK_INVENTORY.new()
+		var item_id := 54 if actor_type == 10 else 92
+		actor.backpack_inventory.add_original_item(item_id, 1, 0)
+		actor.bind_original_crt_random_source(game, "m000", 1)
+		actor.disguise_transition_item_id = item_id
+		actor.disguise_transition_tick_counter = 100
+		var completed_items: Array[int] = []
+		actor.original_disguise_transition_ready.connect(
+			func(_unit: Node2D, completed_item_id: int) -> void:
+				completed_items.append(completed_item_id)
+				actor.initialize_dynamic_original_crt_random()
+				actor.consume_retired_original_crt_random()
+		)
+		actor.advance_original_disguise_transition(
+			1.0 / 30.0 + 0.000001
+		)
+		var expected_sites := [
+			0x00059343 if actor_type == 10 else 0x000593E1,
+			0x00050967,
+			0x00050980,
+			0x0005340B,
+			0x0005358B,
+			0x0005BBBC,
+			0x00053655,
+			0x000537A3,
+			0x00050B64,
+			0x00050B7D,
+		]
+		var sites_match: bool = (
+			game.legacy_crt_random_trace.size() == expected_sites.size()
+		)
+		for site_index: int in range(game.legacy_crt_random_trace.size()):
+			sites_match = (
+				sites_match
+				and int(game.legacy_crt_random_trace[site_index].get(
+					"call_site_rva",
+					0,
+				)) == int(expected_sites[site_index])
+			)
+		_expect(
+			completed_items == [item_id]
+			and game.legacy_crt_random_draw_index == 8499
+			and sites_match,
+			"type %d disguise replacement preserves pre-factory, factory/load and retired-destructor order"
+				% actor_type,
+		)
+		actor.free()
+		game.free()
 
 
 func _test_timing_snapshot_round_trip() -> void:

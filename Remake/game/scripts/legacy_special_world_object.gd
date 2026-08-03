@@ -74,6 +74,7 @@ var resolved_particles: Array[Dictionary] = []
 var resolved_visual_burst_count := 0
 var visual_random_state := 1
 var crt_random_draws: Array[Dictionary] = []
+var original_crt_random_source: Node
 var visual_world_size := Vector2.ZERO
 var next_particle_audio_requester_id := 1
 
@@ -119,6 +120,7 @@ func configure(
 	visual_world_size = new_visual_world_size
 	visual_random_state = new_visual_random_state
 	crt_random_draws.clear()
+	original_crt_random_source = null
 	original_frames.clear()
 	original_anchor = Vector2.ZERO
 	original_frame_hold_ticks = 1
@@ -175,6 +177,10 @@ func configure(
 	_transition_to(State.ACTIVE)
 	queue_redraw()
 	return true
+
+
+func bind_original_crt_random_source(source: Node) -> void:
+	original_crt_random_source = source
 
 
 func set_potential_targets(candidates: Array[Node2D]) -> void:
@@ -673,14 +679,14 @@ static func _rows_are_uniform(rows: Array) -> bool:
 
 
 func _advance_resolved_particles(ticks: int) -> void:
-	for particle_index: int in range(resolved_particles.size() - 1, -1, -1):
-		var particle := resolved_particles[particle_index]
-		var remaining_ticks := ticks
-		while (
-			remaining_ticks > 0
-			and int(particle.get("completed_loops", 0))
-			< int(particle.get("repeat_count", 1))
-		):
+	# sub_464A80 updates the array once per world tick in creation order. When
+	# an entry completes, the last pointer replaces it and is processed at the
+	# same index. Keeping the tick loop outermost also makes bulk test advances
+	# equivalent to normal one-tick physics calls.
+	for unused_tick: int in range(maxi(ticks, 0)):
+		var particle_index := 0
+		while particle_index < resolved_particles.size():
+			var particle := resolved_particles[particle_index]
 			var audio_group := {
 				"action_index": int(particle.get("action_index", -1)),
 				"sound_gfl_index": int(
@@ -725,12 +731,63 @@ func _advance_resolved_particles(ticks: int) -> void:
 					false,
 					int(particle.get("audio_requester_id", 0)),
 				)
-			remaining_ticks -= 1
-		if (
-			int(particle.get("completed_loops", 0))
-			>= int(particle.get("repeat_count", 1))
-		):
-			resolved_particles.remove_at(particle_index)
+			if (
+				int(particle.get("completed_loops", 0))
+				>= int(particle.get("repeat_count", 1))
+			):
+				if _consume_resolved_particle_destructor():
+					resolved_particles[particle_index] = resolved_particles[-1]
+					resolved_particles.pop_back()
+					continue
+			particle_index += 1
+
+
+func _consume_resolved_particle_destructor() -> bool:
+	var start_state := visual_random_state
+	if (
+		original_crt_random_source != null
+		and is_instance_valid(original_crt_random_source)
+		and original_crt_random_source.has_method(
+			"commit_legacy_crt_random_draws"
+		)
+	):
+		start_state = int(
+			original_crt_random_source.get("legacy_crt_random_state")
+		)
+	var plan: Dictionary = (
+		EXPLOSION_VISUAL_RULES.build_dynamic_actor_destructor_plan(
+			start_state
+		)
+	)
+	if plan.is_empty():
+		return false
+	var next_state := int(plan.get("next_random_state", start_state))
+	var draws := plan.get("random_draws", []) as Array
+	if (
+		original_crt_random_source != null
+		and is_instance_valid(original_crt_random_source)
+		and original_crt_random_source.has_method(
+			"commit_legacy_crt_random_draws"
+		)
+	):
+		if not bool(original_crt_random_source.call(
+			"commit_legacy_crt_random_draws",
+			draws,
+		)):
+			return false
+		if int(
+			original_crt_random_source.get("legacy_crt_random_state")
+		) != next_state:
+			push_error("特殊部署爆炸粒子析构的 CRT rand 流不连续")
+			return false
+	else:
+		for raw_draw: Variant in draws:
+			if raw_draw is Dictionary:
+				crt_random_draws.append(
+					(raw_draw as Dictionary).duplicate(true)
+				)
+	visual_random_state = next_state
+	return true
 
 
 func _allocate_particle_audio_requester_id() -> int:

@@ -49,6 +49,8 @@ const STABLE_MOD_TIMELINE_COMPLETION_LEAD_TICKS := 10
 const ORIGINAL_ATTACK_REACTION_TICK_SECONDS := 1.0 / 30.0
 const ATTACK_RECHECK_MIN_SECONDS := 20.0 * ORIGINAL_ATTACK_REACTION_TICK_SECONDS
 const ATTACK_RECHECK_MAX_SECONDS := 39.0 * ORIGINAL_ATTACK_REACTION_TICK_SECONDS
+const ORIGINAL_WORLD_ITEM_ABANDON_MINIMUM_LIMIT := 20
+const ORIGINAL_WORLD_ITEM_ABANDON_RANDOM_SPAN := 40
 ## Tactical sight outlines are presentation, not the authoritative detection
 ## test.  Rebuilding both clipped fans from _draw() repeated 176 supercover
 ## line-of-sight queries on every redraw of a moving observed guard.  Cache the
@@ -117,6 +119,9 @@ var legacy_world_item_target: Node2D
 var legacy_world_item_interaction_pending := false
 var legacy_world_item_replan_elapsed := 0.0
 var pending_legacy_world_item_serial := 0
+var legacy_world_item_abandoning := false
+var legacy_world_item_abandon_elapsed := 0.0
+var legacy_world_item_abandon_serial := 0
 var legacy_hypnosis_active := false
 var legacy_hypnosis_counter := 0
 var legacy_poison_active := false
@@ -149,6 +154,12 @@ var legacy_search_wait_counter := 0
 var legacy_search_wait_limit := 0
 var legacy_search_tick_elapsed := 0.0
 var legacy_search_random_state := 1
+var legacy_idle_search_completion_serial := 0
+var legacy_tracked_face_gate_elapsed := 0.0
+var legacy_tracked_face_gate_serial := 0
+var legacy_tracked_face_gate_last_value := -1
+var legacy_tracked_face_gate_last_passed := false
+var legacy_tracked_face_gate_last_evidence_round_index := 0
 ## sub_45DDA0 writes a generic coordinate command. The recipient's own AI
 ## update runs before the command dispatcher consumes it, so visual contact or
 ## a newer authored patrol command can win the same actor tick.
@@ -368,6 +379,12 @@ func configure_enemy(
 	pending_original_coordinate_alert_active = false
 	pending_original_coordinate_alert_position = Vector2.ZERO
 	original_actor_command_serial = 0
+	legacy_idle_search_completion_serial = 0
+	legacy_tracked_face_gate_elapsed = 0.0
+	legacy_tracked_face_gate_serial = 0
+	legacy_tracked_face_gate_last_value = -1
+	legacy_tracked_face_gate_last_passed = false
+	legacy_tracked_face_gate_last_evidence_round_index = 0
 	_clear_editorial_search_order()
 	_clear_legacy_coordinate_search()
 	legacy_corpse_discovered = false
@@ -584,6 +601,7 @@ func _physics_process(delta: float) -> void:
 	legacy_contact_acquired_this_tick = false
 	var command_serial_at_update_start := original_actor_command_serial
 	_advance_original_crt_actor_random_tick(safe_delta)
+	_advance_original_tracked_target_face_gate(safe_delta)
 	if not is_alive or combat_action != CombatAction.NONE or hurt_remaining > 0.0:
 		super._physics_process(safe_delta)
 		_advance_tactical_range_cache(safe_delta)
@@ -627,6 +645,90 @@ func _physics_process(delta: float) -> void:
 		IMPORTED_SPRITE_ANIMATION.direction_index_for_legacy_group(animation_group_index)
 	)
 	_advance_tactical_range_cache(safe_delta)
+
+
+func _advance_original_tracked_target_face_gate(delta: float) -> bool:
+	# sub_45C710 state 1 increments its tracked-target counter and samples
+	# 0x5CCCD once per actor update while no action lock is active. A value in
+	# the lower half of rand()%20 turns the actor toward its live target through
+	# sub_459B70. Evidence replay consumes the recorded event once per round;
+	# ordinary runtime follows the recovered fixed actor-tick cadence.
+	var evidence_round := _original_recurring_evidence_round_index()
+	if evidence_round > 0:
+		legacy_tracked_face_gate_elapsed = 0.0
+		if (
+			evidence_round
+			<= legacy_tracked_face_gate_last_evidence_round_index
+		):
+			return false
+		legacy_tracked_face_gate_last_evidence_round_index = evidence_round
+		var evidence_events := _consume_original_recurring_actor_events([
+			0x0005CCCD,
+		])
+		var evidence_consumed := false
+		for event: Dictionary in evidence_events:
+			evidence_consumed = (
+				_apply_original_tracked_target_face_value(
+					int(event.get("actual_value", -1))
+				)
+				or evidence_consumed
+			)
+		return evidence_consumed
+	if not _can_apply_original_tracked_target_face_gate():
+		legacy_tracked_face_gate_elapsed = 0.0
+		return false
+	legacy_tracked_face_gate_elapsed += maxf(delta, 0.0)
+	var consumed := false
+	while (
+		legacy_tracked_face_gate_elapsed
+		>= ORIGINAL_ATTACK_REACTION_TICK_SECONDS
+	):
+		legacy_tracked_face_gate_elapsed -= (
+			ORIGINAL_ATTACK_REACTION_TICK_SECONDS
+		)
+		var random_value := next_original_crt_random_value(0x0005CCCD)
+		if random_value < 0:
+			break
+		consumed = (
+			_apply_original_tracked_target_face_value(random_value)
+			or consumed
+		)
+	return consumed
+
+
+func _can_apply_original_tracked_target_face_gate() -> bool:
+	return (
+		is_alive
+		and combat_action == CombatAction.NONE
+		and hurt_remaining <= 0.0
+		and behavior_state in [BehaviorState.CHASE, BehaviorState.ATTACK]
+		and current_target != null
+		and is_instance_valid(current_target)
+		and _target_is_alive(current_target)
+	)
+
+
+func _apply_original_tracked_target_face_value(random_value: int) -> bool:
+	if random_value < 0:
+		return false
+	legacy_tracked_face_gate_serial += 1
+	legacy_tracked_face_gate_last_value = random_value
+	legacy_tracked_face_gate_last_passed = random_value % 20 < 10
+	if (
+		not legacy_tracked_face_gate_last_passed
+		or not _can_apply_original_tracked_target_face_gate()
+	):
+		return true
+	var target_direction := current_target.position - position
+	if target_direction.is_zero_approx():
+		return true
+	if set_animation_group(direction_group_index(target_direction)):
+		original_direction_index = (
+			IMPORTED_SPRITE_ANIMATION.direction_index_for_legacy_group(
+				animation_group_index
+			)
+		)
+	return true
 
 
 func apply_special_control(source: Node2D = null) -> bool:
@@ -1510,7 +1612,7 @@ func _begin_legacy_coordinate_search(
 func _update_legacy_coordinate_search(delta: float) -> void:
 	if legacy_search_finishing:
 		if movement_path_index >= movement_path.size():
-			_enter_patrol()
+			_complete_original_idle_search()
 		return
 	# The initial coordinate command must be allowed to arrive before the local
 	# five-point sub_45E4B0 sweep begins. This preserves playable path intent
@@ -1533,7 +1635,7 @@ func _update_legacy_coordinate_search(delta: float) -> void:
 			legacy_search_point_index
 			>= LEGACY_ENEMY_AI_RULES.SEARCH_POINT_COUNT
 		):
-			_enter_patrol()
+			_complete_original_idle_search()
 			return
 		var sampled: Dictionary = {}
 		var original_values := next_original_crt_random_values([
@@ -1584,6 +1686,35 @@ func _update_legacy_coordinate_search(delta: float) -> void:
 		return
 		if movement_path_index < movement_path.size():
 			return
+
+
+func _complete_original_idle_search() -> void:
+	# When sub_45E4B0 reports that all five local points have completed,
+	# sub_45C710 consumes 0x5C998, clears the search flag and stores the next
+	# strict-greater-than delay in the shared 40..79 counter field.
+	var random_value := next_original_crt_random_value(0x0005C998)
+	var next_wait_limit := LEGACY_ENEMY_AI_RULES.REACTION_MINIMUM_LIMIT
+	if random_value >= 0:
+		next_wait_limit = (
+			random_value % LEGACY_ENEMY_AI_RULES.REACTION_RANDOM_SPAN
+			+ LEGACY_ENEMY_AI_RULES.REACTION_MINIMUM_LIMIT
+		)
+	else:
+		var sampled: Dictionary = (
+			LEGACY_ENEMY_AI_RULES.reaction_limit_from_state(
+				legacy_search_random_state
+			)
+		)
+		legacy_search_random_state = int(sampled.get("state", 1))
+		next_wait_limit = int(sampled.get(
+			"limit",
+			LEGACY_ENEMY_AI_RULES.REACTION_MINIMUM_LIMIT,
+		))
+	legacy_idle_search_completion_serial += 1
+	_enter_patrol()
+	legacy_search_wait_counter = 0
+	legacy_search_wait_limit = next_wait_limit
+	legacy_search_tick_elapsed = 0.0
 
 
 func _clear_legacy_coordinate_search() -> void:
@@ -1959,6 +2090,20 @@ func legacy_enemy_ai_state_snapshot() -> Dictionary:
 		"search_wait_limit": legacy_search_wait_limit,
 		"search_tick_elapsed": legacy_search_tick_elapsed,
 		"search_random_state": legacy_search_random_state,
+		"idle_search_completion_serial": (
+			legacy_idle_search_completion_serial
+		),
+		"tracked_face_gate_elapsed": legacy_tracked_face_gate_elapsed,
+		"tracked_face_gate_serial": legacy_tracked_face_gate_serial,
+		"tracked_face_gate_last_value": (
+			legacy_tracked_face_gate_last_value
+		),
+		"tracked_face_gate_last_passed": (
+			legacy_tracked_face_gate_last_passed
+		),
+		"tracked_face_gate_last_evidence_round_index": (
+			legacy_tracked_face_gate_last_evidence_round_index
+		),
 		"pending_coordinate_alert_active":
 			pending_original_coordinate_alert_active,
 		"pending_coordinate_alert_x":
@@ -2019,6 +2164,31 @@ func restore_legacy_enemy_ai_state(state: Dictionary) -> bool:
 		int(state.get("search_random_state", legacy_search_random_state)),
 		1,
 	)
+	legacy_idle_search_completion_serial = maxi(
+		int(state.get("idle_search_completion_serial", 0)),
+		0,
+	)
+	legacy_tracked_face_gate_elapsed = maxf(
+		float(state.get("tracked_face_gate_elapsed", 0.0)),
+		0.0,
+	)
+	legacy_tracked_face_gate_serial = maxi(
+		int(state.get("tracked_face_gate_serial", 0)),
+		0,
+	)
+	legacy_tracked_face_gate_last_value = int(
+		state.get("tracked_face_gate_last_value", -1)
+	)
+	legacy_tracked_face_gate_last_passed = bool(
+		state.get("tracked_face_gate_last_passed", false)
+	)
+	legacy_tracked_face_gate_last_evidence_round_index = maxi(
+		int(state.get(
+			"tracked_face_gate_last_evidence_round_index",
+			0,
+		)),
+		0,
+	)
 	pending_original_coordinate_alert_active = bool(
 		state.get("pending_coordinate_alert_active", false)
 	)
@@ -2070,6 +2240,9 @@ func legacy_world_item_state_snapshot() -> Dictionary:
 		),
 		"interaction_pending": legacy_world_item_interaction_pending,
 		"replan_elapsed": legacy_world_item_replan_elapsed,
+		"abandoning": legacy_world_item_abandoning,
+		"abandon_elapsed": legacy_world_item_abandon_elapsed,
+		"abandon_serial": legacy_world_item_abandon_serial,
 		"hypnosis_active": legacy_hypnosis_active,
 		"hypnosis_counter": legacy_hypnosis_counter,
 		"poison_active": legacy_poison_active,
@@ -2092,6 +2265,15 @@ func restore_legacy_world_item_state(state: Dictionary) -> bool:
 	legacy_world_item_replan_elapsed = maxf(
 		float(state.get("replan_elapsed", 0.0)),
 		0.0,
+	)
+	legacy_world_item_abandoning = bool(state.get("abandoning", false))
+	legacy_world_item_abandon_elapsed = maxf(
+		float(state.get("abandon_elapsed", 0.0)),
+		0.0,
+	)
+	legacy_world_item_abandon_serial = maxi(
+		int(state.get("abandon_serial", 0)),
+		0,
 	)
 	legacy_hypnosis_active = bool(state.get("hypnosis_active", false))
 	legacy_hypnosis_counter = maxi(
@@ -2138,7 +2320,7 @@ func bind_restored_legacy_world_item_target(items: Array) -> bool:
 			return true
 	pending_legacy_world_item_serial = 0
 	if behavior_state == BehaviorState.WORLD_ITEM:
-		_enter_patrol()
+		_begin_original_world_item_abandonment()
 	return false
 
 
@@ -2244,6 +2426,8 @@ func _begin_legacy_world_item_investigation(world_item: Node2D) -> bool:
 	legacy_world_item_target = world_item
 	legacy_world_item_interaction_pending = false
 	legacy_world_item_replan_elapsed = CHASE_REPLAN_SECONDS
+	legacy_world_item_abandoning = false
+	legacy_world_item_abandon_elapsed = 0.0
 	current_target = null
 	behavior_state = BehaviorState.WORLD_ITEM
 	cancel_path()
@@ -2269,9 +2453,11 @@ func _update_legacy_world_item_investigation(delta: float) -> void:
 			)
 		)
 	):
-		_clear_legacy_world_item_target()
-		_enter_patrol()
+		_begin_original_world_item_abandonment()
+		_update_original_world_item_abandonment(delta)
 		return
+	legacy_world_item_abandoning = false
+	legacy_world_item_abandon_elapsed = 0.0
 	if LEGACY_WORLD_ITEM_RULES.is_adjacent_navigation_cell(
 		position,
 		legacy_world_item_target.position,
@@ -2291,6 +2477,77 @@ func _update_legacy_world_item_investigation(delta: float) -> void:
 		return
 	legacy_world_item_replan_elapsed = 0.0
 	_issue_path_to(legacy_world_item_target.position)
+
+
+func _begin_original_world_item_abandonment() -> void:
+	if legacy_world_item_abandoning:
+		return
+	legacy_world_item_target = null
+	legacy_world_item_interaction_pending = false
+	legacy_world_item_replan_elapsed = 0.0
+	pending_legacy_world_item_serial = 0
+	legacy_world_item_abandoning = true
+	legacy_world_item_abandon_elapsed = 0.0
+	cancel_path()
+	if legacy_search_wait_limit <= 0:
+		legacy_search_wait_counter = 0
+		legacy_search_wait_limit = (
+			LEGACY_ENEMY_AI_RULES.REACTION_MINIMUM_LIMIT
+		)
+
+
+func _update_original_world_item_abandonment(delta: float) -> bool:
+	if not legacy_world_item_abandoning:
+		return false
+	legacy_world_item_abandon_elapsed += maxf(delta, 0.0)
+	while (
+		legacy_world_item_abandon_elapsed
+		>= ORIGINAL_ATTACK_REACTION_TICK_SECONDS
+	):
+		legacy_world_item_abandon_elapsed -= (
+			ORIGINAL_ATTACK_REACTION_TICK_SECONDS
+		)
+		legacy_search_wait_counter += 1
+		if not LEGACY_ENEMY_AI_RULES.counter_has_completed(
+			legacy_search_wait_counter,
+			legacy_search_wait_limit,
+		):
+			continue
+		# sub_45C710 state 2 consumes 0x5CC69 only after the unavailable
+		# item's shared counter strictly exceeds its stored limit, then returns
+		# to state 0 with a fresh 20..59 delay.
+		var random_value := next_original_crt_random_value(0x0005CC69)
+		var next_wait_limit := (
+			ORIGINAL_WORLD_ITEM_ABANDON_MINIMUM_LIMIT
+		)
+		if random_value >= 0:
+			next_wait_limit = (
+				random_value % ORIGINAL_WORLD_ITEM_ABANDON_RANDOM_SPAN
+				+ ORIGINAL_WORLD_ITEM_ABANDON_MINIMUM_LIMIT
+			)
+		else:
+			var sampled: Dictionary = (
+				LEGACY_ENEMY_AI_RULES.reaction_limit_from_state(
+					legacy_search_random_state
+				)
+			)
+			legacy_search_random_state = int(sampled.get("state", 1))
+			var sampled_reaction_limit := int(sampled.get(
+				"limit",
+				LEGACY_ENEMY_AI_RULES.REACTION_MINIMUM_LIMIT,
+			))
+			next_wait_limit = (
+				sampled_reaction_limit
+				- LEGACY_ENEMY_AI_RULES.REACTION_MINIMUM_LIMIT
+				+ ORIGINAL_WORLD_ITEM_ABANDON_MINIMUM_LIMIT
+			)
+		legacy_world_item_abandon_serial += 1
+		_enter_patrol()
+		legacy_search_wait_counter = 0
+		legacy_search_wait_limit = next_wait_limit
+		legacy_search_tick_elapsed = 0.0
+		return true
+	return false
 
 
 func _start_legacy_distraction(
@@ -2336,6 +2593,8 @@ func _clear_legacy_world_item_target() -> void:
 	legacy_world_item_interaction_pending = false
 	legacy_world_item_replan_elapsed = 0.0
 	pending_legacy_world_item_serial = 0
+	legacy_world_item_abandoning = false
+	legacy_world_item_abandon_elapsed = 0.0
 
 
 func _clear_legacy_corpse_attention() -> void:
@@ -2348,6 +2607,7 @@ func _clear_legacy_corpse_attention() -> void:
 
 func _clear_all_legacy_world_item_runtime() -> void:
 	_clear_legacy_world_item_target()
+	legacy_world_item_abandon_serial = 0
 	legacy_hypnosis_active = false
 	legacy_hypnosis_counter = 0
 	legacy_poison_active = false
