@@ -220,8 +220,10 @@ func _test_combat_timing_ammo_and_death(failures: Array[String]) -> void:
 	_expect(
 		target.current_hit_points == 5
 		and attack_hit_events.size() == 1
-		and int(attack_hit_events[0]["damage"]) == 2,
-		"damage is applied exactly when the final attack frame is entered",
+		and int(attack_hit_events[0]["damage"]) == 2
+		and attacker.combat_action == SQUAD_UNIT_SCRIPT.CombatAction.NONE
+		and is_zero_approx(attacker.attack_cooldown_remaining),
+		"final-frame entry commits damage and restores idle with no recovery timer",
 		failures,
 	)
 	attacker._physics_process(0.085)
@@ -1707,7 +1709,7 @@ func _test_weapon_profile() -> Dictionary:
 		"magazine_capacity": 2,
 		"starting_reserve_ammo": 3,
 		"reload_seconds": 0.1,
-		"recovery_seconds": 0.05,
+		"recovery_seconds": 0.0,
 		"alert_radius": 640.0,
 	}
 

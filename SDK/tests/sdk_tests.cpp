@@ -850,6 +850,8 @@ int main(int argc, char** argv) {
             m1937::sdk::rva::special_attack_dispatch != 0 &&
                 m1937::sdk::rva::gasoline_barrel_update != 0 &&
                 m1937::sdk::rva::explosion_actor_update != 0 &&
+                m1937::sdk::rva::attack_command_update != 0 &&
+                m1937::sdk::rva::animation_entered_last_frame != 0 &&
                 m1937::sdk::rva::special_attention_source != 0 &&
                 m1937::sdk::rva::special_attack_dispatch !=
                     m1937::sdk::rva::explosion_actor_update &&
@@ -879,8 +881,12 @@ int main(int argc, char** argv) {
                 m1937::sdk::
                         machine_gun_coordinate_spread_degrees[2] == 2 &&
                 m1937::sdk::accepted_actor_damage(34, 31) == 0 &&
-                m1937::sdk::accepted_actor_damage(34, 32) == 32,
-            "ordinary target-cell, spread and low-damage rules mismatch",
+                m1937::sdk::accepted_actor_damage(34, 32) == 32 &&
+                !m1937::sdk::has_independent_attack_recovery_delay &&
+                m1937::sdk::attack_commits_on_final_frame_entry &&
+                m1937::sdk::attack_returns_idle_on_commit_update &&
+                m1937::sdk::attack_commit_animation_ticks(3, 1) == 2,
+            "ordinary target-cell, timing, spread and low-damage rules mismatch",
             checks);
         require(
             m1937::sdk::rva::attack_target_cell_coincides != 0 &&
@@ -954,7 +960,8 @@ int main(int argc, char** argv) {
                 explosion_damage == 128 &&
                 explosion_ellipse.width == 128 &&
                 explosion_ellipse.height == 64 &&
-                explosion_alert_radius == 800,
+                explosion_alert_radius == 800 &&
+                !m1937::sdk::explosion_damage_requires_terrain_line_of_sight,
             "grenade actor-61 delivery table mismatch", checks);
         require(
             find_attack_rule(8) == nullptr &&
@@ -1305,6 +1312,7 @@ int main(int argc, char** argv) {
                 triggered.blast_horizontal_radius == 128 &&
                 triggered.blast_vertical_radius == 64 &&
                 triggered.alert_radius == 800 &&
+                !m1937::sdk::explosion_damage_requires_terrain_line_of_sight &&
                 timed.explosion_actor_type ==
                     triggered.explosion_actor_type &&
                 timed.primary_damage == triggered.primary_damage,

@@ -200,7 +200,7 @@ func _test_real_document_exchange(main: Node) -> void:
 	_expect(
 		recipient.backpack_inventory != null
 		and recipient.backpack_inventory.has_item(RULES.DOCUMENT_ITEM_ID)
-		and not (main.mission_pickups as Array).has(document)
+		and not is_instance_valid(document)
 		and (main.legacy_crt_random_trace as Array).size() == 4,
 		"recipient collection transfers item 101 and consumes four destructor draws",
 	)

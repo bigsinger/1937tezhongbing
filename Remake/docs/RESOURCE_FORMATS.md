@@ -239,7 +239,7 @@ Remake 现在会在站立、行走、奔跑、匍匐、攻击、主动动作及�
 `reference_y - primary.z + row_lookup[column]` 建立记录，
 `sub_44E000` 稳定升序后由 `sub_44EF50` 绘制。Remake 对非均匀表使用缓存
 AtlasTexture 分列，对均匀表保持一个 draw item；静态场景、移动 actor、
-96 扇门的开/关两态、拾取物、爆炸物和特殊世界对象都使用相同规则。
+177 个门状态（97 个关闭、80 个已开放）、拾取物、爆炸物和特殊世界对象都使用相同规则。
 `row_lookup` 不能误用于碰撞。
 
 三个 triplet 的 middle 分量也全部保留。980 个真实 SPR 的 primary/tertiary

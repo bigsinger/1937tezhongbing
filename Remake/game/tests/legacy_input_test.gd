@@ -192,14 +192,17 @@ func _validate_edge_scroll(failures: Array[String]) -> void:
 		"original client edge uses coordinates 0/1 and the outermost right column",
 		failures,
 	)
+	var modern_corner: Vector2 = MAIN_SCRIPT.edge_scroll_direction_for_position(
+		Vector2(1.0, 1.0), viewport_size
+	)
 	_expect(
-		MAIN_SCRIPT.edge_scroll_direction_for_position(
-			Vector2(1.0, 1.0), viewport_size
-		) == Vector2(-1.0, -1.0)
+		modern_corner.x < 0.0
+		and modern_corner.y < 0.0
+		and is_equal_approx(modern_corner.length(), 1.0)
 		and MAIN_SCRIPT.edge_scroll_direction_for_position(
 			Vector2(1280.0, 360.0), viewport_size
 		).is_zero_approx(),
-		"Main delegates edge classification and rejects coordinates outside the client",
+		"Main uses normalized modern edge intent and rejects coordinates outside the client",
 		failures,
 	)
 	var expected_codes := {

@@ -72,6 +72,23 @@ func _run() -> void:
 		{"name": "古明", "alive": true, "selected": false, "health_ratio": 0.25, "ammo_text": "30"},
 		{"name": "大牛", "alive": false, "selected": false, "health_ratio": 0.0, "ammo_text": ""},
 	])
+	var weapon_texture := _fixture_texture(
+		Vector2i(32, 40), Color(0.72, 0.58, 0.24, 1.0)
+	)
+	var weapon_states: Array[Dictionary] = []
+	var hud_actor_names: Array = GAME_SHELL_SCRIPT.ORIGINAL_HUD_PORTRAITS.keys()
+	for actor_index: int in range(hud_actor_names.size()):
+		weapon_states.append({
+			"name": str(hud_actor_names[actor_index]),
+			"alive": actor_index != 4,
+			"selected": actor_index == 0,
+			"health_ratio": maxf(1.0 - float(actor_index) * 0.25, 0.0),
+			"ammo_text": "50" if actor_index == 2 else "30" if actor_index == 3 else "",
+			"weapon_name": "Rifle" if actor_index == 0 else "",
+			"weapon_ammo_text": "12 / 40" if actor_index == 0 else "",
+			"weapon_icon": weapon_texture if actor_index == 0 else null,
+		})
+	shell.update_original_hud(weapon_states)
 	await process_frame
 	await _check_layout(shell, Vector2i(1024, 768))
 	await _check_overlay_layout(shell, Vector2i(1024, 768))
@@ -200,6 +217,20 @@ func _check_layout(shell: GameShell, viewport_size: Vector2i) -> void:
 	_expect(
 		portrait_right < action_left,
 		"portrait and action clusters never overlap",
+	)
+	var weapon := layout.get("weapon", {}) as Dictionary
+	var weapon_rect := weapon.get("rect", Rect2()) as Rect2
+	_expect(
+		bool(weapon.get("visible", false))
+			and bool(weapon.get("has_icon", false))
+			and str(weapon.get("name", "")) == "Rifle"
+			and str(weapon.get("ammo_text", "")) == "12 / 40",
+		"bottom HUD exposes the selected actor's current weapon and ammunition",
+	)
+	_expect(
+		weapon_rect.position.x >= portrait_right
+			and weapon_rect.end.x <= action_left,
+		"weapon panel stays between portrait and action clusters",
 	)
 	await process_frame
 

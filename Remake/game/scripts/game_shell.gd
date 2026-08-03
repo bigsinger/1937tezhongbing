@@ -144,6 +144,10 @@ var _original_hud_background: NinePatchRect
 var _original_hud_border: NinePatchRect
 var _original_hud_portrait_row: HBoxContainer
 var _original_hud_action_row: HBoxContainer
+var _original_hud_weapon_panel: Panel
+var _original_hud_weapon_icon: TextureRect
+var _original_hud_weapon_name: Label
+var _original_hud_weapon_ammo: Label
 var _original_hud_portrait_controls: Dictionary = {}
 var _original_hud_action_buttons: Dictionary = {}
 var _original_hud_texture_cache: Dictionary = {}
@@ -534,10 +538,30 @@ func set_original_hud_visible(visible: bool) -> void:
 
 func update_original_hud(actor_states: Array) -> void:
 	var by_name: Dictionary = {}
+	var selected_state: Dictionary = {}
 	for state: Dictionary in actor_states:
 		var actor_name := str(state.get("name", ""))
 		if ORIGINAL_HUD_PORTRAITS.has(actor_name):
 			by_name[actor_name] = state
+			if (
+				selected_state.is_empty()
+				and bool(state.get("selected", false))
+				and bool(state.get("alive", true))
+			):
+				selected_state = state
+	if _original_hud_weapon_panel != null:
+		_original_hud_weapon_panel.visible = not selected_state.is_empty()
+		_original_hud_weapon_icon.texture = (
+			selected_state.get("weapon_icon") as Texture2D
+			if not selected_state.is_empty()
+			else null
+		)
+		_original_hud_weapon_name.text = str(
+			selected_state.get("weapon_name", "")
+		)
+		_original_hud_weapon_ammo.text = str(
+			selected_state.get("weapon_ammo_text", "")
+		)
 	for actor_name: String in _original_hud_status_controls:
 		var status_controls := (
 			_original_hud_status_controls[actor_name] as Dictionary
@@ -617,6 +641,21 @@ func original_hud_layout_snapshot() -> Dictionary:
 			"rect": button.get_global_rect(),
 			"pressed": button.button_pressed,
 		}
+	var weapon := {
+		"visible": false,
+		"rect": Rect2(),
+		"name": "",
+		"ammo_text": "",
+		"has_icon": false,
+	}
+	if _original_hud_weapon_panel != null:
+		weapon = {
+			"visible": _original_hud_weapon_panel.visible,
+			"rect": _original_hud_weapon_panel.get_global_rect(),
+			"name": _original_hud_weapon_name.text,
+			"ammo_text": _original_hud_weapon_ammo.text,
+			"has_icon": _original_hud_weapon_icon.texture != null,
+		}
 	return {
 		"assets_ready": _original_hud_assets_ready,
 		"top_visible": _original_top_hud != null and _original_top_hud.visible,
@@ -629,6 +668,7 @@ func original_hud_layout_snapshot() -> Dictionary:
 			else Rect2()
 		),
 		"portraits": portraits,
+		"weapon": weapon,
 		"actions": actions,
 	}
 
@@ -1665,6 +1705,57 @@ func _build_original_bottom_hud() -> void:
 	_original_bottom_hud.add_child(_original_hud_portrait_row)
 	for actor_name: String in ORIGINAL_HUD_PORTRAITS:
 		_build_original_hud_portrait(actor_name)
+
+	_original_hud_weapon_panel = Panel.new()
+	_original_hud_weapon_panel.name = "OriginalHudWeapon"
+	_original_hud_weapon_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_original_hud_weapon_panel.offset_left = 270.0
+	_original_hud_weapon_panel.offset_top = 6.0
+	_original_hud_weapon_panel.offset_right = 472.0
+	_original_hud_weapon_panel.offset_bottom = 56.0
+	_original_hud_weapon_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_original_hud_weapon_panel.visible = false
+	var weapon_style := StyleBoxFlat.new()
+	weapon_style.bg_color = Color(0.035, 0.045, 0.031, 0.82)
+	weapon_style.border_color = Color(0.58, 0.50, 0.27, 0.9)
+	weapon_style.set_border_width_all(1)
+	weapon_style.corner_radius_top_left = 3
+	weapon_style.corner_radius_top_right = 3
+	weapon_style.corner_radius_bottom_left = 3
+	weapon_style.corner_radius_bottom_right = 3
+	_original_hud_weapon_panel.add_theme_stylebox_override("panel", weapon_style)
+	_original_bottom_hud.add_child(_original_hud_weapon_panel)
+
+	_original_hud_weapon_icon = TextureRect.new()
+	_original_hud_weapon_icon.name = "WeaponIcon"
+	_original_hud_weapon_icon.position = Vector2(4.0, 3.0)
+	_original_hud_weapon_icon.size = Vector2(44.0, 44.0)
+	_original_hud_weapon_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_original_hud_weapon_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_original_hud_weapon_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_original_hud_weapon_panel.add_child(_original_hud_weapon_icon)
+
+	_original_hud_weapon_name = Label.new()
+	_original_hud_weapon_name.name = "WeaponName"
+	_original_hud_weapon_name.position = Vector2(54.0, 4.0)
+	_original_hud_weapon_name.size = Vector2(142.0, 22.0)
+	_original_hud_weapon_name.add_theme_color_override(
+		"font_color", Color(0.94, 0.88, 0.66)
+	)
+	_original_hud_weapon_name.add_theme_font_size_override("font_size", 16)
+	_original_hud_weapon_name.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_original_hud_weapon_panel.add_child(_original_hud_weapon_name)
+
+	_original_hud_weapon_ammo = Label.new()
+	_original_hud_weapon_ammo.name = "WeaponAmmo"
+	_original_hud_weapon_ammo.position = Vector2(54.0, 25.0)
+	_original_hud_weapon_ammo.size = Vector2(142.0, 20.0)
+	_original_hud_weapon_ammo.add_theme_color_override(
+		"font_color", Color(0.88, 0.34, 0.25)
+	)
+	_original_hud_weapon_ammo.add_theme_font_size_override("font_size", 14)
+	_original_hud_weapon_ammo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_original_hud_weapon_panel.add_child(_original_hud_weapon_ammo)
 
 	_original_hud_action_row = HBoxContainer.new()
 	_original_hud_action_row.name = "OriginalHudActions"

@@ -22,6 +22,20 @@ class ClearSight:
 		return true
 
 
+class BlockedSight:
+	extends RefCounted
+
+	var query_count := 0
+
+	func has_line_of_sight(
+		_observer_position: Vector2,
+		_target_position: Vector2,
+		_ignored_scene_indices: Array = [],
+	) -> bool:
+		query_count += 1
+		return false
+
+
 class MockActor:
 	extends Node2D
 
@@ -597,15 +611,18 @@ func _test_main_inventory_and_explosion_integration(failures: Array[String]) -> 
 	)
 	collector.maximum_hit_points = 200
 	collector.current_hit_points = 200
+	var blocked_sight := BlockedSight.new()
+	main.dynamic_occupancy = blocked_sight
 	main._on_world_explosion_requested(
 		prop, collector, Vector2.ZERO, 128, 128.0, 64.0, 0
 	)
 	_expect(
 		collector.current_hit_points == 72
+		and blocked_sight.query_count == 0
 		and main.legacy_explosion_effects.size() == 1
 		and int(main.legacy_explosion_effects[0].get("runtime_actor_type"))
 			== 62,
-		"barrel explosion applies actor-62 damage and creates its visual actor",
+		"barrel explosion ignores terrain sight and creates its actor-62 visual",
 		failures,
 	)
 	main.units.clear()

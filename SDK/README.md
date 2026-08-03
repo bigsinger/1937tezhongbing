@@ -49,7 +49,8 @@ PE 指纹和原始指令字节。
 - `OrdinaryCombat.hpp` 固定 attack type 1—7 的直接 actor 伤害、
   步枪/匕首 attacker runtime type 例外、32×16 目标格门、机枪活动目标
   ±1°/纯坐标 ±2° 三路散布，以及八类 target runtime type 的低于 32
-  伤害免疫；
+  伤害免疫；它还固定攻击命令更新入口、末帧提交后同一次更新恢复待机和
+  “没有独立恢复计时”的时序语义；
 - `Mission.hpp` 固定任务控制器 `game_flow_state +0xA4`、
   `evaluation_active +0xBC`、`result_state +0xC0` 布局，以及原 evaluator
   的失败值 2、胜利值 3；`address-catalog.json` 同时固定初始化、求值、
@@ -194,7 +195,7 @@ DBL 1003/header[2] actor 53 仍明确归入可受伤汽油桶生命周期，不�
 注意力保持。它同时说明 type 11 不消费项目 99、不是定时眩晕，并由来源移动或
 目标战斗转换释放。actor 62 的效果 11/15 粒子类型、首匹配 GFL、64×32
 散布、五轮动画寿命和默认状态 1 的 MSVCRT `rand()` 步进也由同一头文件
-固定；runtime type 102 无匹配 SPR，必须保留“消费随机数但不生成粒子”的
+固定；主爆炸伤害不查询地形视线遮挡。runtime type 102 无匹配 SPR，必须保留“消费随机数但不生成粒子”的
 语义。相关函数入口和 `SpecialAttentionSource` 全局量均由
 `address-catalog.json` 生成到 C++/C# 常量，补丁和 Remake 不再各自复制魔数。
 type 8/10 的部署物不能与爆炸 actor 合并：五次部署物工厂取数、独立

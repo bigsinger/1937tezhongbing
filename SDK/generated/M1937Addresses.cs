@@ -130,6 +130,8 @@ namespace Mission1937.SDK.Generated
         public const long ExplosionActorUpdate = 0x000554A0L;
         public const long TriggeredSpecialUpdate = 0x000556B0L;
         public const long SpecialAttackDispatch = 0x00056DF0L;
+        public const long AttackCommandUpdate = 0x00057B40L;
+        public const long AnimationEnteredLastFrame = 0x0001D6A0L;
         public const long BurialRangeCheck = 0x00056A20L;
         public const long BurialCompletion = 0x00056CD0L;
         public const long ApplyActorDamage = 0x00058700L;

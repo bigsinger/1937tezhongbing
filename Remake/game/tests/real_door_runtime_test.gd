@@ -21,8 +21,10 @@ const LEVEL_IDS: Array[String] = [
 	"m010",
 	"m011",
 ]
-const EXPECTED_SUPPORTED_DOOR_COUNT := 96
-const EXPECTED_NAVIGATION_DOOR_COUNT := 94
+const EXPECTED_SUPPORTED_DOOR_COUNT := 177
+const EXPECTED_CLOSED_DOOR_COUNT := 97
+const EXPECTED_AUTHORED_OPEN_DOOR_COUNT := 80
+const EXPECTED_NAVIGATION_DOOR_COUNT := 166
 ## Counts come from the hash-locked VWF Layer 3 data. "Static" means that the
 ## encoded scene is not one of the 772 exact RuntimeActor identities; closed
 ## doors, pickups and historical orphan footprints therefore stay in this
@@ -61,6 +63,8 @@ func _run_tests() -> void:
 	main.set_process(false)
 	main.set_physics_process(false)
 	var total_doors := 0
+	var closed_doors := 0
+	var authored_open_doors := 0
 	var navigation_doors := 0
 	var closed_row_sliced_doors := 0
 	var open_row_sliced_doors := 0
@@ -103,10 +107,24 @@ func _run_tests() -> void:
 				"%s scene %d uses recovered closed/open art and anchors"
 					% [level_id, scene_index],
 			)
+			var starts_open := bool(door.get("starts_open"))
+			if starts_open:
+				authored_open_doors += 1
+			else:
+				closed_doors += 1
 			_expect(
-				not bool(door.get("is_open")),
-				"%s scene %d starts closed" % [level_id, scene_index],
+				bool(door.get("is_open")) == starts_open
+					and bool(door.get("locked_open")) == starts_open,
+				"%s scene %d starts in its authored door state"
+					% [level_id, scene_index],
 			)
+			if starts_open:
+				_expect(
+					main.dynamic_occupancy.is_source_scene_disabled(scene_index)
+						and not _any_solid(main.navigation_grid, movement_cells),
+					"%s scene %d authored opening is immediately traversable"
+						% [level_id, scene_index],
+				)
 			if _uses_original_row_slices(door):
 				closed_row_sliced_doors += 1
 			door.call("set_open", true, false)
@@ -115,20 +133,24 @@ func _run_tests() -> void:
 			door.call("set_open", false, false)
 	_expect(
 		total_doors == EXPECTED_SUPPORTED_DOOR_COUNT,
-		"all %d supported closed doors across the twelve real levels load"
+		"all %d supported door states across the twelve real levels load"
 			% EXPECTED_SUPPORTED_DOOR_COUNT,
+	)
+	_expect(
+		closed_doors == EXPECTED_CLOSED_DOOR_COUNT
+			and authored_open_doors == EXPECTED_AUTHORED_OPEN_DOOR_COUNT,
+		"the real maps retain 97 closed gates and 80 authored openings",
 	)
 	_expect(
 		navigation_doors == EXPECTED_NAVIGATION_DOOR_COUNT,
 		(
-			"%d real doors release local VWF movement cells; two decorative "
-			+ "instances have no closed-only blocked cell"
+			"%d real door states own at least one closed-only VWF movement cell"
 		)
 			% EXPECTED_NAVIGATION_DOOR_COUNT,
 	)
 	_expect(
 		closed_row_sliced_doors == EXPECTED_SUPPORTED_DOOR_COUNT,
-		"all %d closed-door visuals use their original per-column baselines"
+		"all %d authored initial door visuals use original per-column baselines"
 			% EXPECTED_SUPPORTED_DOOR_COUNT,
 	)
 	_expect(
@@ -261,7 +283,19 @@ func _audit_static_navigation_footprints(
 	)
 	var static_scenes: Dictionary = {}
 	var actor_scenes: Dictionary = {}
+	var authored_open_scenes: Dictionary = {}
+	var authored_open_cells: Dictionary = {}
+	for door_value: Variant in main.legacy_doors as Array:
+		var door := door_value as Node2D
+		if not bool(door.get("starts_open")):
+			continue
+		authored_open_scenes[int(door.get("scene_index"))] = true
+		for release_cell: Vector2i in (
+			door.get("movement_release_cells") as Array[Vector2i]
+		):
+			authored_open_cells[release_cell] = true
 	var static_state_violations := 0
+	var static_state_examples: Array[String] = []
 	var live_actor_state_violations := 0
 	for cell_index: int in range(movement_values.size()):
 		var encoded := int(movement_values[cell_index])
@@ -272,14 +306,33 @@ func _audit_static_navigation_footprints(
 			counts["anonymous_static_cells"] = (
 				int(counts["anonymous_static_cells"]) + 1
 			)
+			var anonymous_should_be_open := authored_open_cells.has(cell)
+			var anonymous_is_released := navigation.is_source_cell_released(
+				NavigationGridData.MOVEMENT_LAYER_ID,
+				cell,
+			)
 			if (
-				navigation.is_source_cell_released(
-					NavigationGridData.MOVEMENT_LAYER_ID,
-					cell,
+				(
+					anonymous_should_be_open
+					and (
+						not anonymous_is_released
+						or navigation.astar.is_point_solid(cell)
+					)
 				)
-				or not navigation.astar.is_point_solid(cell)
+				or (
+					not anonymous_should_be_open
+					and (
+						anonymous_is_released
+						or not navigation.astar.is_point_solid(cell)
+					)
+				)
 			):
 				static_state_violations += 1
+				if static_state_examples.size() < 8:
+					static_state_examples.append(
+						"anonymous %s expected_open=%s released=%s solid=%s"
+						% [cell, anonymous_should_be_open, anonymous_is_released, navigation.astar.is_point_solid(cell)]
+					)
 			continue
 		var source_scene := encoded - 1000
 		if expected_actor_scenes.has(str(source_scene)):
@@ -300,15 +353,41 @@ func _audit_static_navigation_footprints(
 			int(counts["encoded_static_cells"]) + 1
 		)
 		static_scenes[source_scene] = true
-		if (
-			navigation.ignored_scene_indices.has(source_scene)
-			or navigation.is_source_cell_released(
+		var encoded_should_be_open := (
+			authored_open_scenes.has(source_scene)
+			or authored_open_cells.has(cell)
+		)
+		var encoded_is_released := (
+			navigation.is_source_cell_released(
 				NavigationGridData.MOVEMENT_LAYER_ID,
 				cell,
 			)
-			or not navigation.astar.is_point_solid(cell)
+		)
+		var encoded_source_ignored := (
+			navigation.ignored_scene_indices.has(source_scene)
+		)
+		if (
+			(
+				encoded_should_be_open
+				and (
+					(not encoded_is_released and not encoded_source_ignored)
+					or navigation.astar.is_point_solid(cell)
+				)
+			)
+			or (
+				not encoded_should_be_open
+				and (
+					encoded_is_released or encoded_source_ignored
+					or not navigation.astar.is_point_solid(cell)
+				)
+			)
 		):
 			static_state_violations += 1
+			if static_state_examples.size() < 8:
+				static_state_examples.append(
+					"scene %d %s expected_open=%s released=%s ignored=%s solid=%s"
+					% [source_scene, cell, encoded_should_be_open, encoded_is_released, encoded_source_ignored, navigation.astar.is_point_solid(cell)]
+				)
 	counts["encoded_static_scenes"] = static_scenes.size()
 	counts["encoded_actor_scenes"] = actor_scenes.size()
 
@@ -325,7 +404,8 @@ func _audit_static_navigation_footprints(
 	)
 	_expect(
 		static_state_violations == 0,
-		"%s keeps every anonymous and non-actor source cell solid" % level_id,
+		"%s opens only cells owned by authored open door passages: %s"
+			% [level_id, str(static_state_examples)],
 	)
 	_expect(
 		live_actor_state_violations == 0,
@@ -338,6 +418,8 @@ func _audit_static_navigation_footprints(
 func _first_door_with_source_footprint(main: Node) -> Node2D:
 	for door_value: Variant in main.legacy_doors as Array:
 		var door := door_value as Node2D
+		if bool(door.get("starts_open")):
+			continue
 		if (
 			door.get("movement_release_cells") as Array[Vector2i]
 		).is_empty():

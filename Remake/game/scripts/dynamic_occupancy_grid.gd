@@ -1410,6 +1410,7 @@ func try_relocate(
 	scene_index: int,
 	new_world_position: Vector2,
 	ignore_dynamic_actors: bool = false,
+	minimum_actor_separation: float = -1.0,
 ) -> bool:
 	if navigation == null or not actors.has(scene_index):
 		return false
@@ -1431,11 +1432,16 @@ func try_relocate(
 		relocation_rejection_count += 1
 		return false
 	if (
-		not ignore_dynamic_actors
+		(not ignore_dynamic_actors or minimum_actor_separation > 0.0)
 		and not _keeps_actor_separation(
 			scene_index,
 			old_world_position,
 			new_world_position,
+			(
+				minimum_actor_separation
+				if minimum_actor_separation > 0.0
+				else MIN_ACTOR_SEPARATION
+			),
 		)
 	):
 		relocation_rejection_count += 1
@@ -1463,6 +1469,7 @@ func try_relocate(
 func try_relocate_from_runtime_evidence(
 	scene_index: int,
 	new_world_position: Vector2,
+	minimum_actor_separation: float = -1.0,
 ) -> bool:
 	if navigation == null or not actors.has(scene_index):
 		return false
@@ -1473,6 +1480,18 @@ func try_relocate_from_runtime_evidence(
 		not navigation.is_valid_cell(new_origin)
 		or absi(new_origin.x - old_origin.x) > 1
 		or absi(new_origin.y - old_origin.y) > 1
+	):
+		relocation_rejection_count += 1
+		return false
+	var old_world_position := actor["world_position"] as Vector2
+	if (
+		minimum_actor_separation > 0.0
+		and not _keeps_actor_separation(
+			scene_index,
+			old_world_position,
+			new_world_position,
+			minimum_actor_separation,
+		)
 	):
 		relocation_rejection_count += 1
 		return false
@@ -2020,16 +2039,18 @@ func _keeps_actor_separation(
 	scene_index: int,
 	old_world_position: Vector2,
 	new_world_position: Vector2,
+	minimum_separation: float = MIN_ACTOR_SEPARATION,
 ) -> bool:
+	minimum_separation = maxf(minimum_separation, 0.0)
 	var target_origin: Vector2i = navigation.world_to_cell(
 		new_world_position
 	)
 	var x_radius := maxi(
-		ceili(MIN_ACTOR_SEPARATION / float(navigation.cell_size.x)),
+		ceili(minimum_separation / float(navigation.cell_size.x)),
 		1,
 	)
 	var y_radius := maxi(
-		ceili(MIN_ACTOR_SEPARATION / float(navigation.cell_size.y)),
+		ceili(minimum_separation / float(navigation.cell_size.y)),
 		1,
 	)
 	for y: int in range(
@@ -2060,7 +2081,7 @@ func _keeps_actor_separation(
 					other_position
 				)
 				if (
-					new_distance < MIN_ACTOR_SEPARATION
+					new_distance < minimum_separation
 					and new_distance <= old_distance
 				):
 					var other_origin := (

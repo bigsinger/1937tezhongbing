@@ -453,14 +453,13 @@ func _test_drop_enemy_pickup_and_death_loot(main: Node) -> void:
 		pickup_sites.append(int(draw.get("call_site_rva", 0)))
 	_expect(
 		(main.mission_pickups as Array).is_empty()
-		and bool(dropped_pickup.get("original_destructor_random_consumed"))
 		and pickup_sites == [
 			0x00053655,
 			0x000537A3,
 			0x00050B64,
 			0x00050B7D,
 		],
-		"enemy pickup retires the world-item actor through the exact four-draw destructor",
+		"enemy pickup retires the world-item actor through the exact four-draw destructor without retaining a freed reference",
 	)
 	_expect(
 		int(carrier_inventory.call("item_count", 48)) == before_count + 1,

@@ -766,21 +766,31 @@ func _run() -> void:
 		"mouse at screen center does not scroll",
 		failures,
 	)
+	var left_edge: Vector2 = main.edge_scroll_direction_for_position(Vector2(0.0, 360.0), viewport_size)
+	var right_edge: Vector2 = main.edge_scroll_direction_for_position(Vector2(1279.0, 360.0), viewport_size)
+	var top_edge: Vector2 = main.edge_scroll_direction_for_position(Vector2(640.0, 0.0), viewport_size)
+	var bottom_edge: Vector2 = main.edge_scroll_direction_for_position(Vector2(640.0, 719.0), viewport_size)
 	expect(
-		main.edge_scroll_direction_for_position(Vector2(0.0, 360.0), viewport_size) == Vector2.LEFT
-		and main.edge_scroll_direction_for_position(Vector2(1279.0, 360.0), viewport_size) == Vector2.RIGHT
-		and main.edge_scroll_direction_for_position(Vector2(640.0, 0.0), viewport_size) == Vector2.UP
-		and main.edge_scroll_direction_for_position(Vector2(640.0, 719.0), viewport_size) == Vector2.DOWN,
-		"all four screen edges request the matching camera direction",
+		left_edge.x <= -0.99 and is_zero_approx(left_edge.y)
+		and right_edge.x >= 0.99 and is_zero_approx(right_edge.y)
+		and top_edge.y <= -0.99 and is_zero_approx(top_edge.x)
+		and bottom_edge.y >= 0.99 and is_zero_approx(bottom_edge.x),
+		"all four screen edges request a near-full matching camera direction",
 		failures,
 	)
+	var corner_intent: Vector2 = main.edge_scroll_direction_for_position(Vector2.ZERO, viewport_size)
+	var near_edge_intent: Vector2 = main.edge_scroll_direction_for_position(Vector2(2.0, 360.0), viewport_size)
+	var inner_edge_intent: Vector2 = main.edge_scroll_direction_for_position(Vector2(31.0, 360.0), viewport_size)
 	expect(
-		main.edge_scroll_direction_for_position(Vector2(0.0, 0.0), viewport_size) == Vector2(-1.0, -1.0)
-		and main.edge_scroll_direction_for_position(Vector2(1.0, 360.0), viewport_size) == Vector2.LEFT
-		and main.edge_scroll_direction_for_position(Vector2(2.0, 360.0), viewport_size).is_zero_approx()
-		and main.edge_scroll_direction_for_position(Vector2(1278.0, 360.0), viewport_size).is_zero_approx()
+		corner_intent.x < 0.0
+		and corner_intent.y < 0.0
+		and is_equal_approx(corner_intent.length(), 1.0)
+		and near_edge_intent.x < inner_edge_intent.x
+		and inner_edge_intent.x < 0.0
+		and main.edge_scroll_direction_for_position(Vector2(32.0, 360.0), viewport_size).is_zero_approx()
+		and main.edge_scroll_direction_for_position(Vector2(1278.0, 360.0), viewport_size).x > 0.0
 		and main.edge_scroll_direction_for_position(Vector2(1280.0, 360.0), viewport_size).is_zero_approx(),
-		"recovered coordinates 0/1 scroll symmetrically, combine corners, and reject the exclusive viewport bound",
+		"modern edge band ramps smoothly, normalizes corners, and rejects the exclusive viewport bound",
 		failures,
 	)
 	expect(

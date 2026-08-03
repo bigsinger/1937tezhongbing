@@ -220,6 +220,10 @@ var active_sprite_footprint_key := ""
 ## separation. Static movement layers remain authoritative; only other live
 ## actors and their transient goal reservations are ignored.
 var use_soft_dynamic_occupancy := false
+## Optional presentation/gameplay spacing override. A negative value keeps the
+## recovered default; patrol controllers use a wider value so group members
+## preserve a readable formation even when their authored routes overlap.
+var minimum_actor_separation := -1.0
 ## A short patrol displacement captured from the stable original runtime is
 ## stronger movement evidence than the reconstructed VWF footprint at that
 ## exact location. This flag is enabled only while replaying such a segment;
@@ -415,6 +419,7 @@ func configure(
 	original_first_gameplay_navigation_applied = false
 	dynamic_occupancy = new_dynamic_occupancy
 	use_soft_dynamic_occupancy = false
+	minimum_actor_separation = -1.0
 	use_recorded_patrol_relocation = false
 	use_recorded_patrol_final_relocation = false
 	position = start_position
@@ -3510,9 +3515,10 @@ func try_start_attack(target: Node2D, force_target: bool = false) -> bool:
 	pending_hit_target = target
 	pending_hit_forced = forced
 	pending_hit_resolved = false
-	attack_cooldown_remaining = maxf(
-		float(weapon_profile.get("recovery_seconds", 0.5)), 0.05
-	)
+	# Native sub_457B40 has no independent recovery counter. The authored SPR
+	# sequence itself owns the attack cadence and returns idle on final-frame
+	# entry; keep this compatibility field normalized to zero.
+	attack_cooldown_remaining = 0.0
 	attack_started.emit(
 		self,
 		target,
@@ -3523,6 +3529,7 @@ func try_start_attack(target: Node2D, force_target: bool = false) -> bool:
 	if action_finished:
 		_resolve_pending_hit()
 		combat_action = CombatAction.NONE
+		pending_hit_target = null
 		_sync_equipped_weapon_after_consumption()
 		apply_idle_frame()
 	return true
@@ -3761,6 +3768,7 @@ func _try_relocate_runtime(
 				"try_relocate_from_runtime_evidence",
 				scene_index,
 				new_world_position,
+				minimum_actor_separation,
 			)
 		)
 	if use_soft_dynamic_occupancy:
@@ -3770,6 +3778,7 @@ func _try_relocate_runtime(
 				scene_index,
 				new_world_position,
 				true,
+				minimum_actor_separation,
 			)
 		)
 	return bool(
@@ -3777,6 +3786,8 @@ func _try_relocate_runtime(
 			"try_relocate",
 			scene_index,
 			new_world_position,
+			false,
+			minimum_actor_separation,
 		)
 	)
 
@@ -3862,6 +3873,7 @@ func _start_one_shot(action: int, groups: Array[Dictionary]) -> void:
 	_request_continuous_animation_audio(_active_action_group(groups))
 	if action == CombatAction.ATTACK and _action_frame_count(groups) == 1:
 		_resolve_pending_hit()
+		action_finished = true
 
 
 func _advance_combat_action(delta: float) -> void:
@@ -3907,6 +3919,15 @@ func _advance_combat_action(delta: float) -> void:
 		)
 		if combat_action == CombatAction.ATTACK and action_frame_index == frame_count - 1:
 			_resolve_pending_hit()
+			# sub_41D6A0 detects entry to the final frame and sub_457B40
+			# commits the hit, clears the attack and restores idle in this same
+			# actor update. Do not hold the final frame or add a cooldown.
+			action_finished = true
+			combat_action = CombatAction.NONE
+			pending_hit_target = null
+			_sync_equipped_weapon_after_consumption()
+			apply_idle_frame()
+			return
 
 
 func _apply_action_frame(groups: Array[Dictionary]) -> void:

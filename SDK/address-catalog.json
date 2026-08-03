@@ -127,6 +127,8 @@
     {"name": "ExplosionActorUpdate", "rva": "0x000554A0", "kind": "function", "confidence": "decompiled"},
     {"name": "TriggeredSpecialUpdate", "rva": "0x000556B0", "kind": "function", "confidence": "decompiled"},
     {"name": "SpecialAttackDispatch", "rva": "0x00056DF0", "kind": "function", "confidence": "decompiled"},
+    {"name": "AttackCommandUpdate", "rva": "0x00057B40", "kind": "function", "confidence": "decompiled"},
+    {"name": "AnimationEnteredLastFrame", "rva": "0x0001D6A0", "kind": "function", "confidence": "decompiled"},
     {"name": "BurialRangeCheck", "rva": "0x00056A20", "kind": "function", "confidence": "decompiled"},
     {"name": "BurialCompletion", "rva": "0x00056CD0", "kind": "function", "confidence": "decompiled"},
     {"name": "ApplyActorDamage", "rva": "0x00058700", "kind": "function", "confidence": "decompiled"},

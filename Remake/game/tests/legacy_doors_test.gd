@@ -44,6 +44,16 @@ func _test_catalog() -> void:
 		) == 149,
 		"station gate B resolves to its original open sprite",
 	)
+	var authored_open: Dictionary = DOOR_CATALOG.profile_for_entity(
+		{"database_entry_id": 341}
+	)
+	_expect(
+		int(authored_open.get("closed_gfl_index", 0)) == 146
+			and int(authored_open.get("open_gfl_index", 0)) == 147
+			and bool(authored_open.get("starts_open", false))
+			and bool(authored_open.get("locked_open", false)),
+		"an authored open gate resolves to the same two-state navigation pair",
+	)
 	_expect(
 		DOOR_CATALOG.profile_for_entity(
 			{"database_entry_id": 9999}

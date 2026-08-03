@@ -107,14 +107,27 @@ func _run() -> void:
 			checkpoint,
 		)
 		var restored_checkpoint: Dictionary = GAME_SESSION_STATE.capture(main)
+		var restored_checkpoint_hash: String = RUNTIME_STATE_SNAPSHOT.snapshot_hash(
+			{"session": restored_checkpoint}
+		)
+		if restored_checkpoint_hash != checkpoint_hash:
+			print(
+				"%s_CHECKPOINT_DIFF %s"
+				% [
+					level_id,
+					_first_snapshot_difference(
+						checkpoint,
+						restored_checkpoint,
+					),
+				]
+			)
 		_expect(
 			bool(restore_result.get("ok", false))
 				and (restore_result.get("warnings", []) as Array).is_empty(),
 			"%s restores its real mid-mission checkpoint without warnings" % level_id,
 		)
 		_expect(
-			RUNTIME_STATE_SNAPSHOT.snapshot_hash({"session": restored_checkpoint})
-				== checkpoint_hash,
+			restored_checkpoint_hash == checkpoint_hash,
 			"%s mid-mission checkpoint round-trips every captured world state"
 				% level_id,
 		)
@@ -1547,15 +1560,81 @@ func _validate_all_objective_disk_checkpoints(
 				normalized_restore_result.get("data", {}) as Dictionary
 			).get("session", {}) as Dictionary
 		)
+		var normalized_hash: String = RUNTIME_STATE_SNAPSHOT.snapshot_hash(
+			{"session": normalized_restored}
+		)
+		var expected_hash := str(record.get("session_hash", ""))
+		if normalized_hash != expected_hash:
+			print(
+				"%s_%s_DISK_DIFF %s"
+				% [
+					level_id,
+					slot_id,
+					_first_snapshot_difference(session, normalized_restored),
+				]
+			)
 		_expect(
 			bool(normalized_restore_result.get("ok", false))
-				and RUNTIME_STATE_SNAPSHOT.snapshot_hash(
-					{"session": normalized_restored}
-				)
-				== str(record.get("session_hash", "")),
+				and normalized_hash == expected_hash,
 			"%s checkpoint %s resumes with an exact normalized world-state hash"
 				% [level_id, slot_id],
 		)
+
+
+func _first_snapshot_difference(
+	expected: Variant,
+	actual: Variant,
+	path: String = "$",
+) -> String:
+	if typeof(expected) != typeof(actual):
+		return "%s type %d != %d" % [path, typeof(expected), typeof(actual)]
+	if expected is Dictionary:
+		var expected_dictionary := expected as Dictionary
+		var actual_dictionary := actual as Dictionary
+		var keys: Array = expected_dictionary.keys()
+		keys.sort_custom(
+			func(first: Variant, second: Variant) -> bool:
+				return str(first) < str(second)
+		)
+		for key: Variant in keys:
+			if not actual_dictionary.has(key):
+				return "%s.%s missing" % [path, str(key)]
+			var nested := _first_snapshot_difference(
+				expected_dictionary[key],
+				actual_dictionary[key],
+				"%s.%s" % [path, str(key)],
+			)
+			if not nested.is_empty():
+				return nested
+		for key: Variant in actual_dictionary.keys():
+			if not expected_dictionary.has(key):
+				return "%s.%s unexpected" % [path, str(key)]
+		return ""
+	if expected is Array:
+		var expected_array := expected as Array
+		var actual_array := actual as Array
+		if expected_array.size() != actual_array.size():
+			return "%s size %d != %d" % [
+				path,
+				expected_array.size(),
+				actual_array.size(),
+			]
+		for index: int in range(expected_array.size()):
+			var nested := _first_snapshot_difference(
+				expected_array[index],
+				actual_array[index],
+				"%s[%d]" % [path, index],
+			)
+			if not nested.is_empty():
+				return nested
+		return ""
+	if RUNTIME_STATE_SNAPSHOT.canonical_text(expected) != RUNTIME_STATE_SNAPSHOT.canonical_text(actual):
+		return "%s %s != %s" % [
+			path,
+			RUNTIME_STATE_SNAPSHOT.canonical_text(expected),
+			RUNTIME_STATE_SNAPSHOT.canonical_text(actual),
+		]
+	return ""
 
 
 func _cleanup_disk_test_root() -> void:

@@ -1,7 +1,7 @@
 class_name CombatProfiles
 extends RefCounted
 
-const SCHEMA_VERSION := 4
+const SCHEMA_VERSION := 5
 const CATALOG_PATH := "res://data/combat_profiles.json"
 const REQUIRED_ALERT_KEYS := [
 	"ally_death_radius",
@@ -249,7 +249,8 @@ static func _is_valid_weapon(weapon: Dictionary) -> bool:
 		or int(starting_reserve_ammo_value) < 0
 		or not _is_number(reload_seconds_value)
 		or float(reload_seconds_value) < 0.0
-		or not _is_positive_number(recovery_seconds_value)
+		or not _is_number(recovery_seconds_value)
+		or float(recovery_seconds_value) < 0.0
 	):
 		return false
 
@@ -284,10 +285,14 @@ static func _is_valid_weapon(weapon: Dictionary) -> bool:
 		"magazine_capacity",
 		"starting_reserve_ammo",
 		"reload_seconds",
-		"recovery_seconds",
 	]:
 		if source_status[field] != "unresolved_remake_default":
 			return false
+	if (
+		source_status["recovery_seconds"] != "recovered"
+		or not is_zero_approx(float(recovery_seconds_value))
+	):
+		return false
 	if source_status["damage"] == "unresolved_remake_default":
 		var damage_notes: Variant = weapon.get("damage_notes")
 		if not damage_notes is String or String(damage_notes).is_empty():

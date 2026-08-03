@@ -19,6 +19,21 @@ const LOW_DAMAGE_IMMUNITY_THRESHOLD := 32
 const ORIGINAL_CELL_SIZE := Vector2i(32, 16)
 const MACHINE_GUN_LIVE_TARGET_SPREAD_DEGREES := [0, -1, 1]
 const MACHINE_GUN_COORDINATE_SPREAD_DEGREES := [0, -2, 2]
+# sub_457B40/sub_41D6A0 commit on entry to the final authored SPR frame and
+# immediately restore the idle serial. RuntimeActorV1 has no separate attack
+# recovery timer.
+const HAS_INDEPENDENT_ATTACK_RECOVERY_DELAY := false
+const ATTACK_COMMITS_ON_FINAL_FRAME_ENTRY := true
+const ATTACK_RETURNS_IDLE_ON_COMMIT_UPDATE := true
+
+
+static func attack_commit_animation_ticks(
+	frame_count: int,
+	frame_hold_ticks: int,
+) -> int:
+	if frame_count <= 1:
+		return 0
+	return (frame_count - 1) * maxi(frame_hold_ticks, 1)
 
 
 static func direct_actor_damage(

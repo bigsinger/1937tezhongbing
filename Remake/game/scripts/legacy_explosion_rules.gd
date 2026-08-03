@@ -10,6 +10,9 @@ const MAIN_HORIZONTAL_RADIUS := 128.0
 const MAIN_VERTICAL_RADIUS := 64.0
 const MAIN_EXCLUDED_RUNTIME_ACTOR_TYPES := [85]
 const ALERT_RADIUS := 800.0
+# sub_4554A0 has no L2/L3 or line-of-sight callee: walls do not attenuate or
+# block either the primary ellipse or the two type-specific damage bands.
+const DAMAGE_REQUIRES_TERRAIN_LINE_OF_SIGHT := false
 const SPECIAL_DAMAGE_BANDS: Array[Dictionary] = [
 	{
 		"runtime_actor_types": [34, 86, 87, 88, 94, 95, 96, 97],
@@ -56,6 +59,9 @@ static func profile_for_actor(runtime_actor_type: int) -> Dictionary:
 		MAIN_EXCLUDED_RUNTIME_ACTOR_TYPES.duplicate()
 	)
 	result["alert_radius"] = ALERT_RADIUS
+	result["damage_requires_terrain_line_of_sight"] = (
+		DAMAGE_REQUIRES_TERRAIN_LINE_OF_SIGHT
+	)
 	result["special_damage_bands"] = SPECIAL_DAMAGE_BANDS.duplicate(true)
 	return result
 

@@ -40,6 +40,10 @@ const CAMPAIGN_PROGRESS_SCRIPT: Script = preload("res://scripts/campaign_progres
 const GAME_SESSION_STATE_SCRIPT: Script = preload("res://scripts/game_session_state.gd")
 const GAME_INPUT_BINDINGS: Script = preload("res://scripts/game_input_bindings.gd")
 const LEGACY_INPUT_RULES: Script = preload("res://scripts/legacy_input_rules.gd")
+const SMOOTH_CAMERA_PAN: Script = preload("res://scripts/smooth_camera_pan.gd")
+const WORLD_AUDIO_SPATIALIZER: Script = preload(
+	"res://scripts/world_audio_spatializer.gd"
+)
 const LEGACY_CURSOR_PRESENTER: Script = preload(
 	"res://scripts/legacy_cursor_presenter.gd"
 )
@@ -147,7 +151,7 @@ const DYNAMIC_OCCUPANCY_GRID: Script = preload("res://scripts/dynamic_occupancy_
 const DEFAULT_WORLD_SIZE := Vector2(1280.0, 720.0)
 const DEFAULT_MOVEMENT_BOUNDS := Rect2(Vector2(36.0, 100.0), Vector2(1208.0, 568.0))
 const CAMERA_PAN_SPEED := 720.0
-const EDGE_SCROLL_MARGIN := 1.0
+const EDGE_SCROLL_MARGIN := 32.0
 const BACKGROUND_ENTITY_Z_INDEX := WORLD_DEPTH.BACKGROUND_Z
 const MISSION_INTERACTION_RADIUS := 128.0
 const MISSION_ZONE_CHECK_SECONDS := 0.20
@@ -353,6 +357,7 @@ var right_drag_start_screen := Vector2.ZERO
 var right_drag_current_screen := Vector2.ZERO
 var edge_scroll_strength := 0.0
 var edge_scroll_last_direction := Vector2.ZERO
+var camera_pan_velocity := Vector2.ZERO
 var legacy_cursor_presenter: RefCounted = LEGACY_CURSOR_PRESENTER.new()
 var original_force_target_held := false
 var sight_observation_mode := false
@@ -1863,6 +1868,10 @@ func load_imported_level(level_id: String = LEVEL_VIEW.DEFAULT_LEVEL_ID) -> bool
 		if is_instance_valid(burial_cache):
 			_free_level_runtime_node(burial_cache)
 	legacy_burial_caches.clear()
+	# Enemy inventory drops are direct children of Main, unlike authored DBL
+	# pickups under ImportedEntities.  Free them before clearing the registry;
+	# otherwise an uncollected drop survives a restart as an orphaned node.
+	_clear_runtime_mission_pickups()
 	legacy_doors.clear()
 	dormant_destruction_effects_by_scene.clear()
 	_clear_original_pickup_order()
@@ -1882,7 +1891,6 @@ func load_imported_level(level_id: String = LEVEL_VIEW.DEFAULT_LEVEL_ID) -> bool
 	imported_animation_cache.clear()
 	world_entities_by_scene.clear()
 	activated_mission_scenes.clear()
-	mission_pickups.clear()
 	next_mission_pickup_serial = 1
 	next_legacy_reinforcement_scene_index = 1000000
 	next_legacy_reinforcement_serial = 1
@@ -1996,6 +2004,16 @@ func _free_level_runtime_node(node: Node) -> void:
 	node.free()
 
 
+func _clear_runtime_mission_pickups() -> int:
+	var removed := 0
+	for mission_pickup: Node2D in mission_pickups:
+		if is_instance_valid(mission_pickup):
+			_free_level_runtime_node(mission_pickup)
+			removed += 1
+	mission_pickups.clear()
+	return removed
+
+
 func spawn_imported_entities() -> int:
 	if imported_level.is_empty():
 		return 0
@@ -2083,14 +2101,37 @@ func spawn_imported_entities() -> int:
 			entity
 		)
 		if not door_profile.is_empty():
-			var closed_door_texture := load_entity_texture(entity)
-			var open_door_texture := _load_converted_texture(
-				str(door_profile.get("open_sprite_relative_path", ""))
+			var starts_open := bool(door_profile.get("starts_open", false))
+			var closed_door_texture := (
+				_load_converted_texture(
+					str(door_profile.get("closed_sprite_relative_path", ""))
+				)
+				if starts_open
+				else load_entity_texture(entity)
 			)
-			var closed_door_draw_order := load_entity_draw_order_profile(entity)
-			var open_door_draw_order := load_draw_order_profile_for_preview(
-				_gfl_preview_path(
-					int(door_profile.get("open_gfl_index", 0))
+			var open_door_texture := (
+				load_entity_texture(entity)
+				if starts_open
+				else _load_converted_texture(
+					str(door_profile.get("open_sprite_relative_path", ""))
+				)
+			)
+			var closed_door_draw_order := (
+				load_draw_order_profile_for_preview(
+					_gfl_preview_path(
+						int(door_profile.get("closed_gfl_index", 0))
+					)
+				)
+				if starts_open
+				else load_entity_draw_order_profile(entity)
+			)
+			var open_door_draw_order := (
+				load_entity_draw_order_profile(entity)
+				if starts_open
+				else load_draw_order_profile_for_preview(
+					_gfl_preview_path(
+						int(door_profile.get("open_gfl_index", 0))
+					)
 				)
 			)
 			var door: Node2D = LEGACY_DOOR_SCRIPT.new()
@@ -2475,8 +2516,9 @@ func _load_gfl_action_groups(
 func create_level_camera() -> void:
 	level_camera = Camera2D.new()
 	level_camera.name = "LevelCamera"
-	level_camera.position_smoothing_enabled = true
-	level_camera.position_smoothing_speed = 12.0
+	# Velocity is smoothed explicitly by SmoothCameraPan. Camera2D's second
+	# smoothing pass used to add lag and edge jitter, especially in a window.
+	level_camera.position_smoothing_enabled = false
 	add_child(level_camera)
 	level_camera.enabled = true
 	configure_level_camera(true)
@@ -3253,14 +3295,21 @@ func _process(delta: float) -> void:
 	if force_up_held:
 		keyboard_direction.y = maxf(keyboard_direction.y, 0.0)
 	var edge_direction := _advance_mouse_edge_scroll(delta)
-	# Original diagonal edge scrolling applies the full X and Y velocity. It is
-	# intentionally not normalized together with the remake keyboard channel.
-	level_camera.position += (
-		(keyboard_direction + edge_direction)
+	var requested_direction := keyboard_direction + edge_direction
+	if requested_direction.length_squared() > 1.0:
+		requested_direction = requested_direction.normalized()
+	var target_velocity := (
+		requested_direction
 		* CAMERA_PAN_SPEED
-		* delta
-		/ level_camera.zoom.x
+		/ maxf(level_camera.zoom.x, 0.001)
 	)
+	camera_pan_velocity = SMOOTH_CAMERA_PAN.advance_velocity(
+		camera_pan_velocity,
+		target_velocity,
+		delta,
+		bool(runtime_settings.get("reduce_camera_motion", false)),
+	)
+	level_camera.position += camera_pan_velocity * maxf(delta, 0.0)
 	clamp_level_camera()
 
 
@@ -3764,7 +3813,11 @@ func _mouse_edge_scroll_direction() -> Vector2:
 		return Vector2.ZERO
 	var viewport_size := get_viewport_rect().size
 	var mouse_position := get_viewport().get_mouse_position()
-	return edge_scroll_direction_for_position(mouse_position, viewport_size, EDGE_SCROLL_MARGIN)
+	return SMOOTH_CAMERA_PAN.edge_intent(
+		mouse_position,
+		viewport_size,
+		EDGE_SCROLL_MARGIN,
+	)
 
 
 func _advance_mouse_edge_scroll(delta: float) -> Vector2:
@@ -3779,16 +3832,9 @@ func _advance_mouse_edge_scroll(delta: float) -> Vector2:
 		edge_scroll_last_direction = Vector2.ZERO
 		return Vector2.ZERO
 	var requested_direction := _mouse_edge_scroll_direction()
-	if not requested_direction.is_zero_approx():
-		edge_scroll_last_direction = requested_direction
-	edge_scroll_strength = LEGACY_INPUT_RULES.advance_scroll_strength(
-		edge_scroll_strength,
-		not requested_direction.is_zero_approx(),
-		maxf(delta, 0.0) * 60.0,
-	)
-	if edge_scroll_strength <= 0.0:
-		edge_scroll_last_direction = Vector2.ZERO
-	return edge_scroll_last_direction * edge_scroll_strength
+	edge_scroll_last_direction = requested_direction
+	edge_scroll_strength = clampf(requested_direction.length(), 0.0, 1.0)
+	return requested_direction
 
 
 static func edge_scroll_direction_for_position(
@@ -3796,7 +3842,7 @@ static func edge_scroll_direction_for_position(
 	viewport_size: Vector2,
 	margin: float = EDGE_SCROLL_MARGIN,
 ) -> Vector2:
-	return LEGACY_INPUT_RULES.edge_direction_for_position(
+	return SMOOTH_CAMERA_PAN.edge_intent(
 		mouse_position,
 		viewport_size,
 		margin,
@@ -3969,6 +4015,10 @@ func _handle_original_left_click(
 	if _try_open_legacy_door_at(world_position):
 		return
 	if _try_issue_legacy_world_object_deployment(world_position):
+		return
+	var inventory_drop := mission_inventory_pickup_at_world_point(world_position)
+	if inventory_drop != null:
+		issue_original_pickup_order(inventory_drop)
 		return
 	var field_pickup := field_pickup_at_world_point(world_position)
 	if field_pickup != null:
@@ -4231,6 +4281,7 @@ func _advance_burial_command_world_tick() -> void:
 			burial_action_started = false
 			burial_progress_ticks = 0
 			burial_worker.set_action_progress(-1.0)
+			burial_target.set_action_progress(-1.0)
 		if (
 			burial_worker.movement_path_index >= burial_worker.movement_path.size()
 			and not burial_worker.position.is_equal_approx(burial_target.position)
@@ -4243,7 +4294,9 @@ func _advance_burial_command_world_tick() -> void:
 		burial_worker.cancel_path()
 		_face_actor_toward(burial_worker, burial_target.position)
 	burial_progress_ticks += 1
-	burial_worker.set_action_progress(
+	# The original feedback belongs to the operated object. Drawing it on the
+	# worker made the bar wander while the corpse itself remained ambiguous.
+	burial_target.set_action_progress(
 		clampf(
 			float(burial_progress_ticks) / float(ORIGINAL_BURIAL_COUNTER_LIMIT),
 			0.0,
@@ -4301,6 +4354,8 @@ func _issue_burial_approach_path() -> void:
 func _cancel_burial_command() -> void:
 	if burial_worker != null and is_instance_valid(burial_worker):
 		burial_worker.set_action_progress(-1.0)
+	if burial_target != null and is_instance_valid(burial_target):
+		burial_target.set_action_progress(-1.0)
 	burial_target = null
 	burial_worker = null
 	burial_progress_ticks = 0
@@ -4421,6 +4476,22 @@ func legacy_door_at_world_point(world_position: Vector2) -> Node2D:
 			and bool(door.call("contains_parent_point", world_position))
 		):
 			return door
+	return null
+
+
+func mission_inventory_pickup_at_world_point(
+	world_position: Vector2,
+) -> MISSION_PICKUP:
+	for pickup: MISSION_PICKUP in mission_pickups:
+		if (
+			pickup != null
+			and is_instance_valid(pickup)
+			and not pickup.collected
+			and str(pickup.item_payload.get("original_inventory_kind", ""))
+				in ["backpack", "weapon"]
+			and pickup.contains_parent_point(world_position)
+		):
+			return pickup
 	return null
 
 
@@ -5044,15 +5115,43 @@ func _on_original_animation_audio_requested(
 	if media_director == null or gfl_index <= 0:
 		return
 	if continuous:
+		var requester_id := actor.get_instance_id() if actor != null else 0
+		if _is_actor_footstep_request(actor):
+			var mix: Dictionary = WORLD_AUDIO_SPATIALIZER.mix_for_source(
+				actor.global_position,
+				_camera_world_rect(),
+			)
+			if not bool(mix.get("audible", true)):
+				media_director.stop_sfx_requester(requester_id, gfl_index)
+				return
+			media_director.request_sfx_audio_index(
+				gfl_index,
+				requester_id,
+				float(mix.get("volume_db", 0.0)),
+			)
+			return
 		media_director.request_sfx_audio_index(
 			gfl_index,
-			actor.get_instance_id() if actor != null else 0,
+			requester_id,
 		)
 	else:
 		media_director.play_audio_index(
 			gfl_index,
 			"sprite_animation",
 		)
+
+
+func _is_actor_footstep_request(actor: Node2D) -> bool:
+	if actor == null or not actor is SQUAD_UNIT:
+		return false
+	var unit := actor as SQUAD_UNIT
+	return (
+		unit.combat_action == SQUAD_UNIT.CombatAction.NONE
+		and (
+			unit.was_moving
+			or unit.movement_path_index < unit.movement_path.size()
+		)
+	)
 
 
 func _on_projectile_requested(
@@ -6188,7 +6287,7 @@ func _on_enemy_legacy_world_item_interaction_requested(
 			enemy.complete_legacy_world_item_interaction(pickup, false)
 		return
 	var mission_pickup := pickup as MISSION_PICKUP
-	var payload: Dictionary = mission_pickup.collect()
+	var payload: Dictionary = mission_pickup.collect(enemy)
 	if payload.is_empty():
 		enemy.complete_legacy_world_item_interaction(pickup, false)
 		return
@@ -6223,6 +6322,7 @@ func _on_enemy_legacy_world_item_interaction_requested(
 			"" if transferred > 0 else "（物品栏保持原状）",
 		]
 	)
+	_free_level_runtime_node(mission_pickup)
 	_refresh_inventory_ui()
 
 
@@ -6823,21 +6923,46 @@ func _refresh_original_hud() -> void:
 		if actor == null:
 			continue
 		var ammo_text := ""
+		var weapon_name := ""
+		var weapon_ammo_text := ""
+		var weapon_icon: Texture2D
 		if (
 			actor.combat_inventory != null
-			and actor.combat_inventory.original_parity_enabled()
 		):
-			var active_state: Dictionary = actor.combat_inventory.weapon_state(
+			var active_action_key := str(
 				actor.combat_inventory.active_weapon_key()
 			)
+			var active_state: Dictionary = actor.combat_inventory.weapon_state(
+				active_action_key
+			)
+			var active_profile := active_state.get("profile", {}) as Dictionary
+			weapon_name = str(
+				WEAPON_NAMES.get(
+					int(active_profile.get("attack_type", 0)),
+					active_action_key,
+				)
+			)
 			var quantity_mode := int(active_state.get("quantity_mode", -1))
-			if quantity_mode == 0 or quantity_mode == 2:
-				ammo_text = str(int(active_state.get("quantity", 0)))
+			if bool(active_state.get("original_parity", false)):
+				if quantity_mode == 0 or quantity_mode == 2:
+					ammo_text = str(int(active_state.get("quantity", 0)))
+					weapon_ammo_text = "× %s" % ammo_text
+				elif quantity_mode == 1:
+					weapon_ammo_text = "耐久武器"
+			else:
+				weapon_ammo_text = "%d / %d" % [
+					int(active_state.get("magazine", 0)),
+					int(active_state.get("reserve", 0)),
+				]
+			weapon_icon = _inventory_icon_for(active_action_key, 0, "")
 		actor_states.append({
 			"name": actor_name,
 			"alive": actor.is_alive,
 			"selected": selected_units.has(actor),
 			"ammo_text": ammo_text,
+			"weapon_name": weapon_name,
+			"weapon_ammo_text": weapon_ammo_text,
+			"weapon_icon": weapon_icon,
 			"health_ratio": (
 				float(actor.current_hit_points)
 				/ maxf(float(actor.maximum_hit_points), 1.0)
@@ -7967,8 +8092,7 @@ func _on_map_position_requested(world_position: Vector2) -> void:
 
 func _on_inventory_cycle_requested(direction: int) -> void:
 	_cycle_selected_weapons(direction)
-	if game_shell != null:
-		game_shell.update_inventory(_inventory_grid_model())
+	_refresh_inventory_ui()
 
 
 func _on_inventory_reload_requested() -> void:
@@ -8026,8 +8150,7 @@ func _on_inventory_slot_requested(slot: Dictionary) -> void:
 				)
 	elif kind == "mission_item":
 		update_status("%s：在对应任务位置按 E 使用" % str(slot.get("label", "任务物品")))
-	if game_shell != null:
-		game_shell.update_inventory(_inventory_grid_model())
+	_refresh_inventory_ui()
 
 
 func _use_original_backpack_item(
@@ -8901,6 +9024,8 @@ func interact_with_mission_world() -> void:
 		if pickup.collected:
 			continue
 		for origin: SQUAD_UNIT in origins:
+			if not pickup.can_collect(origin):
+				continue
 			var distance := origin.position.distance_to(pickup.position)
 			if distance < nearest_distance:
 				nearest_distance = distance
@@ -8908,8 +9033,9 @@ func interact_with_mission_world() -> void:
 				nearest_pickup_collector = origin
 	if nearest_pickup != null and nearest_distance <= MISSION_INTERACTION_RADIUS:
 		var pickup_world_position := nearest_pickup.position
-		var payload := nearest_pickup.collect()
+		var payload := nearest_pickup.collect(nearest_pickup_collector)
 		_unregister_mission_pickup(nearest_pickup)
+		_free_level_runtime_node(nearest_pickup)
 		if (
 			nearest_pickup_collector != null
 			and _collect_original_inventory_pickup(
@@ -9093,7 +9219,7 @@ func issue_original_pickup_order(pickup: Node2D) -> bool:
 	if (
 		pickup == null
 		or not is_instance_valid(pickup)
-		or bool(pickup.get("consumed"))
+		or _world_pickup_is_consumed(pickup)
 		or selected_units.is_empty()
 	):
 		update_status("请先选择存活队员和可拾取物品")
@@ -9109,7 +9235,7 @@ func issue_original_pickup_order(pickup: Node2D) -> bool:
 			collector = unit
 	if (
 		collector == null
-		or not _collector_can_use_field_pickup(collector, pickup)
+		or not _collector_can_use_world_pickup(collector, pickup)
 	):
 		update_status("当前队员不能拾取该物品")
 		return false
@@ -9143,7 +9269,7 @@ func issue_original_pickup_order(pickup: Node2D) -> bool:
 	collector.issue_path(path)
 	update_status("%s 正在接近 %s" % [
 		collector.display_name,
-		str(pickup.get("original_display_name")),
+		_world_pickup_display_name(pickup),
 	])
 	return true
 
@@ -9154,7 +9280,7 @@ func _advance_original_pickup_order() -> void:
 	if (
 		not is_instance_valid(original_pickup_order_target)
 		or original_pickup_order_target.is_queued_for_deletion()
-		or bool(original_pickup_order_target.get("consumed"))
+		or _world_pickup_is_consumed(original_pickup_order_target)
 		or original_pickup_order_collector == null
 		or not is_instance_valid(original_pickup_order_collector)
 		or not original_pickup_order_collector.is_alive
@@ -9178,7 +9304,7 @@ func _complete_original_pickup_order() -> bool:
 		or collector == null
 		or not is_instance_valid(pickup)
 		or not is_instance_valid(collector)
-		or not _collector_can_use_field_pickup(collector, pickup)
+		or not _collector_can_use_world_pickup(collector, pickup)
 	):
 		_clear_original_pickup_order()
 		return false
@@ -9186,9 +9312,19 @@ func _complete_original_pickup_order() -> bool:
 	var payload := pickup.call("collect", collector) as Dictionary
 	if payload.is_empty():
 		return false
-	field_pickups.erase(pickup)
 	_clear_original_pickup_order()
-	_apply_field_pickup(payload, collector, pickup_world_position)
+	if pickup is MISSION_PICKUP:
+		var mission_pickup := pickup as MISSION_PICKUP
+		_unregister_mission_pickup(mission_pickup)
+		_collect_original_inventory_pickup(
+			payload,
+			collector,
+			pickup_world_position,
+		)
+		_free_level_runtime_node(mission_pickup)
+	else:
+		field_pickups.erase(pickup)
+		_apply_field_pickup(payload, collector, pickup_world_position)
 	return true
 
 
@@ -9204,6 +9340,44 @@ func _collector_can_use_field_pickup(collector: SQUAD_UNIT, pickup: Node2D) -> b
 		and str(grant.get("kind", ""))
 			== WORLD_PICKUP_CATALOG.ORIGINAL_INVENTORY_GRANT_KIND
 	)
+
+
+func _collector_can_use_world_pickup(
+	collector: SQUAD_UNIT,
+	pickup: Node2D,
+) -> bool:
+	if collector == null or pickup == null or not is_instance_valid(pickup):
+		return false
+	if pickup is MISSION_PICKUP:
+		return str(
+			(pickup as MISSION_PICKUP).item_payload.get(
+				"original_inventory_kind",
+				"",
+			)
+		) in ["backpack", "weapon"]
+	return _collector_can_use_field_pickup(collector, pickup)
+
+
+func _world_pickup_is_consumed(pickup: Node2D) -> bool:
+	if pickup == null or not is_instance_valid(pickup):
+		return true
+	if pickup is MISSION_PICKUP:
+		return (pickup as MISSION_PICKUP).collected
+	return bool(pickup.get("consumed"))
+
+
+func _world_pickup_display_name(pickup: Node2D) -> String:
+	if pickup is MISSION_PICKUP:
+		var payload := (pickup as MISSION_PICKUP).item_payload
+		return str(
+			payload.get(
+				"item_name",
+				ORIGINAL_INITIAL_ITEM_INVENTORY.item_display_name(
+					int(payload.get("item_id", 0))
+				),
+			)
+		)
+	return str(pickup.get("original_display_name"))
 
 
 func _apply_field_pickup(

@@ -56,6 +56,7 @@ var active_audio_index := -1
 var active_music_index := -1
 var _voice_active_indices: Array[int] = []
 var _sfx_active_indices: Array[int] = []
+var _sfx_requester_ids: Array[int] = []
 var _sfx_cursor := 0
 var _continuous_sfx_requests: Dictionary = {}
 var subtitle_seconds := 0.0
@@ -125,6 +126,7 @@ func close_for_state_change() -> void:
 		_voice_active_indices[index] = -1
 	for index: int in range(_sfx_active_indices.size()):
 		_sfx_active_indices[index] = -1
+		_sfx_requester_ids[index] = 0
 	_continuous_sfx_requests.clear()
 	dialogue_sequence_id = ""
 	dialogue_lines.clear()
@@ -196,6 +198,7 @@ func play_audio_index(
 func request_sfx_audio_index(
 	gfl_index: int,
 	requester_instance_id: int = 0,
+	volume_db: float = 0.0,
 ) -> bool:
 	## sub_41D6F0 requests movement/ambient frame-group sounds on every
 	## actor update. The original sound object counts same-frame requests and
@@ -213,6 +216,17 @@ func request_sfx_audio_index(
 	if stream == null:
 		media_unavailable.emit("audio", str(gfl_index))
 		return false
+	var safe_volume_db := clampf(volume_db, -80.0, 6.0)
+	var existing_requester_slot := -1
+	if requester_instance_id != 0:
+		for existing_slot: int in range(sfx_players.size()):
+			if (
+				_sfx_active_indices[existing_slot] == gfl_index
+				and _sfx_requester_ids[existing_slot] == requester_instance_id
+				and sfx_players[existing_slot].playing
+			):
+				existing_requester_slot = existing_slot
+				break
 
 	var physics_frame := Engine.get_physics_frames()
 	var state_value: Variant = _continuous_sfx_requests.get(gfl_index, {})
@@ -229,6 +243,8 @@ func request_sfx_audio_index(
 		}
 	var requesters := state.get("requesters", {}) as Dictionary
 	if requester_instance_id != 0 and requesters.has(requester_instance_id):
+		if existing_requester_slot >= 0:
+			sfx_players[existing_requester_slot].volume_db = safe_volume_db
 		return true
 	if requester_instance_id != 0:
 		requesters[requester_instance_id] = true
@@ -236,6 +252,9 @@ func request_sfx_audio_index(
 	var request_count := int(state.get("request_count", 0)) + 1
 	state["request_count"] = request_count
 	_continuous_sfx_requests[gfl_index] = state
+	if existing_requester_slot >= 0:
+		sfx_players[existing_requester_slot].volume_db = safe_volume_db
+		return true
 
 	var active_count := 0
 	for slot: int in range(sfx_players.size()):
@@ -249,10 +268,33 @@ func request_sfx_audio_index(
 	var slot := _acquire_sfx_slot()
 	var player := sfx_players[slot]
 	player.stream = stream
+	player.volume_db = safe_volume_db
 	_sfx_active_indices[slot] = gfl_index
+	_sfx_requester_ids[slot] = requester_instance_id
 	player.play()
 	audio_started.emit(gfl_index, "sprite_animation_continuous")
 	return true
+
+
+func stop_sfx_requester(
+	requester_instance_id: int,
+	gfl_index: int = -1,
+) -> int:
+	if requester_instance_id == 0:
+		return 0
+	var stopped := 0
+	for slot: int in range(sfx_players.size()):
+		if (
+			_sfx_requester_ids[slot] != requester_instance_id
+			or (gfl_index >= 0 and _sfx_active_indices[slot] != gfl_index)
+		):
+			continue
+		sfx_players[slot].stop()
+		sfx_players[slot].stream = null
+		_sfx_active_indices[slot] = -1
+		_sfx_requester_ids[slot] = 0
+		stopped += 1
+	return stopped
 
 
 func _play_audio_index(
@@ -296,7 +338,9 @@ func _play_audio_index(
 		var slot := _acquire_sfx_slot()
 		var sfx_player := sfx_players[slot]
 		sfx_player.stream = stream
+		sfx_player.volume_db = 0.0
 		_sfx_active_indices[slot] = gfl_index
+		_sfx_requester_ids[slot] = 0
 		sfx_player.play()
 	var caption := caption_override
 	if caption.is_empty():
@@ -711,6 +755,7 @@ func _on_sfx_finished(slot: int) -> void:
 		return
 	var finished := _sfx_active_indices[slot]
 	_sfx_active_indices[slot] = -1
+	_sfx_requester_ids[slot] = 0
 	if finished >= 0:
 		audio_finished.emit(finished)
 
@@ -913,6 +958,7 @@ func _append_sfx_player() -> int:
 	add_child(sfx_player)
 	sfx_players.append(sfx_player)
 	_sfx_active_indices.append(-1)
+	_sfx_requester_ids.append(0)
 	return slot
 
 

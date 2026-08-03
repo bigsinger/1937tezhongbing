@@ -23,6 +23,8 @@ var open_draw_order_profile: Dictionary = {}
 var row_slice_renderer: Node2D
 var sprite_drawn_by_row_slices := false
 var is_open := false
+var starts_open := false
+var locked_open := false
 var dynamic_occupancy: RefCounted
 var movement_release_cells: Array[Vector2i] = []
 var sight_release_cells: Array[Vector2i] = []
@@ -64,6 +66,8 @@ func configure(
 	)
 	closed_draw_order_profile = new_closed_draw_order_profile.duplicate(true)
 	open_draw_order_profile = new_open_draw_order_profile.duplicate(true)
+	starts_open = bool(profile.get("starts_open", false))
+	locked_open = bool(profile.get("locked_open", starts_open))
 	position = Vector2(
 		float(entity.get("x", entity.get("reference_x", 0))),
 		float(entity.get("y", entity.get("reference_y", 0))),
@@ -73,7 +77,7 @@ func configure(
 	z_index = fallback_z_index
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	centered = true
-	is_open = false
+	is_open = starts_open
 	_apply_visual_state()
 	return scene_index >= 0
 
@@ -108,6 +112,12 @@ func open() -> bool:
 
 
 func set_open(value: bool, emit_change: bool = true) -> bool:
+	# Authored open passages have no closed interaction state.  Keeping them
+	# permanently open also prevents a restored save from turning a visible
+	# opening back into an invisible navigation wall.
+	if locked_open and not value:
+		_apply_navigation_state()
+		return false
 	if is_open == value:
 		_apply_navigation_state()
 		return false
@@ -141,6 +151,8 @@ func snapshot() -> Dictionary:
 		"database_entry_id": database_entry_id,
 		"open_gfl_index": open_gfl_index,
 		"is_open": is_open,
+		"starts_open": starts_open,
+		"locked_open": locked_open,
 	}
 
 

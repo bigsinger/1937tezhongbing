@@ -2,6 +2,7 @@ class_name MissionPickup
 extends Node2D
 
 const WORLD_DEPTH: Script = preload("res://scripts/world_depth.gd")
+const ORIGINAL_NAVIGATION_CELL_SIZE := Vector2(32.0, 16.0)
 
 var item_payload: Dictionary = {}
 var collected := false
@@ -13,6 +14,30 @@ var world_item_serial := 0
 var original_dynamic_actor_lifecycle := false
 var original_factory_random_consumed := false
 var original_destructor_random_consumed := false
+
+
+func can_collect(collector: Node2D) -> bool:
+	if collected or collector == null or not is_instance_valid(collector):
+		return false
+	var collector_cell := Vector2i(
+		floori(collector.global_position.x / ORIGINAL_NAVIGATION_CELL_SIZE.x),
+		floori(collector.global_position.y / ORIGINAL_NAVIGATION_CELL_SIZE.y),
+	)
+	var pickup_cell := Vector2i(
+		floori(global_position.x / ORIGINAL_NAVIGATION_CELL_SIZE.x),
+		floori(global_position.y / ORIGINAL_NAVIGATION_CELL_SIZE.y),
+	)
+	var cell_delta := (collector_cell - pickup_cell).abs()
+	return cell_delta.x <= 1 and cell_delta.y <= 1
+
+
+func contains_parent_point(parent_point: Vector2) -> bool:
+	if collected or not visible:
+		return false
+	var local_point := parent_point - position
+	if original_sprite != null and original_sprite.texture != null:
+		return original_sprite.get_rect().has_point(local_point)
+	return local_point.length_squared() <= 16.0 * 16.0
 
 
 func configure(
@@ -60,8 +85,8 @@ func configure(
 	queue_redraw()
 
 
-func collect() -> Dictionary:
-	if collected:
+func collect(collector: Node2D = null) -> Dictionary:
+	if collected or (collector != null and not can_collect(collector)):
 		return {}
 	collected = true
 	visible = false

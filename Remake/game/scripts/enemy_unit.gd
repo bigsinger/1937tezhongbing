@@ -32,6 +32,7 @@ const STABLE_MOD_BASE_PATROL_SPEED := 134.16407864998737
 ## frame-bound remainder aligns the second audited one-second interval with
 ## the stable process capture instead of letting three guards depart early.
 const STABLE_MOD_PATROL_WAYPOINT_HOLD_SECONDS := 2.1
+const PATROL_FORMATION_MIN_SEPARATION := 28.0
 ## m000..m011 include original runtime patrol/controller motion that is not
 ## represented by the VWF waypoint records. Stable, read-only MOD process
 ## captures provide a short deterministic timeline for those actors. Its path
@@ -936,6 +937,8 @@ func _acquire_visible_live_target(target: Node2D) -> bool:
 
 
 func _update_behavior(delta: float) -> void:
+	if behavior_state != BehaviorState.PATROL:
+		minimum_actor_separation = -1.0
 	if (
 		behavior_state != BehaviorState.PATROL
 		and not stable_mod_patrol_timeline.is_empty()
@@ -1040,6 +1043,7 @@ func _update_behavior(delta: float) -> void:
 
 
 func _update_patrol(delta: float) -> void:
+	minimum_actor_separation = PATROL_FORMATION_MIN_SEPARATION
 	if not stable_mod_patrol_timeline.is_empty():
 		use_soft_dynamic_occupancy = true
 		_update_stable_mod_patrol_timeline(delta)
@@ -1323,6 +1327,7 @@ func _complete_stable_mod_patrol_evidence_endpoint() -> void:
 		"try_relocate_from_runtime_evidence",
 		scene_index,
 		stable_mod_patrol_runtime_destination,
+		minimum_actor_separation,
 	)):
 		position = stable_mod_patrol_runtime_destination
 		_update_sprite_depth()
@@ -1377,7 +1382,9 @@ func restore_stable_mod_patrol_state(state: Dictionary) -> bool:
 	stable_mod_patrol_segment_prepared = false
 	stable_mod_patrol_start_delay_ticks = 0
 	stable_mod_patrol_transition_delay_ticks = 0
-	move_speed = STABLE_MOD_BASE_PATROL_SPEED
+	# GameSessionState restores the exact in-flight scalar speed before this
+	# timeline cursor. Do not replace a calibrated evidence-leg speed with the
+	# nominal patrol value, or a save/load changes actor motion and state hashes.
 	use_recorded_patrol_relocation = false
 	use_recorded_patrol_final_relocation = false
 	return true
@@ -1403,6 +1410,7 @@ func _enter_patrol() -> void:
 	stable_mod_patrol_transition_delay_ticks = 0
 	move_speed = STABLE_MOD_BASE_PATROL_SPEED
 	use_soft_dynamic_occupancy = not stable_mod_patrol_timeline.is_empty()
+	minimum_actor_separation = PATROL_FORMATION_MIN_SEPARATION
 	use_recorded_patrol_relocation = false
 	use_recorded_patrol_final_relocation = false
 	cancel_path()

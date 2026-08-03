@@ -39,6 +39,10 @@ inline constexpr std::int32_t explosion_ellipse_vertical_radius = 192;
 inline constexpr std::int32_t explosion_radius = 256;
 inline constexpr std::int32_t explosion_ellipse_visual_effect_type = 11;
 inline constexpr std::int32_t explosion_radius_visual_effect_type = 15;
+// sub_4554A0 enumerates actors, applies the two distance predicates and calls
+// sub_458700 directly.  Its complete direct-callee set contains no L2/L3 or
+// line-of-sight query, so terrain never occludes native explosion damage.
+inline constexpr bool explosion_damage_requires_terrain_line_of_sight = false;
 
 struct ExplosionParticleDefinition final {
     std::int32_t runtime_actor_type;

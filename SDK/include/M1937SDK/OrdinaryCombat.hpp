@@ -41,6 +41,25 @@ inline constexpr std::array<std::int32_t, 3>
 inline constexpr std::array<std::int32_t, 3>
     machine_gun_coordinate_spread_degrees{{0, -2, 2}};
 
+// sub_457B40 calls sub_41D6A0 once per actor update.  The latter returns true
+// only on the transition into the animation's final frame; the dispatcher
+// commits the attack and returns the actor to its idle serial in that same
+// update.  There is no independent post-animation recovery/cooldown timer in
+// RuntimeActorV1.
+inline constexpr bool has_independent_attack_recovery_delay = false;
+inline constexpr bool attack_commits_on_final_frame_entry = true;
+inline constexpr bool attack_returns_idle_on_commit_update = true;
+
+constexpr std::int32_t attack_commit_animation_ticks(
+    std::int32_t frame_count,
+    std::int32_t frame_hold_ticks) noexcept {
+    if (frame_count <= 1)
+        return 0;
+    if (frame_hold_ticks <= 0)
+        frame_hold_ticks = 1;
+    return (frame_count - 1) * frame_hold_ticks;
+}
+
 constexpr const OrdinaryAttackRule* find_ordinary_attack_rule(
     std::int32_t attack_type) noexcept {
     for (const auto& rule : ordinary_attack_rules) {
@@ -110,5 +129,10 @@ static_assert(attack_target_cell_coincides({0, 0}, {1, 1}));
 static_assert(!attack_target_cell_coincides({0, 0}, {2, 2}));
 static_assert(machine_gun_live_target_spread_degrees[1] == -1);
 static_assert(machine_gun_coordinate_spread_degrees[2] == 2);
+static_assert(!has_independent_attack_recovery_delay);
+static_assert(attack_commits_on_final_frame_entry);
+static_assert(attack_returns_idle_on_commit_update);
+static_assert(attack_commit_animation_ticks(3, 1) == 2);
+static_assert(attack_commit_animation_ticks(5, 2) == 8);
 
 } // namespace m1937::sdk

@@ -8,6 +8,9 @@ const MISSION_DATA: Script = preload("res://scripts/mission_data.gd")
 const MISSION_STATE: Script = preload("res://scripts/mission_state.gd")
 const NAVIGATION_GRID_DATA: Script = preload("res://scripts/navigation_grid_data.gd")
 const COMBAT_PROFILES: Script = preload("res://scripts/combat_profiles.gd")
+const LEGACY_COMBAT_RULES: Script = preload(
+	"res://scripts/legacy_combat_rules.gd"
+)
 const TACTICAL_SENSES: Script = preload("res://scripts/tactical_senses.gd")
 const DYNAMIC_OCCUPANCY_GRID: Script = preload("res://scripts/dynamic_occupancy_grid.gd")
 const LEGACY_ROW_SLICE_SPRITE: Script = preload(
@@ -933,13 +936,25 @@ func _init() -> void:
 	)
 	expect(
 		(
-			int(combat_catalog.get("schema_version", 0)) == 4
+			int(combat_catalog.get("schema_version", 0)) == 5
 			and int(rifle_profile.get("direct_actor_hit_count", 0)) == 1
 			and int(machine_gun_profile.get("direct_actor_hit_count", 0)) == 1
 			and int(machine_gun_profile.get("burst_count", 0)) == 3
 			and int(dagger_profile.get("direct_actor_hit_count", 0)) == 1
 		),
 		"ordinary actor targets receive one original damage call even when coordinate fire fans out",
+		failures,
+	)
+	expect(
+		float(rifle_profile.get("recovery_seconds", -1.0)) == 0.0
+			and (rifle_profile.get("source_status", {}) as Dictionary).get(
+				"recovery_seconds"
+			) == "recovered"
+			and not LEGACY_COMBAT_RULES.HAS_INDEPENDENT_ATTACK_RECOVERY_DELAY
+			and LEGACY_COMBAT_RULES.ATTACK_COMMITS_ON_FINAL_FRAME_ENTRY
+			and LEGACY_COMBAT_RULES.ATTACK_RETURNS_IDLE_ON_COMMIT_UPDATE
+			and LEGACY_COMBAT_RULES.attack_commit_animation_ticks(3, 1) == 2,
+		"ordinary attacks commit and return idle on final-frame entry without a recovery timer",
 		failures,
 	)
 	expect(

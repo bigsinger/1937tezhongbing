@@ -248,8 +248,11 @@ func _test_recovered_projectile_math(failures: Array[String]) -> void:
 	_expect(
 		int(actor_61.get("original_gfl_index", 0)) == 19
 		and int(actor_61.get("blast_damage", 0)) == 128
-		and float(actor_61.get("alert_radius", 0.0)) == 800.0,
-		"actor 61 shares the recovered explosion handler payload",
+		and float(actor_61.get("alert_radius", 0.0)) == 800.0
+		and not bool(
+			actor_61.get("damage_requires_terrain_line_of_sight", true)
+		),
+		"actor 61 shares the recovered unoccluded explosion handler payload",
 		failures,
 	)
 	var sprite_groups: Array[Dictionary] = []

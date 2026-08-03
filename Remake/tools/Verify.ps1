@@ -129,6 +129,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "Godot original input parity tests failed with exit code $LASTEXITCODE."
 }
 
+& $GodotExecutable --headless --path $game --script 'res://tests/world_engine_improvements_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot global world-engine improvement tests failed with exit code $LASTEXITCODE."
+}
+
 & $GodotExecutable --headless --path $game --script 'res://tests/original_hud_runtime_test.gd'
 if ($LASTEXITCODE -ne 0) {
     throw "Godot original HUD runtime tests failed with exit code $LASTEXITCODE."
