@@ -1373,7 +1373,14 @@ static func _restore_mission_pickups(game: Node, records: Array) -> void:
 			record.get("payload", {}) as Dictionary
 		).duplicate(true)
 		var texture: Texture2D
-		if (
+		if game.has_method("_mission_pickup_texture_for_payload"):
+			var texture_value: Variant = game.call(
+				"_mission_pickup_texture_for_payload",
+				payload,
+			)
+			if texture_value is Texture2D:
+				texture = texture_value as Texture2D
+		elif (
 			not str(payload.get("original_inventory_kind", "")).is_empty()
 			and game.has_method("_inventory_icon_for")
 		):

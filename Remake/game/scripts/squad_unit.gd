@@ -667,7 +667,8 @@ func bind_original_crt_random_source(
 	original_crt_primary_candidate_scan_serial = 0
 	original_crt_primary_candidate_last_physics_frame = -1
 	original_secondary_search_enabled = (
-		AI_IDLE_RANDOM_RULES.secondary_search_runtime_type_enabled(
+		AI_IDLE_RANDOM_RULES.secondary_search_dispatch_enabled(
+			level_id,
 			runtime_actor_type
 		)
 	)
@@ -3031,6 +3032,12 @@ func cancel_original_disguise_transition() -> void:
 func expose_original_disguise() -> bool:
 	if runtime_actor_type != LEGACY_DISGUISE_RULES.DISGUISED_RUNTIME_ACTOR_TYPE:
 		return false
+	return expose_original_cover()
+
+
+func expose_original_cover() -> bool:
+	if not LEGACY_DISGUISE_RULES.has_cover_recovery(runtime_actor_type):
+		return false
 	var changed := faction_id != LEGACY_DISGUISE_RULES.PLAYER_FACTION_ID
 	faction_id = LEGACY_DISGUISE_RULES.PLAYER_FACTION_ID
 	disguise_recovery_tick_counter = 0
@@ -3044,16 +3051,17 @@ func advance_original_disguise_recovery(
 	observer_has_visibility: bool,
 	burial_exposes_actor: bool = false,
 ) -> bool:
-	if runtime_actor_type != LEGACY_DISGUISE_RULES.DISGUISED_RUNTIME_ACTOR_TYPE:
+	if not LEGACY_DISGUISE_RULES.has_cover_recovery(runtime_actor_type):
 		disguise_recovery_tick_counter = 0
 		disguise_recovery_tick_elapsed = 0.0
 		return false
 	if (
 		faction_id == LEGACY_DISGUISE_RULES.DISGUISED_FACTION_ID
 		and burial_exposes_actor
+		and LEGACY_DISGUISE_RULES.burial_can_break_cover(runtime_actor_type)
 		and observer_has_visibility
 	):
-		return expose_original_disguise()
+		return expose_original_cover()
 	if faction_id != LEGACY_DISGUISE_RULES.PLAYER_FACTION_ID:
 		disguise_recovery_tick_counter = 0
 		disguise_recovery_tick_elapsed = 0.0

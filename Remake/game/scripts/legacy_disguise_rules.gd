@@ -1,10 +1,13 @@
 class_name LegacyDisguiseRules
 extends RefCounted
 
-## Recovered from M1937.exe sub_450200, sub_459290, sub_459370,
-## sub_45EA70 and sub_45EE00.  Gu Ming is rebuilt as runtime actor 91 when
-## changing into the Japanese uniform; the original actor containers and hit
-## points survive that replacement.
+## Recovered from M1937.exe sub_450200, sub_459200, sub_459290, sub_459370,
+## sub_45EA70, sub_45EC20 and sub_45EE00.  Gu Ming is rebuilt as runtime actor
+## 91 when changing into the Japanese uniform; the original actor containers
+## and hit points survive that replacement.  Mission-8 Tie Dan (type 9) uses
+## the same faction-1 cover/recovery fields, but is exposed only by a witnessed
+## pickup rather than by Gu Ming's pistol/dagger or burial paths.
+const TIE_DAN_COVERT_RUNTIME_ACTOR_TYPE := 9
 const NORMAL_RUNTIME_ACTOR_TYPE := 10
 const DISGUISED_RUNTIME_ACTOR_TYPE := 91
 const NORMAL_GFL_INDEX := 270
@@ -18,7 +21,9 @@ const SPECIAL_ATTENTION_ATTACK_TYPE := 11
 const DISGUISE_APPEARANCE_STATE := 100
 const CHANGE_TICK_LIMIT := 100
 const RECOVERY_TICK_LIMIT := 100
-const ORIGINAL_ACTOR_TICK_SECONDS := 1.0 / 30.0
+# sub_454960 dispatches types 9/10/91 from the measured 59.930 Hz actor
+# update.  These counters are not the separate 30 Hz attack-reaction timer.
+const ORIGINAL_ACTOR_TICK_SECONDS := 1.0 / 60.0
 const OBSERVER_ALERT_RADIUS := 640.0
 const CLOSE_DETECTION_RADIUS := 128.0
 
@@ -81,6 +86,25 @@ static func attack_can_break_disguise(
 		runtime_actor_type == DISGUISED_RUNTIME_ACTOR_TYPE
 		and attack_type in [1, 4]
 	)
+
+
+static func pickup_can_break_cover(runtime_actor_type: int) -> bool:
+	# sub_456AB0 calls sub_45EC20 after a completed target/container pickup only
+	# for runtime type 9.  Attacks and merely approaching the item do not use it.
+	return runtime_actor_type == TIE_DAN_COVERT_RUNTIME_ACTOR_TYPE
+
+
+static func has_cover_recovery(runtime_actor_type: int) -> bool:
+	# sub_459200 and sub_459370 share +0x294/+0x298/+0x29C and both restore
+	# faction 1 after the strict 101st update with no observing faction-1 actor.
+	return runtime_actor_type in [
+		TIE_DAN_COVERT_RUNTIME_ACTOR_TYPE,
+		DISGUISED_RUNTIME_ACTOR_TYPE,
+	]
+
+
+static func burial_can_break_cover(runtime_actor_type: int) -> bool:
+	return runtime_actor_type == DISGUISED_RUNTIME_ACTOR_TYPE
 
 
 static func is_disguised_target(

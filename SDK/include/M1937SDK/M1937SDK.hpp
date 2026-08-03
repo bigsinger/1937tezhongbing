@@ -11,6 +11,7 @@
 #include "Inventory.hpp"
 #include "Media.hpp"
 #include "Mission.hpp"
+#include "Mission7Exchange.hpp"
 #include "MissionRoutes.hpp"
 #include "Module.hpp"
 #include "OrdinaryCombat.hpp"

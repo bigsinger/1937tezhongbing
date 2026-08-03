@@ -183,6 +183,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "Godot legacy world-item tests failed with exit code $LASTEXITCODE."
 }
 
+& $GodotExecutable --headless --path $game --script 'res://tests/legacy_m006_exchange_test.gd' -- --skip-briefing
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot mission-7 document exchange tests failed with exit code $LASTEXITCODE."
+}
+
 & $GodotExecutable --headless --path $game --script 'res://tests/legacy_corpse_discovery_test.gd'
 if ($LASTEXITCODE -ne 0) {
     throw "Godot legacy corpse-discovery tests failed with exit code $LASTEXITCODE."

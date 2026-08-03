@@ -200,6 +200,7 @@ type 8/10 世界对象和汽油桶走统一的世界爆炸结算，可伤害单�
 | `tools/Capture-InventoryParity.ps1` | 在隔离 MOD 与 Remake 中成对复测；只使用目标窗口/进程私有输入 |
 | `../SDK/include/M1937SDK/Inventory.hpp` | MOD/工具可共用的原版物品容器路由与拾取物常量 |
 | `../SDK/include/M1937SDK/Projectiles.hpp` | 0x44 投射物布局、六类规则、路径/弧线/SPR 锚点公式及 RVA 配套接口 |
+| `../SDK/include/M1937SDK/Mission7Exchange.hpp` | m006 名单 actor 101 的携带者/接收者、32/256 边界、GFL 246 与 RVA |
 | `game/scripts/field_pickup.gd` | 一次性场景拾取物 |
 | `game/scripts/legacy_special_world_object.gd` | type 8/10 部署物、触发/计时、所有者和快照；触发后交给独立 actor 62 |
 | `game/scripts/legacy_explosion_effect.gd` | actor 61/62 主动画、伤害帧子效果、析构和独立快照 |
@@ -209,7 +210,8 @@ type 8/10 世界对象和汽油桶走统一的世界爆炸结算，可伤害单�
 | `game/scripts/main.gd` | 输入、原 scene 生成、背包 UI、任务与警报接线 |
 
 仍待恢复或校准的相邻内容包括爆炸对地形/遮挡的原规则，以及未归类动态
-actor 的剩余管理器删除分支。汽油桶数值、触发时序和 actor 62 动画已经恢复。六类投射规则自身
+actor 的剩余管理器删除分支。m006 actor 101 的建立、type 22 接收、析构和
+存档已经恢复。汽油桶数值、触发时序和 actor 62 动画已经恢复。六类投射规则自身
 的路径、步长、碰撞、伤害、普通命中 actor 60、终点爆炸和 SPR 发射锚点已经恢复。原版物品容器
 `actor+552`、武器容器 `actor+556` 的布局、
 数量模式和十二关开局内容已经恢复，不再把不存在的弹匣/装填时间或已确认的

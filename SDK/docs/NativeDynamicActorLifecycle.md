@@ -80,6 +80,28 @@ actor 62 通过自己的 `sub_44A350` 成功工厂建立；其主动画、effect
 事务，actor 90 按原版为一次性对象而不持久化。增援重建沿用真实关卡存档回归，
 并通过显式 `consume_factory_random=false` 避免重放。
 
+## m006 名单 actor 101
+
+`Mission7DocumentCarrierUpdate`（`sub_459840`，RVA `0x00059840`）只在引擎
+任务 7 运行。scene 1457/runtime type 15 持有物品 101 且距离首个 type 100
+对象不超过 32 时，原程序按以下顺序执行：
+
+1. 把 type 100 的当前生命字段写为 200；
+2. 调用 `sub_44A350(carrier.x-16, 0, carrier.y, 101)`，消费五次成功工厂取数；
+3. 从角色两个容器中移除物品 101。
+
+DBL 1021/runtime type 101 对应 GFL 246 `放在地上的文件袋.spr`。随后
+`Mission7DocumentRecipientUpdate`（`sub_4596E0`，RVA `0x000596E0`）让
+scene 1460/runtime type 22 在文件袋 256 像素内直接把 actor 101 设为目标；
+它不经过通用诱饵接受表、朝向或 LOS。抵达后 `sub_456AB0` 转移物品并经管理器
+删除 actor 101，消费四次析构取数。
+
+SDK 的 `Mission7Exchange.hpp` 固定两处入口、scene/runtime type、32/256
+边界、`x-16` 偏移和 actor/GFL 身份。Remake 的中途存档保存 actor 101 与全局
+随机状态，恢复时不重放工厂；文件袋被加藤或玩家取得后才提交析构事务。角色
+任务掉落只给真实容器产生的那一份物品附加任务标签，不会在名单已经转交后从
+孙大麻子的旧绑定再次合成一份。
+
 ## 投射物可见 actor 与命中 actor
 
 `sub_464DF0` 分配的投射物本体是独立的 `0x44` 字节结构，不是动态 actor；

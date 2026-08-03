@@ -150,6 +150,30 @@ constexpr bool secondary_search_runtime_type_enabled(
     }
 }
 
+// sub_454960 sends the six types above directly to sub_45CE90. Types
+// 18/19/24/26 first enter mission-specific wrappers; outside the wrapper's
+// own branch they fall through to exactly the same secondary-search handler.
+// mission_number is the original one-based dword_4E7060 value.
+constexpr bool secondary_search_dispatch_enabled(
+    std::int32_t mission_number,
+    std::int32_t runtime_type) noexcept {
+    if (secondary_search_runtime_type_enabled(runtime_type))
+        return true;
+    if (mission_number <= 0)
+        return false;
+    switch (runtime_type) {
+    case 18:
+        return mission_number != 8;
+    case 19:
+    case 26:
+        return mission_number != 2 && mission_number != 8;
+    case 24:
+        return mission_number != 6;
+    default:
+        return false;
+    }
+}
+
 constexpr bool secondary_search_candidate_is_eligible(
     std::int32_t faction_id,
     bool alive) noexcept {
@@ -291,6 +315,14 @@ static_assert(
 static_assert(secondary_search_runtime_type_enabled(16));
 static_assert(secondary_search_runtime_type_enabled(29));
 static_assert(!secondary_search_runtime_type_enabled(19));
+static_assert(secondary_search_dispatch_enabled(6, 18));
+static_assert(secondary_search_dispatch_enabled(7, 18));
+static_assert(!secondary_search_dispatch_enabled(8, 18));
+static_assert(secondary_search_dispatch_enabled(7, 26));
+static_assert(!secondary_search_dispatch_enabled(2, 19));
+static_assert(!secondary_search_dispatch_enabled(8, 26));
+static_assert(!secondary_search_dispatch_enabled(6, 24));
+static_assert(secondary_search_dispatch_enabled(5, 24));
 static_assert(
     secondary_search_candidate_is_eligible(1, true) &&
     !secondary_search_candidate_is_eligible(2, true));

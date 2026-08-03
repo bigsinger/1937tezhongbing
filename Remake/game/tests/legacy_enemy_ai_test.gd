@@ -36,6 +36,29 @@ class UnavailableWorldItem:
 		return false
 
 
+class FakeRecurringEvidenceStream:
+	extends Node
+
+	var round_index := 1
+	var actor_events: Array[Dictionary] = []
+
+	func original_recurring_evidence_round_index() -> int:
+		return round_index
+
+	func original_recurring_actor_events(
+		_unused_runtime_index: int,
+		accepted_call_sites: Array[int] = [],
+	) -> Array[Dictionary]:
+		var result: Array[Dictionary] = []
+		for event: Dictionary in actor_events:
+			if (
+				accepted_call_sites.is_empty()
+				or accepted_call_sites.has(int(event.get("call_site_rva", 0)))
+			):
+				result.append(event.duplicate(true))
+		return result
+
+
 var failures: Array[String] = []
 var checks := 0
 
@@ -49,6 +72,7 @@ func _run_tests() -> void:
 	_test_coordinate_search_lifecycle_and_snapshot()
 	_test_original_coordinate_broadcast()
 	_test_remaining_original_update_random_branches()
+	_test_recurring_evidence_contact_gate()
 	if failures.is_empty():
 		print("Legacy enemy-AI tests passed (%d checks)." % checks)
 		quit(0)
@@ -121,8 +145,52 @@ func _test_exact_alert_geometry_and_eligibility() -> void:
 			enabled_secondary_types.append(runtime_type)
 	_expect(
 		enabled_secondary_types == [16, 20, 25, 27, 28, 29],
-		"sub_454960 dispatches exactly six runtime types to secondary search",
+		"sub_454960 directly dispatches exactly six runtime types to secondary search",
 	)
+	_expect(
+		RULES.secondary_search_dispatch_enabled("m005", 18)
+		and RULES.secondary_search_dispatch_enabled("m006", 18)
+		and not RULES.secondary_search_dispatch_enabled("m007", 18),
+		"type 18 falls through except for its mission-8 reporter branch",
+	)
+	_expect(
+		RULES.secondary_search_dispatch_enabled("m006", 26)
+		and not RULES.secondary_search_dispatch_enabled("m001", 19)
+		and not RULES.secondary_search_dispatch_enabled("m007", 19)
+		and not RULES.secondary_search_dispatch_enabled("m007", 26),
+		"types 19/26 fall through except for mission-2/8 family branches",
+	)
+	_expect(
+		not RULES.secondary_search_dispatch_enabled("m005", 24)
+		and RULES.secondary_search_dispatch_enabled("m004", 24)
+		and RULES.secondary_search_dispatch_enabled("m006", 24),
+		"type 24 falls through except for its mission-6 disguised-target branch",
+	)
+	_expect(
+		not RULES.secondary_search_dispatch_enabled("", 18)
+		and RULES.secondary_search_dispatch_enabled("m007", 16),
+		"unknown mission context does not invent wrapper fallthrough behavior",
+	)
+	var dispatch_stream = MAIN.new()
+	var m006_reporter = ENEMY_UNIT.new()
+	m006_reporter.runtime_actor_type = 18
+	m006_reporter.bind_original_crt_random_source(dispatch_stream, "m006")
+	var m007_reporter = ENEMY_UNIT.new()
+	m007_reporter.runtime_actor_type = 18
+	m007_reporter.bind_original_crt_random_source(dispatch_stream, "m007")
+	var m006_mother = ENEMY_UNIT.new()
+	m006_mother.runtime_actor_type = 26
+	m006_mother.bind_original_crt_random_source(dispatch_stream, "m006")
+	_expect(
+		m006_reporter.original_secondary_search_enabled
+		and not m007_reporter.original_secondary_search_enabled
+		and m006_mother.original_secondary_search_enabled,
+		"runtime binding applies mission-aware wrapper fallthrough to live actors",
+	)
+	dispatch_stream.free()
+	m006_reporter.free()
+	m007_reporter.free()
+	m006_mother.free()
 	_expect(
 		RULES.secondary_search_candidate_is_eligible(1, true)
 		and not RULES.secondary_search_candidate_is_eligible(2, true)
@@ -643,6 +711,69 @@ func _test_remaining_original_update_random_branches() -> void:
 	item_enemy.free()
 	unavailable_item.free()
 	restored_item.free()
+
+
+func _test_recurring_evidence_contact_gate() -> void:
+	var navigation := FakeNavigation.new()
+	var evidence_stream := FakeRecurringEvidenceStream.new()
+	var enemy = _enemy(36, Vector2.ZERO, navigation)
+	enemy.original_runtime_index = 4
+	enemy.original_crt_random_source = evidence_stream
+	enemy.original_crt_runtime_state_profile = {
+		"entry": {
+			"target_runtime_index": -1,
+			"contact_state": 0,
+		},
+		"exit": {
+			"target_runtime_index": -1,
+			"contact_state": 0,
+		},
+	}
+	_expect(
+		not bool(enemy.call(
+			"_original_recurring_evidence_allows_new_live_contact"
+		)),
+		"complete native no-contact evidence blocks synthetic patrol interpolation contact",
+	)
+	evidence_stream.actor_events = [{
+		"call_site_rva": 0x0005CCCD,
+		"actual_value": 7,
+	}]
+	_expect(
+		bool(enemy.call(
+			"_original_recurring_evidence_allows_new_live_contact"
+		)),
+		"a recorded tracked-target event admits contact in its evidence round",
+	)
+	evidence_stream.actor_events.clear()
+	var target = _enemy(37, Vector2(64.0, 0.0), navigation)
+	get_root().add_child(target)
+	enemy.current_target = target
+	_expect(
+		bool(enemy.call(
+			"_original_recurring_evidence_allows_new_live_contact"
+		)),
+		"an already acquired live target remains valid during evidence replay",
+	)
+	enemy.current_target = null
+	evidence_stream.round_index = 0
+	_expect(
+		bool(enemy.call(
+			"_original_recurring_evidence_allows_new_live_contact"
+		)),
+		"ordinary live detection resumes after the bounded evidence window",
+	)
+	evidence_stream.round_index = 1
+	enemy.original_crt_runtime_state_profile["exit"]["contact_state"] = 1
+	_expect(
+		bool(enemy.call(
+			"_original_recurring_evidence_allows_new_live_contact"
+		)),
+		"native contact-state evidence is never suppressed",
+	)
+	evidence_stream.free()
+	enemy.free()
+	target.free()
 
 
 func _enemy(

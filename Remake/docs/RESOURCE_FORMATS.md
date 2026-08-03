@@ -533,6 +533,18 @@ uint32 quantity_modes[count]
 数组 0 对应当前背包（运行时 `+0x228`），数组 1 对应当前武器
 （`+0x22C`）；数组 2/3 属于模板/兴趣状态，不能误当第二份玩家库存。
 
+离线查询单条 DBL 身份时不需要启动游戏或打开 IDA。`ResourceTool inspect-dbl`
+可按数据库 ID、运行时类型或两者组合筛选，并输出资源名、显示名、类别、元素数
+及完整 header：
+
+```powershell
+dotnet run --project .\tools\ResourceTool -c Release -- `
+  inspect-dbl .\Mod\1937Database.dbl --runtime-type=101
+```
+
+无匹配时返回退出码 3；重复筛选器、负数或非整数会直接拒绝。该命令用于定位
+m006 的 DBL 1021/runtime type 101 文件袋等动态对象，不会修改输入文件。
+
 同编号 `M1937.SI#` 是无外层签名的嵌入 IBLOCK，固定为 320×240 RGB565，
 并在图像负载后精确 EOF。`LegacySaveSnapshot`、`LegacySavePreview` 和
 `ResourceTool import-save` 共同把这些状态转换为 Remake schema 1。

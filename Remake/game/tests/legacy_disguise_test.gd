@@ -3,6 +3,7 @@ extends SceneTree
 const SQUAD_UNIT: Script = preload("res://scripts/squad_unit.gd")
 const ENEMY_UNIT: Script = preload("res://scripts/enemy_unit.gd")
 const RULES: Script = preload("res://scripts/legacy_disguise_rules.gd")
+const MAIN: Script = preload("res://scripts/main.gd")
 
 
 class ClearSight:
@@ -28,6 +29,7 @@ func _run_tests() -> void:
 	_test_transition_contract()
 	_test_actor_tick_lifecycle()
 	_test_exposure_and_recovery()
+	_test_tie_dan_pickup_cover()
 	_test_special_identification()
 	if failures.is_empty():
 		print("Legacy disguise tests passed (%d checks)." % checks)
@@ -69,6 +71,18 @@ func _test_transition_contract() -> void:
 		and not RULES.attack_can_break_disguise(91, 11)
 		and not RULES.attack_can_break_disguise(10, 1),
 		"only disguised pistol and dagger commits can expose Gu Ming",
+	)
+	_expect(
+		RULES.pickup_can_break_cover(9)
+		and not RULES.pickup_can_break_cover(91)
+		and RULES.has_cover_recovery(9)
+		and RULES.has_cover_recovery(91)
+		and not RULES.has_cover_recovery(10),
+		"only Tie Dan pickup commits break type-9 cover while types 9/91 share recovery",
+	)
+	_expect(
+		is_equal_approx(RULES.ORIGINAL_ACTOR_TICK_SECONDS, 1.0 / 60.0),
+		"cover counters use the measured 60 Hz actor update",
 	)
 
 
@@ -158,6 +172,102 @@ func _test_exposure_and_recovery() -> void:
 	)
 	unit.free()
 	restored.free()
+
+
+func _test_tie_dan_pickup_cover() -> void:
+	var main = MAIN.new()
+	var clear_sight := ClearSight.new()
+	main.dynamic_occupancy = clear_sight
+	var tie_dan = _unit()
+	tie_dan.display_name = "Tie Dan"
+	tie_dan.runtime_actor_type = RULES.TIE_DAN_COVERT_RUNTIME_ACTOR_TYPE
+	tie_dan.faction_id = RULES.DISGUISED_FACTION_ID
+	tie_dan.position = Vector2(100.0, 0.0)
+	var enemy = ENEMY_UNIT.new()
+	var empty_groups: Array[Dictionary] = []
+	enemy.configure(
+		"observer",
+		Color.WHITE,
+		Vector2.ZERO,
+		null,
+		empty_groups,
+		empty_groups,
+		-1,
+		clear_sight,
+	)
+	enemy.configure_combat(1, 8, {}, empty_groups, empty_groups, true)
+	enemy.runtime_actor_type = 6
+	enemy.original_direction_index = 3
+	enemy.sense_profile = {
+		"horizontal_radius": RULES.OBSERVER_ALERT_RADIUS,
+		"vertical_radius": RULES.OBSERVER_ALERT_RADIUS * 0.5,
+		"near_band_ratio": 0.5,
+		"omnidirectional": false,
+		"crawling_hidden_in_far_band": false,
+		"requires_line_of_sight": true,
+	}
+	main.units.append(tie_dan)
+	main.enemies.append(enemy)
+	var pickup_position := Vector2(120.0, 8.0)
+	_expect(
+		main.call(
+			"_collect_original_inventory_pickup",
+			{
+				"original_inventory_kind": "backpack",
+				"item_id": 101,
+				"quantity": 1,
+				"quantity_mode": 0,
+			},
+			tie_dan,
+			pickup_position,
+		)
+		and tie_dan.backpack_inventory.has_item(101)
+		and tie_dan.faction_id == RULES.PLAYER_FACTION_ID
+		and enemy.pending_original_coordinate_alert_active
+		and enemy.pending_original_coordinate_alert_position == pickup_position,
+		"a witnessed type-9 pickup exposes Tie Dan and queues the source coordinate",
+	)
+	enemy.original_direction_index = 7
+	for unused_tick: int in range(RULES.RECOVERY_TICK_LIMIT):
+		main.call(
+			"_advance_original_disguise_state",
+			RULES.ORIGINAL_ACTOR_TICK_SECONDS + 0.000001,
+		)
+	_expect(
+		tie_dan.faction_id == RULES.PLAYER_FACTION_ID
+		and tie_dan.disguise_recovery_tick_counter == RULES.RECOVERY_TICK_LIMIT,
+		"type-9 cover remains exposed through unseen counter 100",
+	)
+	main.call(
+		"_advance_original_disguise_state",
+		RULES.ORIGINAL_ACTOR_TICK_SECONDS + 0.000001,
+	)
+	_expect(
+		tie_dan.faction_id == RULES.DISGUISED_FACTION_ID
+		and tie_dan.disguise_recovery_tick_counter == 0,
+		"type-9 cover returns on the strict 101st unseen actor update",
+	)
+	_expect(
+		main.call(
+			"_collect_original_inventory_pickup",
+			{
+				"original_inventory_kind": "backpack",
+				"item_id": 83,
+				"quantity": 1,
+				"quantity_mode": 0,
+			},
+			tie_dan,
+			Vector2(140.0, 8.0),
+		)
+		and tie_dan.backpack_inventory.has_item(83)
+		and tie_dan.faction_id == RULES.DISGUISED_FACTION_ID,
+		"an unwitnessed type-9 pickup preserves faction-1 cover",
+	)
+	main.units.clear()
+	main.enemies.clear()
+	tie_dan.free()
+	enemy.free()
+	main.free()
 
 
 func _test_special_identification() -> void:

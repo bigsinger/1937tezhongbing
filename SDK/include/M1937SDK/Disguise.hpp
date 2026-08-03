@@ -5,6 +5,7 @@
 
 namespace m1937::sdk {
 
+inline constexpr std::int32_t tie_dan_covert_runtime_type = 9;
 inline constexpr std::int32_t gu_ming_normal_runtime_type = 10;
 inline constexpr std::int32_t gu_ming_disguised_runtime_type = 91;
 inline constexpr std::int32_t gu_ming_normal_gfl_index = 270;
@@ -18,6 +19,7 @@ inline constexpr std::int32_t disguise_change_tick_limit = 100;
 inline constexpr std::int32_t disguise_recovery_tick_limit = 100;
 inline constexpr std::int32_t disguise_observer_radius = 640;
 inline constexpr std::int32_t disguise_close_detection_radius = 128;
+inline constexpr std::int32_t cover_actor_updates_per_second = 60;
 
 struct DisguiseTransition final {
     std::int32_t from_runtime_type;
@@ -70,6 +72,18 @@ constexpr bool disguise_breaks_on_attack(
     std::int32_t attack_type) noexcept {
     return runtime_type == gu_ming_disguised_runtime_type &&
            (attack_type == 1 || attack_type == 4);
+}
+
+// sub_456AB0 dispatches sub_45EC20 only after type 9 completes a target or
+// container pickup.  sub_459200 and sub_459370 then use the same faction-1
+// cover and strict 101-update recovery fields for types 9 and 91.
+constexpr bool pickup_breaks_cover(std::int32_t runtime_type) noexcept {
+    return runtime_type == tie_dan_covert_runtime_type;
+}
+
+constexpr bool has_cover_recovery(std::int32_t runtime_type) noexcept {
+    return runtime_type == tie_dan_covert_runtime_type ||
+           runtime_type == gu_ming_disguised_runtime_type;
 }
 
 enum class DisguiseDetectionMode : std::uint8_t {
@@ -144,5 +158,10 @@ static_assert(
 static_assert(disguise_breaks_on_attack(91, 1));
 static_assert(disguise_breaks_on_attack(91, 4));
 static_assert(!disguise_breaks_on_attack(91, 11));
+static_assert(pickup_breaks_cover(9));
+static_assert(!pickup_breaks_cover(91));
+static_assert(has_cover_recovery(9));
+static_assert(has_cover_recovery(91));
+static_assert(!has_cover_recovery(10));
 
 }  // namespace m1937::sdk

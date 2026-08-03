@@ -25,6 +25,9 @@ const ORIGINAL_INPUT_BRANCH_TIMING: Script = preload(
 const AI_IDLE_RANDOM_RULES: Script = preload(
 	"res://scripts/legacy_enemy_ai_rules.gd"
 )
+const LEGACY_DISGUISE_RULES: Script = preload(
+	"res://scripts/legacy_disguise_rules.gd"
+)
 const LEGACY_AMBIENT_PARTICLE_FIELD: Script = preload(
 	"res://scripts/legacy_ambient_particle_field.gd"
 )
@@ -1840,7 +1843,7 @@ func _test_disguise_replacement_random_sequence() -> void:
 				actor.consume_retired_original_crt_random()
 		)
 		actor.advance_original_disguise_transition(
-			1.0 / 30.0 + 0.000001
+			LEGACY_DISGUISE_RULES.ORIGINAL_ACTOR_TICK_SECONDS + 0.000001
 		)
 		var expected_sites := [
 			0x00059343 if actor_type == 10 else 0x000593E1,

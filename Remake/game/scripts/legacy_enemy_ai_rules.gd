@@ -24,7 +24,9 @@ const SEARCH_VERTICAL_SPAN := 16
 const SEARCH_WAIT_MINIMUM_LIMIT := 40
 const SEARCH_WAIT_RANDOM_SPAN := 160
 const WORLD_MARGIN := 16.0
-## sub_454960 dispatches these six runtime types to sub_45CE90.
+## sub_454960 dispatches these six runtime types directly to sub_45CE90.
+## Types 18/19/24/26 first enter a mission-specific wrapper; that wrapper
+## falls through to sub_45CE90 outside its own native mission branches.
 const SECONDARY_SEARCH_RUNTIME_TYPES: Array[int] = [
 	16,
 	20,
@@ -198,6 +200,28 @@ static func secondary_search_runtime_type_enabled(
 	runtime_actor_type: int,
 ) -> bool:
 	return runtime_actor_type in SECONDARY_SEARCH_RUNTIME_TYPES
+
+
+static func secondary_search_dispatch_enabled(
+	level_id: String,
+	runtime_actor_type: int,
+) -> bool:
+	if secondary_search_runtime_type_enabled(runtime_actor_type):
+		return true
+	if level_id.is_empty():
+		return false
+	match runtime_actor_type:
+		18:
+			# sub_4550A0 owns mission 8 (m007); every other mission falls
+			# through to the neutral secondary-search handler.
+			return level_id != "m007"
+		19, 26:
+			# sub_454D90 owns missions 2 and 8 (m001/m007).
+			return level_id not in ["m001", "m007"]
+		24:
+			# sub_454FA0 owns mission 6 (m005).
+			return level_id != "m005"
+	return false
 
 
 static func secondary_search_candidate_is_eligible(

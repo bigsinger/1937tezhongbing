@@ -37,6 +37,7 @@ internal static class Program
         return args[0].ToLowerInvariant() switch
         {
             "inspect" => Inspect(args),
+            "inspect-dbl" => InspectDbl(args),
             "inspect-vwf" => InspectVwf(args),
             "inspect-save" => InspectSave(args),
             "import-save" => ImportSave(args),
@@ -529,6 +530,79 @@ internal static class Program
         return report.IsPlausibleOriginalDirectory ? 0 : 3;
     }
 
+    private static int InspectDbl(string[] args)
+    {
+        RequireArgumentCount(
+            args,
+            2,
+            4,
+            "inspect-dbl <1937Database.dbl> [--id=N] [--runtime-type=N]");
+        foreach (var argument in args.Skip(2))
+        {
+            if (!argument.StartsWith("--id=", StringComparison.OrdinalIgnoreCase) &&
+                !argument.StartsWith(
+                    "--runtime-type=",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException(
+                    $"Unknown inspect-dbl filter '{argument}'. " +
+                    "Expected --id=N or --runtime-type=N.");
+            }
+        }
+        var database = DblDatabase.Open(args[1]);
+        int? entryId = ParseOptionalNonNegativeFilter(args, "--id=");
+        int? runtimeType = ParseOptionalNonNegativeFilter(args, "--runtime-type=");
+        var entries = database.Entries
+            .Where(entry => entryId is null || entry.Id == entryId.Value)
+            .Where(entry =>
+                runtimeType is null ||
+                entry.HeaderValues.Count > 2 &&
+                entry.HeaderValues[2] == checked((uint)runtimeType.Value))
+            .ToArray();
+
+        Console.WriteLine($"Path: {database.Path}");
+        Console.WriteLine($"Format version: {database.FormatVersion}");
+        Console.WriteLine($"Matched entries: {entries.Length}");
+        Console.WriteLine(
+            "Entries: id,kind,runtime_type,resource_name,display_name,category,element_count,headers");
+        foreach (var entry in entries)
+        {
+            var resolvedRuntimeType = entry.HeaderValues.Count > 2
+                ? entry.HeaderValues[2].ToString()
+                : string.Empty;
+            Console.WriteLine(
+                $"  {entry.Id},{entry.Kind},{resolvedRuntimeType}," +
+                $"{entry.ResourceName},{entry.DisplayName},{entry.CategoryName}," +
+                $"{entry.ElementCount},[{string.Join(',', entry.HeaderValues)}]");
+        }
+        return entries.Length > 0 ? 0 : 3;
+    }
+
+    private static int? ParseOptionalNonNegativeFilter(
+        string[] args,
+        string prefix)
+    {
+        var matches = args
+            .Skip(2)
+            .Where(argument => argument.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (matches.Length > 1)
+        {
+            throw new ArgumentException($"Filter '{prefix}' may be supplied only once.");
+        }
+        if (matches.Length == 0)
+        {
+            return null;
+        }
+        var valueText = matches[0][prefix.Length..];
+        if (!int.TryParse(valueText, out var value) || value < 0)
+        {
+            throw new ArgumentException(
+                $"Invalid filter '{matches[0]}'. Expected {prefix}<non-negative integer>.");
+        }
+        return value;
+    }
+
     private static int ListGfl(string[] args)
     {
         RequireArgumentCount(
@@ -887,6 +961,8 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine("  inspect <game-directory>");
+        Console.WriteLine(
+            "  inspect-dbl <1937Database.dbl> [--id=N] [--runtime-type=N]");
         Console.WriteLine(
             "  world-pickup-baseline <1937db.dbl> <output.json>");
         Console.WriteLine(

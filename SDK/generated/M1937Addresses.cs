@@ -118,6 +118,8 @@ namespace Mission1937.SDK.Generated
         public const long QiangziRescueUpdate = 0x000590E0L;
         public const long PengxinRescueUpdate = 0x00059490L;
         public const long LuoUncleRescueUpdate = 0x00059530L;
+        public const long Mission7DocumentRecipientUpdate = 0x000596E0L;
+        public const long Mission7DocumentCarrierUpdate = 0x00059840L;
         public const long SetActorPursuitTarget = 0x0005D260L;
         public const long AdvanceActorPursuit = 0x0005D330L;
         public const long ActorPursuitRandomCall = 0x0005D47EL;
@@ -131,10 +133,12 @@ namespace Mission1937.SDK.Generated
         public const long BurialCompletion = 0x00056CD0L;
         public const long ApplyActorDamage = 0x00058700L;
         public const long PlayerDisguiseToggle = 0x00050200L;
+        public const long TiedanCoverUpdate = 0x00059200L;
         public const long NormalGumingUpdate = 0x00059290L;
         public const long DisguisedGumingUpdate = 0x00059370L;
         public const long TransferActorStateForDisguise = 0x0005D1A0L;
         public const long BreakDisguiseAfterAttack = 0x0005EA70L;
+        public const long BreakTiedanCoverAfterPickup = 0x0005EC20L;
         public const long ScanDisguiseObservers = 0x0005EE00L;
         public const long AttackTargetCellCoincides = 0x0005F000L;
         public const long OriginalEndpointFromAngle = 0x0005DD50L;

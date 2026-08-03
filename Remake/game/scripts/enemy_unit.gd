@@ -799,35 +799,36 @@ func _face_special_control_source() -> void:
 func _update_detection() -> void:
 	var nearest_visible: Node2D
 	var nearest_distance_squared := INF
-	for target: Node2D in potential_targets:
-		if not _is_hostile_target(target):
-			continue
-		var disguise_mode := _disguise_detection_mode(target)
-		var visible := disguise_mode == "close_without_los"
-		if not visible:
-			var ignored: Array = [scene_index]
-			var target_scene_index := int(target.get("scene_index"))
-			if target_scene_index >= 0:
-				ignored.append(target_scene_index)
-			visible = TACTICAL_SENSES.can_detect_original(
-				dynamic_occupancy,
-				position,
-				target.position,
-				original_direction_index,
-				sense_profile,
-				bool(target.get("is_crawling")),
-				ignored,
-			)
-		# Hearing is event driven. A standing, silent target inside the recovered
-		# radius must not be treated as a continuous omnidirectional noise source;
-		# Main routes explicit N-key, dropped-item, shot and explosion events to
-		# investigate_position/receive_alert.
-		if not visible:
-			continue
-		var distance_squared := position.distance_squared_to(target.position)
-		if distance_squared < nearest_distance_squared:
-			nearest_distance_squared = distance_squared
-			nearest_visible = target
+	if _original_recurring_evidence_allows_new_live_contact():
+		for target: Node2D in potential_targets:
+			if not _is_hostile_target(target):
+				continue
+			var disguise_mode := _disguise_detection_mode(target)
+			var visible := disguise_mode == "close_without_los"
+			if not visible:
+				var ignored: Array = [scene_index]
+				var target_scene_index := int(target.get("scene_index"))
+				if target_scene_index >= 0:
+					ignored.append(target_scene_index)
+				visible = TACTICAL_SENSES.can_detect_original(
+					dynamic_occupancy,
+					position,
+					target.position,
+					original_direction_index,
+					sense_profile,
+					bool(target.get("is_crawling")),
+					ignored,
+				)
+			# Hearing is event driven. A standing, silent target inside the recovered
+			# radius must not be treated as a continuous omnidirectional noise source;
+			# Main routes explicit N-key, dropped-item, shot and explosion events to
+			# investigate_position/receive_alert.
+			if not visible:
+				continue
+			var distance_squared := position.distance_squared_to(target.position)
+			if distance_squared < nearest_distance_squared:
+				nearest_distance_squared = distance_squared
+				nearest_visible = target
 	if nearest_visible != null:
 		_acquire_visible_live_target(nearest_visible)
 	elif current_target != null and behavior_state in [BehaviorState.CHASE, BehaviorState.ATTACK]:
@@ -857,6 +858,48 @@ func _update_detection() -> void:
 			var visible_world_item := _first_visible_allowed_world_item()
 			if visible_world_item != null:
 				_begin_legacy_world_item_investigation(visible_world_item)
+
+
+func _original_recurring_evidence_allows_new_live_contact() -> bool:
+	# The captured recurring window is a complete, no-input trace.  Some native
+	# patrol samples are several pixels apart; interpolating those samples through
+	# the remake navigation grid can briefly expose a target that the original
+	# actor never acquired.  For actors proven to have no contact at both capture
+	# boundaries, admit a new target only when that actor has a recorded native
+	# tracked-target event in the current round.  Player input invalidates this
+	# bounded replay lane, after which ordinary live detection resumes unchanged.
+	if _original_recurring_evidence_round_index() <= 0:
+		return true
+	if (
+		current_target != null
+		and is_instance_valid(current_target)
+		and _target_is_alive(current_target)
+	):
+		return true
+	if not _original_recurring_actor_events([
+		0x0005CCCD,
+		0x0005CD01,
+	]).is_empty():
+		return true
+	var entry_value: Variant = original_crt_runtime_state_profile.get(
+		"entry",
+		{},
+	)
+	var exit_value: Variant = original_crt_runtime_state_profile.get(
+		"exit",
+		{},
+	)
+	if not entry_value is Dictionary or not exit_value is Dictionary:
+		return true
+	var entry := entry_value as Dictionary
+	var exit := exit_value as Dictionary
+	var native_window_has_no_contact := (
+		int(entry.get("target_runtime_index", -1)) < 0
+		and int(exit.get("target_runtime_index", -1)) < 0
+		and int(entry.get("contact_state", 0)) == 0
+		and int(exit.get("contact_state", 0)) == 0
+	)
+	return not native_window_has_no_contact
 
 
 func _acquire_visible_live_target(target: Node2D) -> bool:
@@ -2423,6 +2466,36 @@ func _first_visible_allowed_world_item() -> Node2D:
 func _begin_legacy_world_item_investigation(world_item: Node2D) -> bool:
 	if not can_consider_legacy_world_item(world_item):
 		return false
+	return _begin_legacy_world_item_investigation_unchecked(world_item)
+
+
+func begin_original_mission_world_item_investigation(
+	world_item: Node2D,
+) -> bool:
+	# Mission-specific native handlers (notably m006 type 22 -> actor 101)
+	# assign a target directly and do not run the generic acceptance/LOS scan.
+	# They still yield to active combat and reuse the normal A* interaction path.
+	if (
+		not is_alive
+		or world_item == null
+		or not is_instance_valid(world_item)
+		or not world_item.has_method("is_available_original_world_item")
+		or not bool(world_item.call("is_available_original_world_item"))
+		or current_target != null
+		or behavior_state not in [BehaviorState.PATROL, BehaviorState.WORLD_ITEM]
+	):
+		return false
+	if (
+		behavior_state == BehaviorState.WORLD_ITEM
+		and legacy_world_item_target == world_item
+	):
+		return true
+	return _begin_legacy_world_item_investigation_unchecked(world_item)
+
+
+func _begin_legacy_world_item_investigation_unchecked(
+	world_item: Node2D,
+) -> bool:
 	legacy_world_item_target = world_item
 	legacy_world_item_interaction_pending = false
 	legacy_world_item_replan_elapsed = CHASE_REPLAN_SECONDS

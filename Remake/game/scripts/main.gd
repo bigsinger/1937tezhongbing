@@ -44,6 +44,12 @@ const LEGACY_CURSOR_PRESENTER: Script = preload(
 	"res://scripts/legacy_cursor_presenter.gd"
 )
 const WORLD_PICKUP_CATALOG: Script = preload("res://scripts/world_pickup_catalog.gd")
+const LEGACY_DYNAMIC_WORLD_ITEM_CATALOG: Script = preload(
+	"res://scripts/legacy_dynamic_world_item_catalog.gd"
+)
+const LEGACY_M006_EXCHANGE_RULES: Script = preload(
+	"res://scripts/legacy_m006_exchange_rules.gd"
+)
 const FIELD_PICKUP_SCRIPT: Script = preload("res://scripts/field_pickup.gd")
 const EXPLOSIVE_PROP_SCRIPT: Script = preload("res://scripts/explosive_prop.gd")
 const LEGACY_SPECIAL_ACTION_PROFILES: Script = preload("res://scripts/legacy_special_action_profiles.gd")
@@ -3248,6 +3254,7 @@ func _process(delta: float) -> void:
 func _physics_process(_delta: float) -> void:
 	_advance_original_global_alarm()
 	_advance_original_escort_rescue_proximity()
+	_advance_original_m006_document_exchange()
 	_advance_original_pickup_order()
 	_advance_original_drop_order()
 	_advance_burial_command_world_tick()
@@ -3366,13 +3373,14 @@ func _advance_original_disguise_state(delta: float) -> void:
 		if unit == null or not is_instance_valid(unit) or not unit.is_alive:
 			continue
 		unit.advance_original_disguise_transition(safe_delta)
-		if (
+		if not LEGACY_DISGUISE_RULES.has_cover_recovery(
 			unit.runtime_actor_type
-			!= LEGACY_DISGUISE_RULES.DISGUISED_RUNTIME_ACTOR_TYPE
 		):
 			continue
-		var burial_exposes_actor := (
-			burial_action_started
+		var burial_exposes_actor: bool = (
+			LEGACY_DISGUISE_RULES.burial_can_break_cover(
+				unit.runtime_actor_type
+			) and burial_action_started
 			and burial_worker == unit
 			and burial_target != null
 			and is_instance_valid(burial_target)
@@ -3465,6 +3473,34 @@ func _on_original_disguise_attack_committed(
 		return
 	unit.expose_original_disguise()
 	update_status("%s 的伪装行动被敌军目击" % unit.display_name)
+
+
+func _on_original_pickup_cover_committed(
+	collector: SQUAD_UNIT,
+	source_world_position: Vector2,
+) -> bool:
+	if (
+		collector == null
+		or not is_instance_valid(collector)
+		or not collector.is_alive
+		or not LEGACY_DISGUISE_RULES.pickup_can_break_cover(
+			collector.runtime_actor_type
+		)
+	):
+		return false
+	var was_observed := false
+	for enemy: ENEMY_UNIT in enemies:
+		if not _enemy_has_original_visibility(enemy, collector):
+			continue
+		was_observed = true
+		# sub_45EC20 writes the completed target/container coordinate into each
+		# observing actor.  It does not hand out a live target pointer.
+		enemy.receive_original_coordinate_alert(source_world_position)
+	if not was_observed:
+		return false
+	collector.expose_original_cover()
+	update_status("%s 取物时被敌军目击，身份暴露" % collector.display_name)
+	return true
 
 
 func _on_original_disguise_transition_ready(
@@ -4334,6 +4370,7 @@ func _try_interact_burial_cache_at(world_position: Vector2) -> bool:
 	var collector := selected_units[0]
 	if bool(cache.call("can_interact", collector)):
 		var transferred := cache.call("transfer_all_to", collector) as Dictionary
+		_on_original_pickup_cover_committed(collector, cache.position)
 		update_status(
 			"已从藏尸处取得 %d 类武器物资和 %d 类背包物品"
 			% [
@@ -6926,15 +6963,154 @@ func _spawn_original_inventory_pickup(
 	world_position: Vector2,
 	payload: Dictionary,
 ) -> void:
-	var item_id := int(payload.get("item_id", 0))
 	var pickup: MISSION_PICKUP = MISSION_PICKUP.new()
 	add_child(pickup)
 	pickup.configure(
 		payload,
 		world_position,
-		_inventory_icon_for("", item_id, ""),
+		_mission_pickup_texture_for_payload(payload),
 	)
 	_register_mission_pickup(pickup)
+
+
+func _mission_pickup_texture_for_payload(payload: Dictionary) -> Texture2D:
+	var item_id := int(payload.get("item_id", 0))
+	var world_gfl_index: int = (
+		LEGACY_DYNAMIC_WORLD_ITEM_CATALOG.world_gfl_index(item_id)
+	)
+	if world_gfl_index > 0:
+		var world_texture := _load_gfl_texture(world_gfl_index)
+		if world_texture != null:
+			return world_texture
+	if not str(payload.get("original_inventory_kind", "")).is_empty():
+		return _inventory_icon_for("", item_id, "")
+	return null
+
+
+func _advance_original_m006_document_exchange() -> bool:
+	var mission_id := str(current_mission.get("id", ""))
+	if not LEGACY_M006_EXCHANGE_RULES.is_mission(mission_id):
+		return false
+	var changed := false
+	var carrier := _enemy_by_scene_index(
+		LEGACY_M006_EXCHANGE_RULES.CARRIER_SCENE_INDEX
+	)
+	var exit_entity_value: Variant = world_entities_by_scene.get(
+		LEGACY_M006_EXCHANGE_RULES.EXIT_DETECTOR_SCENE_INDEX
+	)
+	if (
+		carrier != null
+		and exit_entity_value is Dictionary
+		and carrier.backpack_inventory != null
+	):
+		var exit_entity := exit_entity_value as Dictionary
+		var carrier_has_document: bool = carrier.backpack_inventory.has_item(
+			LEGACY_M006_EXCHANGE_RULES.DOCUMENT_ITEM_ID
+		)
+		var exit_position := Vector2(
+			float(exit_entity.get("x", 0.0)),
+			float(exit_entity.get("y", 0.0)),
+		)
+		if LEGACY_M006_EXCHANGE_RULES.can_carrier_place_document(
+			mission_id,
+			carrier.is_alive,
+			carrier.runtime_actor_type,
+			carrier_has_document,
+			carrier.position,
+			_entity_runtime_actor_type(exit_entity),
+			exit_position,
+		):
+			# sub_459840 constructs actor 101 before removing item 101 from
+			# both actor inventory containers. Preserve that random-stream order.
+			if not _commit_original_dynamic_actor_factory(
+				"m006 document actor 101"
+			):
+				return false
+			var document_entry: Dictionary = (
+				carrier.backpack_inventory.take_for_drop(
+					LEGACY_M006_EXCHANGE_RULES.DOCUMENT_ITEM_ID,
+					1,
+				)
+			)
+			if document_entry.is_empty():
+				push_error("m006 document item changed during native handoff")
+				return false
+			_spawn_original_inventory_pickup(
+				carrier.position + LEGACY_M006_EXCHANGE_RULES.DROP_OFFSET,
+				{
+					"original_inventory_kind": "backpack",
+					"original_actor_type": (
+						LEGACY_M006_EXCHANGE_RULES.DOCUMENT_WORLD_ACTOR_TYPE
+					),
+					"original_dynamic_actor_lifecycle": true,
+					"original_factory_random_consumed": true,
+					"original_destructor_random_consumed": false,
+					"item_id": LEGACY_M006_EXCHANGE_RULES.DOCUMENT_ITEM_ID,
+					"item_name": ORIGINAL_INITIAL_ITEM_INVENTORY.item_display_name(
+						LEGACY_M006_EXCHANGE_RULES.DOCUMENT_ITEM_ID
+					),
+					"item_role": "m006_name_list",
+					"m006_native_exchange_document": true,
+					"quantity": int(document_entry.get("quantity", 1)),
+					"quantity_mode": int(
+						document_entry.get("quantity_mode", 0)
+					),
+					"source_scene_index": int(carrier.scene_index),
+				},
+			)
+			changed = true
+
+	var recipient := _enemy_by_scene_index(
+		LEGACY_M006_EXCHANGE_RULES.RECIPIENT_SCENE_INDEX
+	)
+	var document_pickup := _first_available_original_world_item(
+		LEGACY_M006_EXCHANGE_RULES.DOCUMENT_WORLD_ACTOR_TYPE,
+		"m006_native_exchange_document",
+	)
+	if recipient == null or document_pickup == null:
+		return changed
+	var recipient_has_document: bool = (
+		recipient.backpack_inventory != null
+		and recipient.backpack_inventory.has_item(
+			LEGACY_M006_EXCHANGE_RULES.DOCUMENT_ITEM_ID
+		)
+	)
+	if LEGACY_M006_EXCHANGE_RULES.can_recipient_pursue_document(
+		mission_id,
+		recipient.is_alive,
+		recipient.runtime_actor_type,
+		recipient_has_document,
+		recipient.position,
+		document_pickup.is_available_original_world_item(),
+		document_pickup.original_actor_type,
+		document_pickup.position,
+	):
+		changed = (
+			recipient.begin_original_mission_world_item_investigation(
+				document_pickup
+			)
+			or changed
+		)
+	return changed
+
+
+func _first_available_original_world_item(
+	original_actor_type: int,
+	required_payload_flag: String = "",
+) -> MISSION_PICKUP:
+	for pickup: MISSION_PICKUP in mission_pickups:
+		if (
+			pickup != null
+			and is_instance_valid(pickup)
+			and pickup.original_actor_type == original_actor_type
+			and pickup.is_available_original_world_item()
+			and (
+				required_payload_flag.is_empty()
+				or bool(pickup.item_payload.get(required_payload_flag, false))
+			)
+		):
+			return pickup
+	return null
 
 
 func _publish_role_eliminations(unit: Node2D) -> void:
@@ -7000,7 +7176,10 @@ func _spawn_role_drops(unit: Node2D) -> void:
 				for payload_key: Variant in payload.keys():
 					merged[payload_key] = payload[payload_key]
 				exact_pickup.item_payload = merged
-				continue
+			# Original-item role drops enrich the exact item removed from the
+			# actor container. Never fabricate a duplicate after an earlier
+			# mission handoff transferred the item to another actor.
+			continue
 		var pickup: MISSION_PICKUP = MISSION_PICKUP.new()
 		add_child(pickup)
 		pickup.configure(payload, unit.position)
@@ -8715,6 +8894,7 @@ func interact_with_mission_world() -> void:
 				nearest_pickup = pickup
 				nearest_pickup_collector = origin
 	if nearest_pickup != null and nearest_distance <= MISSION_INTERACTION_RADIUS:
+		var pickup_world_position := nearest_pickup.position
 		var payload := nearest_pickup.collect()
 		_unregister_mission_pickup(nearest_pickup)
 		if (
@@ -8722,10 +8902,16 @@ func interact_with_mission_world() -> void:
 			and _collect_original_inventory_pickup(
 				payload,
 				nearest_pickup_collector,
+				pickup_world_position,
 			)
 		):
 			_report_direction_action("pickup_role_drop")
 			return
+		if nearest_pickup_collector != null:
+			_on_original_pickup_cover_committed(
+				nearest_pickup_collector,
+				pickup_world_position,
+			)
 		_publish_item_acquired_if_mission_bound(payload)
 		_report_direction_action("pickup_role_drop")
 		update_status("已取得任务物品")
@@ -8746,10 +8932,15 @@ func interact_with_mission_world() -> void:
 				nearest_field_pickup = pickup
 				nearest_field_collector = origin
 	if nearest_field_pickup != null and nearest_field_collector != null:
+		var field_pickup_world_position := nearest_field_pickup.position
 		var field_payload: Dictionary = nearest_field_pickup.collect(nearest_field_collector)
 		if not field_payload.is_empty():
 			field_pickups.erase(nearest_field_pickup)
-			_apply_field_pickup(field_payload, nearest_field_collector)
+			_apply_field_pickup(
+				field_payload,
+				nearest_field_collector,
+				field_pickup_world_position,
+			)
 			return
 
 	var best_scene := -1
@@ -8781,6 +8972,7 @@ func interact_with_mission_world() -> void:
 func _collect_original_inventory_pickup(
 	payload: Dictionary,
 	collector: SQUAD_UNIT,
+	source_world_position: Variant = null,
 ) -> bool:
 	var inventory_kind := str(payload.get("original_inventory_kind", ""))
 	if inventory_kind not in ["backpack", "weapon"]:
@@ -8788,6 +8980,9 @@ func _collect_original_inventory_pickup(
 	var item_id := int(payload.get("item_id", 0))
 	var quantity := maxi(int(payload.get("quantity", 0)), 0)
 	var quantity_mode := int(payload.get("quantity_mode", -1))
+	var committed_world_position := collector.position
+	if source_world_position is Vector2:
+		committed_world_position = source_world_position as Vector2
 	var accepted := false
 	if inventory_kind == "backpack":
 		accepted = (
@@ -8828,6 +9023,10 @@ func _collect_original_inventory_pickup(
 		var rejected_event_payload := payload.duplicate(true)
 		rejected_event_payload["collector_name"] = str(collector.display_name)
 		_publish_item_acquired_if_mission_bound(rejected_event_payload)
+		_on_original_pickup_cover_committed(
+			collector,
+			committed_world_position,
+		)
 		update_status("物品容器冲突，已按任务物品记录")
 		return true
 	var item_name := str(
@@ -8840,6 +9039,10 @@ func _collect_original_inventory_pickup(
 	event_payload["item_name"] = item_name
 	event_payload["collector_name"] = str(collector.display_name)
 	_publish_item_acquired_if_mission_bound(event_payload)
+	_on_original_pickup_cover_committed(
+		collector,
+		committed_world_position,
+	)
 	update_status("%s 拾取 %s" % [collector.display_name, item_name])
 	_refresh_inventory_ui()
 	return true
@@ -8966,12 +9169,13 @@ func _complete_original_pickup_order() -> bool:
 	):
 		_clear_original_pickup_order()
 		return false
+	var pickup_world_position: Vector2 = pickup.position
 	var payload := pickup.call("collect", collector) as Dictionary
 	if payload.is_empty():
 		return false
 	field_pickups.erase(pickup)
 	_clear_original_pickup_order()
-	_apply_field_pickup(payload, collector)
+	_apply_field_pickup(payload, collector, pickup_world_position)
 	return true
 
 
@@ -8989,7 +9193,11 @@ func _collector_can_use_field_pickup(collector: SQUAD_UNIT, pickup: Node2D) -> b
 	)
 
 
-func _apply_field_pickup(payload: Dictionary, collector: SQUAD_UNIT) -> void:
+func _apply_field_pickup(
+	payload: Dictionary,
+	collector: SQUAD_UNIT,
+	source_world_position: Variant = null,
+) -> void:
 	_cancel_legacy_deployment_for_unit(collector)
 	var grant := payload.get("grant", {}) as Dictionary
 	if (
@@ -9006,7 +9214,11 @@ func _apply_field_pickup(payload: Dictionary, collector: SQUAD_UNIT) -> void:
 	exact_payload["item_name"] = (
 		ORIGINAL_INITIAL_ITEM_INVENTORY.item_display_name(item_id)
 	)
-	if not _collect_original_inventory_pickup(exact_payload, collector):
+	if not _collect_original_inventory_pickup(
+		exact_payload,
+		collector,
+		source_world_position,
+	):
 		return
 	# A DBL pickup can also be a mission scene binding (notably m001's
 	# uniform). The inventory event was already published above; only suppress

@@ -705,7 +705,7 @@ int main(int argc, char** argv) {
                 checks);
         }
         require(
-            formal_site_count == 110 &&
+            formal_site_count == 107 &&
                 find_call_site(0) == nullptr,
             "CRT rand formal-mission classification mismatch", checks);
         }
@@ -1116,6 +1116,18 @@ int main(int argc, char** argv) {
                 m1937::sdk::world_item::counter_has_completed(81, 80),
             "world-item counter thresholds mismatch", checks);
         require(
+            m1937::sdk::mission7_exchange::can_carrier_place_document(
+                7, true, 15, true, 100, 32.0f, 0.0f) &&
+                !m1937::sdk::mission7_exchange::can_carrier_place_document(
+                    7, true, 15, true, 100, 32.01f, 0.0f) &&
+                m1937::sdk::mission7_exchange::can_recipient_pursue_document(
+                    7, true, 22, false, true, 101, 256.0f, 0.0f) &&
+                !m1937::sdk::mission7_exchange::
+                    can_recipient_pursue_document(
+                        7, true, 22, true, true, 101, 1.0f, 0.0f) &&
+                m1937::sdk::mission7_exchange::document_world_gfl_index == 246,
+            "mission-7 document exchange constants mismatch", checks);
+        require(
             m1937::sdk::corpse_discovery::is_candidate(1, 1, 0) &&
                 !m1937::sdk::corpse_discovery::is_candidate(1, 0, 0) &&
                 !m1937::sdk::corpse_discovery::is_candidate(1, 1, 1) &&
@@ -1195,7 +1207,18 @@ int main(int argc, char** argv) {
                 secondary_search_runtime_type_enabled(29) &&
                 !secondary_search_runtime_type_enabled(19) &&
                 !secondary_search_runtime_type_enabled(30),
-            "secondary-search runtime-type dispatcher mismatch", checks);
+            "secondary-search direct runtime-type dispatcher mismatch", checks);
+        require(
+            secondary_search_dispatch_enabled(6, 18) &&
+                secondary_search_dispatch_enabled(7, 18) &&
+                !secondary_search_dispatch_enabled(8, 18) &&
+                secondary_search_dispatch_enabled(7, 26) &&
+                !secondary_search_dispatch_enabled(2, 19) &&
+                !secondary_search_dispatch_enabled(8, 26) &&
+                !secondary_search_dispatch_enabled(6, 24) &&
+                secondary_search_dispatch_enabled(5, 24) &&
+                !secondary_search_dispatch_enabled(0, 18),
+            "secondary-search mission-wrapper fallthrough mismatch", checks);
         require(
             secondary_search_candidate_is_eligible(1, true) &&
                 !secondary_search_candidate_is_eligible(2, true) &&
@@ -1329,11 +1352,19 @@ int main(int argc, char** argv) {
         require(
             m1937::sdk::disguise_change_tick_limit == 100 &&
                 m1937::sdk::disguise_recovery_tick_limit == 100 &&
+                m1937::sdk::cover_actor_updates_per_second == 60 &&
                 m1937::sdk::disguise_breaks_on_attack(91, 1) &&
                 m1937::sdk::disguise_breaks_on_attack(91, 4) &&
                 !m1937::sdk::disguise_breaks_on_attack(91, 11) &&
                 !m1937::sdk::disguise_breaks_on_attack(10, 1),
             "Gu Ming disguise timing/attack exposure mismatch", checks);
+        require(
+            m1937::sdk::pickup_breaks_cover(9) &&
+                !m1937::sdk::pickup_breaks_cover(91) &&
+                m1937::sdk::has_cover_recovery(9) &&
+                m1937::sdk::has_cover_recovery(91) &&
+                !m1937::sdk::has_cover_recovery(10),
+            "Tie Dan pickup-cover/recovery rules mismatch", checks);
         require(
             m1937::sdk::disguise_detection_mode(
                 4, 1, 1000, 1000) ==
@@ -1352,17 +1383,19 @@ int main(int argc, char** argv) {
             "Gu Ming disguise identification rules mismatch", checks);
         require(
             m1937::sdk::rva::player_disguise_toggle != 0 &&
+                m1937::sdk::rva::tiedan_cover_update != 0 &&
                 m1937::sdk::rva::normal_guming_update != 0 &&
                 m1937::sdk::rva::disguised_guming_update != 0 &&
                 m1937::sdk::rva::transfer_actor_state_for_disguise !=
                     0 &&
                 m1937::sdk::rva::break_disguise_after_attack != 0 &&
+                m1937::sdk::rva::break_tiedan_cover_after_pickup != 0 &&
                 m1937::sdk::rva::scan_disguise_observers != 0 &&
                 m1937::sdk::rva::normal_guming_update !=
                     m1937::sdk::rva::disguised_guming_update &&
                 m1937::sdk::rva::break_disguise_after_attack !=
                     m1937::sdk::rva::scan_disguise_observers,
-            "Gu Ming disguise RVA catalog mismatch", checks);
+            "type-9/type-91 cover RVA catalog mismatch", checks);
 
         using namespace m1937::sdk::enemy_ai;
         const auto novice = tuning_for(0, 0);

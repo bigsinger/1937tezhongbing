@@ -134,7 +134,10 @@
       "briefing_image_index": 1054,
       "scene_bindings": {"sun_damazi": [1457], "kato_engine_role": [1460], "m006_sun_damazi": [1457], "m006_kato": [1460], "m006_exchange_point": [1461], "exit": [1462]},
       "binding_notes": "剧情中的加藤由引擎 type22/DBL 王老板资源承担；原始物品清单确认 scene 1457 的孙大麻子携带物品 101。",
-      "role_drops": {"m006_sun_damazi": {"item_role": "m006_name_list", "original_item_id": 101}},
+      "role_drops": {
+        "m006_sun_damazi": {"item_role": "m006_name_list", "original_item_id": 101},
+        "m006_kato": {"item_role": "m006_name_list", "original_item_id": 101}
+      },
       "restoration_notes": "原版 case 7 的实际胜利判定是 type15 与 type22 均死亡，且强子持有物品 101；scene 1461 接头点和 scene 1462 出口不参与实际胜利。stable_mod 忠实恢复该控制流，repaired 保留按任务叙事补写的尾随、接头和撤离流程。",
       "rule_profiles": {
         "stable_mod": {

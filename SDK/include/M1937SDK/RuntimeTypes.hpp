@@ -157,12 +157,14 @@ struct RuntimeActorV1 final {
         // transition clears it; it is not a timed stun.
         std::int32_t special_attention_hold; // +0x290
     };
-    // Type 91 uses these fields after a witnessed pistol/dagger action.
-    // Unseen updates restore faction 1 only when counter > limit.
+    // Type 9 uses these fields after a witnessed pickup; type 91 uses them
+    // after a witnessed pistol/dagger action or burial. Unseen actor updates
+    // restore faction 1 only when counter > limit.
     std::int32_t disguise_recovery_active;  // +0x294
     std::int32_t disguise_recovery_limit;   // +0x298, default 100
     union {
         std::int32_t disguise_recovery_counter; // +0x29C
+        std::int32_t cover_recovery_counter;    // +0x29C
         // sub_45D330 reuses this slot as the type-56 pursuit delay counter.
         std::int32_t pursuit_delay_counter;      // +0x29C
     };

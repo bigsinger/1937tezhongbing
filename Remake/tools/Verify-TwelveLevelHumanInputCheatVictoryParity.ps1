@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$GodotExecutable,
-    [string]$OutputDirectory = ''
+    [string]$OutputDirectory = '',
+    [ValidateRange(0, 11)][int]$StartLevel = 0,
+    [ValidateRange(0, 11)][int]$EndLevel = 11
 )
 
 $ErrorActionPreference = 'Stop'
@@ -17,9 +19,12 @@ if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
 }
 $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 [IO.Directory]::CreateDirectory($OutputDirectory) | Out-Null
+if ($StartLevel -gt $EndLevel) {
+    throw 'StartLevel must be less than or equal to EndLevel.'
+}
 
 $results = [Collections.Generic.List[object]]::new()
-foreach ($index in 0..11) {
+foreach ($index in $StartLevel..$EndLevel) {
     $levelId = 'm{0:D3}' -f $index
     $scenarioId = "$levelId-human-input-cheat-victory-v1"
     $levelOutput = Join-Path $OutputDirectory $levelId
@@ -70,6 +75,8 @@ $summary = [pscustomobject][ordered]@{
     system_cursor_calls = 0
     system_keyboard_calls = 0
     global_focus_calls = 0
+    start_level = $StartLevel
+    end_level = $EndLevel
     levels = @($results)
     check_count = [int](
         @($results | Measure-Object check_count -Sum).Sum)
