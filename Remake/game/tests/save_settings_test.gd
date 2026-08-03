@@ -1129,6 +1129,11 @@ func _test_mid_mission_capture_and_apply(failures: Array[String]) -> void:
 
 	var target_game := _make_mock_game(false)
 	root.add_child(target_game)
+	# A fresh level may author a pursuit link that no longer exists in the save.
+	# Restoring the explicit -1 identity must clear that stale startup relation.
+	var stale_pursuit_enemy = target_game.enemies[0]
+	stale_pursuit_enemy.original_pursuit_target_scene_index = 100
+	stale_pursuit_enemy.original_pursuit_target = target_game.units[0]
 	var apply_result: Dictionary = GAME_SESSION_STATE.apply_after_level_loaded(target_game, disk_session)
 	_expect(
 		bool(apply_result["ok"])
@@ -1154,6 +1159,12 @@ func _test_mid_mission_capture_and_apply(failures: Array[String]) -> void:
 		and target_game.enemies[0].current_target == target_unit
 		and target_game.enemies[0].behavior_state == ENEMY_UNIT.BehaviorState.CHASE,
 		"enemy pursuit target and behavior restore together",
+		failures,
+	)
+	_expect(
+		target_game.enemies[0].original_pursuit_target == null
+		and int(target_game.enemies[0].original_pursuit_target_scene_index) == -1,
+		"saved native pursuit identity clears a stale authored startup link",
 		failures,
 	)
 	_expect(

@@ -765,6 +765,7 @@ func _test_twelve_level_runtime_state_and_pursuit() -> void:
 	follower.configure_runtime_actor_type({
 		"database_header_values": [0, 0, 12],
 		"original_runtime_profile": {"runtime_index": 119},
+		"native_actor_state": {"pursuit_actor_scene_index": 1614},
 	})
 	follower.bind_original_crt_random_source(game, "m000")
 	follower.position = Vector2.ZERO
@@ -777,6 +778,7 @@ func _test_twelve_level_runtime_state_and_pursuit() -> void:
 		and advanced
 		and follower.original_pursuit_serial == 1
 		and follower.original_pursuit_target_runtime_index == 118
+		and follower.original_pursuit_target_scene_index == 1614
 		and follower.original_pursuit_call_site_rva == 0x0005D47E
 		and follower.process_physics_priority == 1119,
 		"runtime actor 119 consumes one ordered native pursuit update",
@@ -801,6 +803,7 @@ func _test_twelve_level_runtime_state_and_pursuit() -> void:
 	restored.configure_runtime_actor_type({
 		"database_header_values": [0, 0, 12],
 		"original_runtime_profile": {"runtime_index": 119},
+		"native_actor_state": {"pursuit_actor_scene_index": 1614},
 	})
 	restored.bind_original_crt_random_source(game, "m000")
 	restored.bind_original_pursuit_target(target)
@@ -815,6 +818,7 @@ func _test_twelve_level_runtime_state_and_pursuit() -> void:
 			0.0125,
 		)
 		and restored.original_pursuit_serial == 1
+		and restored.original_pursuit_target_scene_index == 1614
 		and restored.original_pursuit_last_command_variant == 1,
 		"save/load restores the recovered pursuit scheduler phase",
 	)

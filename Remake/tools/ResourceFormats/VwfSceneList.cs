@@ -23,17 +23,17 @@ public enum VwfActorExtendedFieldV5
     DefaultAttackType = 2,
     CurrentHitPoints = 3,
     HiddenOrRemoved = 4,
-    UnknownRuntime1C4 = 5,
-    UnknownRuntime1C8 = 6,
+    TimedActionLimit = 5,
+    TimedActionCounter = 6,
     BurialOrDisguiseTransitionReady = 7,
-    UnknownRuntime1D0 = 8,
+    TimedActionProgressActive = 8,
     HypnosisActive = 9,
-    UnknownRuntime240 = 10,
-    UnknownRuntime244 = 11,
+    PursuitActorSceneIndex = 10,
+    WorldPickupQuantity = 11,
     CorpseDiscovered = 12,
     TargetLost = 13,
     MovementActive = 14,
-    UnknownRuntime1E0 = 15,
+    CoordinateMoveCommandActive = 15,
     MovementPathState = 16,
     MovementMode = 17,
     ResolvedGoalX = 18,
@@ -42,23 +42,23 @@ public enum VwfActorExtendedFieldV5
     SearchDelayLimit = 21,
     SearchDelayCounter = 22,
     ReactionState = 23,
-    UnknownRuntime260 = 24,
+    SearchWanderStepCounter = 24,
     PoisonActive = 25,
     PoisonCounter = 26,
     PoisonCounterLimit = 27,
     HypnosisCounterLimit = 28,
     HypnosisCounter = 29,
     UnknownRuntime274 = 30,
-    UnknownRuntime1B0 = 31,
-    UnknownRuntime284 = 32,
-    UnknownRuntime280 = 33,
+    NavigationOccupancyEnabled = 31,
+    StationaryRouteFacingDirection = 32,
+    StationaryRouteFacingRestoreEnabled = 33,
     BurialActionStarted = 34,
     DisguiseChangePending = 35,
     PathOverrideOrSpecialAttentionHold = 36,
     DisguiseRecoveryActive = 37,
     DisguiseRecoveryLimit = 38,
     DisguiseRecoveryOrPursuitDelayCounter = 39,
-    UnknownRuntime1DC = 40,
+    EscortRecruitmentCompleted = 40,
 }
 
 public static class VwfActorExtendedLayoutV5
@@ -126,12 +126,22 @@ public sealed record VwfSceneEntity(
     public uint DefaultAttackType => ExtendedField(VwfActorExtendedFieldV5.DefaultAttackType);
     public uint CurrentHitPoints => ExtendedField(VwfActorExtendedFieldV5.CurrentHitPoints);
     public uint HiddenOrRemoved => ExtendedField(VwfActorExtendedFieldV5.HiddenOrRemoved);
+    public uint TimedActionLimit => ExtendedField(VwfActorExtendedFieldV5.TimedActionLimit);
+    public uint TimedActionCounter => ExtendedField(VwfActorExtendedFieldV5.TimedActionCounter);
     public uint BurialOrDisguiseTransitionReady =>
         ExtendedField(VwfActorExtendedFieldV5.BurialOrDisguiseTransitionReady);
+    public uint TimedActionProgressActive =>
+        ExtendedField(VwfActorExtendedFieldV5.TimedActionProgressActive);
     public uint HypnosisActive => ExtendedField(VwfActorExtendedFieldV5.HypnosisActive);
+    public int PursuitActorSceneIndex =>
+        SignedExtendedField(VwfActorExtendedFieldV5.PursuitActorSceneIndex);
+    public uint WorldPickupQuantity =>
+        ExtendedField(VwfActorExtendedFieldV5.WorldPickupQuantity);
     public uint CorpseDiscovered => ExtendedField(VwfActorExtendedFieldV5.CorpseDiscovered);
     public uint TargetLost => ExtendedField(VwfActorExtendedFieldV5.TargetLost);
     public uint MovementActive => ExtendedField(VwfActorExtendedFieldV5.MovementActive);
+    public uint CoordinateMoveCommandActive =>
+        ExtendedField(VwfActorExtendedFieldV5.CoordinateMoveCommandActive);
     public uint MovementPathState => ExtendedField(VwfActorExtendedFieldV5.MovementPathState);
     public uint MovementMode => ExtendedField(VwfActorExtendedFieldV5.MovementMode);
     public int ResolvedGoalX => SignedExtendedField(VwfActorExtendedFieldV5.ResolvedGoalX);
@@ -139,11 +149,19 @@ public sealed record VwfSceneEntity(
     public uint SearchDelayLimit => ExtendedField(VwfActorExtendedFieldV5.SearchDelayLimit);
     public uint SearchDelayCounter => ExtendedField(VwfActorExtendedFieldV5.SearchDelayCounter);
     public uint ReactionState => ExtendedField(VwfActorExtendedFieldV5.ReactionState);
+    public uint SearchWanderStepCounter =>
+        ExtendedField(VwfActorExtendedFieldV5.SearchWanderStepCounter);
     public uint PoisonActive => ExtendedField(VwfActorExtendedFieldV5.PoisonActive);
     public uint PoisonCounter => ExtendedField(VwfActorExtendedFieldV5.PoisonCounter);
     public uint PoisonCounterLimit => ExtendedField(VwfActorExtendedFieldV5.PoisonCounterLimit);
     public uint HypnosisCounterLimit => ExtendedField(VwfActorExtendedFieldV5.HypnosisCounterLimit);
     public uint HypnosisCounter => ExtendedField(VwfActorExtendedFieldV5.HypnosisCounter);
+    public uint NavigationOccupancyEnabled =>
+        ExtendedField(VwfActorExtendedFieldV5.NavigationOccupancyEnabled);
+    public uint StationaryRouteFacingDirection =>
+        ExtendedField(VwfActorExtendedFieldV5.StationaryRouteFacingDirection);
+    public uint StationaryRouteFacingRestoreEnabled =>
+        ExtendedField(VwfActorExtendedFieldV5.StationaryRouteFacingRestoreEnabled);
     public uint BurialActionStarted => ExtendedField(VwfActorExtendedFieldV5.BurialActionStarted);
     public uint DisguiseChangePending => ExtendedField(VwfActorExtendedFieldV5.DisguiseChangePending);
     public uint PathOverrideOrSpecialAttentionHold =>
@@ -154,6 +172,8 @@ public sealed record VwfSceneEntity(
         ExtendedField(VwfActorExtendedFieldV5.DisguiseRecoveryLimit);
     public uint DisguiseRecoveryOrPursuitDelayCounter =>
         ExtendedField(VwfActorExtendedFieldV5.DisguiseRecoveryOrPursuitDelayCounter);
+    public uint EscortRecruitmentCompleted =>
+        ExtendedField(VwfActorExtendedFieldV5.EscortRecruitmentCompleted);
     public IReadOnlyList<uint> AuxiliaryArrayLengths =>
         AuxiliaryArrays
             .Select(array => checked((uint)array.Count))

@@ -507,6 +507,8 @@ internal static class LegacySaveImporter
             ["selected"] = selected,
             ["animation_group_index"] =
                 LegacyGroupIndex(state.DirectionIndex),
+            ["original_pursuit_actor_scene_index"] =
+                state.PursuitActorSceneIndex,
             ["original_active_attack_type"] =
                 checked((int)state.DefaultAttackType),
             ["inventory"] = inventory.Snapshot,
@@ -672,7 +674,8 @@ internal static class LegacySaveImporter
             ["patrol_wait_remaining"] = 0.0,
             ["patrol_path_in_flight"] =
                 state.MovementActive != 0 ||
-                state.MovementPathState != 0,
+                state.MovementPathState != 0 ||
+                state.CoordinateMoveCommandActive != 0,
             ["last_known_x"] = contactState == 0
                 ? state.ReferenceX
                 : state.ResolvedGoalX,
@@ -730,7 +733,10 @@ internal static class LegacySaveImporter
             ["search_finishing"] = false,
             ["search_origin_x"] = state.ResolvedGoalX,
             ["search_origin_y"] = state.ResolvedGoalY,
-            ["search_point_index"] = 0,
+            ["search_point_index"] = Math.Clamp(
+                checked((int)state.SearchWanderStepCounter),
+                0,
+                5),
             ["search_wait_counter"] = checked((int)state.SearchDelayCounter),
             ["search_wait_limit"] = checked((int)state.SearchDelayLimit),
             ["search_tick_elapsed"] = 0.0,

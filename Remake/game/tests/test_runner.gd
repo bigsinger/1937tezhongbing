@@ -157,13 +157,21 @@ func _init() -> void:
 			}
 		],
 	}
-	var synthetic_native_actor_state := {"schema_version": 1}
+	var synthetic_native_actor_state := {
+		"schema_version": IMPORTED_LEVEL_DATA.NATIVE_ACTOR_STATE_SCHEMA_VERSION,
+	}
 	for key: String in IMPORTED_LEVEL_DATA.NATIVE_ACTOR_STATE_UNSIGNED_KEYS:
 		synthetic_native_actor_state[key] = 0
 	for key: String in IMPORTED_LEVEL_DATA.NATIVE_ACTOR_STATE_SIGNED_KEYS:
 		synthetic_native_actor_state[key] = 0
 	synthetic_native_actor_state["contact_state"] = 2
 	synthetic_native_actor_state["reaction_state"] = 17
+	synthetic_native_actor_state["timed_action_limit"] = 100
+	synthetic_native_actor_state["pursuit_actor_scene_index"] = -1
+	synthetic_native_actor_state["coordinate_move_command_active"] = 1
+	synthetic_native_actor_state["navigation_occupancy_enabled"] = 1
+	synthetic_native_actor_state["stationary_route_facing_direction"] = 6
+	synthetic_native_actor_state["stationary_route_facing_restore_enabled"] = 1
 	synthetic_native_actor_state["resolved_goal_x"] = -32
 	synthetic_native_actor_state["resolved_goal_y"] = 168
 	var synthetic_entities := synthetic_level["entities"] as Array
@@ -243,12 +251,37 @@ func _init() -> void:
 		(
 			parsed_native_actor_state["contact_state"] == 2
 			and parsed_native_actor_state["reaction_state"] == 17
+			and parsed_native_actor_state["timed_action_limit"] == 100
+			and parsed_native_actor_state["pursuit_actor_scene_index"] == -1
+			and parsed_native_actor_state["coordinate_move_command_active"] == 1
+			and parsed_native_actor_state["navigation_occupancy_enabled"] == 1
+			and parsed_native_actor_state["stationary_route_facing_direction"] == 6
+			and parsed_native_actor_state["stationary_route_facing_restore_enabled"] == 1
 			and parsed_native_actor_state["resolved_goal_x"] == -32
 			and parsed_native_actor_state["resolved_goal_y"] == 168
 		),
-		"imported entity preserves separately mapped contact and reaction state",
+		"imported entity preserves proven native actor-state mappings",
 		failures,
 	)
+	var native_facing_unit = SQUAD_UNIT_SCRIPT.new()
+	native_facing_unit.original_native_actor_state = {
+		"stationary_route_facing_direction": 6,
+		"stationary_route_facing_restore_enabled": 1,
+	}
+	expect(
+		native_facing_unit.original_native_initial_facing_direction(2) == 6,
+		"stationary two-point routes restore their saved native facing",
+		failures,
+	)
+	native_facing_unit.original_native_actor_state[
+		"stationary_route_facing_restore_enabled"
+	] = 0
+	expect(
+		native_facing_unit.original_native_initial_facing_direction(2) == 2,
+		"ordinary routes keep their authored facing",
+		failures,
+	)
+	native_facing_unit.free()
 	var anchor_image := Image.create(64, 96, false, Image.FORMAT_RGBA8)
 	var anchor_texture := ImageTexture.create_from_image(anchor_image)
 	expect(

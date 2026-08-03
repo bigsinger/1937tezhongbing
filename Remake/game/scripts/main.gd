@@ -2628,10 +2628,10 @@ func spawn_squad() -> void:
 		_bind_original_crt_random_actor(unit)
 		unit.configure_movement_modes(run_groups, walk_groups, crawl_groups)
 		if not entity.is_empty():
-			var authored_direction := clampi(
-				int(entity.get("direction_index", 1)),
-				1,
-				8,
+			var authored_direction := (
+				unit.original_native_initial_facing_direction(
+					int(entity.get("direction_index", 1))
+				)
 			)
 			unit.set_animation_group(
 				IMPORTED_SPRITE_ANIMATION.legacy_group_index_for_direction(
@@ -2792,19 +2792,28 @@ func spawn_squad() -> void:
 
 func _link_original_pursuit_actors() -> int:
 	var actors_by_runtime_index: Dictionary = {}
+	var actors_by_scene_index: Dictionary = {}
 	for actor: Node2D in _all_active_runtime_actors():
 		var runtime_index := int(actor.get("original_runtime_index"))
 		if runtime_index >= 0:
 			actors_by_runtime_index[runtime_index] = actor
+		var actor_scene_index := int(actor.get("scene_index"))
+		if actor_scene_index >= 0:
+			actors_by_scene_index[actor_scene_index] = actor
 	var linked_count := 0
 	for actor: Node2D in _all_active_runtime_actors():
 		var target_runtime_index := int(
 			actor.get("original_pursuit_target_runtime_index")
 		)
-		if target_runtime_index < 0:
+		var target_scene_index := int(
+			actor.get("original_pursuit_target_scene_index")
+		)
+		if target_runtime_index < 0 and target_scene_index < 0:
 			continue
-		var target_value: Variant = actors_by_runtime_index.get(
-			target_runtime_index
+		var target_value: Variant = (
+			actors_by_runtime_index.get(target_runtime_index)
+			if target_runtime_index >= 0
+			else actors_by_scene_index.get(target_scene_index)
 		)
 		if (
 			target_value is Node2D
@@ -2817,10 +2826,14 @@ func _link_original_pursuit_actors() -> int:
 		else:
 			push_error(
 				(
-					"Missing original pursuit target %d for runtime actor %d"
+					(
+						"Missing original pursuit target runtime=%d scene=%d "
+						+ "for runtime actor %d"
+					)
 				)
 				% [
 					target_runtime_index,
+					target_scene_index,
 					int(actor.get("original_runtime_index")),
 				]
 			)

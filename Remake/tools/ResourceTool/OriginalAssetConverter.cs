@@ -360,16 +360,25 @@ internal static class OriginalAssetConverter
             object? nativeActorState = databaseEntry.CategoryName == "角色"
                 ? new
                 {
-                    schema_version = 1,
+                    schema_version = 2,
                     route_update_active = entity.RouteUpdateActive,
                     contact_state = entity.ContactState,
                     hidden_or_removed = entity.HiddenOrRemoved,
+                    timed_action_limit = entity.TimedActionLimit,
+                    timed_action_counter = entity.TimedActionCounter,
                     burial_or_disguise_transition_ready =
                         entity.BurialOrDisguiseTransitionReady,
+                    timed_action_progress_active =
+                        entity.TimedActionProgressActive,
                     hypnosis_active = entity.HypnosisActive,
+                    pursuit_actor_scene_index =
+                        entity.PursuitActorSceneIndex,
+                    world_pickup_quantity = entity.WorldPickupQuantity,
                     corpse_discovered = entity.CorpseDiscovered,
                     target_lost = entity.TargetLost,
                     movement_active = entity.MovementActive,
+                    coordinate_move_command_active =
+                        entity.CoordinateMoveCommandActive,
                     movement_path_state = entity.MovementPathState,
                     movement_mode = entity.MovementMode,
                     resolved_goal_x = entity.ResolvedGoalX,
@@ -377,11 +386,19 @@ internal static class OriginalAssetConverter
                     search_delay_limit = entity.SearchDelayLimit,
                     search_delay_counter = entity.SearchDelayCounter,
                     reaction_state = entity.ReactionState,
+                    search_wander_step_counter =
+                        entity.SearchWanderStepCounter,
                     poison_active = entity.PoisonActive,
                     poison_counter = entity.PoisonCounter,
                     poison_counter_limit = entity.PoisonCounterLimit,
                     hypnosis_counter_limit = entity.HypnosisCounterLimit,
                     hypnosis_counter = entity.HypnosisCounter,
+                    navigation_occupancy_enabled =
+                        entity.NavigationOccupancyEnabled,
+                    stationary_route_facing_direction =
+                        entity.StationaryRouteFacingDirection,
+                    stationary_route_facing_restore_enabled =
+                        entity.StationaryRouteFacingRestoreEnabled,
                     burial_action_started = entity.BurialActionStarted,
                     disguise_change_pending = entity.DisguiseChangePending,
                     path_override_or_special_attention_hold =
@@ -389,7 +406,9 @@ internal static class OriginalAssetConverter
                     disguise_recovery_active = entity.DisguiseRecoveryActive,
                     disguise_recovery_limit = entity.DisguiseRecoveryLimit,
                     disguise_recovery_or_pursuit_delay_counter =
-                        entity.DisguiseRecoveryOrPursuitDelayCounter
+                        entity.DisguiseRecoveryOrPursuitDelayCounter,
+                    escort_recruitment_completed =
+                        entity.EscortRecruitmentCompleted
                 }
                 : null;
 

@@ -161,6 +161,9 @@ static func _capture_actor(actor: Node2D, group_name: String) -> Dictionary:
 		"y": actor.position.y,
 		"faction_id": int(actor.get("faction_id")),
 		"runtime_actor_type": int(actor.get("runtime_actor_type")),
+		"original_pursuit_actor_scene_index": int(
+			actor.get("original_pursuit_target_scene_index")
+		),
 		"current_hit_points": int(actor.get("current_hit_points")),
 		"maximum_hit_points": int(actor.get("maximum_hit_points")),
 		"is_alive": bool(actor.get("is_alive")),
@@ -687,6 +690,28 @@ static func _restore_actor(game: Node, actor: Node2D, record: Dictionary, group_
 		"runtime_actor_type",
 		int(record.get("runtime_actor_type", actor.get("runtime_actor_type"))),
 	)
+	var saved_pursuit_scene_index := int(
+		record.get(
+			"original_pursuit_actor_scene_index",
+			actor.get("original_pursuit_target_scene_index"),
+		)
+	)
+	actor.set("original_pursuit_target_runtime_index", -1)
+	actor.set(
+		"original_pursuit_target_scene_index",
+		saved_pursuit_scene_index,
+	)
+	actor.set("original_pursuit_target", null)
+	var saved_pursuit_target := (
+		_find_actor_by_identity(game, saved_pursuit_scene_index, "")
+		if saved_pursuit_scene_index >= 0
+		else null
+	)
+	if actor.has_method("bind_original_pursuit_target"):
+		actor.call(
+			"bind_original_pursuit_target",
+			saved_pursuit_target,
+		)
 	actor.set("maximum_hit_points", maxi(int(record.get("maximum_hit_points", 1)), 1))
 	var alive := bool(record.get("is_alive", true))
 	actor.set("is_alive", alive)

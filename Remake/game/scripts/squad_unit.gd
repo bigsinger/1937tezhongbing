@@ -169,6 +169,7 @@ var original_secondary_search_last_goal := Vector2.ZERO
 var original_secondary_search_last_navigation_applied := false
 var original_secondary_search_last_physics_frame := -1
 var original_pursuit_target_runtime_index := -1
+var original_pursuit_target_scene_index := -1
 var original_pursuit_target: Node2D
 var original_pursuit_call_site_rva := 0
 var original_pursuit_delay_counter := 0
@@ -370,6 +371,7 @@ func configure(
 	original_secondary_search_last_navigation_applied = false
 	original_secondary_search_last_physics_frame = -1
 	original_pursuit_target_runtime_index = -1
+	original_pursuit_target_scene_index = -1
 	original_pursuit_target = null
 	original_pursuit_call_site_rva = 0
 	original_pursuit_delay_counter = 0
@@ -631,12 +633,38 @@ func configure_runtime_actor_type(entity: Dictionary) -> int:
 		original_native_actor_state = (
 			(native_state_value as Dictionary).duplicate(true)
 		)
+	original_pursuit_target_scene_index = int(
+		original_native_actor_state.get(
+			"pursuit_actor_scene_index",
+			-1,
+		)
+	)
 	original_secondary_search_enabled = (
 		AI_IDLE_RANDOM_RULES.secondary_search_runtime_type_enabled(
 			runtime_actor_type
 		)
 	)
 	return runtime_actor_type
+
+
+func original_native_initial_facing_direction(fallback: int) -> int:
+	var normalized_fallback := clampi(fallback, 1, 8)
+	if (
+		int(original_native_actor_state.get(
+			"stationary_route_facing_restore_enabled",
+			0,
+		)) == 0
+	):
+		return normalized_fallback
+	var stored_direction := int(original_native_actor_state.get(
+		"stationary_route_facing_direction",
+		normalized_fallback,
+	))
+	return (
+		stored_direction
+		if stored_direction >= 1 and stored_direction <= 8
+		else normalized_fallback
+	)
 
 
 func bind_original_crt_random_source(
@@ -904,23 +932,47 @@ func consume_retired_original_crt_random() -> bool:
 
 
 func bind_original_pursuit_target(target: Node2D) -> bool:
-	if original_pursuit_target_runtime_index < 0:
+	if (
+		original_pursuit_target_runtime_index < 0
+		and original_pursuit_target_scene_index < 0
+	):
 		original_pursuit_target = null
 		return target == null
 	if (
 		target == null
 		or not is_instance_valid(target)
-		or int(target.get("original_runtime_index"))
-			!= original_pursuit_target_runtime_index
+		or (
+			original_pursuit_target_runtime_index >= 0
+			and int(target.get("original_runtime_index"))
+				!= original_pursuit_target_runtime_index
+		)
+		or (
+			original_pursuit_target_scene_index >= 0
+			and int(target.get("scene_index"))
+				!= original_pursuit_target_scene_index
+		)
 	):
 		return false
 	original_pursuit_target = target
+	if original_pursuit_target_runtime_index < 0:
+		original_pursuit_target_runtime_index = int(
+			target.get("original_runtime_index")
+		)
+	if original_pursuit_target_scene_index < 0:
+		original_pursuit_target_scene_index = int(target.get("scene_index"))
+	if original_pursuit_call_site_rva == 0:
+		original_pursuit_call_site_rva = (
+			0x0005D394
+			if runtime_actor_type == 56
+			else 0x0005D47E
+		)
 	return true
 
 
 func original_pursuit_snapshot() -> Dictionary:
 	return {
 		"target_runtime_index": original_pursuit_target_runtime_index,
+		"target_scene_index": original_pursuit_target_scene_index,
 		"call_site_rva": original_pursuit_call_site_rva,
 		"delay_counter": original_pursuit_delay_counter,
 		"elapsed": original_pursuit_elapsed,
@@ -1251,6 +1303,10 @@ func restore_original_crt_random_timing(state: Dictionary) -> bool:
 				"target_runtime_index",
 				original_pursuit_target_runtime_index,
 			)) != original_pursuit_target_runtime_index
+			or int(pursuit_state.get(
+				"target_scene_index",
+				original_pursuit_target_scene_index,
+			)) != original_pursuit_target_scene_index
 			or int(pursuit_state.get(
 				"call_site_rva",
 				original_pursuit_call_site_rva,
@@ -2061,9 +2117,13 @@ func _resolved_original_pursuit_target() -> Node2D:
 		original_pursuit_target_runtime_index = int(
 			original_pursuit_target.get("original_runtime_index")
 		)
+		original_pursuit_target_scene_index = int(
+			original_pursuit_target.get("scene_index")
+		)
 		return original_pursuit_target
 	original_pursuit_target = null
 	original_pursuit_target_runtime_index = -1
+	original_pursuit_target_scene_index = -1
 	original_pursuit_call_site_rva = 0
 	return null
 

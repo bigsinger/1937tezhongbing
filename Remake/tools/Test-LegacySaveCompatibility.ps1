@@ -22,6 +22,8 @@ $auditDirectory = [IO.Path]::GetFullPath(
 $requiredPaths = @(
     (Join-Path $modDirectory '1937Database.dbl')
 )
+$linkedPursuitCount = 0
+$restoredSearchStepCount = 0
 foreach ($index in 0..2) {
     $requiredPaths += Join-Path $modDirectory ('1937M{0:D3}.SAV' -f $index)
     $requiredPaths += Join-Path $modDirectory ('M1937.SI{0}' -f $index)
@@ -80,6 +82,50 @@ foreach ($index in 0..2) {
     if ($LASTEXITCODE -ne 0) {
         throw "Original save import failed for $slotId with exit code $LASTEXITCODE."
     }
+}
+
+foreach ($index in 0..2) {
+    $slotId = 'legacy_{0:D3}' -f $index
+    $outputPath = Join-Path $auditDirectory "$slotId.json"
+    $document = Get-Content -LiteralPath $outputPath -Raw -Encoding UTF8 |
+        ConvertFrom-Json
+    $actors = @($document.session.squad) +
+        @($document.session.enemies) +
+        @($document.session.escorts) +
+        @($document.session.ambient)
+    $actorScenes = @{}
+    foreach ($actor in $actors) {
+        $actorScenes[[int]$actor.scene_index] = $true
+        if ($null -eq $actor.PSObject.Properties[
+                'original_pursuit_actor_scene_index']) {
+            throw "$slotId actor $($actor.scene_index) lost its pursuit scene field."
+        }
+    }
+    foreach ($actor in $actors) {
+        $targetScene = [int]$actor.original_pursuit_actor_scene_index
+        if ($targetScene -ge 0 -and -not $actorScenes.ContainsKey($targetScene)) {
+            throw (
+                "$slotId actor $($actor.scene_index) pursuit target " +
+                "$targetScene was not restored as an actor.")
+        }
+        if ($targetScene -ge 0) {
+            ++$linkedPursuitCount
+        }
+    }
+    foreach ($enemy in @($document.session.enemies)) {
+        $searchStep = [int]$enemy.ai.legacy_enemy_ai.search_point_index
+        if ($searchStep -lt 0 -or $searchStep -gt 5) {
+            throw "$slotId enemy $($enemy.scene_index) has invalid search step $searchStep."
+        }
+        if ($searchStep -gt 0) {
+            ++$restoredSearchStepCount
+        }
+    }
+}
+if ($linkedPursuitCount -eq 0 -or $restoredSearchStepCount -eq 0) {
+    throw (
+        'Legacy saves did not exercise pursuit links and search-step restoration: ' +
+        "$linkedPursuitCount/$restoredSearchStepCount.")
 }
 
 if ([string]::IsNullOrWhiteSpace($GodotExecutable) -and

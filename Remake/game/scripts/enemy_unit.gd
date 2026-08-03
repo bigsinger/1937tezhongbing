@@ -282,7 +282,9 @@ func configure_enemy(
 	# contact checkpoint, so sensing cadence is gameplay state, not a rendering
 	# optimization point.
 	sense_elapsed = 0.0
-	original_direction_index = clampi(int(entity.get("direction_index", 1)), 1, 8)
+	original_direction_index = original_native_initial_facing_direction(
+		int(entity.get("direction_index", 1))
+	)
 	set_animation_group(
 		IMPORTED_SPRITE_ANIMATION.legacy_group_index_for_direction(original_direction_index)
 	)

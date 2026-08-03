@@ -61,7 +61,9 @@ func configure_escort(
 		new_death_groups,
 		false,
 	)
-	var direction_index := clampi(int(entity.get("direction_index", 1)), 1, 8)
+	var direction_index := original_native_initial_facing_direction(
+		int(entity.get("direction_index", 1))
+	)
 	set_animation_group(
 		IMPORTED_SPRITE_ANIMATION.legacy_group_index_for_direction(direction_index)
 	)

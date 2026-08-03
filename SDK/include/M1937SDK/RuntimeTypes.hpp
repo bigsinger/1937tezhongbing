@@ -85,9 +85,14 @@ struct RuntimeActorV1 final {
     std::int32_t command_variant;           // +0x1A4
     std::int32_t command_pending;           // +0x1A8
     std::int32_t selected_for_command;      // +0x1AC
-    std::byte unknown_1b0[16];
+    // sub_451B70/sub_451FA0/sub_452360 gate L2/L3 scene occupancy updates
+    // with this value. sub_41D950 recomputes it from the actor footprint.
+    std::int32_t navigation_occupancy_enabled; // +0x1B0
+    std::byte unknown_1b4[12];
     std::int32_t current_hit_points;        // +0x1C0
-    std::byte unknown_1c4[8];
+    // sub_4553B0 advances this bounded action and sub_455760 draws its bar.
+    std::int32_t timed_action_limit;        // +0x1C4, default 100
+    std::int32_t timed_action_counter;      // +0x1C8
     union {
         // Burial completion sets this on the source target.
         std::int32_t burial_resolved;       // +0x1CC
@@ -96,10 +101,15 @@ struct RuntimeActorV1 final {
         // it to replace runtime type 10 with 91 (or 91 with 10).
         std::int32_t disguise_transition_ready; // +0x1CC
     };
-    std::byte unknown_1d0[4];
+    std::int32_t timed_action_progress_active; // +0x1D0
     std::int32_t search_or_return_active;   // +0x1D4
     std::int32_t movement_active;           // +0x1D8
-    std::byte unknown_1dc[16];
+    // m002/m004 one-shot escort recruitment handlers set this after proximity
+    // succeeds so the mission transition cannot fire twice.
+    std::int32_t escort_recruitment_completed; // +0x1DC
+    // Set by accepted ground-coordinate commands and cleared by command reset.
+    std::int32_t coordinate_move_command_active; // +0x1E0
+    std::byte unknown_1e4[8];
     // Command kind 4 uses this pending/active slot.
     std::int32_t burial_command_active;     // +0x1EC
     std::byte unknown_1f0[12];
@@ -129,21 +139,29 @@ struct RuntimeActorV1 final {
     // active combat/action target at +0x214 and is also used by authored
     // formation followers.
     std::uint32_t pursuit_actor_address;    // +0x23C
-    std::byte unknown_240[8];
+    // Save files replace the pointer above with the followed actor's world
+    // scene index; sub_45D2A0 resolves it back to +0x23C after load.
+    std::int32_t pursuit_actor_scene_index; // +0x240, -1 when absent
+    // Quantity copied to a newly dropped item actor by sub_4583F0.
+    std::int32_t world_pickup_quantity;     // +0x244
     std::int32_t search_delay_limit;        // +0x248
     std::int32_t search_delay_counter;      // +0x24C
     std::int32_t contact_state;             // +0x250
     std::int32_t target_lost;               // +0x254
     std::int32_t corpse_discovered;          // +0x258
     std::int32_t reaction_state;            // +0x25C
-    std::byte unknown_260[4];
+    // Five-step local search cycle driven by sub_45E4B0.
+    std::int32_t search_wander_step_counter; // +0x260
     std::int32_t poison_active;              // +0x264
     std::int32_t poison_counter;             // +0x268
     std::int32_t poison_counter_limit;       // +0x26C
     std::byte unknown_270[8];
     std::int32_t hypnosis_counter_limit;     // +0x278
     std::int32_t hypnosis_counter;           // +0x27C
-    std::byte unknown_280[8];
+    // A route with exactly two identical points captures/restores a stationary
+    // guard's facing through sub_469820/sub_45E950.
+    std::int32_t stationary_route_facing_restore_enabled; // +0x280
+    std::int32_t stationary_route_facing_direction; // +0x284
     // Set after the worker reaches the corpse and the 100-limit counter starts.
     std::int32_t burial_action_started;     // +0x288
     // Type 10/91 clothing use sets this while the strict >100 transition
@@ -245,11 +263,17 @@ static_assert(offsetof(RuntimeActorV1, interest_actor_address) == 0x1A0);
 static_assert(offsetof(RuntimeActorV1, command_variant) == 0x1A4);
 static_assert(offsetof(RuntimeActorV1, command_pending) == 0x1A8);
 static_assert(offsetof(RuntimeActorV1, selected_for_command) == 0x1AC);
+static_assert(offsetof(RuntimeActorV1, navigation_occupancy_enabled) == 0x1B0);
 static_assert(offsetof(RuntimeActorV1, current_hit_points) == 0x1C0);
+static_assert(offsetof(RuntimeActorV1, timed_action_limit) == 0x1C4);
+static_assert(offsetof(RuntimeActorV1, timed_action_counter) == 0x1C8);
 static_assert(offsetof(RuntimeActorV1, disguise_transition_ready) == 0x1CC);
 static_assert(offsetof(RuntimeActorV1, burial_resolved) == 0x1CC);
+static_assert(offsetof(RuntimeActorV1, timed_action_progress_active) == 0x1D0);
 static_assert(offsetof(RuntimeActorV1, search_or_return_active) == 0x1D4);
 static_assert(offsetof(RuntimeActorV1, movement_active) == 0x1D8);
+static_assert(offsetof(RuntimeActorV1, escort_recruitment_completed) == 0x1DC);
+static_assert(offsetof(RuntimeActorV1, coordinate_move_command_active) == 0x1E0);
 static_assert(offsetof(RuntimeActorV1, burial_command_active) == 0x1EC);
 static_assert(offsetof(RuntimeActorV1, movement_path_state) == 0x1FC);
 static_assert(offsetof(RuntimeActorV1, current_attack_type) == 0x204);
@@ -262,17 +286,22 @@ static_assert(offsetof(RuntimeActorV1, item_inventory_address) == 0x228);
 static_assert(offsetof(RuntimeActorV1, inventory_address) == 0x22C);
 static_assert(offsetof(RuntimeActorV1, hypnosis_active) == 0x238);
 static_assert(offsetof(RuntimeActorV1, pursuit_actor_address) == 0x23C);
+static_assert(offsetof(RuntimeActorV1, pursuit_actor_scene_index) == 0x240);
+static_assert(offsetof(RuntimeActorV1, world_pickup_quantity) == 0x244);
 static_assert(offsetof(RuntimeActorV1, search_delay_limit) == 0x248);
 static_assert(offsetof(RuntimeActorV1, search_delay_counter) == 0x24C);
 static_assert(offsetof(RuntimeActorV1, contact_state) == 0x250);
 static_assert(offsetof(RuntimeActorV1, target_lost) == 0x254);
 static_assert(offsetof(RuntimeActorV1, corpse_discovered) == 0x258);
 static_assert(offsetof(RuntimeActorV1, reaction_state) == 0x25C);
+static_assert(offsetof(RuntimeActorV1, search_wander_step_counter) == 0x260);
 static_assert(offsetof(RuntimeActorV1, poison_active) == 0x264);
 static_assert(offsetof(RuntimeActorV1, poison_counter) == 0x268);
 static_assert(offsetof(RuntimeActorV1, poison_counter_limit) == 0x26C);
 static_assert(offsetof(RuntimeActorV1, hypnosis_counter_limit) == 0x278);
 static_assert(offsetof(RuntimeActorV1, hypnosis_counter) == 0x27C);
+static_assert(offsetof(RuntimeActorV1, stationary_route_facing_restore_enabled) == 0x280);
+static_assert(offsetof(RuntimeActorV1, stationary_route_facing_direction) == 0x284);
 static_assert(offsetof(RuntimeActorV1, burial_action_started) == 0x288);
 static_assert(offsetof(RuntimeActorV1, disguise_change_pending) == 0x28C);
 static_assert(offsetof(RuntimeActorV1, path_override_active) == 0x290);

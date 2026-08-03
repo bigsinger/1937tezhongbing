@@ -26,29 +26,43 @@ $unsignedKeys = @(
     'route_update_active',
     'contact_state',
     'hidden_or_removed',
+    'timed_action_limit',
+    'timed_action_counter',
     'burial_or_disguise_transition_ready',
+    'timed_action_progress_active',
     'hypnosis_active',
+    'world_pickup_quantity',
     'corpse_discovered',
     'target_lost',
     'movement_active',
+    'coordinate_move_command_active',
     'movement_path_state',
     'movement_mode',
     'search_delay_limit',
     'search_delay_counter',
     'reaction_state',
+    'search_wander_step_counter',
     'poison_active',
     'poison_counter',
     'poison_counter_limit',
     'hypnosis_counter_limit',
     'hypnosis_counter',
+    'navigation_occupancy_enabled',
+    'stationary_route_facing_direction',
+    'stationary_route_facing_restore_enabled',
     'burial_action_started',
     'disguise_change_pending',
     'path_override_or_special_attention_hold',
     'disguise_recovery_active',
     'disguise_recovery_limit',
-    'disguise_recovery_or_pursuit_delay_counter'
+    'disguise_recovery_or_pursuit_delay_counter',
+    'escort_recruitment_completed'
 )
-$signedKeys = @('resolved_goal_x', 'resolved_goal_y')
+$signedKeys = @(
+    'pursuit_actor_scene_index',
+    'resolved_goal_x',
+    'resolved_goal_y'
+)
 $expectedKeys = @('schema_version') + $unsignedKeys + $signedKeys |
     Sort-Object
 $expectedNonZeroKeys = @(
@@ -56,16 +70,22 @@ $expectedNonZeroKeys = @(
     'disguise_recovery_limit',
     'hidden_or_removed',
     'hypnosis_counter_limit',
+    'coordinate_move_command_active',
     'movement_active',
     'movement_mode',
     'movement_path_state',
     'poison_counter_limit',
+    'pursuit_actor_scene_index',
+    'navigation_occupancy_enabled',
     'resolved_goal_x',
     'resolved_goal_y',
     'route_update_active',
     'search_delay_counter',
     'search_delay_limit',
-    'target_lost'
+    'stationary_route_facing_direction',
+    'stationary_route_facing_restore_enabled',
+    'target_lost',
+    'timed_action_limit'
 ) | Sort-Object
 
 $entityTotal = 0
@@ -98,8 +118,8 @@ for ($levelIndex = 0; $levelIndex -lt 12; ++$levelIndex) {
             continue
         }
         $state = $entity.native_actor_state
-        if ($null -eq $state -or [int]$state.schema_version -ne 1) {
-            throw "$levelId scene $($entity.scene_index) has no schema-1 native actor state."
+        if ($null -eq $state -or [int]$state.schema_version -ne 2) {
+            throw "$levelId scene $($entity.scene_index) has no schema-2 native actor state."
         }
         $actualKeys = @($state.PSObject.Properties.Name | Sort-Object)
         if (($actualKeys -join "`n") -cne ($expectedKeys -join "`n")) {

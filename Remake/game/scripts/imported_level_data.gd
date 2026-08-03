@@ -6,6 +6,7 @@ const DEFAULT_LEVEL_ID := "m000"
 const IMPORT_ROOT := "res://../LocalAssets/converted/levels"
 const DEFAULT_LEVEL_PATH := IMPORT_ROOT + "/" + DEFAULT_LEVEL_ID + "/level.json"
 const NAVIGATION_SCHEMA_VERSION := 1
+const NATIVE_ACTOR_STATE_SCHEMA_VERSION := 2
 const NAVIGATION_LAYER_IDS := {
 	"line_of_sight_obstacle": 2,
 	"movement_obstacle": 3,
@@ -16,29 +17,40 @@ const NATIVE_ACTOR_STATE_UNSIGNED_KEYS: Array[String] = [
 	"route_update_active",
 	"contact_state",
 	"hidden_or_removed",
+	"timed_action_limit",
+	"timed_action_counter",
 	"burial_or_disguise_transition_ready",
+	"timed_action_progress_active",
 	"hypnosis_active",
+	"world_pickup_quantity",
 	"corpse_discovered",
 	"target_lost",
 	"movement_active",
+	"coordinate_move_command_active",
 	"movement_path_state",
 	"movement_mode",
 	"search_delay_limit",
 	"search_delay_counter",
 	"reaction_state",
+	"search_wander_step_counter",
 	"poison_active",
 	"poison_counter",
 	"poison_counter_limit",
 	"hypnosis_counter_limit",
 	"hypnosis_counter",
+	"navigation_occupancy_enabled",
+	"stationary_route_facing_direction",
+	"stationary_route_facing_restore_enabled",
 	"burial_action_started",
 	"disguise_change_pending",
 	"path_override_or_special_attention_hold",
 	"disguise_recovery_active",
 	"disguise_recovery_limit",
 	"disguise_recovery_or_pursuit_delay_counter",
+	"escort_recruitment_completed",
 ]
 const NATIVE_ACTOR_STATE_SIGNED_KEYS: Array[String] = [
+	"pursuit_actor_scene_index",
 	"resolved_goal_x",
 	"resolved_goal_y",
 ]
@@ -376,9 +388,12 @@ static func _parse_native_actor_state(value: Variant) -> Dictionary:
 		return {}
 	var source := value as Dictionary
 	var schema_version: Variant = _read_integer(source, "schema_version")
-	if schema_version == null or int(schema_version) != 1:
+	if (
+		schema_version == null
+		or int(schema_version) != NATIVE_ACTOR_STATE_SCHEMA_VERSION
+	):
 		return {}
-	var parsed := {"schema_version": 1}
+	var parsed := {"schema_version": NATIVE_ACTOR_STATE_SCHEMA_VERSION}
 	for key: String in NATIVE_ACTOR_STATE_UNSIGNED_KEYS:
 		var raw_value: Variant = _read_integer(source, key)
 		if (

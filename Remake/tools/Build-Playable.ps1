@@ -147,6 +147,7 @@ function Remove-SafeOutputDirectory {
 
 $assetManifestPath = Join-Path $sourceAssets 'manifest.json'
 $assetProfile = ''
+$assetActorStateSchema = 0
 if (Test-Path -LiteralPath $assetManifestPath -PathType Leaf) {
     try {
         $assetManifest = Get-Content -LiteralPath $assetManifestPath `
@@ -158,8 +159,25 @@ if (Test-Path -LiteralPath $assetManifestPath -PathType Leaf) {
         $assetProfile = ''
     }
 }
+if (Test-Path -LiteralPath $requiredLevel -PathType Leaf) {
+    try {
+        $levelDocument = Get-Content -LiteralPath $requiredLevel `
+            -Raw -Encoding UTF8 | ConvertFrom-Json
+        $firstActorState = @($levelDocument.entities | Where-Object {
+            $null -ne $_.native_actor_state
+        } | Select-Object -First 1)
+        if ($firstActorState.Count -eq 1) {
+            $assetActorStateSchema =
+                [int]$firstActorState[0].native_actor_state.schema_version
+        }
+    }
+    catch {
+        $assetActorStateSchema = 0
+    }
+}
 if (-not (Test-Path -LiteralPath $requiredLevel -PathType Leaf) -or
-    $assetProfile -ne 'repository-mod-12-level-20260729') {
+    $assetProfile -ne 'repository-mod-12-level-20260729' -or
+    $assetActorStateSchema -ne 2) {
     Write-Host 'Stable Mod assets are missing or stale; importing them now.'
     & (Join-Path $PSScriptRoot 'Import-ModAssets.ps1') `
         -OutputDirectory $sourceAssets
@@ -168,6 +186,7 @@ if (-not (Test-Path -LiteralPath $requiredLevel -PathType Leaf) -or
         throw 'Stable Mod asset import did not produce a playable content set.'
     }
     $assetProfile = 'repository-mod-12-level-20260729'
+    $assetActorStateSchema = 2
 }
 
 $godot = Resolve-GodotExecutable -RequestedPath $GodotExecutable
