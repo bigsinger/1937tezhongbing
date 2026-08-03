@@ -50,7 +50,6 @@ static func empty_session(level_id: String = "m000") -> Dictionary:
 			"explosive_props": [],
 			"mission_pickups": [],
 			"field_inventory": {},
-			"deployed_mines": [],
 			"legacy_special_world_objects": [],
 			"legacy_explosion_effects": [],
 			"legacy_ai_control_effects": [],
@@ -321,7 +320,11 @@ func _is_valid_session(session: Dictionary) -> bool:
 				and not (raw_presence as Dictionary)[presence_key] is bool
 			):
 				return false
-	for key: String in ["activated_scene_indices", "collected_scene_indices", "destroyed_scene_indices", "deployed_mines"]:
+	for key: String in [
+		"activated_scene_indices",
+		"collected_scene_indices",
+		"destroyed_scene_indices",
+	]:
 		if not world.get(key) is Array:
 			return false
 	for optional_key: String in [

@@ -827,15 +827,33 @@ int main(int argc, char** argv) {
                 m1937::sdk::find_original_world_pickup(1003) == nullptr,
             "world pickup lookup accepted a non-pickup DBL entry", checks);
         require(
-            m1937::sdk::gasoline_barrel_database_entry_id == 1003 &&
-                m1937::sdk::gasoline_barrel_item_id == 53,
-            "gasoline barrel identity mismatch", checks);
+            m1937::sdk::original_gasoline_barrel.database_entry_id == 1003 &&
+                m1937::sdk::original_gasoline_barrel.runtime_actor_type == 53 &&
+                m1937::sdk::original_gasoline_barrel.initial_hit_points == 8 &&
+                m1937::sdk::original_gasoline_barrel
+                        .detonation_hit_points_sentinel == 8 &&
+                m1937::sdk::original_gasoline_barrel.resolved_action_index == 1 &&
+                m1937::sdk::original_gasoline_barrel.effect_dispatch_type == 5 &&
+                m1937::sdk::original_gasoline_barrel.explosion_actor_type == 62 &&
+                m1937::sdk::original_gasoline_barrel.blast_damage == 128 &&
+                m1937::sdk::original_gasoline_barrel
+                        .blast_horizontal_radius == 128 &&
+                m1937::sdk::original_gasoline_barrel
+                        .blast_vertical_radius == 64 &&
+                m1937::sdk::original_gasoline_barrel.alert_radius == 800 &&
+                !m1937::sdk::gasoline_barrel_should_detonate(8) &&
+                m1937::sdk::gasoline_barrel_should_detonate(7) &&
+                m1937::sdk::gasoline_barrel_should_detonate(0),
+            "gasoline barrel actor-53/actor-62 lifecycle mismatch", checks);
 
         require(
             m1937::sdk::rva::special_attack_dispatch != 0 &&
+                m1937::sdk::rva::gasoline_barrel_update != 0 &&
                 m1937::sdk::rva::explosion_actor_update != 0 &&
                 m1937::sdk::rva::special_attention_source != 0 &&
                 m1937::sdk::rva::special_attack_dispatch !=
+                    m1937::sdk::rva::explosion_actor_update &&
+                m1937::sdk::rva::gasoline_barrel_update !=
                     m1937::sdk::rva::explosion_actor_update,
             "special-action RVA catalog mismatch", checks);
         require(

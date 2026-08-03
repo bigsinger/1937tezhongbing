@@ -167,7 +167,9 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 `Inventory.hpp` 进一步把 `sub_45AE10` 的完整容器分派表，以及十类真实
 DBL 世界拾取物的 item ID、单次数量、目标容器和 mode 固化为 `constexpr`
 接口。该表来自原程序指令与 `1937Database.dbl`，不是按物品名称猜测；
-DBL 1003/物品 53 仍明确归入可受伤汽油桶生命周期，不会误作拾取物。
+DBL 1003/header[2] actor 53 仍明确归入可受伤汽油桶生命周期，不会误作拾取物；
+35 个 VWF 实例的初始生命 8、`sub_4551B0` 的生命哨兵、效果类型 5→actor 62、
+128 点/`128×64`/800 警报参数也已固化为 `original_gasoline_barrel`。
 `CurrentActionId` 也进入单一地址目录。地址表同时收录地面命令分派点及
 原版的移动重置/命令清理函数。
 兼容层只在签名完全匹配时修复导航缓存，随后仍由原版 A*、动作状态机和

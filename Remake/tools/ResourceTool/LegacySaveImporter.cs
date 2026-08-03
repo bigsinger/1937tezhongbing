@@ -346,7 +346,6 @@ internal static class LegacySaveImporter
             ["explosive_props"] = explosiveProps,
             ["mission_pickups"] = new JsonArray(),
             ["field_inventory"] = new JsonObject(),
-            ["deployed_mines"] = new JsonArray(),
             ["legacy_special_world_objects"] = new JsonArray(),
             ["legacy_explosion_effects"] = new JsonArray(),
             ["legacy_ai_control_effects"] = new JsonArray(),

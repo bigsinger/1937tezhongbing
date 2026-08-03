@@ -46,9 +46,11 @@ const LEGACY_CURSOR_PRESENTER: Script = preload(
 const WORLD_PICKUP_CATALOG: Script = preload("res://scripts/world_pickup_catalog.gd")
 const FIELD_PICKUP_SCRIPT: Script = preload("res://scripts/field_pickup.gd")
 const EXPLOSIVE_PROP_SCRIPT: Script = preload("res://scripts/explosive_prop.gd")
-const LAND_MINE_SCRIPT: Script = preload("res://scripts/land_mine.gd")
 const LEGACY_SPECIAL_ACTION_PROFILES: Script = preload("res://scripts/legacy_special_action_profiles.gd")
 const LEGACY_SPECIAL_WORLD_OBJECT_SCRIPT: Script = preload("res://scripts/legacy_special_world_object.gd")
+const LEGACY_EXPLOSION_RULES: Script = preload(
+	"res://scripts/legacy_explosion_rules.gd"
+)
 const LEGACY_EXPLOSION_VISUAL_RULES: Script = preload(
 	"res://scripts/legacy_explosion_visual_rules.gd"
 )
@@ -431,7 +433,6 @@ var original_drop_order_actor: SQUAD_UNIT
 var original_drop_order_item_id := 0
 var original_drop_order_destination := Vector2.ZERO
 var explosive_props: Array[Node2D] = []
-var deployed_mines: Array[Node2D] = []
 var legacy_special_world_objects: Array[Node2D] = []
 var legacy_explosion_effects: Array[Node2D] = []
 var legacy_ai_control_effects: Array[Node] = []
@@ -1704,10 +1705,6 @@ func load_imported_level(level_id: String = LEVEL_VIEW.DEFAULT_LEVEL_ID) -> bool
 	burial_mode = false
 	if game_shell != null:
 		game_shell.set_original_hud_action_state("observation", false)
-	for mine: Node2D in deployed_mines:
-		if is_instance_valid(mine):
-			_free_level_runtime_node(mine)
-	deployed_mines.clear()
 	for world_object: Node2D in legacy_special_world_objects:
 		if is_instance_valid(world_object):
 			_free_level_runtime_node(world_object)
@@ -2011,6 +2008,9 @@ func spawn_imported_entities() -> int:
 				):
 					container.add_child(prop)
 					prop.explosion_requested.connect(_on_world_explosion_requested)
+					prop.tree_exited.connect(
+						Callable(self, "_on_explosive_prop_exited").bind(prop)
+					)
 					explosive_props.append(prop)
 					spawned += 1
 					continue
@@ -4465,35 +4465,6 @@ func _cycle_selected_weapons(direction: int) -> void:
 	_refresh_inventory_ui()
 
 
-func _deploy_selected_land_mine() -> void:
-	var mine_profile: Dictionary = WORLD_PICKUP_CATALOG.deployable_profile("land_mine")
-	if mine_profile.is_empty():
-		update_status("地雷配置不可用")
-		return
-	for unit: SQUAD_UNIT in selected_units:
-		if not unit.is_alive or unit.ammo_item_count(43) <= 0:
-			continue
-		if unit.remove_ammo_item(43, 1) != 1:
-			continue
-		var mine: Node2D = LAND_MINE_SCRIPT.new()
-		mine.name = "LandMine_%d" % (deployed_mines.size() + 1)
-		if not mine.configure(mine_profile, unit.position, unit, unit.faction_id):
-			mine.free()
-			unit.add_ammo_item(43, 1)
-			continue
-		add_child(mine)
-		var targets: Array[Node2D] = []
-		for enemy: ENEMY_UNIT in enemies:
-			targets.append(enemy)
-		mine.set_potential_targets(targets)
-		mine.explosion_requested.connect(_on_world_explosion_requested)
-		deployed_mines.append(mine)
-		update_status("%s 已布设地雷；0.75 秒后武装" % unit.display_name)
-		_refresh_inventory_ui()
-		return
-	update_status("所选队员没有可用地雷")
-
-
 func _try_issue_legacy_world_object_deployment(world_position: Vector2) -> bool:
 	var special_action_selected := false
 	for selected_unit: SQUAD_UNIT in selected_units:
@@ -5348,6 +5319,10 @@ func _on_legacy_explosion_effect_exited(effect: Node2D) -> void:
 	legacy_explosion_effects.erase(effect)
 
 
+func _on_explosive_prop_exited(prop: Node2D) -> void:
+	explosive_props.erase(prop)
+
+
 func _on_world_explosion_requested(
 	source: Node2D,
 	instigator: Node2D,
@@ -5378,6 +5353,8 @@ func _on_world_explosion_requested(
 			or not candidate.has_method("is_combat_alive")
 			or not bool(candidate.call("is_combat_alive"))
 			or not candidate.has_method("take_damage")
+			or int(candidate.get("runtime_actor_type"))
+				in LEGACY_EXPLOSION_RULES.MAIN_EXCLUDED_RUNTIME_ACTOR_TYPES
 		):
 			continue
 		var offset := candidate.global_position - world_position
@@ -5393,18 +5370,40 @@ func _on_world_explosion_requested(
 		vertical_radius,
 		damage,
 	)
-	var special_visual_burst_count := _apply_legacy_special_damage_bands(
+	var special_visual_bursts := _apply_legacy_special_damage_bands(
 		source,
 		instigator,
 		world_position,
 		candidates,
 	)
-	if (
+	if source != null and source.get_script() == EXPLOSIVE_PROP_SCRIPT:
+		_spawn_legacy_explosion_effect(
+			world_position,
+			int(source.get("explosion_actor_type")),
+			special_visual_bursts,
+			legacy_crt_random_state,
+			true,
+		)
+	elif (
 		source != null
 		and source.get_script() == LEGACY_SPECIAL_WORLD_OBJECT_SCRIPT
-		and special_visual_burst_count == 0
+		and special_visual_bursts.is_empty()
 	):
 		_add_legacy_special_visual_burst(source, 11, world_position)
+	var recovered_alert_radius := _legacy_special_alert_radius(source)
+	if (
+		recovered_alert_radius > 0.0
+		and source != null
+		and source.get_script() == EXPLOSIVE_PROP_SCRIPT
+	):
+		_queue_or_broadcast_alert(
+			source,
+			source,
+			world_position,
+			recovered_alert_radius,
+			true,
+		)
+		return
 	var alert_source: Node2D = instigator
 	if alert_source == null or not is_instance_valid(alert_source):
 		for unit: SQUAD_UNIT in units:
@@ -5416,14 +5415,17 @@ func _on_world_explosion_requested(
 		world_position,
 		horizontal_radius,
 		vertical_radius,
-		_legacy_special_alert_radius(source),
+		recovered_alert_radius,
 	)
 
 
 static func _legacy_special_alert_radius(source: Node2D) -> float:
-	if source == null or source.get_script() != LEGACY_SPECIAL_WORLD_OBJECT_SCRIPT:
+	if source == null or not source.has_method("explosion_payload"):
 		return 0.0
-	return maxf(float(source.get("alert_radius")), 0.0)
+	var payload: Variant = source.call("explosion_payload")
+	if not payload is Dictionary:
+		return 0.0
+	return maxf(float((payload as Dictionary).get("alert_radius", 0.0)), 0.0)
 
 
 func _apply_legacy_special_damage_bands(
@@ -5431,13 +5433,19 @@ func _apply_legacy_special_damage_bands(
 	instigator: Node2D,
 	world_position: Vector2,
 	candidates: Array[Node2D],
-) -> int:
-	if source == null or source.get_script() != LEGACY_SPECIAL_WORLD_OBJECT_SCRIPT:
-		return 0
-	var raw_bands: Variant = source.get("special_damage_bands")
+) -> Array[Dictionary]:
+	var bursts: Array[Dictionary] = []
+	if source == null or not source.has_method("explosion_payload"):
+		return bursts
+	var payload: Variant = source.call("explosion_payload")
+	if not payload is Dictionary:
+		return bursts
+	var raw_bands: Variant = (payload as Dictionary).get(
+		"special_damage_bands",
+		[],
+	)
 	if not raw_bands is Array:
-		return 0
-	var visual_burst_count := 0
+		return bursts
 	for raw_band: Variant in raw_bands as Array:
 		if not raw_band is Dictionary:
 			continue
@@ -5450,8 +5458,6 @@ func _apply_legacy_special_damage_bands(
 			if (
 				candidate == source
 				or not is_instance_valid(candidate)
-				or not candidate.has_method("is_combat_alive")
-				or not bool(candidate.call("is_combat_alive"))
 				or not candidate.has_method("take_damage")
 				or not (actor_types as Array).has(int(candidate.get("runtime_actor_type")))
 				or not _legacy_special_band_contains(
@@ -5460,6 +5466,9 @@ func _apply_legacy_special_damage_bands(
 				)
 			):
 				continue
+			# sub_4554A0 dispatches the special-band effect after calling the
+			# damage helper even when that helper finds +0x1CC already resolved.
+			# Preserve the visual burst for an actor killed by the main band.
 			candidate.call(
 				"take_damage",
 				band_damage,
@@ -5470,8 +5479,13 @@ func _apply_legacy_special_damage_bands(
 				int(band.get("original_visual_effect_type", 11)),
 				candidate.global_position,
 			)
-			visual_burst_count += 1
-	return visual_burst_count
+			bursts.append({
+				"effect_family": int(
+					band.get("original_visual_effect_type", 11)
+				),
+				"world_position": candidate.global_position,
+			})
+	return bursts
 
 
 func _add_legacy_special_visual_burst(

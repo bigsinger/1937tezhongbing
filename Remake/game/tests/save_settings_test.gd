@@ -91,7 +91,6 @@ class MockGame:
 	var field_pickups: Array[Node2D] = []
 	var explosive_props: Array[Node2D] = []
 	var mission_pickups: Array[Node2D] = []
-	var deployed_mines: Array[Node2D] = []
 	var buried_enemy_scene_indices: Dictionary = {}
 	var projectile_world: Node2D
 	var activated_mission_scenes: Dictionary = {}
@@ -1360,16 +1359,6 @@ func _test_placeholder_actor_identity_restore(failures: Array[String]) -> void:
 	source_enemy.behavior_state = ENEMY_UNIT.BehaviorState.CHASE
 	(source_game.dynamic_occupancy as MockOccupancy).actors.clear()
 	var session: Dictionary = GAME_SESSION_STATE.capture(source_game)
-	(session["world"] as Dictionary)["deployed_mines"] = [
-		{
-			"x": 12.0,
-			"y": 34.0,
-			"owner_scene_index": -1,
-			"owner_display_name": "",
-			"faction_id": 3,
-			"state": 1,
-		}
-	]
 
 	var target_game := _make_mock_game(false)
 	root.add_child(target_game)
@@ -1402,12 +1391,6 @@ func _test_placeholder_actor_identity_restore(failures: Array[String]) -> void:
 		target_enemy.current_target == target_bravo
 		and target_enemy.behavior_state == ENEMY_UNIT.BehaviorState.CHASE,
 		"placeholder enemy target restores through stable display identity",
-		failures,
-	)
-	_expect(
-		target_game.deployed_mines.size() == 1
-		and target_game.deployed_mines[0].owner_actor == null,
-		"an unresolved negative owner ID remains unbound instead of selecting the first actor",
 		failures,
 	)
 	source_game.queue_free()

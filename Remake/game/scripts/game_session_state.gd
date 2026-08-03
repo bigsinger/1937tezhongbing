@@ -10,7 +10,6 @@ extends RefCounted
 const COMBAT_INVENTORY: Script = preload("res://scripts/combat_inventory.gd")
 const COMBAT_PROFILES: Script = preload("res://scripts/combat_profiles.gd")
 const BACKPACK_INVENTORY: Script = preload("res://scripts/backpack_inventory.gd")
-const LAND_MINE: Script = preload("res://scripts/land_mine.gd")
 const LEGACY_SPECIAL_ACTION_PROFILES: Script = preload("res://scripts/legacy_special_action_profiles.gd")
 const MISSION_PICKUP: Script = preload("res://scripts/mission_pickup.gd")
 const SAVE_STORE: Script = preload("res://scripts/game_save_store.gd")
@@ -299,7 +298,6 @@ static func _capture_world(game: Node) -> Dictionary:
 		"explosive_props": [],
 		"mission_pickups": [],
 		"field_inventory": _json_dictionary(game.get("field_inventory")),
-		"deployed_mines": [],
 		"legacy_special_world_objects": [],
 		"legacy_explosion_effects": [],
 		"legacy_ai_control_effects": [],
@@ -389,8 +387,15 @@ static func _capture_world(game: Node) -> Dictionary:
 			var prop := prop_value as Node2D
 			(world["explosive_props"] as Array).append(
 				{
+					"schema_version": 2,
 					"scene_index": int(prop.get("scene_index")),
 					"hit_points": int(prop.get("hit_points")),
+					"runtime_actor_type": int(
+						prop.get("runtime_actor_type")
+					),
+					"explosion_actor_type": int(
+						prop.get("explosion_actor_type")
+					),
 				}
 			)
 	for pickup_value: Variant in _array_property(game, "mission_pickups"):
@@ -410,12 +415,6 @@ static func _capture_world(game: Node) -> Dictionary:
 						),
 					}
 				)
-	for mine_value: Variant in _array_property(game, "deployed_mines"):
-		if mine_value is Node2D and is_instance_valid(mine_value):
-			var mine := mine_value as Node2D
-			if int(mine.get("state")) in [4, 5]:
-				continue
-			(world["deployed_mines"] as Array).append(_capture_mine(mine))
 	for world_object_value: Variant in _array_property(game, "legacy_special_world_objects"):
 		if (
 			world_object_value is Node
@@ -557,27 +556,6 @@ static func _capture_world(game: Node) -> Dictionary:
 			if child is Node2D and child.has_method("is_resolved") and not bool(child.call("is_resolved")):
 				(world["projectiles"] as Array).append(_capture_projectile(child as Node2D))
 	return world
-
-
-static func _capture_mine(mine: Node2D) -> Dictionary:
-	var owner: Variant = mine.get("owner_actor")
-	return {
-		"x": mine.position.x,
-		"y": mine.position.y,
-		"owner_scene_index": int((owner as Node).get("scene_index")) if owner is Node and is_instance_valid(owner) else -1,
-		"owner_display_name": _actor_display_name(owner),
-		"faction_id": int(mine.get("faction_id")),
-		"state": int(mine.get("state")),
-		"state_elapsed": float(mine.get("state_elapsed")),
-		"arm_delay_seconds": float(mine.get("arm_delay_seconds")),
-		"trigger_horizontal_radius": float(mine.get("trigger_horizontal_radius")),
-		"trigger_vertical_radius": float(mine.get("trigger_vertical_radius")),
-		"detonation_delay_seconds": float(mine.get("detonation_delay_seconds")),
-		"blast_damage": int(mine.get("blast_damage")),
-		"blast_horizontal_radius": float(mine.get("blast_horizontal_radius")),
-		"blast_vertical_radius": float(mine.get("blast_vertical_radius")),
-		"resolved_visual_seconds": float(mine.get("resolved_visual_seconds")),
-	}
 
 
 static func _capture_projectile(projectile: Node2D) -> Dictionary:
@@ -1275,10 +1253,20 @@ static func _restore_world(game: Node, world: Dictionary, warnings: Array[String
 				(prop as Node).queue_free()
 				prop_array.remove_at(index)
 			else:
-				(prop as Node).set("hit_points", maxi(int((prop_records[prop_scene] as Dictionary).get("hit_points", 1)), 1))
-				(prop as Node).queue_redraw()
+				var record := prop_records[prop_scene] as Dictionary
+				if (
+					int(record.get("runtime_actor_type", 53)) != 53
+					or int(record.get("explosion_actor_type", 62)) != 62
+					or not (prop as Node).has_method("restore_runtime_state")
+					or not bool((prop as Node).call(
+						"restore_runtime_state",
+						int(record.get("hit_points", 8)),
+					))
+				):
+					warnings.append(
+						"gasoline barrel state could not be restored"
+					)
 	_restore_mission_pickups(game, world.get("mission_pickups", []) as Array)
-	_restore_mines(game, world.get("deployed_mines", []) as Array, warnings)
 	_restore_legacy_special_world_objects(
 		game,
 		world.get("legacy_special_world_objects", []) as Array,
@@ -1395,50 +1383,6 @@ static func _restore_mission_pickups(game: Node, records: Array) -> void:
 			game.call("_register_mission_pickup", pickup)
 		else:
 			existing.append(pickup)
-
-
-static func _restore_mines(game: Node, records: Array, warnings: Array[String]) -> void:
-	var mine_array := _array_property(game, "deployed_mines")
-	for mine_value: Variant in mine_array:
-		if mine_value is Node and is_instance_valid(mine_value):
-			(mine_value as Node).queue_free()
-	mine_array.clear()
-	for record_value: Variant in records:
-		if not record_value is Dictionary:
-			continue
-		var record := record_value as Dictionary
-		var owner := _find_actor_by_identity(
-			game,
-			int(record.get("owner_scene_index", -1)),
-			str(record.get("owner_display_name", "")),
-		)
-		var profile := {
-			"key": "land_mine",
-			"arm_delay_seconds": float(record.get("arm_delay_seconds", 0.75)),
-			"trigger_horizontal_radius": float(record.get("trigger_horizontal_radius", 48.0)),
-			"trigger_vertical_radius": float(record.get("trigger_vertical_radius", 28.0)),
-			"detonation_delay_seconds": float(record.get("detonation_delay_seconds", 0.35)),
-			"blast_damage": int(record.get("blast_damage", 16)),
-			"blast_horizontal_radius": float(record.get("blast_horizontal_radius", 96.0)),
-			"blast_vertical_radius": float(record.get("blast_vertical_radius", 48.0)),
-			"resolved_visual_seconds": float(record.get("resolved_visual_seconds", 0.12)),
-		}
-		var mine: Node2D = LAND_MINE.new()
-		if not bool(mine.call("configure", profile, Vector2(float(record.get("x", 0.0)), float(record.get("y", 0.0))), owner, int(record.get("faction_id", 3)))):
-			mine.free()
-			warnings.append("a deployed mine could not be restored")
-			continue
-		game.add_child(mine)
-		mine.set("state", int(record.get("state", 1)))
-		mine.set("state_elapsed", maxf(float(record.get("state_elapsed", 0.0)), 0.0))
-		var targets: Array[Node2D] = []
-		for enemy_value: Variant in _array_property(game, "enemies"):
-			if enemy_value is Node2D:
-				targets.append(enemy_value as Node2D)
-		mine.call("set_potential_targets", targets)
-		if game.has_method("_on_world_explosion_requested"):
-			mine.connect("explosion_requested", Callable(game, "_on_world_explosion_requested"))
-		mine_array.append(mine)
 
 
 static func _restore_legacy_special_world_objects(

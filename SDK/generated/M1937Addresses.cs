@@ -123,6 +123,7 @@ namespace Mission1937.SDK.Generated
         public const long ActorPursuitRandomCall = 0x0005D47EL;
         public const long FindActorByRuntimeTypeWithinRadius = 0x0005EF90L;
         public const long TimedSpecialUpdate = 0x000553B0L;
+        public const long GasolineBarrelUpdate = 0x000551B0L;
         public const long ExplosionActorUpdate = 0x000554A0L;
         public const long TriggeredSpecialUpdate = 0x000556B0L;
         public const long SpecialAttackDispatch = 0x00056DF0L;

@@ -7,7 +7,11 @@
     "database_sha256": "0017D8AB6A41F104BF0DE9A8282AB593B94E2BF7131038566AC281A8F15025D9",
     "runtime_item_id": "DBL sprite header[2]",
     "container_and_quantity_mode": "M1937.exe sub_45AE10",
-    "grant_quantity": "M1937.exe sub_453F70"
+    "grant_quantity": "M1937.exe sub_453F70",
+    "gasoline_barrel_actor_state": "35 converted VWF actor records across m001/m003/m004/m005/m008/m009/m011",
+    "gasoline_barrel_update": "M1937.exe sub_4551B0 (RVA 0x000551B0)",
+    "effect_dispatch": "M1937.exe sub_44CDB0 -> sub_4656C0 case 5 -> sub_465250",
+    "explosion_actor_update": "M1937.exe sub_4554A0 (RVA 0x000554A0)"
   },
   "pickup_grants": [
     {
@@ -106,7 +110,19 @@
       "database_entry_id": 1003,
       "display_name": "\u53EF\u7206\u70B8\u6C7D\u6CB9\u6876",
       "resource_name": "\u53EF\u7206\u70B8\u6C7D\u6CB9\u6876.spr",
-      "runtime_item_id": 53
+      "runtime_actor_type": 53,
+      "observed_instance_count": 35,
+      "observed_level_ids": ["m001", "m003", "m004", "m005", "m008", "m009", "m011"],
+      "initial_hit_points": 8,
+      "detonation_hit_points_sentinel": 8,
+      "resolved_action_index": 1,
+      "effect_dispatch_type": 5,
+      "explosion_actor_type": 62,
+      "blast_damage": 128,
+      "blast_horizontal_radius": 128,
+      "blast_vertical_radius": 64,
+      "alert_radius": 800,
+      "main_excluded_runtime_actor_types": [85]
     }
   ]
 }

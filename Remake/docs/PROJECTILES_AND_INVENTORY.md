@@ -156,9 +156,9 @@ type 8/10 世界对象和汽油桶走统一的世界爆炸结算，可伤害单�
 - type 8 / 项目 43：选择后左击目标，在攻击命中帧部署 actor 84 / GFL 470 对象；对象创建后即进入 ACTIVE，存活 faction 1 目标进入 `32 × 16` 椭圆后触发 actor 62。
 - type 10 / 项目 45：选择后左击目标，在攻击命中帧部署 actor 85 / GFL 900 对象；从创建起按 world tick 计时，第 100 tick 触发 actor 62。
 - actor 62：在 `128 × 64` 等距椭圆内造成 128 点主伤害并发布 800 半径警报；runtime type 34/86/87/88/94/95/96/97 在 `384 × 192` 椭圆内、type 66/67/68/77/93 在严格小于 256 的欧氏半径内，各另受一次 128 点伤害。两组原视觉效果编号分别为 11 和 15；每组尝试 1—2 个 64×32 散布粒子，使用原 MSVCRT 随机序列并完整播放 5 轮。可生成粒子的实际寿命为 90 或 150 world tick。
-- 汽油桶：选择队员后左击汽油桶下达攻击命令；当前生命 8，摧毁后造成 16 点伤害，爆炸椭圆 `128 × 64`。
+- 汽油桶：DBL 1003 的 35 个关卡实例都是 runtime actor 53、初始生命 8。任意一次有效伤害令生命偏离 8 后，actor 53 在自己的下一次 world tick 按 `sub_4551B0` 置结束动作 1，并通过效果类型 5 创建 actor 62；因此它不是“扣至 0 才爆”。爆炸完整复用上述 actor 62 的 128 点主伤害、`128 × 64` 椭圆、特殊伤害带、800 警报和 GFL 20 动画。
 
-项目 43/45、actor 84/85/62、GFL 470/900、type 8 的 faction 1 与 `32 × 16` 触发、type 10 的 100 tick，以及上述伤害/几何/警报/粒子寿命均来自恢复路径；汽油桶生命/伤害/范围仍是显式重制默认。仓库保留了早期通用 `LandMine` 状态机，但当前原版键位和 type 8 生命周期不再通过 `X` 或该状态机暴露；不要把旧测试接口写成试玩操作。
+项目 43/45、actor 84/85/62、GFL 470/900、type 8 的 faction 1 与 `32 × 16` 触发、type 10 的 100 tick，以及上述伤害/几何/警报/粒子寿命均来自恢复路径。汽油桶的 actor 53、生命哨兵 8、效果类型 5 和 actor 62 链路也已由 35 条 VWF 状态与 `sub_4551B0`/`sub_4656C0`/`sub_4554A0` 闭合。早期秒制通用 `LandMine` 重制状态机及其默认数据已经删除；项目 43 只走原版 type 8 / actor 84 路径。
 
 ## 5. 实现边界
 
@@ -175,9 +175,9 @@ type 8/10 世界对象和汽油桶走统一的世界爆炸结算，可伤害单�
 | `game/data/original_initial_weapon_inventory.json` | 十二关 660 个精确角色的 761 个取证武器条目；含 27 名玩家/83 条子集 |
 | `game/scripts/backpack_inventory.gd` | actor +0x228 有序物品、mode、丢弃和快照 |
 | `game/data/original_initial_item_inventory.json` | 十二关 660 个精确角色的 539 个取证开局条目 |
-| `game/data/world_pickups.json` | 真实拾取实体、地雷和汽油桶的数据配置 |
+| `game/data/world_pickups.json` | 真实拾取实体及 actor 53 汽油桶的数据配置；不含虚构通用地雷参数 |
 | `tools/ResourceFormats/OriginalWorldPickupEvidence.cs` | 从 DBL 恢复并严格分类十类原版世界拾取物 |
-| `validation/baselines/mod/world-pickups-v1.json` | MOD 数据库哈希、item ID、容器和 mode 的可复现基线 |
+| `validation/baselines/mod/world-pickups-v1.json` | MOD 数据库哈希、item ID、容器/mode，以及 35 个 actor 53 汽油桶和 actor 62 爆炸链的可复现基线 |
 | `validation/baselines/mod/m001-mine-pickup-inventory-v1.json` | scene 2280 左击 scene 2096 后项目 43 的 `2→3` 稳定 MOD 运行基线 |
 | `validation/baselines/mod/m000-pistol-attack-inventory-v1.json` | scene 1436 手枪攻击 scene 1598 后项目 36 的 `7→6` 稳定 MOD 运行基线 |
 | `validation/baselines/mod/m010-rifle-attack-inventory-v1.json` | scene 1589 步枪攻击 scene 1126 后项目 37 的 `20→19` 稳定 MOD 运行基线 |
@@ -198,12 +198,11 @@ type 8/10 世界对象和汽油桶走统一的世界爆炸结算，可伤害单�
 | `game/scripts/legacy_special_world_object.gd` | type 8/10 部署、触发/计时、爆炸、清理和快照 |
 | `game/scripts/legacy_ai_control_effect.gd` | type 11 应用、刷新、解除和快照 |
 | `game/scripts/inventory_grid_view.gd` | 276×421 右侧五列武器/物品栏 |
-| `game/scripts/land_mine.gd` | 早期通用地雷状态机；当前原版 type 8 路径由 `LegacySpecialWorldObject` 独立承担 |
-| `game/scripts/explosive_prop.gd` | 可受伤汽油桶和爆炸请求 |
+| `game/scripts/explosive_prop.gd` | actor 53 生命哨兵更新、actor 62 爆炸请求和存档状态 |
 | `game/scripts/main.gd` | 输入、原 scene 生成、背包 UI、任务与警报接线 |
 
 仍待恢复或校准的相邻内容包括：actor 61/62 与其他系统共享的完整全局随机
-调用顺序、汽油桶数值及动画，以及爆炸对地形/遮挡的原规则。六类投射规则自身
+调用顺序，以及爆炸对地形/遮挡的原规则。汽油桶数值、触发时序和 actor 62 动画已经恢复。六类投射规则自身
 的路径、步长、碰撞、伤害、普通命中 actor 60、终点爆炸和 SPR 发射锚点已经恢复。原版物品容器
 `actor+552`、武器容器 `actor+556` 的布局、
 数量模式和十二关开局内容已经恢复，不再把不存在的弹匣/装填时间或已确认的

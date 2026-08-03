@@ -1,7 +1,7 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "entity_count": 11,
-  "source_status": "World-pickup item IDs are recovered from DBL sprite header[2]. Original sub_45AE10 recovers the destination container and quantity mode, sub_453F70 proves a one-item grant, and sub_456AB0 proves completion when collector and target differ by at most one 32x16 navigation cell on both axes. The gasoline-barrel/mine timing and blast geometry remain explicit remake defaults.",
+  "source_status": "World-pickup item IDs are recovered from DBL sprite header[2]. Original sub_45AE10 recovers the destination container and quantity mode, sub_453F70 proves a one-item grant, and sub_456AB0 proves completion when collector and target differ by at most one 32x16 navigation cell on both axes. DBL 1003 is runtime actor 53 with 8 HP in all 35 instances across the twelve levels; sub_4551B0 detonates when HP differs from 8 and effect-dispatch type 5 creates actor 62, whose sub_4554A0 supplies the exact damage, geometry, special bands and alert radius. The retired generic LandMine state machine is not product data; original type 8 uses actor 84 and the recovered special-action profile.",
   "entities": {
     "982": {
       "database_entry_id": 982,
@@ -238,48 +238,22 @@
       "key": "explosive_gasoline_barrel",
       "original_display_name": "可爆炸汽油桶",
       "behavior": "explosive_prop",
-      "runtime_item_id": 53,
-      "hit_points": 8,
-      "blast_damage": 16,
-      "blast_horizontal_radius": 128.0,
-      "blast_vertical_radius": 64.0,
-      "destroyed_visual_seconds": 0.12,
+      "runtime_actor_type": 53,
+      "initial_hit_points": 8,
+      "detonation_hit_points_sentinel": 8,
+      "resolved_action_index": 1,
+      "effect_dispatch_type": 5,
+      "explosion_actor_type": 62,
       "source_status": {
         "identity": "recovered_converted_database",
-        "runtime_item_id": "recovered_dbl_header_2",
-        "behavior": "inferred_from_recovered_display_name",
-        "hit_points": "unresolved_remake_default",
-        "blast_damage": "unresolved_remake_default",
-        "blast_horizontal_radius": "unresolved_remake_default",
-        "blast_vertical_radius": "unresolved_remake_default",
-        "destroyed_visual_seconds": "unresolved_remake_default"
-      }
-    }
-  },
-  "deployables": {
-    "land_mine": {
-      "key": "land_mine",
-      "source_pickup_database_entry_id": 984,
-      "ammo_item_id": 43,
-      "arm_delay_seconds": 0.75,
-      "trigger_horizontal_radius": 48.0,
-      "trigger_vertical_radius": 24.0,
-      "detonation_delay_seconds": 0.15,
-      "blast_damage": 16,
-      "blast_horizontal_radius": 128.0,
-      "blast_vertical_radius": 64.0,
-      "resolved_visual_seconds": 0.12,
-      "source_status": {
-        "identity": "inferred_from_recovered_display_name",
-        "ammo_item_id": "recovered_attack_item_mapping",
-        "arm_delay_seconds": "unresolved_remake_default",
-        "trigger_horizontal_radius": "unresolved_remake_default",
-        "trigger_vertical_radius": "unresolved_remake_default",
-        "detonation_delay_seconds": "unresolved_remake_default",
-        "blast_damage": "unresolved_remake_default",
-        "blast_horizontal_radius": "unresolved_remake_default",
-        "blast_vertical_radius": "unresolved_remake_default",
-        "resolved_visual_seconds": "unresolved_remake_default"
+        "runtime_actor_type": "recovered_dbl_header_2",
+        "behavior": "recovered_sub_454960_case_53",
+        "initial_hit_points": "recovered_35_vwf_actor_states",
+        "detonation_hit_points_sentinel": "recovered_sub_4551B0",
+        "resolved_action_index": "recovered_sub_4551B0_sub_4527E0",
+        "effect_dispatch_type": "recovered_sub_4551B0",
+        "explosion_actor_type": "recovered_sub_4656C0_case_5",
+        "explosion_profile": "recovered_sub_4554A0"
       }
     }
   }

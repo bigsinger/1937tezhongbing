@@ -8,6 +8,7 @@ extends RefCounted
 const MAIN_DAMAGE := 128
 const MAIN_HORIZONTAL_RADIUS := 128.0
 const MAIN_VERTICAL_RADIUS := 64.0
+const MAIN_EXCLUDED_RUNTIME_ACTOR_TYPES := [85]
 const ALERT_RADIUS := 800.0
 const SPECIAL_DAMAGE_BANDS: Array[Dictionary] = [
 	{
@@ -51,6 +52,9 @@ static func profile_for_actor(runtime_actor_type: int) -> Dictionary:
 	result["blast_damage"] = MAIN_DAMAGE
 	result["blast_horizontal_radius"] = MAIN_HORIZONTAL_RADIUS
 	result["blast_vertical_radius"] = MAIN_VERTICAL_RADIUS
+	result["main_excluded_runtime_actor_types"] = (
+		MAIN_EXCLUDED_RUNTIME_ACTOR_TYPES.duplicate()
+	)
 	result["alert_radius"] = ALERT_RADIUS
 	result["special_damage_bands"] = SPECIAL_DAMAGE_BANDS.duplicate(true)
 	return result

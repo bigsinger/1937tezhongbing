@@ -236,6 +236,13 @@ func _prepare_level_for_deterministic_world_actions(main: Node) -> void:
 	# Presentation and AI cooperation are tested independently. Removing them
 	# here keeps this gate focused on real world-object -> mission-state wiring
 	# and also prevents victory from writing an autosave during CI.
+	# The fixture moves actors and invokes world interactions directly. A real
+	# player command invalidates the short input-free CRT evidence lane through
+	# Main._input(); mirror that boundary here before any synthetic world action
+	# so followers use the normal recovered pursuit scheduler instead of waiting
+	# for a captured no-input round that the fixture intentionally bypasses.
+	if main.has_method("invalidate_original_recurring_evidence"):
+		main.invalidate_original_recurring_evidence("headless_world_action")
 	if main.mission_direction_runtime != null:
 		main.mission_direction_runtime.free()
 		main.mission_direction_runtime = null

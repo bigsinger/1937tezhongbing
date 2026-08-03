@@ -120,6 +120,7 @@
     {"name": "ActorPursuitRandomCall", "rva": "0x0005D47E", "kind": "instruction", "confidence": "disassembled"},
     {"name": "FindActorByRuntimeTypeWithinRadius", "rva": "0x0005EF90", "kind": "function", "confidence": "disassembled"},
     {"name": "TimedSpecialUpdate", "rva": "0x000553B0", "kind": "function", "confidence": "decompiled"},
+    {"name": "GasolineBarrelUpdate", "rva": "0x000551B0", "kind": "function", "confidence": "decompiled"},
     {"name": "ExplosionActorUpdate", "rva": "0x000554A0", "kind": "function", "confidence": "decompiled"},
     {"name": "TriggeredSpecialUpdate", "rva": "0x000556B0", "kind": "function", "confidence": "decompiled"},
     {"name": "SpecialAttackDispatch", "rva": "0x00056DF0", "kind": "function", "confidence": "decompiled"},

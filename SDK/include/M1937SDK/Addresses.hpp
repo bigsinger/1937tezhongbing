@@ -126,6 +126,7 @@ inline constexpr std::uintptr_t advance_actor_pursuit = 0x0005D330;
 inline constexpr std::uintptr_t actor_pursuit_random_call = 0x0005D47E;
 inline constexpr std::uintptr_t find_actor_by_runtime_type_within_radius = 0x0005EF90;
 inline constexpr std::uintptr_t timed_special_update = 0x000553B0;
+inline constexpr std::uintptr_t gasoline_barrel_update = 0x000551B0;
 inline constexpr std::uintptr_t explosion_actor_update = 0x000554A0;
 inline constexpr std::uintptr_t triggered_special_update = 0x000556B0;
 inline constexpr std::uintptr_t special_attack_dispatch = 0x00056DF0;

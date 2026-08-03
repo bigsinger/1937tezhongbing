@@ -2,7 +2,6 @@ extends SceneTree
 
 const EXPLOSIVE_PROP_SCRIPT: Script = preload("res://scripts/explosive_prop.gd")
 const FIELD_PICKUP_SCRIPT: Script = preload("res://scripts/field_pickup.gd")
-const LAND_MINE_SCRIPT: Script = preload("res://scripts/land_mine.gd")
 const WORLD_PICKUP_CATALOG: Script = preload("res://scripts/world_pickup_catalog.gd")
 const MAIN_SCRIPT: Script = preload("res://scripts/main.gd")
 const MAIN_INPUT_HARNESS: Script = preload("res://tests/main_input_harness.gd")
@@ -37,6 +36,20 @@ class MockActor:
 		return hit_points > 0
 
 
+class MockResolvedExplosionCandidate:
+	extends Node2D
+
+	var runtime_actor_type := 34
+	var damage_call_count := 0
+
+	func is_combat_alive() -> bool:
+		return false
+
+	func take_damage(_amount: int, _attacker: Node2D = null) -> int:
+		damage_call_count += 1
+		return 0
+
+
 class SignalSink:
 	extends RefCounted
 
@@ -44,13 +57,8 @@ class SignalSink:
 	var last_collection: Dictionary = {}
 	var prop_damage_count := 0
 	var prop_explosion_count := 0
-	var mine_armed_count := 0
-	var mine_triggered_count := 0
-	var mine_explosion_count := 0
-	var mine_disarmed_count := 0
 	var last_explosion_damage := 0
 	var last_explosion_radii := Vector2.ZERO
-	var last_trigger_target: Node2D
 
 	func on_collected(_pickup: Node2D, _collector: Node, payload: Dictionary) -> void:
 		collection_count += 1
@@ -76,30 +84,6 @@ class SignalSink:
 		prop_explosion_count += 1
 		last_explosion_damage = damage
 		last_explosion_radii = Vector2(horizontal_radius, vertical_radius)
-
-	func on_mine_armed(_mine: Node2D) -> void:
-		mine_armed_count += 1
-
-	func on_mine_triggered(_mine: Node2D, target: Node2D) -> void:
-		mine_triggered_count += 1
-		last_trigger_target = target
-
-	func on_mine_explosion(
-		_mine: Node2D,
-		_instigator: Node2D,
-		_world_position: Vector2,
-		damage: int,
-		horizontal_radius: float,
-		vertical_radius: float,
-		_source_faction_id: int,
-	) -> void:
-		mine_explosion_count += 1
-		last_explosion_damage = damage
-		last_explosion_radii = Vector2(horizontal_radius, vertical_radius)
-
-	func on_mine_disarmed(_mine: Node2D) -> void:
-		mine_disarmed_count += 1
-
 
 class MockMissionRuntime:
 	extends Node
@@ -138,8 +122,8 @@ func _run_tests() -> void:
 	_test_catalog(failures)
 	_test_field_pickup_without_original_assets(failures)
 	_test_explosive_prop_without_original_assets(failures)
-	_test_land_mine_arming_and_hostile_trigger(failures)
 	_test_main_inventory_and_explosion_integration(failures)
+	_test_resolved_actor_keeps_special_explosion_visual(failures)
 	_test_special_world_deployment_product_entry(failures)
 	_test_mission_charge_policy_catalog(failures)
 	_test_charge_policy_activation_and_uniform_ghost(failures)
@@ -206,24 +190,25 @@ func _test_catalog(failures: Array[String]) -> void:
 				% database_entry_id,
 			failures,
 		)
-	var mine_profile: Dictionary = WORLD_PICKUP_CATALOG.deployable_profile("land_mine")
-	_expect(not mine_profile.is_empty(), "land-mine runtime profile resolves", failures)
-	_expect(int(mine_profile.get("ammo_item_id", 0)) == 43, "land mine uses recovered item 43 mapping", failures)
-	var mine_sources := mine_profile.get("source_status", {}) as Dictionary
-	for default_field: String in [
-		"arm_delay_seconds",
-		"trigger_horizontal_radius",
-		"trigger_vertical_radius",
-		"detonation_delay_seconds",
-		"blast_damage",
-		"blast_horizontal_radius",
-		"blast_vertical_radius",
-	]:
-		_expect(
-			String(mine_sources.get(default_field, "")) == "unresolved_remake_default",
-			"land-mine %s is marked as an unresolved remake default" % default_field,
-			failures,
-		)
+	var barrel_profile: Dictionary = (
+		WORLD_PICKUP_CATALOG.profile_for_database_entry_id(1003)
+	)
+	_expect(
+		int(barrel_profile.get("runtime_actor_type", 0)) == 53
+		and int(barrel_profile.get("initial_hit_points", 0)) == 8
+		and int(
+			barrel_profile.get("detonation_hit_points_sentinel", 0)
+		) == 8
+		and int(barrel_profile.get("effect_dispatch_type", 0)) == 5
+		and int(barrel_profile.get("explosion_actor_type", 0)) == 62,
+		"gasoline barrel retains the recovered actor-53 to actor-62 chain",
+		failures,
+	)
+	_expect(
+		not catalog.has("deployables"),
+		"catalog omits the retired generic LandMine remake state machine",
+		failures,
+	)
 	var invalid_catalog := catalog.duplicate(true)
 	var invalid_entities := invalid_catalog["entities"] as Dictionary
 	var invalid_pickup := invalid_entities["982"] as Dictionary
@@ -375,63 +360,51 @@ func _test_explosive_prop_without_original_assets(failures: Array[String]) -> vo
 		failures,
 	)
 	_expect(not prop.has_original_texture(), "barrel fallback has no original texture dependency", failures)
-	_expect(prop.is_combat_alive() and prop.hit_points == 8, "barrel starts with its explicit remake-default HP", failures)
+	_expect(
+		prop.is_combat_alive()
+		and prop.runtime_actor_type == 53
+		and prop.hit_points == 8
+		and prop.explosion_actor_type == 62,
+		"barrel starts as recovered actor 53 with 8 HP and actor-62 output",
+		failures,
+	)
 	var sink := SignalSink.new()
 	prop.damage_taken.connect(sink.on_prop_damage)
 	prop.explosion_requested.connect(sink.on_prop_explosion)
 	_expect(prop.take_damage(3, attacker) == 3, "barrel accepts partial damage", failures)
-	_expect(prop.hit_points == 5 and sink.prop_explosion_count == 0, "partial damage does not detonate barrel", failures)
-	_expect(prop.take_damage(20, attacker) == 5, "lethal barrel damage is capped at remaining HP", failures)
-	_expect(not prop.is_combat_alive() and prop.has_exploded, "lethal damage resolves the barrel", failures)
-	_expect(sink.prop_damage_count == 2 and sink.prop_explosion_count == 1, "barrel emits one explosion request after two hits", failures)
-	_expect(sink.last_explosion_damage == 16 and sink.last_explosion_radii == Vector2(128.0, 64.0), "barrel explosion request carries data-driven damage and ellipse", failures)
+	_expect(
+		prop.hit_points == 5
+		and sink.prop_explosion_count == 0
+		and prop.is_combat_alive(),
+		"actor 53 waits for its own update after HP differs from 8",
+		failures,
+	)
+	prop.advance_world_ticks(1)
+	_expect(
+		not prop.is_combat_alive()
+		and prop.has_exploded
+		and sink.prop_damage_count == 1
+		and sink.prop_explosion_count == 1,
+		"the next actor-53 update resolves exactly one explosion",
+		failures,
+	)
+	_expect(
+		sink.last_explosion_damage == 128
+		and sink.last_explosion_radii == Vector2(128.0, 64.0),
+		"barrel request carries actor-62 damage and ellipse",
+		failures,
+	)
 	_expect(prop.take_damage(1, attacker) == 0 and not prop.request_explosion(attacker), "barrel detonation is idempotent", failures)
 	var payload: Dictionary = prop.explosion_payload()
-	_expect(int(payload.get("database_entry_id", 0)) == 1003 and int(payload.get("scene_index", -1)) == 72, "barrel explosion payload retains imported identity", failures)
-	arena.queue_free()
-
-
-func _test_land_mine_arming_and_hostile_trigger(failures: Array[String]) -> void:
-	var arena := Node2D.new()
-	root.add_child(arena)
-	var owner := _actor(3, Vector2.ZERO, arena)
-	var ally := _actor(3, Vector2(8.0, 0.0), arena)
-	var neutral := _actor(0, Vector2(4.0, 0.0), arena)
-	var enemy := _actor(1, Vector2(100.0, 0.0), arena)
-	var mine = LAND_MINE_SCRIPT.new()
-	arena.add_child(mine)
-	var profile: Dictionary = WORLD_PICKUP_CATALOG.deployable_profile("land_mine")
-	_expect(mine.configure(profile, Vector2.ZERO, owner, 3), "land mine is placed in an arming state", failures)
-	var targets: Array[Node2D] = [owner, ally, neutral, enemy]
-	mine.set_potential_targets(targets)
-	var sink := SignalSink.new()
-	mine.armed.connect(sink.on_mine_armed)
-	mine.triggered.connect(sink.on_mine_triggered)
-	mine.explosion_requested.connect(sink.on_mine_explosion)
-	mine.advance_simulation(float(profile["arm_delay_seconds"]) - 0.01)
-	_expect(not mine.is_armed() and sink.mine_armed_count == 0, "mine cannot trigger before its arming delay", failures)
-	enemy.position = Vector2(30.0, 0.0)
-	mine.advance_simulation(0.01)
-	_expect(sink.mine_armed_count == 1, "mine emits one armed event when delay elapses", failures)
-	_expect(sink.mine_triggered_count == 1 and sink.last_trigger_target == enemy, "armed mine ignores ally and neutral then selects hostile entrant", failures)
-	_expect(sink.mine_explosion_count == 0, "triggered mine observes its detonation delay", failures)
-	mine.advance_simulation(float(profile["detonation_delay_seconds"]) - 0.01)
-	_expect(sink.mine_explosion_count == 0, "mine remains pending until the complete detonation delay", failures)
-	mine.advance_simulation(0.02)
-	_expect(sink.mine_explosion_count == 1 and mine.is_resolved(), "mine emits one explosion request and resolves", failures)
-	_expect(sink.last_explosion_damage == 16 and sink.last_explosion_radii == Vector2(128.0, 64.0), "mine request carries data-driven damage and ellipse", failures)
-
-	var second_mine = LAND_MINE_SCRIPT.new()
-	arena.add_child(second_mine)
-	_expect(second_mine.configure(profile, Vector2(200.0, 200.0), owner, 3), "second mine configures for disarm path", failures)
-	var safe_targets: Array[Node2D] = [ally, neutral]
-	second_mine.set_potential_targets(safe_targets)
-	var second_sink := SignalSink.new()
-	second_mine.disarmed.connect(second_sink.on_mine_disarmed)
-	second_mine.advance_simulation(float(profile["arm_delay_seconds"]) + 1.0)
-	_expect(second_mine.is_armed(), "friendly and neutral actors do not trigger an armed mine", failures)
-	_expect(second_mine.disarm() and second_sink.mine_disarmed_count == 1, "armed mine supports explicit disarming", failures)
-	_expect(not second_mine.disarm(), "mine cannot be disarmed twice", failures)
+	_expect(
+		int(payload.get("database_entry_id", 0)) == 1003
+		and int(payload.get("scene_index", -1)) == 72
+		and int(payload.get("runtime_actor_type", 0)) == 53
+		and int(payload.get("explosion_actor_type", 0)) == 62
+		and float(payload.get("alert_radius", 0.0)) == 800.0,
+		"barrel payload retains identity and recovered actor-62 alert profile",
+		failures,
+	)
 	arena.queue_free()
 
 
@@ -622,17 +595,59 @@ func _test_main_inventory_and_explosion_integration(failures: Array[String]) -> 
 		"player targeting explicitly accepts a neutral explosive world object",
 		failures,
 	)
-	collector.current_hit_points = 20
+	collector.maximum_hit_points = 200
+	collector.current_hit_points = 200
 	main._on_world_explosion_requested(
-		prop, collector, Vector2.ZERO, 16, 128.0, 64.0, 0
+		prop, collector, Vector2.ZERO, 128, 128.0, 64.0, 0
 	)
 	_expect(
-		collector.current_hit_points == 4,
-		"world-object explosion reaches the shared actual-damage path",
+		collector.current_hit_points == 72
+		and main.legacy_explosion_effects.size() == 1
+		and int(main.legacy_explosion_effects[0].get("runtime_actor_type"))
+			== 62,
+		"barrel explosion applies actor-62 damage and creates its visual actor",
 		failures,
 	)
 	main.units.clear()
 	main.explosive_props.clear()
+	main.free()
+	arena.queue_free()
+
+
+func _test_resolved_actor_keeps_special_explosion_visual(
+	failures: Array[String],
+) -> void:
+	var arena := Node2D.new()
+	root.add_child(arena)
+	var main = MAIN_INPUT_HARNESS.new()
+	arena.add_child(main)
+	var prop = EXPLOSIVE_PROP_SCRIPT.new()
+	var profile: Dictionary = WORLD_PICKUP_CATALOG.profile_for_database_entry_id(1003)
+	_expect(
+		prop.configure(profile, {"scene_index": 10, "x": 0, "y": 0}),
+		"special-band fixture configures an actor-53 source",
+		failures,
+	)
+	arena.add_child(prop)
+	var candidate := MockResolvedExplosionCandidate.new()
+	arena.add_child(candidate)
+	var candidates: Array[Node2D] = [candidate]
+	var bursts: Array[Dictionary] = main._apply_legacy_special_damage_bands(
+		prop,
+		null,
+		Vector2.ZERO,
+		candidates,
+	)
+	_expect(
+		candidate.damage_call_count == 1
+		and bursts.size() == 1
+		and int(bursts[0].get("effect_family", 0)) == 11,
+		(
+			"actor 62 keeps the type-34 effect-11 burst after main damage "
+			+ "already resolved the target"
+		),
+		failures,
+	)
 	main.free()
 	arena.queue_free()
 

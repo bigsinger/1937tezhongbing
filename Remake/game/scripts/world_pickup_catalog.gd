@@ -1,7 +1,7 @@
 class_name WorldPickupCatalog
 extends RefCounted
 
-const SCHEMA_VERSION := 2
+const SCHEMA_VERSION := 3
 const CATALOG_PATH := "res://data/world_pickups.json"
 const EXPECTED_ENTITY_IDS := [982, 983, 984, 986, 987, 988, 990, 993, 998, 999, 1003]
 const PICKUP_BEHAVIOR := "field_pickup"
@@ -19,7 +19,6 @@ const EXPECTED_PICKUP_GRANTS := {
 	998: {"item_id": 45, "container": "weapon", "quantity_mode": 0},
 	999: {"item_id": 47, "container": "backpack", "quantity_mode": 0},
 }
-const DEFAULT_STATUS := "unresolved_remake_default"
 const RECOVERED_ITEM_STATUS := "recovered_dbl_header_2"
 const RECOVERED_CONTAINER_STATUS := "recovered_sub_45AE10"
 const RECOVERED_QUANTITY_STATUS := "recovered_sub_453F70"
@@ -66,13 +65,10 @@ static func is_valid_catalog(catalog: Dictionary) -> bool:
 			return false
 		if not _is_valid_entity_profile(profile_value as Dictionary, database_entry_id):
 			return false
-	var deployables_value: Variant = catalog.get("deployables")
-	if not deployables_value is Dictionary:
-		return false
-	var deployables := deployables_value as Dictionary
-	if deployables.size() != 1 or not deployables.get("land_mine") is Dictionary:
-		return false
-	return _is_valid_land_mine_profile(deployables["land_mine"] as Dictionary)
+	# The original product path for item 43 is attack type 8 -> actor 84.
+	# A separate seconds-based LandMine profile was an early Remake invention
+	# and must not silently return as catalog data.
+	return not catalog.has("deployables")
 
 
 static func profile_for_database_entry_id(
@@ -83,19 +79,6 @@ static func profile_for_database_entry_id(
 	if catalog.is_empty():
 		return {}
 	var profile_value: Variant = (catalog["entities"] as Dictionary).get(str(database_entry_id))
-	if not profile_value is Dictionary:
-		return {}
-	return (profile_value as Dictionary).duplicate(true)
-
-
-static func deployable_profile(
-	deployable_key: String,
-	resource_path: String = CATALOG_PATH,
-) -> Dictionary:
-	var catalog := load_catalog(resource_path)
-	if catalog.is_empty():
-		return {}
-	var profile_value: Variant = (catalog["deployables"] as Dictionary).get(deployable_key)
 	if not profile_value is Dictionary:
 		return {}
 	return (profile_value as Dictionary).duplicate(true)
@@ -168,53 +151,27 @@ static func _is_valid_pickup_profile(profile: Dictionary, source: Dictionary) ->
 
 
 static func _is_valid_explosive_profile(profile: Dictionary, source: Dictionary) -> bool:
-	if (
-		int(profile.get("runtime_item_id", 0)) != 53
-		or String(source.get("runtime_item_id", "")) != RECOVERED_ITEM_STATUS
-	):
-		return false
-	var positive_fields := [
-		"hit_points",
-		"blast_damage",
-		"blast_horizontal_radius",
-		"blast_vertical_radius",
-		"destroyed_visual_seconds",
-	]
-	for field: String in positive_fields:
-		if float(profile.get(field, 0.0)) <= 0.0:
-			return false
-		if String(source.get(field, "")) != DEFAULT_STATUS:
-			return false
-	return true
-
-
-static func _is_valid_land_mine_profile(profile: Dictionary) -> bool:
-	if String(profile.get("key", "")) != "land_mine":
-		return false
-	if int(profile.get("source_pickup_database_entry_id", 0)) != 984:
-		return false
-	if int(profile.get("ammo_item_id", 0)) != 43:
-		return false
-	var source_value: Variant = profile.get("source_status")
-	if not source_value is Dictionary:
-		return false
-	var source := source_value as Dictionary
-	for identity_field: String in ["identity", "ammo_item_id"]:
-		if String(source.get(identity_field, "")).is_empty():
-			return false
-	var positive_fields := [
-		"arm_delay_seconds",
-		"trigger_horizontal_radius",
-		"trigger_vertical_radius",
-		"detonation_delay_seconds",
-		"blast_damage",
-		"blast_horizontal_radius",
-		"blast_vertical_radius",
-		"resolved_visual_seconds",
-	]
-	for field: String in positive_fields:
-		if float(profile.get(field, 0.0)) <= 0.0:
-			return false
-		if String(source.get(field, "")) != DEFAULT_STATUS:
-			return false
-	return true
+	return (
+		int(profile.get("runtime_actor_type", 0)) == 53
+		and int(profile.get("initial_hit_points", 0)) == 8
+		and int(profile.get("detonation_hit_points_sentinel", 0)) == 8
+		and int(profile.get("resolved_action_index", -1)) == 1
+		and int(profile.get("effect_dispatch_type", 0)) == 5
+		and int(profile.get("explosion_actor_type", 0)) == 62
+		and String(source.get("runtime_actor_type", ""))
+			== RECOVERED_ITEM_STATUS
+		and String(source.get("behavior", ""))
+			== "recovered_sub_454960_case_53"
+		and String(source.get("initial_hit_points", ""))
+			== "recovered_35_vwf_actor_states"
+		and String(source.get("detonation_hit_points_sentinel", ""))
+			== "recovered_sub_4551B0"
+		and String(source.get("resolved_action_index", ""))
+			== "recovered_sub_4551B0_sub_4527E0"
+		and String(source.get("effect_dispatch_type", ""))
+			== "recovered_sub_4551B0"
+		and String(source.get("explosion_actor_type", ""))
+			== "recovered_sub_4656C0_case_5"
+		and String(source.get("explosion_profile", ""))
+			== "recovered_sub_4554A0"
+	)

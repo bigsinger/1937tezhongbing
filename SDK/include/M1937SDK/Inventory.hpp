@@ -76,10 +76,39 @@ inline constexpr std::array<WorldPickupDefinition, 10>
         make_original_world_pickup(999, 47),
     }};
 
-// DBL 1003 has item-like header[2] value 53, but the original routes it
-// through the damageable gasoline-barrel lifecycle rather than pickup code.
-inline constexpr std::int32_t gasoline_barrel_database_entry_id = 1003;
-inline constexpr std::int32_t gasoline_barrel_item_id = 53;
+struct GasolineBarrelDefinition final {
+    std::int32_t database_entry_id = 1003;
+    std::int32_t runtime_actor_type = 53;
+    std::int32_t initial_hit_points = 8;
+    std::int32_t detonation_hit_points_sentinel = 8;
+    std::int32_t resolved_action_index = 1;
+    std::int32_t effect_dispatch_type = 5;
+    std::int32_t explosion_actor_type = 62;
+    std::int32_t blast_damage = 128;
+    std::int32_t blast_horizontal_radius = 128;
+    std::int32_t blast_vertical_radius = 64;
+    std::int32_t alert_radius = 800;
+};
+
+// All 35 DBL 1003 actors in the twelve converted VWF levels start with HP 8.
+// sub_4551B0 resolves actor 53 when HP differs from 8 and dispatches effect 5;
+// sub_4656C0 maps effect 5 to actor 62, whose sub_4554A0 supplies the exact
+// damage, ellipse and alert profile below.
+inline constexpr GasolineBarrelDefinition original_gasoline_barrel{};
+
+// Source-compatible aliases retained for SDK consumers compiled against the
+// earlier identity-only catalog. The header value is now named accurately in
+// GasolineBarrelDefinition as a runtime actor type.
+inline constexpr std::int32_t gasoline_barrel_database_entry_id =
+    original_gasoline_barrel.database_entry_id;
+inline constexpr std::int32_t gasoline_barrel_item_id =
+    original_gasoline_barrel.runtime_actor_type;
+
+constexpr bool gasoline_barrel_should_detonate(
+    std::int32_t current_hit_points) noexcept {
+    return current_hit_points !=
+        original_gasoline_barrel.detonation_hit_points_sentinel;
+}
 
 constexpr const WorldPickupDefinition* find_original_world_pickup(
     std::int32_t database_entry_id) noexcept {
@@ -106,5 +135,13 @@ static_assert(
     find_original_world_pickup(998) != nullptr &&
     find_original_world_pickup(998)->item_id == 45);
 static_assert(find_original_world_pickup(1003) == nullptr);
+static_assert(
+    original_gasoline_barrel.database_entry_id == 1003 &&
+    original_gasoline_barrel.runtime_actor_type == 53 &&
+    original_gasoline_barrel.explosion_actor_type == 62 &&
+    original_gasoline_barrel.blast_damage == 128);
+static_assert(!gasoline_barrel_should_detonate(8));
+static_assert(gasoline_barrel_should_detonate(7));
+static_assert(gasoline_barrel_should_detonate(0));
 
 }  // namespace m1937::sdk

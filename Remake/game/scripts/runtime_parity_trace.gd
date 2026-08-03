@@ -71,7 +71,6 @@ func capture_main(
 			"runtime_object_count": (
 				actors.size()
 				+ _live_array_count(main, "mission_pickups")
-				+ _live_array_count(main, "deployed_mines")
 				+ _live_array_count(main, "legacy_special_world_objects")
 				+ _live_array_count(main, "legacy_ai_control_effects")
 				+ _live_array_count(main, "legacy_burial_caches")

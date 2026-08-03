@@ -186,9 +186,9 @@ Godot 端的责任分工为：
 - `legacy_special_world_object.gd` / `legacy_explosion_visual_rules.gd` / `legacy_ai_control_effect.gd`：type 8/10 世界对象、actor 62 原粒子计划与 type 11 状态的建立、推进、释放和快照；
 - `world_depth.gd`：地面、正常深度、固定前景和顶层四渲染队列；
 - `imported_level_data.gd`：读取并校验 `database_header_values`，不能再次在导入链中丢弃 DBL `header[0]`；
-- `world_pickup_catalog.gd`、`field_pickup.gd`、`land_mine.gd`、`explosive_prop.gd`：真实场景拾取、地雷和油桶。
+- `world_pickup_catalog.gd`、`field_pickup.gd`、`explosive_prop.gd`：真实场景拾取和 actor 53 汽油桶；地雷只由 type 8 / actor 84 专用运行时承担。
 
-`combat_profiles.json` 当前的普通敌人/军犬感知、11 类攻击距离、普通伤害、直接 actor 命中数、坐标弹道数、弹药物品 ID、每次消耗和末帧提交语义来自 `M1937.exe` 字段级逆向，不能随意当作手感参数改写。`LegacyCombatRules` 固定 `sub_456DF0` 的步枪 attacker runtime type 1（16 点）、匕首 attacker runtime type 56（1 点）、机枪直接 actor 只结算一次，以及 `sub_458700` 的八类低于 32 伤害免疫；不得重新把机枪三条坐标散布弹道解释为同一 actor 三次扣血。每个新战斗字段都必须标记 `recovered`、`recovered_with_unresolved_override` 或 `unresolved_remake_default`。原版已确认不存在弹匣/备弹/装填抽象；正式关卡必须使用 `original_initial_weapon_inventory.json` 的直接数量和模式，profile 中旧字段只供 schema 1 迁移及合成测试兼容。十类场景拾取的 DBL `header[2]` 物品 ID、`sub_45AE10` 容器/mode 和 `sub_453F70` 单件数量已经恢复；type 1/2/3/6/7/9 的 delivery mode、逐 tick 步长、目标格门、机枪散布、actor/GFL、碰撞顺序、伤害、actor 60 火花、手榴弹抛物线/终点爆炸和 SPR 发射锚点也已恢复，不再使用速度、弧高、碰撞半径或落地延时等重制参数。拾取点击与敌军取物的 32×16 邻格、朝向扇区及 L2 遮挡也已恢复；物品 33/48/49/52/82/83 另有六组原版/Remake 零差异轨迹。仍为重制默认的是汽油桶数值；爆炸对地形/遮挡的原规则及 AI 战术层的包抄/让路决策仍待恢复。普通警戒听觉已确认不做障碍遮挡，尸体发现也已进入原版生命周期。
+`combat_profiles.json` 当前的普通敌人/军犬感知、11 类攻击距离、普通伤害、直接 actor 命中数、坐标弹道数、弹药物品 ID、每次消耗和末帧提交语义来自 `M1937.exe` 字段级逆向，不能随意当作手感参数改写。`LegacyCombatRules` 固定 `sub_456DF0` 的步枪 attacker runtime type 1（16 点）、匕首 attacker runtime type 56（1 点）、机枪直接 actor 只结算一次，以及 `sub_458700` 的八类低于 32 伤害免疫；不得重新把机枪三条坐标散布弹道解释为同一 actor 三次扣血。每个新战斗字段都必须标记 `recovered`、`recovered_with_unresolved_override` 或 `unresolved_remake_default`。原版已确认不存在弹匣/备弹/装填抽象；正式关卡必须使用 `original_initial_weapon_inventory.json` 的直接数量和模式，profile 中旧字段只供 schema 1 迁移及合成测试兼容。十类场景拾取的 DBL `header[2]` 物品 ID、`sub_45AE10` 容器/mode 和 `sub_453F70` 单件数量已经恢复；type 1/2/3/6/7/9 的 delivery mode、逐 tick 步长、目标格门、机枪散布、actor/GFL、碰撞顺序、伤害、actor 60 火花、手榴弹抛物线/终点爆炸和 SPR 发射锚点也已恢复，不再使用速度、弧高、碰撞半径或落地延时等重制参数。拾取点击与敌军取物的 32×16 邻格、朝向扇区及 L2 遮挡也已恢复；物品 33/48/49/52/82/83 另有六组原版/Remake 零差异轨迹。汽油桶的 35 条 actor 53 / 8 HP 状态、任意生命变化触发、效果类型 5→actor 62 以及完整爆炸参数已经恢复；爆炸对地形/遮挡的原规则及 AI 战术层的包抄/让路决策仍待恢复。普通警戒听觉已确认不做障碍遮挡，尸体发现也已进入原版生命周期。
 
 type 8/10/11 已由专用运行时接管：type 8 创建 actor 84 / GFL 470、消费物品 43，并由存活 faction 1 进入 32×16 椭圆触发；type 10 创建 actor 85 / GFL 900、消费物品 45，在第 100 个 world tick 爆炸；二者随后创建 actor 62，主爆炸在 128×64 等距椭圆内造成 128 伤害并传播 800 半径警报，另按运行时 actor type 执行两组已恢复的 128 伤害带。效果 11/15 会按逐关原版启动检查点继续的 MSVCRT LCG 尝试 1—2 个 64×32 散布粒子，首匹配 GFL 动画完整播放 5 轮并在 90/150 tick 清理；全局随机状态进入 `GameSessionState`。type 11 不直接结算伤害、不消费物品 99；它设置目标 `+656/+0x290` 为注意力保持，暂停普通空闲移动并面向专用来源，来源开始移动或目标进入战斗状态时释放，不存在 180 tick 超时。活跃对象与状态均进入 `GameSessionState`。十二关启动流、首个完整更新轮次的 769 条调用和首批 AI/物品消费者已恢复；首轮观察门结果和 76 名绑定角色的路线等待、追击、候选扫描、阻塞重试及次级搜索更新后状态会应用到精确 runtime actor。m000 的 710 轮时间戳基线进一步证明观察门和主候选扫描按 59.930491 Hz 角色更新持续消费，Remake 已按 60 Hz 接线并保存相位。十二关无输入窗口现固定 5,845 个完整轮次；m000 另固定 413 轮、24,586 次调用的短移动输入分支。移动确认不在输入处理函数立即抽取随机数，而是排入被选 actor 18 的待确认队列，在它自己的更新槽调用 `0x5D7CF`；分支 ID、活动状态、待确认数量和序号均随 `GameSessionState` 保存。尚未取证的随机选择、战斗、拾取/丢弃和存读档输入仍可能改变长时实机调用时刻，不得扩张这条短分支的结论。详见 [原版行为取证摘要](ORIGINAL_BEHAVIOR_FORENSICS.md)和[原版全局随机流恢复](ORIGINAL_CRT_RANDOM_STREAM.md)。
 
@@ -277,7 +277,7 @@ m004 的计划书来源已由物品 101/VWF 携带记录定案为 scene 2637；�
 
 - 关卡、任务耗时、完成/进度/去重、失败和持久事实；
 - 队员/敌人/护送角色的位置、阵营、生命/死亡、选择、背包/武器/弹药，以及 AI 巡逻/搜索和护送关系；
-- 已激活任务 scene、公共物品、剩余拾取物、可爆物状态、任务掉落、地雷、type 8/10 世界对象、type 11 状态和未结算投射物；
+- 已激活任务 scene、公共物品、剩余拾取物、可爆物状态、任务掉落、type 8 地雷/type 10 定时世界对象、type 11 状态和未结算投射物；
 - 已掩埋敌人的 scene 索引、type 78/GFL 64 藏尸处双容器和未完成 B 命令的执行者/目标/计数，读取后保持一致；type 90/GFL 341 观察标记按原版明确不保存；
 - 十二关导演节拍/教程门控/持久事件/计时、AI 姿态/增援预算/命令序号；
 - 镜头和战役完成/解锁进度。

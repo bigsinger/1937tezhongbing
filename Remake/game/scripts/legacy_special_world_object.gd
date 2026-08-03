@@ -531,6 +531,13 @@ func _physics_process(_delta: float) -> void:
 func _trigger_and_detonate(candidate: Node2D) -> void:
 	if state != State.ACTIVE:
 		return
+	# A placed object outlives its deploying actor across deaths and checkpoint
+	# restores. Godot keeps a freed Object sentinel in the typed owner slot; a
+	# typed signal cannot marshal that sentinel as Node2D. Native explosions do
+	# not require the owner pointer, so emit null once the actor is gone.
+	var valid_owner: Node2D = null
+	if owner_actor != null and is_instance_valid(owner_actor):
+		valid_owner = owner_actor
 	trigger_target = candidate
 	restored_trigger_scene_index = (
 		int(candidate.get("scene_index"))
@@ -543,7 +550,7 @@ func _trigger_and_detonate(candidate: Node2D) -> void:
 	resolved_world_ticks = 0
 	explosion_requested.emit(
 		self,
-		owner_actor,
+		valid_owner,
 		global_position,
 		blast_damage,
 		blast_horizontal_radius,

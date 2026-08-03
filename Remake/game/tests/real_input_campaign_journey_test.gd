@@ -371,8 +371,15 @@ func _exercise_level(main: Node, level_index: int) -> void:
 			and main.game_shell.is_failure_open(),
 		"%s failure automatically opens the grey failure menu" % level_id,
 	)
-	var restart_button := main.game_shell.get("_restart_button") as Button
-	_expect(restart_button != null, "%s failure menu owns a restart button" % level_id)
+	# FAILURE renders the original TextureButton surface; the modern Button is
+	# owned by the hidden secondary menu and cannot receive keyboard focus here.
+	var restart_button := (
+		main.game_shell.get("_failure_restart_button") as BaseButton
+	)
+	_expect(
+		restart_button != null and restart_button.is_visible_in_tree(),
+		"%s visible original failure menu owns a restart button" % level_id,
+	)
 	if restart_button != null:
 		restart_button.grab_focus()
 		await _tap_key(KEY_ENTER)
@@ -381,8 +388,16 @@ func _exercise_level(main: Node, level_index: int) -> void:
 			str(main.current_mission.get("id", "")) == level_id
 				and not main.current_mission_state.is_failed()
 				and int(main.game_shell.get("overlay_mode")) == OVERLAY_NONE,
-			"%s Enter on the focused restart control starts a fresh mission"
-				% level_id,
+			(
+				"%s Enter on the focused original restart control starts a fresh "
+				+ "mission (mission=%s, failed=%s, overlay=%d)"
+			)
+				% [
+					level_id,
+					str(main.current_mission.get("id", "")),
+					str(main.current_mission_state.is_failed()),
+					int(main.game_shell.get("overlay_mode")),
+				],
 		)
 
 	trace_records.append(
