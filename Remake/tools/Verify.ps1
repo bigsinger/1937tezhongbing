@@ -54,6 +54,7 @@ else {
 & (Join-Path $PSScriptRoot 'Test-VisualParityBaseline.ps1')
 & (Join-Path $PSScriptRoot 'Test-OriginalOverlayAssetBaseline.ps1')
 & (Join-Path $PSScriptRoot 'Test-OriginalOverlayVisualParityBaseline.ps1')
+& (Join-Path $PSScriptRoot 'Test-OriginalHudVisualParityBaseline.ps1')
 
 $modResource = Join-Path `
     ([System.IO.Path]::GetDirectoryName($remakeRoot)) `

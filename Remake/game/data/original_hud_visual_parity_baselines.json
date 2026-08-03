@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "baseline_id": "stable-mod-original-hud-visual-parity-v1",
+  "content_profile": "repository-mod-12-level-20260729",
+  "captured_utc": "2026-08-03T04:40:36.9076757Z",
+  "method": "stable MOD cnc-ddraw RGB565 primary-surface memory versus Remake target viewport; native-pixel HUD crops; source UI resources recovered by static executable analysis",
+  "input_isolation": "offline surface evidence and offscreen Remake viewport capture; no global mouse, keyboard or focus input",
+  "original_binary_images_committed": false,
+  "coverage_note": "The two top samples cover an idle one-actor mission and the original three-actor ordering with a visible pistol quantity. Bottom samples cover the complete 1024x62 bar plus the native left and right control islands after extension to 1920x1080.",
+  "samples": [
+    {
+      "sample": "top_m000_idle",
+      "comparison_scope": "native_status_crop",
+      "dimensions": [50, 20],
+      "metrics": {
+        "mean_absolute_error": 3.312,
+        "near_match_ratio": 0.944,
+        "edge_correlation": 0.996246,
+        "black_hole_ratio": 0.0
+      },
+      "thresholds": {
+        "maximum_mean_absolute_error": 6.0,
+        "minimum_near_match_ratio": 0.92,
+        "minimum_edge_correlation": 0.94,
+        "maximum_black_hole_ratio": 0.003
+      },
+      "stable_mod_sha256": "4D23AAE2CDA799F1FC906671AD30051D7F562F73FD8304857A73C245DF2DF981",
+      "remake_sha256": "85E3A6BE1675ED3CE517B27313A82EDF99D366D599724EA782D66285BCA38D88",
+      "passed": true
+    },
+    {
+      "sample": "top_m001_ammo",
+      "comparison_scope": "native_status_crop",
+      "dimensions": [150, 20],
+      "metrics": {
+        "mean_absolute_error": 4.296778,
+        "near_match_ratio": 0.959333,
+        "edge_correlation": 0.99618,
+        "black_hole_ratio": 0.0
+      },
+      "thresholds": {
+        "maximum_mean_absolute_error": 6.0,
+        "minimum_near_match_ratio": 0.92,
+        "minimum_edge_correlation": 0.94,
+        "maximum_black_hole_ratio": 0.003
+      },
+      "stable_mod_sha256": "3B380CCC59415FC52982DA58F06CD4519F9B46FF10EBF99294D0BEDBDC3AEA0E",
+      "remake_sha256": "3F51491EF2CA01720F8D9940419E470188C7E8E972C36C43DE13534E11DFC704",
+      "passed": true
+    },
+    {
+      "sample": "bottom_1024_full",
+      "comparison_scope": "complete_bottom_bar",
+      "dimensions": [1024, 62],
+      "metrics": {
+        "mean_absolute_error": 2.18782,
+        "near_match_ratio": 0.98354,
+        "edge_correlation": 0.960633,
+        "black_hole_ratio": 0.00085055
+      },
+      "thresholds": {
+        "maximum_mean_absolute_error": 6.0,
+        "minimum_near_match_ratio": 0.92,
+        "minimum_edge_correlation": 0.94,
+        "maximum_black_hole_ratio": 0.003
+      },
+      "stable_mod_sha256": "E059FBCC1622C9884409EABBAB3208AD5AB1F112F022B4F9F1D3C93AF334C30B",
+      "remake_sha256": "3E3D131D6070967FC1621F01F335CEE389087D400AB5DC6A2923A457F22001C6",
+      "passed": true
+    },
+    {
+      "sample": "bottom_1920_left",
+      "comparison_scope": "native_left_island_after_width_extension",
+      "dimensions": [512, 62],
+      "metrics": {
+        "mean_absolute_error": 2.034201,
+        "near_match_ratio": 0.983115,
+        "edge_correlation": 0.956081,
+        "black_hole_ratio": 0.00085055
+      },
+      "thresholds": {
+        "maximum_mean_absolute_error": 6.0,
+        "minimum_near_match_ratio": 0.92,
+        "minimum_edge_correlation": 0.94,
+        "maximum_black_hole_ratio": 0.003
+      },
+      "stable_mod_sha256": "56F5AED6C9AA3EA9F3D8BFF93BC4A84AE21039506290F061407B9EC4E64183F0",
+      "remake_sha256": "AF6FD510CE328AEB0B0D2CDB5A803173F1B4656C63A0D56E3639C0A098A97302",
+      "passed": true
+    },
+    {
+      "sample": "bottom_1920_actions",
+      "comparison_scope": "native_right_action_island_after_width_extension",
+      "dimensions": [150, 50],
+      "metrics": {
+        "mean_absolute_error": 3.093111,
+        "near_match_ratio": 0.987067,
+        "edge_correlation": 0.992929,
+        "black_hole_ratio": 0.0
+      },
+      "thresholds": {
+        "maximum_mean_absolute_error": 6.0,
+        "minimum_near_match_ratio": 0.92,
+        "minimum_edge_correlation": 0.94,
+        "maximum_black_hole_ratio": 0.003
+      },
+      "stable_mod_sha256": "EB4A60F35ED17097DA801EA48264AF584455524B08E97171B25EAC89056B719E",
+      "remake_sha256": "9E8E1EFF01674B7B50D83E6FC9A3A94F411FBB81AAF2F8EFEBFCB5E02E819C12",
+      "passed": true
+    }
+  ],
+  "passed": true
+}

@@ -2740,7 +2740,11 @@ func _init() -> void:
 	main.create_interface()
 	main.spawn_squad()
 	expect(main.units.size() == 5, "prototype creates five squad members", failures)
-	expect(main.selected_units.size() == 1, "prototype selects one member initially", failures)
+	expect(
+		main.selected_units.is_empty(),
+		"original startup leaves the squad unselected until player input",
+		failures,
+	)
 	main.clear_selection()
 	for unit in main.units:
 		main.handle_selection(unit.position, true)
@@ -2757,7 +2761,11 @@ func _init() -> void:
 	expect(issued_targets.size() == 5, "issued corner targets stay unique", failures)
 	main.spawn_squad()
 	expect(main.units.size() == 5, "reset restores five squad members", failures)
-	expect(main.selected_units.size() == 1, "reset restores initial selection", failures)
+	expect(
+		main.selected_units.is_empty(),
+		"reset restores the original unselected startup state",
+		failures,
+	)
 	main.free()
 
 	if failures.is_empty():

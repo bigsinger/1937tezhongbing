@@ -23,6 +23,11 @@ func _run() -> void:
 	var main = MAIN_SCENE.instantiate()
 	root.add_child(main)
 	await process_frame
+	var modern_debug_hud := main.get_node_or_null("ModernDebugHud") as CanvasLayer
+	_expect(
+		modern_debug_hud != null and not modern_debug_hud.visible,
+		"prototype-only text HUD is hidden in the normal product path",
+	)
 	_expect(
 		main.startup_level_selection_pending
 		and main.game_shell.overlay_mode == GAME_SHELL_SCRIPT.OverlayMode.LEVEL_SELECTOR
@@ -45,6 +50,10 @@ func _run() -> void:
 		"choosing a startup mission enters its normal level-loading path",
 	)
 	await _dismiss_startup_media(main)
+	_expect(
+		main.selected_units.is_empty(),
+		"mission startup preserves the original idle portraits until player selection",
+	)
 	_expect(await _wait_for_render_frame(), "initial product frame renders")
 	var hud_layout: Dictionary = main.game_shell.original_hud_layout_snapshot()
 	_expect(bool(hud_layout.get("assets_ready", false)), "original HUD assets load")
@@ -56,6 +65,20 @@ func _run() -> void:
 	_expect(
 		_visible_hud_portrait_count(hud_layout) == 1,
 		"m000 HUD exposes its one original playable actor",
+	)
+	_expect(
+		bool(hud_layout.get("top_visible", false))
+		and _visible_hud_status_count(hud_layout) == 1,
+		"m000 HUD exposes its one matching original top ammo cell",
+	)
+	var m000_status := (
+		(hud_layout.get("status_cells", {}) as Dictionary).get("强子", {})
+		as Dictionary
+	)
+	_expect(
+		(m000_status.get("rect", Rect2()) as Rect2)
+		== Rect2(53.0, 1.0, 50.0, 20.0),
+		"top ammo cell keeps the recovered native-pixel anchor",
 	)
 	_expect(
 		(hud_layout.get("actions", {}) as Dictionary).size() == 3,
@@ -263,6 +286,14 @@ func _visible_hud_portrait_count(layout: Dictionary) -> int:
 	return count
 
 
+func _visible_hud_status_count(layout: Dictionary) -> int:
+	var count := 0
+	for raw_status: Variant in (layout.get("status_cells", {}) as Dictionary).values():
+		if bool((raw_status as Dictionary).get("visible", false)):
+			count += 1
+	return count
+
+
 func _original_pause_layout_matches_viewport(
 	layout: Dictionary,
 	viewport_size: Vector2,
@@ -399,11 +430,23 @@ func _write_hud_layout(file_name: String, layout: Dictionary) -> void:
 		"viewport": {"width": root.size.x, "height": root.size.y},
 		"assets_ready": bool(layout.get("assets_ready", false)),
 		"visible": bool(layout.get("visible", false)),
+		"top_visible": bool(layout.get("top_visible", false)),
 		"height": float(layout.get("height", 0.0)),
 		"bar_rect": _rect_record(layout.get("bar_rect", Rect2()) as Rect2),
+		"status_cells": {},
 		"portraits": {},
 		"actions": {},
 	}
+	for actor_name: String in (layout.get("status_cells", {}) as Dictionary):
+		var status := (
+			(layout.get("status_cells", {}) as Dictionary)[actor_name]
+			as Dictionary
+		)
+		encoded["status_cells"][actor_name] = {
+			"visible": bool(status.get("visible", false)),
+			"ammo_text": str(status.get("ammo_text", "")),
+			"rect": _rect_record(status.get("rect", Rect2()) as Rect2),
+		}
 	for actor_name: String in (layout.get("portraits", {}) as Dictionary):
 		var portrait := (
 			(layout.get("portraits", {}) as Dictionary)[actor_name]

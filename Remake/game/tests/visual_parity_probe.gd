@@ -66,7 +66,10 @@ func _run_probe() -> void:
 	await process_frame
 	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
 	DisplayServer.window_set_size(Vector2i(expected_width, expected_height))
-	DisplayServer.window_set_position(Vector2i(3000, 100))
+	# Keep automated captures completely outside every normal desktop work area.
+	# The probe reads its own viewport texture and never needs a visible window
+	# or any global mouse movement.
+	DisplayServer.window_set_position(Vector2i(30000, 30000))
 	root.content_scale_size = Vector2i(expected_width, expected_height)
 	await process_frame
 	await process_frame

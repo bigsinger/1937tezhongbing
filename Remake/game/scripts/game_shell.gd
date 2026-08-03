@@ -72,6 +72,13 @@ const ORIGINAL_HUD_PORTRAITS := {
 	"古明": {"dead": 1154, "idle": 1155, "selected": 1156},
 	"大牛": {"dead": 1126, "idle": 1127, "selected": 1128},
 }
+const ORIGINAL_HUD_AMMO_STATUS := {
+	"老赵": 1186,
+	"铁蛋": 1214,
+	"强子": 1197,
+	"古明": 1153,
+	"大牛": 1125,
+}
 const ORIGINAL_HUD_ACTIONS: Array[Dictionary] = [
 	{
 		"action": "observation",
@@ -128,6 +135,10 @@ var settings: Dictionary = {}
 
 var _root: Control
 var _hud_root: Control
+var _original_top_hud: Control
+var _original_hud_status_row: HBoxContainer
+var _original_hud_status_controls: Dictionary = {}
+var _original_hud_ammo_font: SystemFont
 var _original_bottom_hud: Control
 var _original_hud_background: NinePatchRect
 var _original_hud_border: NinePatchRect
@@ -321,6 +332,13 @@ func configure_original_hud_assets(converted_root: String) -> bool:
 			if _load_original_hud_texture("psd", int(portrait[state])) == null:
 				_update_original_hud_visibility()
 				return false
+		if (
+			_load_original_hud_texture(
+				"psd", int(ORIGINAL_HUD_AMMO_STATUS[actor_name])
+			) == null
+		):
+			_update_original_hud_visibility()
+			return false
 	for descriptor: Dictionary in ORIGINAL_HUD_ACTIONS:
 		var action := str(descriptor["action"])
 		var button := _original_hud_action_buttons.get(action) as TextureButton
@@ -360,6 +378,7 @@ func configure_original_hud_assets(converted_root: String) -> bool:
 
 	_original_hud_assets_ready = true
 	_update_original_hud_portrait_textures()
+	_update_original_hud_status_textures()
 	_update_original_hud_visibility()
 	return true
 
@@ -519,6 +538,13 @@ func update_original_hud(actor_states: Array) -> void:
 		var actor_name := str(state.get("name", ""))
 		if ORIGINAL_HUD_PORTRAITS.has(actor_name):
 			by_name[actor_name] = state
+	for actor_name: String in _original_hud_status_controls:
+		var status_controls := (
+			_original_hud_status_controls[actor_name] as Dictionary
+		)
+		var status_container := status_controls.get("container") as Control
+		status_container.visible = false
+		(status_controls.get("ammo_label") as Label).text = ""
 	for actor_name: String in ORIGINAL_HUD_PORTRAITS:
 		var controls := _original_hud_portrait_controls.get(actor_name) as Dictionary
 		if controls == null:
@@ -530,21 +556,31 @@ func update_original_hud(actor_states: Array) -> void:
 			continue
 		controls["alive"] = bool(state.get("alive", true))
 		controls["selected"] = bool(state.get("selected", false))
+		var status_controls := (
+			_original_hud_status_controls.get(actor_name) as Dictionary
+		)
+		if status_controls != null:
+			var status_container := status_controls.get("container") as Control
+			status_container.visible = true
+			(status_controls.get("ammo_label") as Label).text = str(
+				state.get("ammo_text", "")
+			)
 		var ratio := clampf(float(state.get("health_ratio", 1.0)), 0.0, 1.0)
 		var health_fill := controls.get("health_fill") as ColorRect
-		var height := 50.0 * ratio
-		health_fill.position = Vector2(51.0, 50.0 - height)
-		health_fill.size = Vector2(4.0, height)
+		var height := 32.0 * ratio
+		health_fill.position = Vector2(43.0, 46.0 - height)
+		health_fill.size = Vector2(3.0, height)
 		health_fill.color = (
-			Color(0.18, 0.9, 0.3, 1.0)
+			Color.GREEN
 			if ratio > 0.5
-			else Color(0.95, 0.78, 0.18, 1.0)
+			else Color.YELLOW
 			if ratio > 0.25
-			else Color(0.92, 0.2, 0.16, 1.0)
+			else Color.RED
 		)
 		var button := controls.get("button") as TextureButton
 		button.tooltip_text = "%s　生命 %d%%" % [actor_name, roundi(ratio * 100.0)]
 	_update_original_hud_portrait_textures()
+	_update_original_hud_status_textures()
 	set_original_hud_visible(not by_name.is_empty())
 
 
@@ -555,6 +591,16 @@ func set_original_hud_action_state(action: String, active: bool) -> void:
 
 
 func original_hud_layout_snapshot() -> Dictionary:
+	var status_cells: Dictionary = {}
+	for actor_name: String in _original_hud_status_controls:
+		var controls := _original_hud_status_controls[actor_name] as Dictionary
+		var container := controls.get("container") as Control
+		var ammo_label := controls.get("ammo_label") as Label
+		status_cells[actor_name] = {
+			"visible": container.visible,
+			"rect": container.get_global_rect(),
+			"ammo_text": ammo_label.text,
+		}
 	var portraits: Dictionary = {}
 	for actor_name: String in _original_hud_portrait_controls:
 		var controls := _original_hud_portrait_controls[actor_name] as Dictionary
@@ -573,6 +619,8 @@ func original_hud_layout_snapshot() -> Dictionary:
 		}
 	return {
 		"assets_ready": _original_hud_assets_ready,
+		"top_visible": _original_top_hud != null and _original_top_hud.visible,
+		"status_cells": status_cells,
 		"visible": _original_bottom_hud != null and _original_bottom_hud.visible,
 		"height": ORIGINAL_BOTTOM_HUD_HEIGHT,
 		"bar_rect": (
@@ -1452,6 +1500,7 @@ func _build_interface() -> void:
 	_hud_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_hud_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_hud_root)
+	_build_original_top_hud()
 	_build_original_bottom_hud()
 
 	_root = Control.new()
@@ -1485,6 +1534,69 @@ func _build_interface() -> void:
 	_root.visible = false
 
 
+func _build_original_top_hud() -> void:
+	_original_top_hud = Control.new()
+	_original_top_hud.name = "OriginalTopHud"
+	_original_top_hud.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_original_top_hud.position = Vector2(53.0, 1.0)
+	_original_top_hud.size = Vector2(250.0, 20.0)
+	_original_top_hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_original_top_hud.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_original_top_hud.visible = false
+	_hud_root.add_child(_original_top_hud)
+
+	_original_hud_ammo_font = SystemFont.new()
+	_original_hud_ammo_font.font_names = PackedStringArray([
+		"SimSun",
+		"宋体",
+		"Arial",
+	])
+	_original_hud_status_row = HBoxContainer.new()
+	_original_hud_status_row.name = "OriginalHudAmmoStatus"
+	_original_hud_status_row.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_original_hud_status_row.position = Vector2.ZERO
+	_original_hud_status_row.size = Vector2(250.0, 20.0)
+	_original_hud_status_row.add_theme_constant_override("separation", 0)
+	_original_hud_status_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_original_top_hud.add_child(_original_hud_status_row)
+	for actor_name: String in ORIGINAL_HUD_PORTRAITS:
+		_build_original_hud_status(actor_name)
+
+
+func _build_original_hud_status(actor_name: String) -> void:
+	var container := Control.new()
+	container.name = "OriginalHudAmmo_%s" % actor_name
+	container.custom_minimum_size = Vector2(50.0, 20.0)
+	container.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	container.visible = false
+	_original_hud_status_row.add_child(container)
+
+	var texture := TextureRect.new()
+	texture.name = "StatusTexture"
+	texture.position = Vector2.ZERO
+	texture.size = Vector2(50.0, 20.0)
+	texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	texture.stretch_mode = TextureRect.STRETCH_KEEP
+	texture.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	container.add_child(texture)
+
+	var ammo_label := Label.new()
+	ammo_label.name = "AmmoCount"
+	ammo_label.position = Vector2(17.0, 2.0)
+	ammo_label.size = Vector2(33.0, 20.0)
+	ammo_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ammo_label.add_theme_font_override("font", _original_hud_ammo_font)
+	ammo_label.add_theme_font_size_override("font_size", 16)
+	ammo_label.add_theme_color_override("font_color", Color.RED)
+	ammo_label.add_theme_constant_override("outline_size", 0)
+	container.add_child(ammo_label)
+	_original_hud_status_controls[actor_name] = {
+		"container": container,
+		"texture": texture,
+		"ammo_label": ammo_label,
+	}
+
+
 func _build_original_bottom_hud() -> void:
 	_original_bottom_hud = Control.new()
 	_original_bottom_hud.name = "OriginalBottomHud"
@@ -1503,6 +1615,9 @@ func _build_original_bottom_hud() -> void:
 	_original_hud_background.patch_margin_right = 27
 	_original_hud_background.patch_margin_top = 2
 	_original_hud_background.patch_margin_bottom = 3
+	_original_hud_background.axis_stretch_horizontal = (
+		NinePatchRect.AXIS_STRETCH_MODE_TILE
+	)
 	_original_hud_background.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_original_bottom_hud.add_child(_original_hud_background)
 
@@ -1513,6 +1628,9 @@ func _build_original_bottom_hud() -> void:
 	_original_hud_border.patch_margin_right = 27
 	_original_hud_border.patch_margin_top = 3
 	_original_hud_border.patch_margin_bottom = 4
+	_original_hud_border.axis_stretch_horizontal = (
+		NinePatchRect.AXIS_STRETCH_MODE_TILE
+	)
 	_original_hud_border.draw_center = false
 	_original_hud_border.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_original_bottom_hud.add_child(_original_hud_border)
@@ -1538,11 +1656,11 @@ func _build_original_bottom_hud() -> void:
 	_original_hud_portrait_row = HBoxContainer.new()
 	_original_hud_portrait_row.name = "OriginalHudPortraits"
 	_original_hud_portrait_row.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	_original_hud_portrait_row.offset_left = 5.0
+	_original_hud_portrait_row.offset_left = 10.0
 	_original_hud_portrait_row.offset_top = 6.0
-	_original_hud_portrait_row.offset_right = 5.0 + (57.0 * 5.0)
+	_original_hud_portrait_row.offset_right = 10.0 + (50.0 * 5.0)
 	_original_hud_portrait_row.offset_bottom = 56.0
-	_original_hud_portrait_row.add_theme_constant_override("separation", 2)
+	_original_hud_portrait_row.add_theme_constant_override("separation", 0)
 	_original_hud_portrait_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_original_bottom_hud.add_child(_original_hud_portrait_row)
 	for actor_name: String in ORIGINAL_HUD_PORTRAITS:
@@ -1553,9 +1671,9 @@ func _build_original_bottom_hud() -> void:
 	_original_hud_action_row.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	_original_hud_action_row.offset_left = -160.0
 	_original_hud_action_row.offset_top = 6.0
-	_original_hud_action_row.offset_right = -4.0
+	_original_hud_action_row.offset_right = -10.0
 	_original_hud_action_row.offset_bottom = 56.0
-	_original_hud_action_row.add_theme_constant_override("separation", 2)
+	_original_hud_action_row.add_theme_constant_override("separation", 0)
 	_original_hud_action_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_original_bottom_hud.add_child(_original_hud_action_row)
 	for descriptor: Dictionary in ORIGINAL_HUD_ACTIONS:
@@ -1565,7 +1683,7 @@ func _build_original_bottom_hud() -> void:
 func _build_original_hud_portrait(actor_name: String) -> void:
 	var container := Control.new()
 	container.name = "OriginalHudPortrait_%s" % actor_name
-	container.custom_minimum_size = Vector2(57.0, 50.0)
+	container.custom_minimum_size = Vector2(50.0, 50.0)
 	container.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	container.visible = false
 	_original_hud_portrait_row.add_child(container)
@@ -1582,17 +1700,17 @@ func _build_original_hud_portrait(actor_name: String) -> void:
 
 	var health_back := ColorRect.new()
 	health_back.name = "HealthBackground"
-	health_back.position = Vector2(51.0, 0.0)
-	health_back.size = Vector2(4.0, 50.0)
-	health_back.color = Color(0.025, 0.035, 0.025, 0.95)
+	health_back.position = Vector2(42.0, 13.0)
+	health_back.size = Vector2(5.0, 34.0)
+	health_back.color = Color.BLACK
 	health_back.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	container.add_child(health_back)
 
 	var health_fill := ColorRect.new()
 	health_fill.name = "HealthFill"
-	health_fill.position = Vector2(51.0, 0.0)
-	health_fill.size = Vector2(4.0, 50.0)
-	health_fill.color = Color(0.18, 0.9, 0.3, 1.0)
+	health_fill.position = Vector2(43.0, 14.0)
+	health_fill.size = Vector2(3.0, 32.0)
+	health_fill.color = Color.GREEN
 	health_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	container.add_child(health_fill)
 	_original_hud_portrait_controls[actor_name] = {
@@ -1640,6 +1758,17 @@ func _update_original_hud_portrait_textures() -> void:
 		var button := controls.get("button") as TextureButton
 		button.texture_normal = _load_original_hud_texture(
 			"psd", int(portrait[state])
+		)
+
+
+func _update_original_hud_status_textures() -> void:
+	if not _original_hud_assets_ready:
+		return
+	for actor_name: String in _original_hud_status_controls:
+		var controls := _original_hud_status_controls[actor_name] as Dictionary
+		var texture := controls.get("texture") as TextureRect
+		texture.texture = _load_original_hud_texture(
+			"psd", int(ORIGINAL_HUD_AMMO_STATUS[actor_name])
 		)
 
 
@@ -1715,6 +1844,10 @@ func _load_original_color_keyed_hud_texture(
 
 
 func _update_original_hud_visibility() -> void:
+	if _original_top_hud != null:
+		_original_top_hud.visible = (
+			_original_hud_assets_ready and _original_hud_requested_visible
+		)
 	if _original_bottom_hud != null:
 		_original_bottom_hud.visible = (
 			_original_hud_assets_ready and _original_hud_requested_visible

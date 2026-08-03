@@ -17,14 +17,19 @@ const PSD_TEXTURE_IDS: Array[int] = [
 	1101, 1102, 1103, 1104, 1105, 1106,
 	1107, 1108, 1109, 1110, 1112, 1113, 1114, 1115,
 	1126, 1127, 1128,
+	1125,
 	1129,
 	1138,
 	1143, 1144,
 	1154, 1155, 1156,
+	1153,
 	1160, 1161,
 	1187, 1188, 1189,
+	1186,
 	1198, 1199, 1200,
+	1197,
 	1215, 1216, 1217,
+	1214,
 	1232, 1233,
 	1254,
 	1260, 1261,
@@ -61,11 +66,11 @@ func _run() -> void:
 		"synthetic original HUD asset set loads",
 	)
 	shell.update_original_hud([
-		{"name": "老赵", "alive": true, "selected": true, "health_ratio": 1.0},
-		{"name": "铁蛋", "alive": true, "selected": false, "health_ratio": 0.75},
-		{"name": "强子", "alive": true, "selected": false, "health_ratio": 0.5},
-		{"name": "古明", "alive": true, "selected": false, "health_ratio": 0.25},
-		{"name": "大牛", "alive": false, "selected": false, "health_ratio": 0.0},
+		{"name": "老赵", "alive": true, "selected": true, "health_ratio": 1.0, "ammo_text": ""},
+		{"name": "铁蛋", "alive": true, "selected": false, "health_ratio": 0.75, "ammo_text": ""},
+		{"name": "强子", "alive": true, "selected": false, "health_ratio": 0.5, "ammo_text": "50"},
+		{"name": "古明", "alive": true, "selected": false, "health_ratio": 0.25, "ammo_text": "30"},
+		{"name": "大牛", "alive": false, "selected": false, "health_ratio": 0.0, "ammo_text": ""},
 	])
 	await process_frame
 	await _check_layout(shell, Vector2i(1024, 768))
@@ -105,6 +110,14 @@ func _check_layout(shell: GameShell, viewport_size: Vector2i) -> void:
 	var expected_bar := _rect_from_record(expected.get("bar_rect", {}) as Dictionary)
 	_expect(bool(layout.get("assets_ready", false)), "HUD assets remain ready")
 	_expect(bool(layout.get("visible", false)), "HUD remains visible")
+	_expect(bool(layout.get("top_visible", false)), "top ammo HUD remains visible")
+	_expect(
+		shell._original_hud_background.axis_stretch_horizontal
+		== NinePatchRect.AXIS_STRETCH_MODE_TILE
+		and shell._original_hud_border.axis_stretch_horizontal
+		== NinePatchRect.AXIS_STRETCH_MODE_TILE,
+		"modern widths tile the recovered stone centre instead of stretching it",
+	)
 	_expect(
 		bar.position.is_equal_approx(expected_bar.position),
 		"HUD starts exactly 62 pixels above the viewport bottom at %s; actual %s"
@@ -124,10 +137,34 @@ func _check_layout(shell: GameShell, viewport_size: Vector2i) -> void:
 			var rect := portrait.get("rect", Rect2()) as Rect2
 			portrait_right = maxf(portrait_right, rect.end.x)
 			_expect(
-				is_equal_approx(rect.size.y, 50.0),
-				"%s portrait keeps the original 50-pixel height" % actor_name,
+				rect.size.is_equal_approx(Vector2(50.0, 50.0)),
+				"%s portrait keeps the original contiguous 50x50 slot" % actor_name,
 			)
 	_expect(visible_portraits == 5, "all five supplied actor portraits are visible")
+	var status_cells := layout.get("status_cells", {}) as Dictionary
+	var visible_status_cells := 0
+	for actor_name: String in PORTRAIT_NAMES:
+		var status := status_cells.get(actor_name, {}) as Dictionary
+		if bool(status.get("visible", false)):
+			visible_status_cells += 1
+			_expect(
+				(status.get("rect", Rect2()) as Rect2).size
+				== Vector2(50.0, 20.0),
+				"%s ammo cell keeps the original 50x20 size" % actor_name,
+			)
+	_expect(visible_status_cells == 5, "all five supplied ammo cells are visible")
+	var first_status := status_cells[PORTRAIT_NAMES[0]] as Dictionary
+	_expect(
+		(first_status.get("rect", Rect2()) as Rect2).is_equal_approx(
+			_rect_from_record(expected.get("first_status_rect", {}) as Dictionary)
+		),
+		"first ammo cell matches the %s pixel baseline" % viewport_key,
+	)
+	_expect(
+		str((status_cells[PORTRAIT_NAMES[2]] as Dictionary).get("ammo_text", "")) == "50"
+		and str((status_cells[PORTRAIT_NAMES[3]] as Dictionary).get("ammo_text", "")) == "30",
+		"top ammo cells expose original quantity text",
+	)
 	var first_portrait := portraits[PORTRAIT_NAMES[0]] as Dictionary
 	_expect(
 		(first_portrait.get("rect", Rect2()) as Rect2).is_equal_approx(
@@ -156,8 +193,8 @@ func _check_layout(shell: GameShell, viewport_size: Vector2i) -> void:
 		action_left = minf(action_left, rect.position.x)
 		action_right = maxf(action_right, rect.end.x)
 	_expect(
-		action_right <= float(viewport_size.x) and action_right >= float(viewport_size.x) - 8.0,
-		"right action cluster remains anchored to the viewport edge; right %.1f / %d"
+		is_equal_approx(action_right, float(viewport_size.x) - 10.0),
+		"right action cluster keeps the recovered ten-pixel inset; right %.1f / %d"
 		% [action_right, viewport_size.x],
 	)
 	_expect(
@@ -523,15 +560,29 @@ func _check_mode_state(shell: GameShell) -> void:
 
 func _check_health_bars(shell: GameShell) -> void:
 	var expected_heights := {
-		"老赵": 50.0,
-		"铁蛋": 37.5,
-		"强子": 25.0,
-		"古明": 12.5,
+		"老赵": 32.0,
+		"铁蛋": 24.0,
+		"强子": 16.0,
+		"古明": 8.0,
 		"大牛": 0.0,
 	}
 	for actor_name: String in expected_heights:
 		var controls := shell._original_hud_portrait_controls[actor_name] as Dictionary
+		var back := controls["health_back"] as ColorRect
 		var fill := controls["health_fill"] as ColorRect
+		_expect(
+			back.position == Vector2(42.0, 13.0)
+			and back.size == Vector2(5.0, 34.0)
+			and back.color == Color.BLACK,
+			"%s health bar keeps the recovered 5x34 in-portrait black frame"
+			% actor_name,
+		)
+		_expect(
+			is_equal_approx(fill.position.x, 43.0)
+			and is_equal_approx(fill.size.x, 3.0)
+			and is_equal_approx(fill.position.y + fill.size.y, 46.0),
+			"%s health fill stays inside the recovered 3x32 interior" % actor_name,
+		)
 		_expect(
 			is_equal_approx(fill.size.y, float(expected_heights[actor_name])),
 			"%s health bar reflects its exact health ratio" % actor_name,
@@ -574,6 +625,8 @@ func _write_fixture_assets(fixture_root: String) -> bool:
 
 func _fixture_psd_size(index: int) -> Vector2i:
 	match index:
+		1125, 1153, 1186, 1197, 1214:
+			return Vector2i(50, 20)
 		1063, 1064:
 			return Vector2i(106, 25)
 		1065, 1066:

@@ -1400,6 +1400,12 @@ func _exit_tree() -> void:
 
 func create_interface() -> void:
 	var canvas := CanvasLayer.new()
+	canvas.name = "ModernDebugHud"
+	# This text layer was useful while the remake was still a prototype, but it
+	# is not part of the original 2001 play surface.  Keep it available for
+	# developers without covering the recovered top HUD/world pixels in normal
+	# product builds.
+	canvas.visible = "--modern-debug-hud" in OS.get_cmdline_user_args()
 	add_child(canvas)
 
 	var title := Label.new()
@@ -2637,8 +2643,11 @@ func spawn_squad() -> void:
 		Time.get_ticks_usec() - spawn_phase_started_usec
 	)
 	spawn_phase_started_usec = Time.get_ticks_usec()
-	if not units.is_empty():
-		select_only(units[0])
+	# The stable MOD exposes every available portrait in its idle (grayscale)
+	# state when a mission first opens.  A character becomes selected only after
+	# an original F2-F6 shortcut or a world/HUD click; initial_camera_focus()
+	# already places the camera over the first available squad member.
+	_refresh_inventory_ui()
 	last_squad_spawn_phase_usec["initial_selection"] = (
 		Time.get_ticks_usec() - spawn_phase_started_usec
 	)
@@ -6403,7 +6412,7 @@ func _on_ammo_changed(unit: Node2D, magazine: int, reserve: int) -> void:
 
 
 func _refresh_inventory_ui() -> void:
-	_refresh_original_bottom_hud()
+	_refresh_original_hud()
 	if inventory_label == null:
 		return
 	var lines: Array[String] = []
@@ -6476,7 +6485,7 @@ func _refresh_inventory_ui() -> void:
 		game_shell.update_inventory(_inventory_grid_model())
 
 
-func _refresh_original_bottom_hud() -> void:
+func _refresh_original_hud() -> void:
 	if game_shell == null:
 		return
 	var actor_states: Array[Dictionary] = []
@@ -6489,10 +6498,22 @@ func _refresh_original_bottom_hud() -> void:
 				break
 		if actor == null:
 			continue
+		var ammo_text := ""
+		if (
+			actor.combat_inventory != null
+			and actor.combat_inventory.original_parity_enabled()
+		):
+			var active_state: Dictionary = actor.combat_inventory.weapon_state(
+				actor.combat_inventory.active_weapon_key()
+			)
+			var quantity_mode := int(active_state.get("quantity_mode", -1))
+			if quantity_mode == 0 or quantity_mode == 2:
+				ammo_text = str(int(active_state.get("quantity", 0)))
 		actor_states.append({
 			"name": actor_name,
 			"alive": actor.is_alive,
 			"selected": selected_units.has(actor),
+			"ammo_text": ammo_text,
 			"health_ratio": (
 				float(actor.current_hit_points)
 				/ maxf(float(actor.maximum_hit_points), 1.0)

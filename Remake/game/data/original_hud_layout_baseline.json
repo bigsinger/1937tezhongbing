@@ -9,9 +9,11 @@
     "left_border_gfl": 1140,
     "right_border_gfl": 1139,
     "height": 62,
+    "ammo_status_size": [50, 20],
+    "ammo_text_offset": [17, 2],
     "action_button_size": 50,
     "portrait_size": 50,
-    "notes": "The 1920x1080 layout preserves native-pixel controls and extends the center background instead of scaling a fixed 1024x768 logical canvas."
+    "notes": "Static analysis of sub_43FB70 and Direct RGB565 surface matching recover 50x20 top ammo cells at x=53/y=1, red quantity text at relative x=17/y=2, contiguous portraits at x=10 with no gaps, a 5x34 black health frame and 3x32 fill inside each 50x50 portrait, contiguous action buttons with a ten-pixel right inset, and a 62-pixel bar. The 1920x1080 layout preserves these native-pixel controls and extends the center background instead of scaling a fixed 1024x768 logical canvas."
   },
   "portrait_order": ["老赵", "铁蛋", "强子", "古明", "大牛"],
   "portrait_gfl": {
@@ -21,6 +23,13 @@
     "古明": {"dead": 1154, "idle": 1155, "selected": 1156},
     "大牛": {"dead": 1126, "idle": 1127, "selected": 1128}
   },
+  "ammo_status_gfl": {
+    "老赵": 1186,
+    "铁蛋": 1214,
+    "强子": 1197,
+    "古明": 1153,
+    "大牛": 1125
+  },
   "actions": [
     {"id": "observation", "normal_gfl": 1160, "active_gfl": 1161},
     {"id": "minimap", "normal_gfl": 1143, "active_gfl": 1144},
@@ -29,20 +38,22 @@
   "viewports": {
     "1024x768": {
       "bar_rect": {"x": 0, "y": 706, "width": 1024, "height": 62},
-      "first_portrait_rect": {"x": 5, "y": 712, "width": 57, "height": 50},
+      "first_status_rect": {"x": 53, "y": 1, "width": 50, "height": 20},
+      "first_portrait_rect": {"x": 10, "y": 712, "width": 50, "height": 50},
       "action_rects": {
         "observation": {"x": 864, "y": 712, "width": 50, "height": 50},
-        "minimap": {"x": 916, "y": 712, "width": 50, "height": 50},
-        "system": {"x": 968, "y": 712, "width": 50, "height": 50}
+        "minimap": {"x": 914, "y": 712, "width": 50, "height": 50},
+        "system": {"x": 964, "y": 712, "width": 50, "height": 50}
       }
     },
     "1920x1080": {
       "bar_rect": {"x": 0, "y": 1018, "width": 1920, "height": 62},
-      "first_portrait_rect": {"x": 5, "y": 1024, "width": 57, "height": 50},
+      "first_status_rect": {"x": 53, "y": 1, "width": 50, "height": 20},
+      "first_portrait_rect": {"x": 10, "y": 1024, "width": 50, "height": 50},
       "action_rects": {
         "observation": {"x": 1760, "y": 1024, "width": 50, "height": 50},
-        "minimap": {"x": 1812, "y": 1024, "width": 50, "height": 50},
-        "system": {"x": 1864, "y": 1024, "width": 50, "height": 50}
+        "minimap": {"x": 1810, "y": 1024, "width": 50, "height": 50},
+        "system": {"x": 1860, "y": 1024, "width": 50, "height": 50}
       }
     }
   }
