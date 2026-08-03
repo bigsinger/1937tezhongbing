@@ -297,6 +297,7 @@ if ($LASTEXITCODE -ne 0) {
 
 if ((-not $SkipRealAssetChecks) -and
     (Test-Path -LiteralPath $realAssetManifest -PathType Leaf)) {
+    & (Join-Path $PSScriptRoot 'Test-OriginalActorStateImport.ps1')
     & (Join-Path $PSScriptRoot 'Build-LevelFidelityBaselines.ps1') -Verify
 
     # This is a quiet, headless state check. It never sends input or attempts

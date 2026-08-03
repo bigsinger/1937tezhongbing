@@ -172,7 +172,7 @@ internal static class Program
                 $"Scene {sceneFilter.Value} is not a present entity slot in {vwfPath}.");
         }
         var factionCounts = sceneList.Entities
-            .GroupBy(entity => entity.ExtendedFields.Count > 8 ? entity.ExtendedFields[8] : 0)
+            .GroupBy(entity => entity.DatabaseEntry?.FactionId ?? 0)
             .OrderBy(group => group.Key)
             .ToDictionary(group => group.Key, group => group.Count());
 
@@ -210,9 +210,7 @@ internal static class Program
                 "Entities: scene,database_id,world_x,world_y,reference_x,reference_y,direction,faction,death");
             foreach (var entity in selectedEntities)
             {
-                var faction = entity.ExtendedFields.Count > 8
-                    ? entity.ExtendedFields[8]
-                    : 0;
+                var faction = entity.DatabaseEntry?.FactionId ?? 0;
                 Console.WriteLine(
                     $"  {entity.SceneIndex},{entity.DatabaseEntryId}," +
                     $"{entity.WorldX},{entity.WorldY}," +
@@ -243,13 +241,15 @@ internal static class Program
         if (extendedDetails)
         {
             Console.WriteLine(
-                "Extended fields: scene,database_id,presence,field_0..field_40");
+                "Extended fields: scene,database_id,presence," +
+                "field_0..field_40,reserved_0..reserved_23");
             foreach (var entity in selectedEntities)
             {
                 Console.WriteLine(
                     $"  {entity.SceneIndex},{entity.DatabaseEntryId}," +
                     $"{entity.ExtendedDataPresence}," +
-                    string.Join(",", entity.ExtendedFields));
+                    string.Join(",", entity.ExtendedFields) + "," +
+                    string.Join(",", entity.ExtendedReservedTailFields));
             }
         }
         if (auxiliaryDetails)

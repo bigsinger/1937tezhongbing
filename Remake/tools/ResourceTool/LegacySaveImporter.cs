@@ -14,6 +14,12 @@ internal sealed record LegacySaveImportResult(
 
 internal static class LegacySaveImporter
 {
+    private const int PatrolBehaviorState = 0;
+    private const int ChaseBehaviorState = 1;
+    private const int SearchBehaviorState = 3;
+    private const int CorpseDiscoveryBehaviorState = 6;
+    private const int RestoredTargetMaximumDistance = 96;
+
     private static readonly HashSet<int> SupportedBackpackItemIds =
     [
         33, 46, 47, 48, 49, 50, 51, 52, 53, 54, 82, 83, 92, 101
@@ -161,7 +167,10 @@ internal static class LegacySaveImporter
                 Int(actorProfile, "runtime_faction_id") == 1 ||
                 combatTargetScenes.Contains(sceneIndex))
             {
-                actorRecord["ai"] = BuildAiState(state);
+                actorRecord["ai"] = BuildAiState(
+                    state,
+                    savedByScene,
+                    playerScenes);
                 enemies.Add(actorRecord);
             }
             else
@@ -191,14 +200,20 @@ internal static class LegacySaveImporter
                 false,
                 profileByItem);
             record["scene_index"] = state.SceneIndex;
-            var ai = BuildAiState(state);
-            ai["legacy_corpse"] = new JsonObject
+            var ai = BuildAiState(
+                state,
+                savedByScene,
+                playerScenes);
+            var legacyCorpse = ai["legacy_corpse"] as JsonObject;
+            if (legacyCorpse is null)
             {
-                ["reinforcement_spawned"] = true,
-                ["reinforcement_serial"] = reinforcementSerial,
-                ["reinforcement_source_marker_scene_index"] = -1,
-                ["reinforcement_leader_scene_index"] = -1
-            };
+                legacyCorpse = new JsonObject();
+                ai["legacy_corpse"] = legacyCorpse;
+            }
+            legacyCorpse["reinforcement_spawned"] = true;
+            legacyCorpse["reinforcement_serial"] = reinforcementSerial;
+            legacyCorpse["reinforcement_source_marker_scene_index"] = -1;
+            legacyCorpse["reinforcement_leader_scene_index"] = -1;
             record["ai"] = ai;
             enemies.Add(record);
             actorRecordByScene[state.SceneIndex] = record;
@@ -611,24 +626,161 @@ internal static class LegacySaveImporter
         };
     }
 
-    private static JsonObject BuildAiState(VwfSceneEntity state) =>
-        new()
+    private static JsonObject BuildAiState(
+        VwfSceneEntity state,
+        IReadOnlyDictionary<int, VwfSceneEntity> savedByScene,
+        IReadOnlySet<int> playerScenes)
+    {
+        var contactState = checked((int)state.ContactState);
+        var currentTargetSceneIndex = contactState == 1
+            ? NearestSceneIndex(
+                state.ResolvedGoalX,
+                state.ResolvedGoalY,
+                savedByScene.Values,
+                candidate =>
+                    playerScenes.Contains(candidate.SceneIndex) &&
+                    candidate.DeathState == 0 &&
+                    candidate.CurrentHitPoints > 0)
+            : -1;
+        var corpseTargetSceneIndex = contactState == 3
+            ? NearestSceneIndex(
+                state.ResolvedGoalX,
+                state.ResolvedGoalY,
+                savedByScene.Values,
+                candidate =>
+                    candidate.SceneIndex != state.SceneIndex &&
+                    (candidate.DeathState != 0 ||
+                     candidate.CurrentHitPoints == 0) &&
+                    candidate.DatabaseEntry?.FactionId == 1)
+            : -1;
+        var behaviorState = contactState switch
         {
-            ["behavior_state"] =
-                checked((int)state.ReactionState),
+            1 when currentTargetSceneIndex >= 0 => ChaseBehaviorState,
+            1 => SearchBehaviorState,
+            2 => SearchBehaviorState,
+            3 when corpseTargetSceneIndex >= 0 =>
+                CorpseDiscoveryBehaviorState,
+            3 => SearchBehaviorState,
+            _ => PatrolBehaviorState,
+        };
+        var ai = new JsonObject
+        {
+            ["behavior_state"] = behaviorState,
             ["patrol_index"] = checked(
                 (int)(state.Patrol?.CurrentWaypointIndex ?? 0)),
             ["patrol_enabled"] = state.Patrol is not null,
             ["patrol_wait_remaining"] = 0.0,
-            ["patrol_path_in_flight"] = false,
-            ["last_known_x"] = 0.0,
-            ["last_known_y"] = 0.0,
+            ["patrol_path_in_flight"] =
+                state.MovementActive != 0 ||
+                state.MovementPathState != 0,
+            ["last_known_x"] = contactState == 0
+                ? state.ReferenceX
+                : state.ResolvedGoalX,
+            ["last_known_y"] = contactState == 0
+                ? state.ReferenceY
+                : state.ResolvedGoalY,
             ["search_elapsed"] = 0.0,
             ["attack_count"] = 0,
             ["regroup_remaining"] = 0.0,
-            ["current_target_scene_index"] = -1,
+            ["current_target_scene_index"] = currentTargetSceneIndex,
             ["current_target_display_name"] = string.Empty
         };
+        ai["legacy_world_item"] = new JsonObject
+        {
+            ["target_serial"] = 0,
+            ["interaction_pending"] = false,
+            ["replan_elapsed"] = 0.0,
+            ["abandoning"] = false,
+            ["abandon_elapsed"] = 0.0,
+            ["abandon_serial"] = 0,
+            ["hypnosis_active"] = state.HypnosisActive != 0,
+            ["hypnosis_counter"] = checked((int)state.HypnosisCounter),
+            ["poison_active"] = state.PoisonActive != 0,
+            ["poison_counter"] = checked((int)state.PoisonCounter),
+            ["distraction_active"] = false,
+            ["distraction_counter"] = 0,
+            ["distraction_limit"] = 0,
+            // The original process-global CRT state is not serialized in SAV.
+            ["random_state"] = 1,
+        };
+        ai["legacy_corpse"] = new JsonObject
+        {
+            ["discovered"] = state.CorpseDiscovered != 0,
+            ["buried"] =
+                state.DeathState != 0 &&
+                (state.HiddenOrRemoved != 0 ||
+                 state.BurialOrDisguiseTransitionReady != 0),
+            ["target_scene_index"] = corpseTargetSceneIndex,
+            ["reaction_counter"] = contactState == 3
+                ? checked((int)state.SearchDelayCounter)
+                : 0,
+            ["reaction_limit"] = contactState == 3
+                ? checked((int)state.SearchDelayLimit)
+                : 0,
+            ["reaction_elapsed"] = 0.0,
+            ["random_state"] = 1,
+            ["reinforcement_spawned"] = false,
+            ["reinforcement_source_marker_scene_index"] = -1,
+            ["reinforcement_serial"] = 0,
+            ["reinforcement_leader_scene_index"] = -1,
+        };
+        ai["legacy_enemy_ai"] = new JsonObject
+        {
+            ["search_active"] = contactState == 2,
+            ["search_finishing"] = false,
+            ["search_origin_x"] = state.ResolvedGoalX,
+            ["search_origin_y"] = state.ResolvedGoalY,
+            ["search_point_index"] = 0,
+            ["search_wait_counter"] = checked((int)state.SearchDelayCounter),
+            ["search_wait_limit"] = checked((int)state.SearchDelayLimit),
+            ["search_tick_elapsed"] = 0.0,
+            ["search_random_state"] = 1,
+            ["idle_search_completion_serial"] = 0,
+            ["tracked_face_gate_elapsed"] = 0.0,
+            ["tracked_face_gate_serial"] = 0,
+            ["tracked_face_gate_last_value"] = -1,
+            ["tracked_face_gate_last_passed"] = false,
+            ["tracked_face_gate_last_evidence_round_index"] = 0,
+            ["pending_coordinate_alert_active"] = contactState == 2,
+            ["pending_coordinate_alert_x"] = state.ResolvedGoalX,
+            ["pending_coordinate_alert_y"] = state.ResolvedGoalY,
+            ["actor_command_serial"] = 0,
+        };
+        return ai;
+    }
+
+    private static int NearestSceneIndex(
+        int targetX,
+        int targetY,
+        IEnumerable<VwfSceneEntity> candidates,
+        Func<VwfSceneEntity, bool> predicate)
+    {
+        var maximumSquaredDistance =
+            (long)RestoredTargetMaximumDistance *
+            RestoredTargetMaximumDistance;
+        var bestSceneIndex = -1;
+        var bestSquaredDistance = long.MaxValue;
+        foreach (var candidate in candidates)
+        {
+            if (!predicate(candidate))
+            {
+                continue;
+            }
+            var deltaX = (long)candidate.ReferenceX - targetX;
+            var deltaY = (long)candidate.ReferenceY - targetY;
+            var squaredDistance = deltaX * deltaX + deltaY * deltaY;
+            if (squaredDistance > maximumSquaredDistance ||
+                squaredDistance > bestSquaredDistance ||
+                (squaredDistance == bestSquaredDistance &&
+                 candidate.SceneIndex >= bestSceneIndex))
+            {
+                continue;
+            }
+            bestSceneIndex = candidate.SceneIndex;
+            bestSquaredDistance = squaredDistance;
+        }
+        return bestSceneIndex;
+    }
 
     private static JsonObject BuildAmbientState(
         VwfSceneEntity state) =>

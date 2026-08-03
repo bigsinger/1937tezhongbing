@@ -137,6 +137,11 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 `database_header_values[2]` 的运行时类型，不是 DBL id；实际 DBL id 是
 `database_entry_id`。`+0x1C0` 已由 54 个身份与自然接敌扣血序列证明为
 当前生命值，`+0x20C` 与所有已解析 VWF 对象精确对应，证明为默认攻击类型。
+`sub_453FE0` 还固定了 VWF 版本 5 的 41 个扩展值到非连续 `RuntimeActorV1`
+偏移的完整顺序：field 1 写 `+0x250` 接敌状态，field 23 才写 `+0x25C`
+反应状态；field 8 写尚未命名的 `+0x1D0`，绝不是阵营。阵营始终取 DBL。
+随后的 24 个序列化值只进入加载器临时区，SDK 将其作为保留尾部建模，避免
+格式工具静默丢字节。
 46 名已解析敌军已用于 m000 巡逻差分门禁。
 
 不要直接编辑这些文件；`Test-SdkSingleSource.ps1` 会验证它们与对应 JSON

@@ -12,6 +12,36 @@ const NAVIGATION_LAYER_IDS := {
 	"event_layer": 4,
 	"manual_movement_correction": 5,
 }
+const NATIVE_ACTOR_STATE_UNSIGNED_KEYS: Array[String] = [
+	"route_update_active",
+	"contact_state",
+	"hidden_or_removed",
+	"burial_or_disguise_transition_ready",
+	"hypnosis_active",
+	"corpse_discovered",
+	"target_lost",
+	"movement_active",
+	"movement_path_state",
+	"movement_mode",
+	"search_delay_limit",
+	"search_delay_counter",
+	"reaction_state",
+	"poison_active",
+	"poison_counter",
+	"poison_counter_limit",
+	"hypnosis_counter_limit",
+	"hypnosis_counter",
+	"burial_action_started",
+	"disguise_change_pending",
+	"path_override_or_special_attention_hold",
+	"disguise_recovery_active",
+	"disguise_recovery_limit",
+	"disguise_recovery_or_pursuit_delay_counter",
+]
+const NATIVE_ACTOR_STATE_SIGNED_KEYS: Array[String] = [
+	"resolved_goal_x",
+	"resolved_goal_y",
+]
 
 
 static func load_default() -> Dictionary:
@@ -257,6 +287,9 @@ static func _parse_entity(source: Dictionary) -> Dictionary:
 	var default_attack_type: Variant = _read_optional_integer_alias(
 		source, ["default_attack_type", "attack_type"], 0
 	)
+	var native_actor_state := _parse_native_actor_state(
+		source.get("native_actor_state")
+	)
 	if (
 		faction_id == null
 		or int(faction_id) < 0
@@ -269,6 +302,11 @@ static func _parse_entity(source: Dictionary) -> Dictionary:
 		or default_attack_type == null
 		or int(default_attack_type) < 0
 		or int(default_attack_type) > 11
+		or (
+			source.has("native_actor_state")
+			and source.get("native_actor_state") != null
+			and native_actor_state.is_empty()
+		)
 	):
 		return {}
 	var special_sensor_mode := false
@@ -326,8 +364,40 @@ static func _parse_entity(source: Dictionary) -> Dictionary:
 		"crawl_state": int(crawl_state),
 		"current_hit_points": int(current_hit_points),
 		"default_attack_type": int(default_attack_type),
+		"native_actor_state": native_actor_state,
 		"special_sensor_mode": special_sensor_mode,
 	}
+
+
+static func _parse_native_actor_state(value: Variant) -> Dictionary:
+	if value == null:
+		return {}
+	if not value is Dictionary:
+		return {}
+	var source := value as Dictionary
+	var schema_version: Variant = _read_integer(source, "schema_version")
+	if schema_version == null or int(schema_version) != 1:
+		return {}
+	var parsed := {"schema_version": 1}
+	for key: String in NATIVE_ACTOR_STATE_UNSIGNED_KEYS:
+		var raw_value: Variant = _read_integer(source, key)
+		if (
+			raw_value == null
+			or int(raw_value) < 0
+			or int(raw_value) > 0xFFFFFFFF
+		):
+			return {}
+		parsed[key] = int(raw_value)
+	for key: String in NATIVE_ACTOR_STATE_SIGNED_KEYS:
+		var raw_value: Variant = _read_integer(source, key)
+		if (
+			raw_value == null
+			or int(raw_value) < -0x80000000
+			or int(raw_value) > 0x7FFFFFFF
+		):
+			return {}
+		parsed[key] = int(raw_value)
+	return parsed
 
 
 static func _parse_size(value: Variant) -> Dictionary:

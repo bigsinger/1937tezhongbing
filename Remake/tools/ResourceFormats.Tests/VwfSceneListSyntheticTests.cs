@@ -96,10 +96,40 @@ internal static class VwfSceneListSyntheticTests
             ref checks);
         Equal(1u, entity.ExtendedDataPresence, "SLIST1 extended-data presence", ref checks);
         Equal(41, entity.ExtendedFields.Count, "SLIST1 extended field count", ref checks);
-        Equal(17u, entity.ReactionState, "SLIST1 reaction state ext1", ref checks);
+        Equal(24, entity.ExtendedReservedTailFields.Count, "SLIST1 reserved tail count", ref checks);
+        Equal(2u, entity.ContactState, "SLIST1 contact state ext1", ref checks);
+        Equal(17u, entity.ReactionState, "SLIST1 reaction state ext23", ref checks);
         Equal(3u, entity.DefaultAttackType, "SLIST1 default attack type ext2", ref checks);
         Equal(8u, entity.CurrentHitPoints, "SLIST1 current HP ext3", ref checks);
+        Equal(1u, entity.RouteUpdateActive, "SLIST1 route-update flag ext0", ref checks);
+        Equal(1u, entity.TargetLost, "SLIST1 target-lost flag ext13", ref checks);
+        Equal(2u, entity.MovementPathState, "SLIST1 path state ext16", ref checks);
+        Equal(1u, entity.MovementMode, "SLIST1 movement mode ext17", ref checks);
+        Equal(-32, entity.ResolvedGoalX, "SLIST1 signed resolved goal X ext18", ref checks);
+        Equal(168, entity.ResolvedGoalY, "SLIST1 resolved goal Y ext20", ref checks);
+        Equal(65u, entity.SearchDelayLimit, "SLIST1 search limit ext21", ref checks);
+        Equal(7u, entity.SearchDelayCounter, "SLIST1 search counter ext22", ref checks);
+        Equal(80u, entity.PoisonCounterLimit, "SLIST1 poison limit ext27", ref checks);
+        Equal(600u, entity.HypnosisCounterLimit, "SLIST1 hypnosis limit ext28", ref checks);
+        Equal(100u, entity.DisguiseRecoveryLimit, "SLIST1 disguise limit ext38", ref checks);
         Equal(0xA5A5A5A5u, entity.ExtendedFields[40], "SLIST1 last retained extended field", ref checks);
+        Equal(0x5A5A5A5Au, entity.ExtendedReservedTailFields[0], "SLIST1 first reserved tail field", ref checks);
+        Equal(0xC3C3C3C3u, entity.ExtendedReservedTailFields[23], "SLIST1 last reserved tail field", ref checks);
+        Equal(
+            0x25C,
+            VwfActorExtendedLayoutV5.RuntimeOffsets[(int)VwfActorExtendedFieldV5.ReactionState],
+            "SLIST1 reaction-state runtime offset",
+            ref checks);
+        Equal(
+            VwfActorExtendedLayoutV5.FieldCount,
+            VwfActorExtendedLayoutV5.RuntimeOffsets.Count,
+            "SLIST1 runtime offset count",
+            ref checks);
+        Equal(
+            VwfActorExtendedLayoutV5.FieldCount,
+            VwfActorExtendedLayoutV5.RuntimeOffsets.Distinct().Count(),
+            "SLIST1 runtime offsets are unique",
+            ref checks);
 
         return checks;
     }
@@ -211,16 +241,29 @@ internal static class VwfSceneListSyntheticTests
 
         writer.Write(1u);
         var extendedFields = new uint[41];
-        extendedFields[1] = 17;
+        extendedFields[0] = 1;
+        extendedFields[1] = 2;
         extendedFields[2] = 3;
         extendedFields[3] = 8;
+        extendedFields[13] = 1;
+        extendedFields[16] = 2;
+        extendedFields[17] = 1;
+        extendedFields[18] = unchecked((uint)-32);
+        extendedFields[20] = 168;
+        extendedFields[21] = 65;
+        extendedFields[22] = 7;
+        extendedFields[23] = 17;
+        extendedFields[27] = 80;
+        extendedFields[28] = 600;
+        extendedFields[38] = 100;
         extendedFields[40] = 0xA5A5A5A5;
         foreach (var value in extendedFields)
         {
             writer.Write(value);
         }
         writer.Write(0x5A5A5A5Au);
-        writer.Write(new byte[23 * sizeof(uint)]);
+        writer.Write(new byte[22 * sizeof(uint)]);
+        writer.Write(0xC3C3C3C3u);
         writer.Write(1u);
         writer.Write(2u);
         writer.Write(50u);

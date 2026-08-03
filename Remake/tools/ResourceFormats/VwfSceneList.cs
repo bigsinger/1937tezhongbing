@@ -10,6 +10,76 @@ public sealed record VwfAuxiliaryEntry(
     uint Quantity,
     uint QuantityMode);
 
+/// <summary>
+/// Version-5 SLIST actor-state fields in their serialized order. The original
+/// loader writes these values to non-contiguous RuntimeActorV1 offsets; names
+/// below use the runtime semantics that have been proven. Unknown slots keep
+/// their destination offset instead of receiving a speculative meaning.
+/// </summary>
+public enum VwfActorExtendedFieldV5
+{
+    RouteUpdateActive = 0,
+    ContactState = 1,
+    DefaultAttackType = 2,
+    CurrentHitPoints = 3,
+    HiddenOrRemoved = 4,
+    UnknownRuntime1C4 = 5,
+    UnknownRuntime1C8 = 6,
+    BurialOrDisguiseTransitionReady = 7,
+    UnknownRuntime1D0 = 8,
+    HypnosisActive = 9,
+    UnknownRuntime240 = 10,
+    UnknownRuntime244 = 11,
+    CorpseDiscovered = 12,
+    TargetLost = 13,
+    MovementActive = 14,
+    UnknownRuntime1E0 = 15,
+    MovementPathState = 16,
+    MovementMode = 17,
+    ResolvedGoalX = 18,
+    UnknownRuntime21C = 19,
+    ResolvedGoalY = 20,
+    SearchDelayLimit = 21,
+    SearchDelayCounter = 22,
+    ReactionState = 23,
+    UnknownRuntime260 = 24,
+    PoisonActive = 25,
+    PoisonCounter = 26,
+    PoisonCounterLimit = 27,
+    HypnosisCounterLimit = 28,
+    HypnosisCounter = 29,
+    UnknownRuntime274 = 30,
+    UnknownRuntime1B0 = 31,
+    UnknownRuntime284 = 32,
+    UnknownRuntime280 = 33,
+    BurialActionStarted = 34,
+    DisguiseChangePending = 35,
+    PathOverrideOrSpecialAttentionHold = 36,
+    DisguiseRecoveryActive = 37,
+    DisguiseRecoveryLimit = 38,
+    DisguiseRecoveryOrPursuitDelayCounter = 39,
+    UnknownRuntime1DC = 40,
+}
+
+public static class VwfActorExtendedLayoutV5
+{
+    public const int FieldCount = 41;
+    public const int ReservedTailFieldCount = 24;
+
+    /// <summary>
+    /// RuntimeActorV1 byte destinations used by M1937.exe sub_453FE0.
+    /// </summary>
+    public static IReadOnlyList<int> RuntimeOffsets { get; } =
+    [
+        0x184, 0x250, 0x20C, 0x1C0, 0x03C, 0x1C4, 0x1C8,
+        0x1CC, 0x1D0, 0x238, 0x240, 0x244, 0x258, 0x254,
+        0x1D8, 0x1E0, 0x1FC, 0x208, 0x218, 0x21C, 0x220,
+        0x248, 0x24C, 0x25C, 0x260, 0x264, 0x268, 0x26C,
+        0x278, 0x27C, 0x274, 0x1B0, 0x284, 0x280, 0x288,
+        0x28C, 0x290, 0x294, 0x298, 0x29C, 0x1DC,
+    ];
+}
+
 public sealed record VwfPatrolData(
     uint Signature,
     uint FormatVersion,
@@ -45,18 +115,55 @@ public sealed record VwfSceneEntity(
     int ReferenceY,
     uint ExtendedDataPresence,
     IReadOnlyList<uint> ExtendedFields,
+    IReadOnlyList<uint> ExtendedReservedTailFields,
     IReadOnlyList<IReadOnlyList<VwfAuxiliaryEntry>> AuxiliaryArrays,
     VwfPatrolData? Patrol,
     DblEntry? DatabaseEntry)
 {
     public bool HasExtendedData => ExtendedDataPresence != 0;
-    public uint ReactionState => ExtendedFields[1];
-    public uint DefaultAttackType => ExtendedFields[2];
-    public uint CurrentHitPoints => ExtendedFields[3];
+    public uint RouteUpdateActive => ExtendedField(VwfActorExtendedFieldV5.RouteUpdateActive);
+    public uint ContactState => ExtendedField(VwfActorExtendedFieldV5.ContactState);
+    public uint DefaultAttackType => ExtendedField(VwfActorExtendedFieldV5.DefaultAttackType);
+    public uint CurrentHitPoints => ExtendedField(VwfActorExtendedFieldV5.CurrentHitPoints);
+    public uint HiddenOrRemoved => ExtendedField(VwfActorExtendedFieldV5.HiddenOrRemoved);
+    public uint BurialOrDisguiseTransitionReady =>
+        ExtendedField(VwfActorExtendedFieldV5.BurialOrDisguiseTransitionReady);
+    public uint HypnosisActive => ExtendedField(VwfActorExtendedFieldV5.HypnosisActive);
+    public uint CorpseDiscovered => ExtendedField(VwfActorExtendedFieldV5.CorpseDiscovered);
+    public uint TargetLost => ExtendedField(VwfActorExtendedFieldV5.TargetLost);
+    public uint MovementActive => ExtendedField(VwfActorExtendedFieldV5.MovementActive);
+    public uint MovementPathState => ExtendedField(VwfActorExtendedFieldV5.MovementPathState);
+    public uint MovementMode => ExtendedField(VwfActorExtendedFieldV5.MovementMode);
+    public int ResolvedGoalX => SignedExtendedField(VwfActorExtendedFieldV5.ResolvedGoalX);
+    public int ResolvedGoalY => SignedExtendedField(VwfActorExtendedFieldV5.ResolvedGoalY);
+    public uint SearchDelayLimit => ExtendedField(VwfActorExtendedFieldV5.SearchDelayLimit);
+    public uint SearchDelayCounter => ExtendedField(VwfActorExtendedFieldV5.SearchDelayCounter);
+    public uint ReactionState => ExtendedField(VwfActorExtendedFieldV5.ReactionState);
+    public uint PoisonActive => ExtendedField(VwfActorExtendedFieldV5.PoisonActive);
+    public uint PoisonCounter => ExtendedField(VwfActorExtendedFieldV5.PoisonCounter);
+    public uint PoisonCounterLimit => ExtendedField(VwfActorExtendedFieldV5.PoisonCounterLimit);
+    public uint HypnosisCounterLimit => ExtendedField(VwfActorExtendedFieldV5.HypnosisCounterLimit);
+    public uint HypnosisCounter => ExtendedField(VwfActorExtendedFieldV5.HypnosisCounter);
+    public uint BurialActionStarted => ExtendedField(VwfActorExtendedFieldV5.BurialActionStarted);
+    public uint DisguiseChangePending => ExtendedField(VwfActorExtendedFieldV5.DisguiseChangePending);
+    public uint PathOverrideOrSpecialAttentionHold =>
+        ExtendedField(VwfActorExtendedFieldV5.PathOverrideOrSpecialAttentionHold);
+    public uint DisguiseRecoveryActive =>
+        ExtendedField(VwfActorExtendedFieldV5.DisguiseRecoveryActive);
+    public uint DisguiseRecoveryLimit =>
+        ExtendedField(VwfActorExtendedFieldV5.DisguiseRecoveryLimit);
+    public uint DisguiseRecoveryOrPursuitDelayCounter =>
+        ExtendedField(VwfActorExtendedFieldV5.DisguiseRecoveryOrPursuitDelayCounter);
     public IReadOnlyList<uint> AuxiliaryArrayLengths =>
         AuxiliaryArrays
             .Select(array => checked((uint)array.Count))
             .ToArray();
+
+    public uint ExtendedField(VwfActorExtendedFieldV5 field) =>
+        ExtendedFields[checked((int)field)];
+
+    public int SignedExtendedField(VwfActorExtendedFieldV5 field) =>
+        unchecked((int)ExtendedField(field));
 }
 
 public sealed class VwfSceneList
@@ -77,9 +184,6 @@ public sealed class VwfSceneList
         EntityPatrolPresenceOffset + sizeof(uint);
 
     private const string Magic = "SLIST1 U.M.E Guowei 2000\0";
-    private const int ExtendedFieldCount = 41;
-    private const int ExtendedTailByteCount = 24 * sizeof(uint);
-
     private VwfSceneList(
         string path,
         long offset,
@@ -238,11 +342,15 @@ public sealed class VwfSceneList
         var extendedDataPresence = reader.ReadUInt32(
             $"SLIST1 entity {sceneIndex} extended data presence");
         var extendedFields = reader.ReadUInt32Array(
-            ExtendedFieldCount,
+            VwfActorExtendedLayoutV5.FieldCount,
             $"SLIST1 entity {sceneIndex} extended fields");
-        reader.Skip(
-            ExtendedTailByteCount,
-            $"SLIST1 entity {sceneIndex} extended data tail");
+        // The executable reads these 24 values into a temporary and discards
+        // them. Retain them so format inspection and future round-tripping do
+        // not silently lose source bytes even though they have no runtime
+        // destination in the supported executable.
+        var extendedReservedTailFields = reader.ReadUInt32Array(
+            VwfActorExtendedLayoutV5.ReservedTailFieldCount,
+            $"SLIST1 entity {sceneIndex} extended reserved tail");
 
         IReadOnlyList<VwfAuxiliaryEntry>[] auxiliaryArrays =
             new IReadOnlyList<VwfAuxiliaryEntry>[4];
@@ -295,6 +403,7 @@ public sealed class VwfSceneList
             ReadInt32(prefix, 112),
             extendedDataPresence,
             extendedFields,
+            extendedReservedTailFields,
             auxiliaryArrays,
             patrol,
             databaseEntry);

@@ -143,6 +143,7 @@ var special_control_source: Node2D
 var scene_index := -1
 var runtime_actor_type := 0
 var original_runtime_index := -1
+var original_native_actor_state: Dictionary = {}
 var original_crt_level_id := ""
 var original_crt_random_source: Node
 var original_crt_initialization_profile: Dictionary = {}
@@ -343,6 +344,7 @@ func configure(
 	scene_index = new_scene_index
 	runtime_actor_type = 0
 	original_runtime_index = -1
+	original_native_actor_state.clear()
 	original_crt_level_id = ""
 	original_crt_random_source = null
 	original_crt_initialization_profile.clear()
@@ -607,6 +609,7 @@ func restore_original_ai_idle_animation(state: Dictionary) -> bool:
 
 func configure_runtime_actor_type(entity: Dictionary) -> int:
 	runtime_actor_type = 0
+	original_native_actor_state.clear()
 	var header_values: Variant = entity.get("database_header_values", [])
 	if header_values is Array and (header_values as Array).size() > 2:
 		runtime_actor_type = int((header_values as Array)[2])
@@ -623,6 +626,11 @@ func configure_runtime_actor_type(entity: Dictionary) -> int:
 		)
 	else:
 		original_runtime_index = -1
+	var native_state_value: Variant = entity.get("native_actor_state", {})
+	if native_state_value is Dictionary:
+		original_native_actor_state = (
+			(native_state_value as Dictionary).duplicate(true)
+		)
 	original_secondary_search_enabled = (
 		AI_IDLE_RANDOM_RULES.secondary_search_runtime_type_enabled(
 			runtime_actor_type
@@ -723,7 +731,18 @@ func bind_original_crt_random_source(
 			int(runtime_entry.get("contact_state", 0)) != 0
 		)
 	else:
-		original_route_update_active = false
+		original_route_update_active = (
+			int(original_native_actor_state.get(
+				"route_update_active",
+				0,
+			)) != 0
+		)
+		original_secondary_search_contact_state = (
+			int(original_native_actor_state.get(
+				"contact_state",
+				0,
+			)) != 0
+		)
 	original_ai_previous_world_position = position
 	original_ai_shared_counter_last_physics_frame = -1
 	original_ai_stationary_reset_serial = 0

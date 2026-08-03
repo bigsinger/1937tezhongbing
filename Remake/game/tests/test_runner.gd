@@ -157,10 +157,47 @@ func _init() -> void:
 			}
 		],
 	}
+	var synthetic_native_actor_state := {"schema_version": 1}
+	for key: String in IMPORTED_LEVEL_DATA.NATIVE_ACTOR_STATE_UNSIGNED_KEYS:
+		synthetic_native_actor_state[key] = 0
+	for key: String in IMPORTED_LEVEL_DATA.NATIVE_ACTOR_STATE_SIGNED_KEYS:
+		synthetic_native_actor_state[key] = 0
+	synthetic_native_actor_state["contact_state"] = 2
+	synthetic_native_actor_state["reaction_state"] = 17
+	synthetic_native_actor_state["resolved_goal_x"] = -32
+	synthetic_native_actor_state["resolved_goal_y"] = 168
+	var synthetic_entities := synthetic_level["entities"] as Array
+	(synthetic_entities[0] as Dictionary)["native_actor_state"] = (
+		synthetic_native_actor_state
+	)
 	expect(
 		IMPORTED_LEVEL_DATA.is_valid_dictionary(synthetic_level),
 		"synthetic imported-level dictionary validates",
 		failures
+	)
+	var invalid_native_unsigned: Dictionary = synthetic_level.duplicate(true)
+	var invalid_unsigned_entities := invalid_native_unsigned["entities"] as Array
+	var invalid_unsigned_entity := invalid_unsigned_entities[0] as Dictionary
+	var invalid_unsigned_state := (
+		invalid_unsigned_entity["native_actor_state"] as Dictionary
+	)
+	invalid_unsigned_state["contact_state"] = -1
+	expect(
+		not IMPORTED_LEVEL_DATA.is_valid_dictionary(invalid_native_unsigned),
+		"imported level rejects a negative unsigned native actor field",
+		failures,
+	)
+	var invalid_native_missing: Dictionary = synthetic_level.duplicate(true)
+	var invalid_missing_entities := invalid_native_missing["entities"] as Array
+	var invalid_missing_entity := invalid_missing_entities[0] as Dictionary
+	var invalid_missing_state := (
+		invalid_missing_entity["native_actor_state"] as Dictionary
+	)
+	invalid_missing_state.erase("reaction_state")
+	expect(
+		not IMPORTED_LEVEL_DATA.is_valid_dictionary(invalid_native_missing),
+		"imported level rejects an incomplete native actor state",
+		failures,
 	)
 	var parsed_level: Dictionary = IMPORTED_LEVEL_DATA.parse_dictionary(synthetic_level)
 	expect(
@@ -197,6 +234,19 @@ func _init() -> void:
 	expect(
 		parsed_entity["sprite_anchor"] == {"x": 24, "y": 47},
 		"imported entity preserves its recovered SPR primary X/Z anchor",
+		failures,
+	)
+	var parsed_native_actor_state := (
+		parsed_entity["native_actor_state"] as Dictionary
+	)
+	expect(
+		(
+			parsed_native_actor_state["contact_state"] == 2
+			and parsed_native_actor_state["reaction_state"] == 17
+			and parsed_native_actor_state["resolved_goal_x"] == -32
+			and parsed_native_actor_state["resolved_goal_y"] == 168
+		),
+		"imported entity preserves separately mapped contact and reaction state",
 		failures,
 	)
 	var anchor_image := Image.create(64, 96, false, Image.FORMAT_RGBA8)

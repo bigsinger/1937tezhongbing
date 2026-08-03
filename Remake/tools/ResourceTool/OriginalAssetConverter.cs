@@ -357,6 +357,41 @@ internal static class OriginalAssetConverter
                     }),
                     waypoints = patrolWaypoints
                 };
+            object? nativeActorState = databaseEntry.CategoryName == "角色"
+                ? new
+                {
+                    schema_version = 1,
+                    route_update_active = entity.RouteUpdateActive,
+                    contact_state = entity.ContactState,
+                    hidden_or_removed = entity.HiddenOrRemoved,
+                    burial_or_disguise_transition_ready =
+                        entity.BurialOrDisguiseTransitionReady,
+                    hypnosis_active = entity.HypnosisActive,
+                    corpse_discovered = entity.CorpseDiscovered,
+                    target_lost = entity.TargetLost,
+                    movement_active = entity.MovementActive,
+                    movement_path_state = entity.MovementPathState,
+                    movement_mode = entity.MovementMode,
+                    resolved_goal_x = entity.ResolvedGoalX,
+                    resolved_goal_y = entity.ResolvedGoalY,
+                    search_delay_limit = entity.SearchDelayLimit,
+                    search_delay_counter = entity.SearchDelayCounter,
+                    reaction_state = entity.ReactionState,
+                    poison_active = entity.PoisonActive,
+                    poison_counter = entity.PoisonCounter,
+                    poison_counter_limit = entity.PoisonCounterLimit,
+                    hypnosis_counter_limit = entity.HypnosisCounterLimit,
+                    hypnosis_counter = entity.HypnosisCounter,
+                    burial_action_started = entity.BurialActionStarted,
+                    disguise_change_pending = entity.DisguiseChangePending,
+                    path_override_or_special_attention_hold =
+                        entity.PathOverrideOrSpecialAttentionHold,
+                    disguise_recovery_active = entity.DisguiseRecoveryActive,
+                    disguise_recovery_limit = entity.DisguiseRecoveryLimit,
+                    disguise_recovery_or_pursuit_delay_counter =
+                        entity.DisguiseRecoveryOrPursuitDelayCounter
+                }
+                : null;
 
             return new
             {
@@ -373,9 +408,11 @@ internal static class OriginalAssetConverter
                 death_state = entity.DeathState,
                 crawl_state = entity.CrawlState,
                 extended_data_present = entity.HasExtendedData,
+                contact_state = entity.ContactState,
                 reaction_state = entity.ReactionState,
                 default_attack_type = entity.DefaultAttackType,
                 current_hit_points = entity.CurrentHitPoints,
+                native_actor_state = nativeActorState,
                 x = entity.WorldX,
                 y = entity.WorldY,
                 reference_x = entity.ReferenceX,
