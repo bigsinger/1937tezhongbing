@@ -3,6 +3,7 @@
   "coverage_id": "original-crt-random-runtime-coverage-v1",
   "content_profile": "repository-mod-12-level-20260729",
   "sdk_catalog": "SDK/crt-rand-call-sites.json",
+  "dynamic_actor_lifecycle_catalog": "SDK/dynamic-actor-lifecycle-sites.json",
   "status_definitions": {
     "exact_runtime": "All registered call sites in this caller have a live shared-stream consumer.",
     "checkpoint_exact": "The one-shot result and stream position are restored from captured startup evidence.",
@@ -49,7 +50,7 @@
       "implementation_markers": [
         {"path": "Remake/game/scripts/squad_unit.gd", "contains": "func consume_retired_original_crt_random"}
       ],
-      "timing_gap": "Gu Ming replacement, actor-84/85 placement, actor-90 observation markers, actor-78 burial replacement, manually dropped world items, actor-57/80/81 travelling visuals, actor-60 impacts, plus actor-61/62 primary, fire and debris retirement are connected; mission actor-101 and any remaining native manager-removal lifecycles still need evidence-backed hooks."
+      "timing_gap": "Every healthy formal in-level creation and removal path is connected, including m006 actor 101. The remaining native calls are checkpoint-boundary cleanup of still-live projectile/effect actors and resource/allocation failure rollbacks; the current per-level and save checkpoint model makes those replacement-time draws neutral to resumed gameplay, but they are not falsely claimed as live runtime consumers. See SDK/dynamic-actor-lifecycle-sites.json."
     },
     {
       "caller_rva": "0x000533F0",
@@ -66,7 +67,7 @@
       "implementation_markers": [
         {"path": "Remake/game/scripts/squad_unit.gd", "contains": "func consume_retired_original_crt_random"}
       ],
-      "timing_gap": "Gu Ming replacement, actor-84/85 placement, actor-90 observation markers, actor-78 burial replacement, manually dropped world items, actor-57/80/81 travelling visuals, actor-60 impacts, plus actor-61/62 primary, fire and debris retirement are connected; mission actor-101 and any remaining native manager-removal lifecycles still need evidence-backed hooks."
+      "timing_gap": "Every healthy formal in-level creation and removal path is connected, including m006 actor 101. The remaining native calls are checkpoint-boundary cleanup of still-live projectile/effect actors and resource/allocation failure rollbacks; the current per-level and save checkpoint model makes those replacement-time draws neutral to resumed gameplay, but they are not falsely claimed as live runtime consumers. See SDK/dynamic-actor-lifecycle-sites.json."
     },
     {
       "caller_rva": "0x00055200",

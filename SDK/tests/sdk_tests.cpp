@@ -958,6 +958,10 @@ int main(int argc, char** argv) {
             "grenade actor-61 delivery table mismatch", checks);
         require(
             find_attack_rule(8) == nullptr &&
+                static_cast<std::int32_t>(
+                    DeliveryMode::dormant_owner_afterimage_trail) == 2 &&
+                dormant_mode_2_effect_type == 3 &&
+                dormant_mode_2_initial_actor_type == 58 &&
                 inclusive_path_point_count({0, 0}, {100, 40}) == 101 &&
                 inclusive_path_point_count({0, 0}, {40, 100}) == 101 &&
                 resolution_world_ticks(101, 16) == 8 &&

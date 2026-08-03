@@ -42,6 +42,7 @@ if ($LASTEXITCODE -ne 0) {
 & (Join-Path $PSScriptRoot 'Test-CrtRandomActorEventTimingBaseline.ps1')
 & (Join-Path $PSScriptRoot 'Test-CrtRandomRuntimeStateBaseline.ps1')
 & (Join-Path $PSScriptRoot 'Test-CrtRandomRuntimeCoverage.ps1')
+& (Join-Path $PSScriptRoot 'Test-DynamicActorLifecycleCoverage.ps1')
 if ((-not $SkipRealAssetChecks) -and
     (Test-Path -LiteralPath $realAssetManifest -PathType Leaf)) {
     & (Join-Path $PSScriptRoot 'Test-ModRuntimeIdentityCatalog.ps1') `

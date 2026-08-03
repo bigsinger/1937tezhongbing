@@ -1,0 +1,529 @@
+{
+  "schema_version": 1,
+  "catalog_id": "m1937-dynamic-actor-lifecycle-sites-v1",
+  "address_kind": "rva_from_loaded_M1937_exe_base",
+  "supported_executable_sha256": "F4DD1131DF6C993C01EA011F9439BC725E6DC6491B5FBBA47724D7D5B64DA3F3",
+  "content_profile": "repository-mod-12-level-20260729",
+  "functions": {
+    "create_world_actor_rva": "0x0004A350",
+    "remove_world_actor_rva": "0x00049DA0",
+    "effect_dispatch_rva": "0x000656C0",
+    "successful_factory_crt_draws": 5,
+    "successful_removal_crt_draws": 4
+  },
+  "summary": {
+    "factory_site_count": 19,
+    "factory_formal_startup_checkpoint_site_count": 1,
+    "factory_formal_runtime_site_count": 16,
+    "factory_nonformal_site_count": 2,
+    "removal_site_count": 20,
+    "removal_formal_runtime_exact_site_count": 11,
+    "removal_checkpoint_boundary_site_count": 5,
+    "removal_native_failure_guard_site_count": 3,
+    "removal_nonformal_site_count": 1,
+    "formal_in_level_unimplemented_site_count": 0
+  },
+  "mode_2_nonformal_proof": {
+    "delivery_mode": 2,
+    "effect_type": 3,
+    "initial_runtime_actor_type": 58,
+    "effect_dispatch_direct_caller_rvas": [
+      "0x0004CDB0",
+      "0x00056DF0"
+    ],
+    "formal_effect_types_from_actor_attack_dispatch": [1, 2, 13, 14],
+    "formal_effect_types_from_generic_dispatch_calls": [4, 5, 8, 10, 11, 12, 15],
+    "formal_effect_types_union": [1, 2, 4, 5, 8, 10, 11, 12, 13, 14, 15],
+    "unreferenced_effect_types": [3, 6, 7, 9],
+    "route_clone_factory_site_rvas": [
+      "0x0006371E",
+      "0x000638D6"
+    ],
+    "formal_projectile_profile_count": 6,
+    "formal_projectile_profile_has_mode_2": false,
+    "note": "Effect 3 creates actor 58 and mode-2 route clones, but sub_4656C0 has only sub_44CDB0 and sub_456DF0 as callers. Their recovered constant arguments exclude effect 3, and all six formal projectile profiles exclude delivery mode 2."
+  },
+  "checkpoint_model": {
+    "status": "checkpoint_neutral_not_runtime_exact",
+    "implementation_markers": [
+      {
+        "path": "Remake/game/scripts/main.gd",
+        "contains": "func _reset_legacy_crt_random_for_level_load"
+      },
+      {
+        "path": "Remake/game/scripts/main.gd",
+        "contains": "func restore_legacy_crt_random_stream_snapshot"
+      },
+      {
+        "path": "Remake/game/scripts/main.gd",
+        "contains": "func _apply_original_crt_random_startup_checkpoint"
+      }
+    ],
+    "note": "Native manager destructors can retire still-live visual actors during level/effect teardown. Remake restores a captured per-level stream checkpoint after replacing the level and restores the saved stream after replacing a save snapshot, so those pre-replacement draws cannot affect the resumed state. They remain explicitly classified instead of being claimed as live runtime consumers."
+  },
+  "factory_sites": [
+    {
+      "site_rva": "0x0004EC19",
+      "caller_rva": "0x0004E8F0",
+      "semantic": "SLIST type-13 materialization during level load",
+      "classification": "formal_startup_checkpoint",
+      "remake_status": "checkpoint_exact",
+      "runtime_actor_types": [13],
+      "implementation_markers": [
+        {
+          "path": "Remake/game/scripts/main.gd",
+          "contains": "func _apply_original_crt_random_startup_checkpoint"
+        }
+      ]
+    },
+    {
+      "site_rva": "0x00050003",
+      "caller_rva": "0x0004FED0",
+      "semantic": "first S-command observation marker creation branch",
+      "classification": "formal_runtime",
+      "remake_status": "exact_runtime",
+      "runtime_actor_types": [90],
+      "implementation_markers": [
+        {
+          "path": "Remake/game/scripts/main.gd",
+          "contains": "func _place_or_move_sight_beacon"
+        }
+      ]
+    },
+    {
+      "site_rva": "0x00050160",
+      "caller_rva": "0x0004FED0",
+      "semantic": "alternate first S-command observation marker creation branch",
+      "classification": "formal_runtime",
+      "remake_status": "exact_runtime",
+      "runtime_actor_types": [90],
+      "implementation_markers": [
+        {
+          "path": "Remake/game/scripts/main.gd",
+          "contains": "func _place_or_move_sight_beacon"
+        }
+      ]
+    },
+    {
+      "site_rva": "0x000502FE",
+      "caller_rva": "0x00050200",
+      "semantic": "Gu Ming disguise actor replacement",
+      "classification": "formal_runtime",
+      "remake_status": "exact_runtime",
+      "runtime_actor_types": [10, 91],
+      "implementation_markers": [
+        {
+          "path": "Remake/game/scripts/main.gd",
+          "contains": "func _on_original_disguise_transition_ready"
+        }
+      ]
+    },
+    {
+      "site_rva": "0x00056D5C",
+      "caller_rva": "0x00056CD0",
+      "semantic": "completed B-command burial replacement",
+      "classification": "formal_runtime",
+      "remake_status": "exact_runtime",
+      "runtime_actor_types": [78],
+      "implementation_markers": [
+        {
+          "path": "Remake/game/scripts/main.gd",
+          "contains": "func _finish_burial"
+        }
+      ]
+    },
+    {
+      "site_rva": "0x0005783C",
+      "caller_rva": "0x00056DF0",
+      "semantic": "attack type 8 deployed actor",
+      "classification": "formal_runtime",
+      "remake_status": "exact_runtime",
+      "runtime_actor_types": [84],
+      "implementation_markers": [
+        {
+          "path": "Remake/game/scripts/main.gd",
+          "contains": "func _spawn_legacy_special_world_object"
+        }
+      ]
+    },
+    {
+      "site_rva": "0x00057982",
+      "caller_rva": "0x00056DF0",
+      "semantic": "attack type 10 deployed actor",
+      "classification": "formal_runtime",
+      "remake_status": "exact_runtime",
+      "runtime_actor_types": [85],
+      "implementation_markers": [
+        {
+          "path": "Remake/game/scripts/main.gd",
+          "contains": "func _spawn_legacy_special_world_object"
+        }
+      ]
+    },
+    {
+      "site_rva": "0x00058428",
+      "caller_rva": "0x000583F0",
+      "semantic": "completed backpack or weapon drop creates a world-item actor",
+      "classification": "formal_runtime",
+      "remake_status": "exact_runtime",
+      "runtime_actor_type_source": "selected_item_id",
+      "implementation_markers": [
+        {
+          "path": "Remake/game/scripts/main.gd",
+          "contains": "func _complete_original_drop_order"
+        }
+      ]
+    },
+    {
+      "site_rva": "0x0005992C",
+      "caller_rva": "0x00059840",
+      "semantic": "m006 document carrier places mission actor 101",
+      "classification": "formal_runtime",
+      "remake_status": "exact_runtime",
+      "runtime_actor_types": [101],
+      "implementation_markers": [
+        {
+          "path": "Remake/game/scripts/main.gd",
+          "contains": "func _advance_original_m006_document_exchange"
+        }
+      ]
+    },
+    {
+      "site_rva": "0x0005E383",
+      "caller_rva": "0x0005E2A0",
+      "semantic": "first corpse-alarm reinforcement",
+      "classification": "formal_runtime",
+      "remake_status": "exact_runtime",
+      "runtime_actor_types": [6],
+      "implementation_markers": [
+        {
+          "path": "Remake/game/scripts/main.gd",
+          "contains": "func _spawn_legacy_reinforcement"
+        }
+      ]
+    },
+    {
+      "site_rva": "0x0005E449",
+      "caller_rva": "0x0005E2A0",
+      "semantic": "second corpse-alarm reinforcement",
+      "classification": "formal_runtime",
+      "remake_status": "exact_runtime",
+      "runtime_actor_types": [6],
+      "implementation_markers": [
+        {
+          "path": "Remake/game/scripts/main.gd",
+          "contains": "func _spawn_legacy_reinforcement"
+        }
+      ]
+    },
+    {
+      "site_rva": "0x000632C2",
+      "caller_rva": "0x00063290",
+      "semantic": "projectile travelling visual actor; formal 57/80/81 and dormant effect-3 actor 58 share this site",
+      "classification": "formal_runtime_mixed",
+      "remake_status": "exact_formal_branch",
+      "formal_runtime_actor_types": [57, 80, 81],
+      "nonformal_runtime_actor_types": [58, 59],
+      "implementation_markers": [
+        {
+          "path": "Remake/game/scripts/combat_projectile.gd",
+          "contains": "func _commit_dynamic_actor_factory"
+        }
+      ]
+    },
+    {
+      "site_rva": "0x0006371E",
+      "caller_rva": "0x000635F0",
+      "semantic": "effect-3 mode-2 forward-route owner clone",
+      "classification": "nonformal_dormant",
+      "remake_status": "nonformal",
+      "runtime_actor_type_source": "projectile_owner_runtime_type"
+    },
+    {
+      "site_rva": "0x000638D6",
+      "caller_rva": "0x000637A0",
+      "semantic": "effect-3 mode-2 reverse-route owner clone",
+      "classification": "nonformal_dormant",
+      "remake_status": "nonformal",
+      "runtime_actor_type_source": "projectile_owner_runtime_type"
+    },
+    {
+      "site_rva": "0x00063F8C",
+      "caller_rva": "0x00063F40",
+      "semantic": "effect 4/5 primary explosion actor",
+      "classification": "formal_runtime",
+      "remake_status": "exact_runtime",
+      "runtime_actor_types": [61, 62],
+      "implementation_markers": [
+        {
+          "path": "Remake/game/scripts/legacy_explosion_effect.gd",
+          "contains": "VISUAL_RULES.build_dynamic_actor_factory_plan"
+        }
+      ]
+    },
+    {
+      "site_rva": "0x00064082",
+      "caller_rva": "0x00064060",
+      "semantic": "one-shot impact actor",
+      "classification": "formal_runtime",
+      "remake_status": "exact_runtime",
+      "runtime_actor_types": [60],
+      "implementation_markers": [
+        {
+          "path": "Remake/game/scripts/combat_projectile.gd",
+          "contains": "func _begin_linear_impact"
+        }
+      ]
+    },
+    {
+      "site_rva": "0x0006420E",
+      "caller_rva": "0x000641C0",
+      "semantic": "effect-12 debris actor",
+      "classification": "formal_runtime",
+      "remake_status": "exact_runtime",
+      "runtime_actor_types": [72, 73, 74, 75, 76],
+      "implementation_markers": [
+        {
+          "path": "Remake/game/scripts/legacy_explosion_effect.gd",
+          "contains": "func _add_debris_cluster"
+        }
+      ]
+    },
+    {
+      "site_rva": "0x00064991",
+      "caller_rva": "0x00064730",
+      "semantic": "effect-10/11/15 persistent or burst particle branch A",
+      "classification": "formal_runtime",
+      "remake_status": "exact_runtime",
+      "runtime_actor_type_source": "effect_particle_profile",
+      "implementation_markers": [
+        {
+          "path": "Remake/game/scripts/legacy_explosion_effect.gd",
+          "contains": "func _add_burst"
+        }
+      ]
+    },
+    {
+      "site_rva": "0x00064A14",
+      "caller_rva": "0x00064730",
+      "semantic": "effect-10/11/15 persistent or burst particle branch B",
+      "classification": "formal_runtime",
+      "remake_status": "exact_runtime",
+      "runtime_actor_type_source": "effect_particle_profile",
+      "implementation_markers": [
+        {
+          "path": "Remake/game/scripts/legacy_explosion_effect.gd",
+          "contains": "func _add_burst"
+        }
+      ]
+    }
+  ],
+  "removal_sites": [
+    {
+      "site_rva": "0x0005032B",
+      "caller_rva": "0x00050200",
+      "semantic": "retire old Gu Ming disguise actor after replacement",
+      "classification": "formal_runtime",
+      "remake_status": "exact_runtime",
+      "implementation_markers": [
+        {
+          "path": "Remake/game/scripts/main.gd",
+          "contains": "func _on_original_disguise_transition_ready"
+        }
+      ]
+    },
+    {
+      "site_rva": "0x00056C7C",
+      "caller_rva": "0x00056AB0",
+      "semantic": "collected world-item actor",
+      "classification": "formal_runtime",
+      "remake_status": "exact_runtime",
+      "implementation_markers": [
+        {
+          "path": "Remake/game/scripts/main.gd",
+          "contains": "func _complete_original_pickup_order"
+        }
+      ]
+    },
+    {
+      "site_rva": "0x0005C85C",
+      "caller_rva": "0x0005C710",
+      "semantic": "one-shot observation marker after first valid observation",
+      "classification": "formal_runtime",
+      "remake_status": "exact_runtime",
+      "implementation_markers": [
+        {
+          "path": "Remake/game/scripts/main.gd",
+          "contains": "func _on_sight_beacon_observed"
+        }
+      ]
+    },
+    {
+      "site_rva": "0x00063213",
+      "caller_rva": "0x000631B0",
+      "semantic": "projectile object destructor retires any still-live travelling visuals",
+      "classification": "checkpoint_boundary_cleanup",
+      "remake_status": "checkpoint_neutral"
+    },
+    {
+      "site_rva": "0x00063AF5",
+      "caller_rva": "0x00063A00",
+      "semantic": "formal mode-3/4 travelling actor removed on collision",
+      "classification": "formal_runtime",
+      "remake_status": "exact_runtime",
+      "implementation_markers": [
+        {
+          "path": "Remake/game/scripts/combat_projectile.gd",
+          "contains": "func _retire_travelling_actor"
+        }
+      ]
+    },
+    {
+      "site_rva": "0x00063BA2",
+      "caller_rva": "0x00063A00",
+      "semantic": "formal mode-1 travelling actor removed at destination",
+      "classification": "formal_runtime",
+      "remake_status": "exact_runtime",
+      "implementation_markers": [
+        {
+          "path": "Remake/game/scripts/combat_projectile.gd",
+          "contains": "func _retire_travelling_actor"
+        }
+      ]
+    },
+    {
+      "site_rva": "0x00063C95",
+      "caller_rva": "0x00063A00",
+      "semantic": "formal mode-3/4 travelling actor removed at destination",
+      "classification": "formal_runtime",
+      "remake_status": "exact_runtime",
+      "implementation_markers": [
+        {
+          "path": "Remake/game/scripts/combat_projectile.gd",
+          "contains": "func _retire_travelling_actor"
+        }
+      ]
+    },
+    {
+      "site_rva": "0x00063CF1",
+      "caller_rva": "0x00063A00",
+      "semantic": "formal mode-1 travelling actor removed after arc completion",
+      "classification": "formal_runtime",
+      "remake_status": "exact_runtime",
+      "implementation_markers": [
+        {
+          "path": "Remake/game/scripts/combat_projectile.gd",
+          "contains": "func _retire_travelling_actor"
+        }
+      ]
+    },
+    {
+      "site_rva": "0x00063DDF",
+      "caller_rva": "0x00063A00",
+      "semantic": "effect-3 mode-2 expired owner clone",
+      "classification": "nonformal_dormant",
+      "remake_status": "nonformal"
+    },
+    {
+      "site_rva": "0x00063F27",
+      "caller_rva": "0x00063F10",
+      "semantic": "primary effect object destructor retires a still-live actor 61/62",
+      "classification": "checkpoint_boundary_cleanup",
+      "remake_status": "checkpoint_neutral"
+    },
+    {
+      "site_rva": "0x00064002",
+      "caller_rva": "0x00063FE0",
+      "semantic": "primary effect actor completes its animation",
+      "classification": "formal_runtime",
+      "remake_status": "exact_runtime",
+      "implementation_markers": [
+        {
+          "path": "Remake/game/scripts/legacy_explosion_effect.gd",
+          "contains": "func _consume_primary_destructor"
+        }
+      ]
+    },
+    {
+      "site_rva": "0x00064047",
+      "caller_rva": "0x00064030",
+      "semantic": "one-shot impact object destructor retires a still-live actor 60",
+      "classification": "checkpoint_boundary_cleanup",
+      "remake_status": "checkpoint_neutral"
+    },
+    {
+      "site_rva": "0x000640D2",
+      "caller_rva": "0x000640B0",
+      "semantic": "actor 60 completes its impact animation",
+      "classification": "formal_runtime",
+      "remake_status": "exact_runtime",
+      "implementation_markers": [
+        {
+          "path": "Remake/game/scripts/combat_projectile.gd",
+          "contains": "func _retire_impact_actor"
+        }
+      ]
+    },
+    {
+      "site_rva": "0x000641AA",
+      "caller_rva": "0x00064160",
+      "semantic": "debris object destructor retires a still-live debris actor",
+      "classification": "checkpoint_boundary_cleanup",
+      "remake_status": "checkpoint_neutral"
+    },
+    {
+      "site_rva": "0x00064279",
+      "caller_rva": "0x000641C0",
+      "semantic": "debris setup allocation failure rollback",
+      "classification": "native_failure_guard",
+      "remake_status": "modern_allocator_not_modeled"
+    },
+    {
+      "site_rva": "0x0006433E",
+      "caller_rva": "0x000642F0",
+      "semantic": "missing formal debris-path resource rollback",
+      "classification": "native_failure_guard",
+      "remake_status": "validated_resources_make_branch_unreachable"
+    },
+    {
+      "site_rva": "0x000643F8",
+      "caller_rva": "0x000642F0",
+      "semantic": "debris bounce allocation failure rollback",
+      "classification": "native_failure_guard",
+      "remake_status": "modern_allocator_not_modeled"
+    },
+    {
+      "site_rva": "0x000644ED",
+      "caller_rva": "0x000642F0",
+      "semantic": "debris actor completes its final flight",
+      "classification": "formal_runtime",
+      "remake_status": "exact_runtime",
+      "implementation_markers": [
+        {
+          "path": "Remake/game/scripts/legacy_explosion_effect.gd",
+          "contains": "func _advance_debris_particles"
+        }
+      ]
+    },
+    {
+      "site_rva": "0x000646EB",
+      "caller_rva": "0x000646C0",
+      "semantic": "particle burst object destructor retires all still-live particles",
+      "classification": "checkpoint_boundary_cleanup",
+      "remake_status": "checkpoint_neutral"
+    },
+    {
+      "site_rva": "0x00064AF6",
+      "caller_rva": "0x00064A80",
+      "semantic": "particle reaches its configured repeat count",
+      "classification": "formal_runtime",
+      "remake_status": "exact_runtime",
+      "implementation_markers": [
+        {
+          "path": "Remake/game/scripts/legacy_explosion_effect.gd",
+          "contains": "func _advance_particles"
+        }
+      ]
+    }
+  ]
+}

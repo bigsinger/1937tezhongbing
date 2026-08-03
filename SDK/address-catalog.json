@@ -99,6 +99,7 @@
     {"name": "ActorDistance", "rva": "0x0005A040", "kind": "function", "confidence": "decompiled"},
     {"name": "AlertEffectiveRadius", "rva": "0x0005A7C0", "kind": "function", "confidence": "decompiled"},
     {"name": "CreateWorldActor", "rva": "0x0004A350", "kind": "function", "confidence": "decompiled"},
+    {"name": "RemoveWorldActor", "rva": "0x00049DA0", "kind": "function", "confidence": "decompiled"},
     {"name": "CompleteActorInteraction", "rva": "0x00056AB0", "kind": "function", "confidence": "decompiled"},
     {"name": "ApplyWorldItemEffect", "rva": "0x00058270", "kind": "function", "confidence": "decompiled"},
     {"name": "CompleteWorldItemDrop", "rva": "0x000583F0", "kind": "function", "confidence": "decompiled"},

@@ -41,7 +41,8 @@ PE 指纹和原始指令字节。
 - `Projectiles.hpp` 固定 type 1/2/3/6/7/9 的 effect/mode、
   64/64/64/16/5/8 步长、actor/GFL、直接伤害、L3→L2 碰撞顺序、
   actor 60 命中火花、0x44 运行时投射物布局、Bresenham/抛物线公式和
-  SPR primary/tertiary 发射锚点；
+  SPR primary/tertiary 发射锚点；它还保留 dormant mode 2 / effect 3 /
+  actor 58 的数值 ABI，但明确标记十二关无入口；
 - `Sprite.hpp` 固定 32 位 frame-group `+0x04..+0x50` 布局、Layer 3
   movement lookup、Layer 2 line-of-sight lookup、逐列 draw-order row
   lookup，以及 `actor_cell-primary/(32×16)` 的遮罩定位公式；
@@ -191,6 +192,9 @@ DBL 1003/header[2] actor 53 仍明确归入可受伤汽油桶生命周期，不�
 type 8/10 的部署物不能与爆炸 actor 合并：五次部署物工厂取数、独立
 actor 62 工厂以及原部署物四次派生/基类析构取数的严格顺序见
 [原版动态 actor 工厂与析构顺序](docs/NativeDynamicActorLifecycle.md)。
+19 个直接工厂点、20 个直接删除点及其正式/检查点/失败回滚/不可达分类由
+`dynamic-actor-lifecycle-sites.json` 统一登记；Remake 的 CI 会同时核对源码
+接线和正式投射 profile，防止文档声称恢复而实现遗漏。
 原版所有 119 个直接 `rand()` 调用点另由 `crt-rand-call-sites.json`
 统一登记；Remake 按调用点标签提交到一个可存档、可回放的全局 MSVCRT
 LCG 流，未登记地址会拒绝消费，避免各系统私有随机数悄悄破坏顺序。十二关

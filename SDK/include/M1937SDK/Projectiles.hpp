@@ -62,9 +62,17 @@ inline constexpr std::int32_t world_ticks_per_second = 60;
 enum class DeliveryMode : std::int32_t {
     invisible_linear = 0,
     grenade_parabola = 1,
+    // Effect 3 can select this owner-afterimage route in the executable, but
+    // no caller of the effect dispatcher and no formal twelve-level weapon
+    // profile requests it. Keep the numeric ABI without presenting it as a
+    // supported campaign attack.
+    dormant_owner_afterimage_trail = 2,
     dart_linear = 3,
     slingshot_linear = 4,
 };
+
+inline constexpr std::int32_t dormant_mode_2_effect_type = 3;
+inline constexpr std::int32_t dormant_mode_2_initial_actor_type = 58;
 
 enum class CollisionSemantics : std::uint8_t {
     layer3_actor_then_layer2_obstruction,

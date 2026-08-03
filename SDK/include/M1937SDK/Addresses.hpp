@@ -105,6 +105,7 @@ inline constexpr std::uintptr_t alert_radius_operand_4 = 0x00057187;
 inline constexpr std::uintptr_t actor_distance = 0x0005A040;
 inline constexpr std::uintptr_t alert_effective_radius = 0x0005A7C0;
 inline constexpr std::uintptr_t create_world_actor = 0x0004A350;
+inline constexpr std::uintptr_t remove_world_actor = 0x00049DA0;
 inline constexpr std::uintptr_t complete_actor_interaction = 0x00056AB0;
 inline constexpr std::uintptr_t apply_world_item_effect = 0x00058270;
 inline constexpr std::uintptr_t complete_world_item_drop = 0x000583F0;

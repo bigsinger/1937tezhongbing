@@ -102,6 +102,7 @@ namespace Mission1937.SDK.Generated
         public const long ActorDistance = 0x0005A040L;
         public const long AlertEffectiveRadius = 0x0005A7C0L;
         public const long CreateWorldActor = 0x0004A350L;
+        public const long RemoveWorldActor = 0x00049DA0L;
         public const long CompleteActorInteraction = 0x00056AB0L;
         public const long ApplyWorldItemEffect = 0x00058270L;
         public const long CompleteWorldItemDrop = 0x000583F0L;
