@@ -136,6 +136,13 @@ func _check_layout(shell: GameShell, viewport_size: Vector2i) -> void:
 			== Vector2(float(viewport_size.x), float(viewport_size.y) - HUD_HEIGHT),
 		"the HUD consumes pointer input and exposes the true gameplay edge",
 	)
+	_expect(
+		shell.is_screen_point_over_gameplay_ui(bar.get_center())
+			and not shell.is_screen_point_over_gameplay_ui(
+				Vector2(float(viewport_size.x) * 0.5, bar.position.y - 8.0)
+			),
+		"the complete bottom bar is an explicit no-click-through screen region",
+	)
 	var gameplay_size := shell.gameplay_viewport_size(Vector2(viewport_size))
 	_expect(
 		SMOOTH_CAMERA_PAN.edge_intent(

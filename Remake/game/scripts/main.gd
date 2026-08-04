@@ -152,6 +152,8 @@ const DEFAULT_WORLD_SIZE := Vector2(1280.0, 720.0)
 const DEFAULT_MOVEMENT_BOUNDS := Rect2(Vector2(36.0, 100.0), Vector2(1208.0, 568.0))
 const CAMERA_PAN_SPEED := 720.0
 const EDGE_SCROLL_MARGIN := 32.0
+const EDGE_SCROLL_VERTICAL_MARGIN := 48.0
+const EDGE_SCROLL_RELEASE_GRACE_SECONDS := 0.10
 const BACKGROUND_ENTITY_Z_INDEX := WORLD_DEPTH.BACKGROUND_Z
 const MISSION_INTERACTION_RADIUS := 128.0
 const MISSION_ZONE_CHECK_SECONDS := 0.20
@@ -357,6 +359,7 @@ var right_drag_start_screen := Vector2.ZERO
 var right_drag_current_screen := Vector2.ZERO
 var edge_scroll_strength := 0.0
 var edge_scroll_last_direction := Vector2.ZERO
+var edge_scroll_release_elapsed := EDGE_SCROLL_RELEASE_GRACE_SECONDS
 var camera_pan_velocity := Vector2.ZERO
 var legacy_cursor_presenter: RefCounted = LEGACY_CURSOR_PRESENTER.new()
 var original_force_target_held := false
@@ -450,6 +453,7 @@ var legacy_ai_control_effects: Array[Node] = []
 var legacy_deployment_targets: Array[Node2D] = []
 var legacy_burial_caches: Array[Node2D] = []
 var legacy_doors: Array[Node2D] = []
+var legacy_navigation_passages: Array[Dictionary] = []
 var dormant_destruction_effects_by_scene: Dictionary = {}
 var buried_enemy_scene_indices: Dictionary = {}
 var field_inventory: Dictionary = {}
@@ -1862,6 +1866,7 @@ func load_imported_level(level_id: String = LEVEL_VIEW.DEFAULT_LEVEL_ID) -> bool
 	# otherwise an uncollected drop survives a restart as an orphaned node.
 	_clear_runtime_mission_pickups()
 	legacy_doors.clear()
+	legacy_navigation_passages.clear()
 	dormant_destruction_effects_by_scene.clear()
 	_clear_original_pickup_order()
 	_clear_original_drop_order()
@@ -2086,6 +2091,20 @@ func spawn_imported_entities() -> int:
 			playable_entities[display_name] = controllable_entity
 			continue
 		var database_entry_id := int(entity.get("database_entry_id", 0))
+		var permanent_passage_profile: Dictionary = (
+			LEGACY_DOOR_CATALOG.permanent_passage_profile_for_entity(entity)
+		)
+		if not permanent_passage_profile.is_empty():
+			var passage_texture := load_entity_texture(entity)
+			if passage_texture != null:
+				legacy_navigation_passages.append({
+					"scene_index": scene_index,
+					"entity": entity.duplicate(true),
+					"profile": permanent_passage_profile,
+					"texture_size": passage_texture.get_size(),
+					"movement_release_cells": [],
+					"sight_release_cells": [],
+				})
 		var door_profile: Dictionary = LEGACY_DOOR_CATALOG.profile_for_entity(
 			entity
 		)
@@ -2502,12 +2521,59 @@ func _load_gfl_action_groups(
 	return groups
 
 
+func _register_permanent_navigation_passages() -> int:
+	if dynamic_occupancy == null or navigation_grid == null:
+		return 0
+	var registered := 0
+	for passage_index: int in range(legacy_navigation_passages.size()):
+		var passage := legacy_navigation_passages[passage_index]
+		var entity := passage.get("entity", {}) as Dictionary
+		var profile := passage.get("profile", {}) as Dictionary
+		var texture_size: Vector2 = passage.get(
+			"texture_size",
+			Vector2.ZERO,
+		) as Vector2
+		var movement_cells: Array[Vector2i] = (
+			LEGACY_DOOR_CATALOG.local_source_cells_for_passage(
+				entity,
+				texture_size,
+				navigation_grid,
+				NAVIGATION_GRID_DATA.MOVEMENT_LAYER_ID,
+			)
+		)
+		var sight_cells: Array[Vector2i] = (
+			LEGACY_DOOR_CATALOG.local_source_cells_for_passage(
+				entity,
+				texture_size,
+				navigation_grid,
+				NAVIGATION_GRID_DATA.LINE_OF_SIGHT_LAYER_ID,
+			)
+		)
+		passage["movement_release_cells"] = movement_cells
+		passage["sight_release_cells"] = sight_cells
+		legacy_navigation_passages[passage_index] = passage
+		if bool(dynamic_occupancy.call(
+			"register_source_scene_footprint",
+			int(passage.get("scene_index", -1)),
+			movement_cells,
+			sight_cells,
+			true,
+			bool(profile.get("release_sight", true)),
+		)):
+			registered += 1
+	return registered
+
+
 func create_level_camera() -> void:
 	level_camera = Camera2D.new()
 	level_camera.name = "LevelCamera"
 	# Velocity is smoothed explicitly by SmoothCameraPan. Camera2D's second
 	# smoothing pass used to add lag and edge jitter, especially in a window.
 	level_camera.position_smoothing_enabled = false
+	# Actor transforms are physics-interpolated, but the camera is advanced on
+	# every rendered frame. Interpolating it a second time would reintroduce the
+	# uneven vertical stepping this explicit velocity controller avoids.
+	level_camera.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	add_child(level_camera)
 	level_camera.enabled = true
 	configure_level_camera(true)
@@ -2597,6 +2663,7 @@ func spawn_squad() -> void:
 				"bind_dynamic_occupancy"
 			):
 				door.call("bind_dynamic_occupancy", dynamic_occupancy)
+		_register_permanent_navigation_passages()
 	last_squad_spawn_phase_usec["dynamic_grid"] = (
 		Time.get_ticks_usec() - spawn_phase_started_usec
 	)
@@ -3855,11 +3922,39 @@ func _reset_context_cursor() -> void:
 
 
 func _pointer_over_interactive_control() -> bool:
+	if (
+		game_shell != null
+		and game_shell.has_method("is_screen_point_over_gameplay_ui")
+		and bool(game_shell.call(
+			"is_screen_point_over_gameplay_ui",
+			get_viewport().get_mouse_position(),
+		))
+	):
+		return true
 	var hovered_control := get_viewport().gui_get_hovered_control()
 	return (
 		hovered_control != null
 		and hovered_control.mouse_filter != Control.MOUSE_FILTER_IGNORE
 	)
+
+
+func _pointer_event_over_gameplay_ui(event: InputEvent) -> bool:
+	if (
+		game_shell == null
+		or not game_shell.has_method("is_screen_point_over_gameplay_ui")
+	):
+		return false
+	var screen_position := Vector2(-1.0, -1.0)
+	if event is InputEventMouseButton:
+		screen_position = (event as InputEventMouseButton).position
+	elif event is InputEventMouseMotion:
+		screen_position = (event as InputEventMouseMotion).position
+	else:
+		return false
+	return bool(game_shell.call(
+		"is_screen_point_over_gameplay_ui",
+		screen_position,
+	))
 
 
 func _cursor_ground_is_walkable(world_position: Vector2) -> bool:
@@ -3914,6 +4009,7 @@ func _mouse_edge_scroll_direction() -> Vector2:
 		mouse_position,
 		viewport_size,
 		EDGE_SCROLL_MARGIN,
+		EDGE_SCROLL_VERTICAL_MARGIN,
 	)
 
 
@@ -3924,14 +4020,32 @@ func _advance_mouse_edge_scroll(delta: float) -> Vector2:
 		or not DisplayServer.window_is_focused()
 		or right_dragging
 		or camera_dragging
+		or (game_shell != null and game_shell.is_overlay_open())
+		or _pointer_over_interactive_control()
 	):
-		edge_scroll_strength = 0.0
-		edge_scroll_last_direction = Vector2.ZERO
+		_reset_camera_edge_intent()
 		return Vector2.ZERO
 	var requested_direction := _mouse_edge_scroll_direction()
-	edge_scroll_last_direction = requested_direction
+	if not requested_direction.is_zero_approx():
+		edge_scroll_last_direction = requested_direction
+		edge_scroll_release_elapsed = 0.0
+	else:
+		edge_scroll_release_elapsed += maxf(delta, 0.0)
+		requested_direction = SMOOTH_CAMERA_PAN.retain_edge_intent(
+			edge_scroll_last_direction,
+			edge_scroll_release_elapsed,
+			EDGE_SCROLL_RELEASE_GRACE_SECONDS,
+		)
+		if requested_direction.is_zero_approx():
+			edge_scroll_last_direction = Vector2.ZERO
 	edge_scroll_strength = clampf(requested_direction.length(), 0.0, 1.0)
 	return requested_direction
+
+
+func _reset_camera_edge_intent() -> void:
+	edge_scroll_strength = 0.0
+	edge_scroll_last_direction = Vector2.ZERO
+	edge_scroll_release_elapsed = EDGE_SCROLL_RELEASE_GRACE_SECONDS
 
 
 static func edge_scroll_direction_for_position(
@@ -3943,6 +4057,7 @@ static func edge_scroll_direction_for_position(
 		mouse_position,
 		viewport_size,
 		margin,
+		EDGE_SCROLL_VERTICAL_MARGIN,
 	)
 
 
@@ -4009,6 +4124,19 @@ func _toggle_fullscreen_window_mode() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if game_shell != null and game_shell.is_overlay_open():
+		return
+	if _pointer_event_over_gameplay_ui(event):
+		# This is a defensive boundary in addition to Control.MOUSE_FILTER_STOP.
+		# It prevents a HUD press/release from becoming a world order even if a
+		# resized window changes the hovered-control state during that frame.
+		if event is InputEventMouseButton:
+			var ui_mouse_event := event as InputEventMouseButton
+			if not ui_mouse_event.pressed:
+				if ui_mouse_event.button_index == MOUSE_BUTTON_MIDDLE:
+					camera_dragging = false
+				elif ui_mouse_event.button_index == MOUSE_BUTTON_RIGHT:
+					right_dragging = false
+		get_viewport().set_input_as_handled()
 		return
 	if event is InputEventMouseMotion and camera_dragging and level_camera != null:
 		var motion := event as InputEventMouseMotion
@@ -8266,8 +8394,13 @@ func _load_converted_texture(relative_path: String) -> Texture2D:
 func _on_map_position_requested(world_position: Vector2) -> void:
 	if level_camera == null:
 		return
+	_cancel_direction_camera_tween()
+	camera_pan_velocity = Vector2.ZERO
+	_reset_camera_edge_intent()
 	level_camera.position = world_position
 	clamp_level_camera()
+	if level_camera.has_method("force_update_scroll"):
+		level_camera.call("force_update_scroll")
 	if game_shell != null:
 		game_shell.update_map_camera(_camera_world_rect())
 

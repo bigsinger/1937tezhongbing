@@ -543,6 +543,18 @@ func gameplay_viewport_size(full_viewport_size: Vector2) -> Vector2:
 	return result
 
 
+func is_screen_point_over_gameplay_ui(screen_position: Vector2) -> bool:
+	for control_value: Variant in [_original_bottom_hud, _map_panel]:
+		var control := control_value as Control
+		if (
+			control != null
+			and control.visible
+			and control.get_global_rect().has_point(screen_position)
+		):
+			return true
+	return false
+
+
 func update_original_hud(actor_states: Array) -> void:
 	var by_name: Dictionary = {}
 	var selected_state: Dictionary = {}
@@ -618,7 +630,10 @@ func update_original_hud(actor_states: Array) -> void:
 			else Color.RED
 		)
 		var button := controls.get("button") as TextureButton
-		button.tooltip_text = "%s　生命 %d%%" % [actor_name, roundi(ratio * 100.0)]
+		button.tooltip_text = "选择%s并定位视图　生命 %d%%" % [
+			actor_name,
+			roundi(ratio * 100.0),
+		]
 	_update_original_hud_portrait_textures()
 	_update_original_hud_status_textures()
 	set_original_hud_visible(not by_name.is_empty())
@@ -1818,7 +1833,11 @@ func _build_original_hud_portrait(actor_name: String) -> void:
 	button.ignore_texture_size = true
 	button.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
 	button.focus_mode = Control.FOCUS_NONE
+	button.mouse_filter = Control.MOUSE_FILTER_STOP
+	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	button.tooltip_text = "选择%s并将视图定位到该角色" % actor_name
 	button.pressed.connect(_on_original_hud_actor_pressed.bind(actor_name))
+	button.gui_input.connect(_consume_original_hud_pointer_input)
 	container.add_child(button)
 
 	var health_back := ColorRect.new()
@@ -1854,9 +1873,12 @@ func _build_original_hud_action(descriptor: Dictionary) -> void:
 	button.ignore_texture_size = true
 	button.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
 	button.focus_mode = Control.FOCUS_NONE
+	button.mouse_filter = Control.MOUSE_FILTER_STOP
+	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	button.toggle_mode = bool(descriptor.get("toggle", false))
 	button.tooltip_text = str(descriptor.get("tooltip", action))
 	button.pressed.connect(_on_original_hud_action_pressed.bind(action))
+	button.gui_input.connect(_consume_original_hud_pointer_input)
 	_original_hud_action_row.add_child(button)
 	_original_hud_action_buttons[action] = button
 
@@ -1873,10 +1895,15 @@ func _on_original_hud_weapon_gui_input(event: InputEvent) -> void:
 	if not event is InputEventMouseButton:
 		return
 	var mouse_event := event as InputEventMouseButton
+	get_viewport().set_input_as_handled()
 	if not mouse_event.pressed or mouse_event.button_index != MOUSE_BUTTON_LEFT:
 		return
 	inventory_cycle_requested.emit(1)
-	get_viewport().set_input_as_handled()
+
+
+func _consume_original_hud_pointer_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton or event is InputEventMouseMotion:
+		get_viewport().set_input_as_handled()
 
 
 func _update_original_hud_portrait_textures() -> void:
@@ -2423,6 +2450,10 @@ func _build_map_panel() -> void:
 	_map_view.custom_minimum_size = Vector2(276.0, 158.0)
 	_map_view.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_map_view.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_map_view.mouse_filter = Control.MOUSE_FILTER_STOP
+	_map_view.focus_mode = Control.FOCUS_NONE
+	_map_view.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	_map_view.tooltip_text = "点击或拖动以移动游戏视图"
 	_map_view.world_position_requested.connect(_on_map_position_requested)
 	_map_panel.add_child(_map_view)
 	_map_panel.visible = false

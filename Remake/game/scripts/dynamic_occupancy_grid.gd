@@ -203,6 +203,11 @@ func finalize_registration() -> void:
 			permanent_footprint.get("movement", []) as Array[Vector2i]
 		):
 			movement_release_lookup[cell] = true
+		if bool(permanent_footprint.get("permanent_sight_release", false)):
+			for cell: Vector2i in (
+				permanent_footprint.get("sight", []) as Array[Vector2i]
+			):
+				sight_release_lookup[cell] = true
 	for scene_index: int in scene_indices:
 		if not source_scene_footprints.has(scene_index):
 			continue
@@ -234,6 +239,7 @@ func register_source_scene_footprint(
 	movement_cells: Array[Vector2i],
 	sight_cells: Array[Vector2i],
 	permanent_movement_release: bool = false,
+	permanent_sight_release: bool = false,
 ) -> bool:
 	if navigation == null or scene_index < 0:
 		return false
@@ -241,6 +247,7 @@ func register_source_scene_footprint(
 		"movement": movement_cells.duplicate(),
 		"sight": sight_cells.duplicate(),
 		"permanent_movement_release": permanent_movement_release,
+		"permanent_sight_release": permanent_sight_release,
 	}
 	return not movement_cells.is_empty() or not sight_cells.is_empty()
 

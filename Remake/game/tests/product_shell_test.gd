@@ -329,6 +329,17 @@ func _run() -> void:
 	)
 	shell._map_view.size = Vector2(800.0, 400.0)
 	var map_rect: Rect2 = shell._map_view._map_rect()
+	expect(
+		shell._map_view.mouse_filter == Control.MOUSE_FILTER_STOP
+			and shell._map_view.mouse_default_cursor_shape
+				== Control.CURSOR_POINTING_HAND
+			and not shell._map_view.tooltip_text.is_empty()
+			and shell.is_screen_point_over_gameplay_ui(
+				shell._map_panel.get_global_rect().get_center()
+			),
+		"the minimap owns pointer input and advertises camera navigation",
+		failures,
+	)
 	var click := InputEventMouseButton.new()
 	click.button_index = MOUSE_BUTTON_LEFT
 	click.pressed = true
@@ -338,6 +349,31 @@ func _run() -> void:
 		map_clicks.size() == 1
 		and map_clicks[0].is_equal_approx(Vector2(500.0, 250.0)),
 		"clicking the tactical-map center requests the world center",
+		failures,
+	)
+	var click_release := InputEventMouseButton.new()
+	click_release.button_index = MOUSE_BUTTON_LEFT
+	click_release.pressed = false
+	click_release.position = map_rect.get_center()
+	shell._map_view._gui_input(click_release)
+	var drag_press := InputEventMouseButton.new()
+	drag_press.button_index = MOUSE_BUTTON_LEFT
+	drag_press.pressed = true
+	drag_press.position = map_rect.position + map_rect.size * 0.25
+	shell._map_view._gui_input(drag_press)
+	var drag_motion := InputEventMouseMotion.new()
+	drag_motion.button_mask = MOUSE_BUTTON_MASK_LEFT
+	drag_motion.position = map_rect.position + map_rect.size * 0.75
+	shell._map_view._gui_input(drag_motion)
+	var drag_release := InputEventMouseButton.new()
+	drag_release.button_index = MOUSE_BUTTON_LEFT
+	drag_release.pressed = false
+	drag_release.position = drag_motion.position
+	shell._map_view._gui_input(drag_release)
+	expect(
+		map_clicks.size() == 3
+			and map_clicks[-1].is_equal_approx(Vector2(750.0, 375.0)),
+		"dragging across the tactical map continuously moves the requested world view",
 		failures,
 	)
 	var original_map_image := Image.create(336, 166, false, Image.FORMAT_RGBA8)
@@ -381,7 +417,7 @@ func _run() -> void:
 	border_click.pressed = true
 	border_click.position = texture_rect.position + Vector2.ONE
 	shell._map_view._gui_input(border_click)
-	expect(map_clicks.size() == 1, "the decorative 13px minimap border is not treated as world terrain", failures)
+	expect(map_clicks.size() == 3, "the decorative 13px minimap border is not treated as world terrain", failures)
 	shell.hide_tactical_map()
 	expect(not shell.is_tactical_map_visible() and not paused, "minimap hides without changing pause state", failures)
 

@@ -25,6 +25,7 @@ const EXPECTED_SUPPORTED_DOOR_COUNT := 177
 const EXPECTED_CLOSED_DOOR_COUNT := 97
 const EXPECTED_AUTHORED_OPEN_DOOR_COUNT := 80
 const EXPECTED_NAVIGATION_DOOR_COUNT := 167
+const EXPECTED_PERMANENT_PASSAGE_COUNT := 59
 ## Counts come from the hash-locked VWF Layer 3 data. "Static" means that the
 ## encoded scene is not one of the 772 exact RuntimeActor identities; closed
 ## doors, pickups and historical orphan footprints therefore stay in this
@@ -66,6 +67,7 @@ func _run_tests() -> void:
 	var closed_doors := 0
 	var authored_open_doors := 0
 	var navigation_doors := 0
+	var permanent_passages := 0
 	var closed_row_sliced_doors := 0
 	var open_row_sliced_doors := 0
 	var static_navigation_totals := {
@@ -149,6 +151,32 @@ func _run_tests() -> void:
 			if _uses_original_row_slices(door):
 				open_row_sliced_doors += 1
 			door.call("set_open", false, false)
+		var passages: Array = main.legacy_navigation_passages
+		permanent_passages += passages.size()
+		for passage_value: Variant in passages:
+			var passage := passage_value as Dictionary
+			var scene_index := int(passage.get("scene_index", -1))
+			var movement_cells := (
+				passage.get("movement_release_cells", []) as Array[Vector2i]
+			)
+			var sight_cells := (
+				passage.get("sight_release_cells", []) as Array[Vector2i]
+			)
+			_expect(
+				not movement_cells.is_empty()
+					and not _any_solid(main.navigation_grid, movement_cells),
+				"%s scene %d visible doorway is a permanent A* passage"
+					% [level_id, scene_index],
+			)
+			_expect(
+				sight_cells.is_empty()
+					or not _any_line_of_sight_blocked(
+						main.navigation_grid,
+						sight_cells,
+					),
+				"%s scene %d visible doorway does not create invisible sight cover"
+					% [level_id, scene_index],
+			)
 	_expect(
 		total_doors == EXPECTED_SUPPORTED_DOOR_COUNT,
 		"all %d supported door states across the twelve real levels load"
@@ -165,6 +193,11 @@ func _run_tests() -> void:
 			"%d/%d real door states own at least one A* portal cell"
 		)
 			% [navigation_doors, EXPECTED_NAVIGATION_DOOR_COUNT],
+	)
+	_expect(
+		permanent_passages == EXPECTED_PERMANENT_PASSAGE_COUNT,
+		"all %d authored visible doorways across the campaign are navigation passages"
+			% EXPECTED_PERMANENT_PASSAGE_COUNT,
 	)
 	_expect(
 		closed_row_sliced_doors == EXPECTED_SUPPORTED_DOOR_COUNT,
@@ -197,6 +230,19 @@ func _run_tests() -> void:
 	)
 
 	main.switch_level(0, false, false)
+	var m000_short_passages := 0
+	for passage_value: Variant in main.legacy_navigation_passages as Array:
+		var passage := passage_value as Dictionary
+		var movement_cells := (
+			passage.get("movement_release_cells", []) as Array[Vector2i]
+		)
+		if _has_short_path_through_door(main.navigation_grid, movement_cells):
+			m000_short_passages += 1
+	_expect(
+		(main.legacy_navigation_passages as Array).size() == 25
+			and m000_short_passages >= 20,
+		"m000 exposes routable paths through its courtyard arches and doorway",
+	)
 	var modern_group_count := int(
 		main.call("_configure_modern_enemy_patrol_groups", true)
 	)
@@ -347,6 +393,15 @@ func _audit_static_navigation_footprints(
 		door_portal_scenes[int(door.get("scene_index"))] = true
 		for release_cell: Vector2i in movement_cells:
 			door_portal_cells[release_cell] = true
+	for passage_value: Variant in main.legacy_navigation_passages as Array:
+		var passage := passage_value as Dictionary
+		var movement_cells := (
+			passage.get("movement_release_cells", []) as Array[Vector2i]
+		)
+		if movement_cells.is_empty():
+			continue
+		for release_cell: Vector2i in movement_cells:
+			door_portal_cells[release_cell] = true
 	var static_state_violations := 0
 	var static_state_examples: Array[String] = []
 	var live_actor_state_violations := 0
@@ -457,7 +512,7 @@ func _audit_static_navigation_footprints(
 	)
 	_expect(
 		static_state_violations == 0,
-		"%s releases only cells owned by interactive door portals: %s"
+		"%s releases only cells owned by interactive doors or visible passages: %s"
 			% [level_id, str(static_state_examples)],
 	)
 	_expect(

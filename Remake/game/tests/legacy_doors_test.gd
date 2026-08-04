@@ -17,6 +17,7 @@ var checks := 0
 
 func _init() -> void:
 	_test_catalog()
+	_test_permanent_visual_passage()
 	_test_visual_navigation_and_snapshot_lifecycle()
 	if failures.is_empty():
 		print("Legacy door tests passed (%d checks)." % checks)
@@ -59,6 +60,81 @@ func _test_catalog() -> void:
 			{"database_entry_id": 9999}
 		).is_empty(),
 		"unpaired scenery is not guessed as an interactive door",
+	)
+	_expect(
+		str(
+			DOOR_CATALOG
+			. permanent_passage_profile_for_entity({"database_entry_id": 98})
+			. get("name", "")
+		) == "courtyard_arch_a"
+			and DOOR_CATALOG.is_permanent_navigation_passage(420)
+			and not DOOR_CATALOG.is_permanent_navigation_passage(636),
+		"visible arches are classified separately from interactive and closed doors",
+	)
+
+
+func _test_permanent_visual_passage() -> void:
+	var movement := PackedInt64Array()
+	var sight := PackedInt64Array()
+	movement.resize(35)
+	sight.resize(35)
+	var passage_cell := Vector2i(2, 2)
+	var stale_reused_cell := Vector2i(6, 0)
+	movement[passage_cell.y * 7 + passage_cell.x] = 1033
+	movement[stale_reused_cell.y * 7 + stale_reused_cell.x] = 1033
+	sight[passage_cell.y * 7 + passage_cell.x] = 1033
+	sight[stale_reused_cell.y * 7 + stale_reused_cell.x] = 1033
+	var navigation = NAVIGATION_GRID_DATA.create_for_tests(
+		7,
+		5,
+		Vector2i(32, 16),
+		movement,
+		sight,
+	)
+	var entity := {
+		"scene_index": 33,
+		"database_entry_id": 98,
+		"reference_x": 80.0,
+		"reference_y": 40.0,
+		"sprite_anchor": {"x": 16.0, "y": 8.0},
+	}
+	var movement_cells: Array[Vector2i] = (
+		DOOR_CATALOG.local_source_cells_for_passage(
+			entity,
+			Vector2(32.0, 16.0),
+			navigation,
+			NAVIGATION_GRID_DATA.MOVEMENT_LAYER_ID,
+		)
+	)
+	var sight_cells: Array[Vector2i] = (
+		DOOR_CATALOG.local_source_cells_for_passage(
+			entity,
+			Vector2(32.0, 16.0),
+			navigation,
+			NAVIGATION_GRID_DATA.LINE_OF_SIGHT_LAYER_ID,
+		)
+	)
+	_expect(
+		movement_cells == [passage_cell]
+			and sight_cells == [passage_cell],
+		"an open arch releases only source cells intersecting its concrete sprite",
+	)
+	var occupancy = DYNAMIC_OCCUPANCY_GRID.new()
+	occupancy.configure(navigation)
+	occupancy.register_source_scene_footprint(
+		33,
+		movement_cells,
+		sight_cells,
+		true,
+		true,
+	)
+	occupancy.finalize_registration()
+	_expect(
+		not navigation.astar.is_point_solid(passage_cell)
+			and not navigation.is_line_of_sight_blocked(passage_cell)
+			and navigation.astar.is_point_solid(stale_reused_cell)
+			and navigation.is_line_of_sight_blocked(stale_reused_cell),
+		"a permanent visual opening releases movement and sight without punching a distant hole",
 	)
 
 

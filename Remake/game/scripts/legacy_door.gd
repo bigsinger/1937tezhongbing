@@ -261,12 +261,24 @@ func _derive_release_cells(
 	if closed_texture == null or open_texture == null:
 		return result
 	if source_navigation.has_method("source_cells_for_scene"):
+		var cell_size: Vector2i = source_navigation.get("cell_size")
+		var closed_visual_rect := Rect2(
+			position - closed_anchor,
+			closed_texture.get_size(),
+		).grow(maxf(float(cell_size.x), float(cell_size.y)) * 0.5)
 		for source_cell: Vector2i in source_navigation.call(
 			"source_cells_for_scene",
 			layer_id,
 			scene_index,
 		) as Array[Vector2i]:
-			if not result.has(source_cell):
+			var cell_rect := Rect2(
+				Vector2(source_cell * cell_size),
+				Vector2(cell_size),
+			)
+			if (
+				closed_visual_rect.intersects(cell_rect)
+				and not result.has(source_cell)
+			):
 				result.append(source_cell)
 	var closed_image := closed_texture.get_image()
 	var open_image := open_texture.get_image()

@@ -99,13 +99,68 @@ func _run() -> void:
 		main.game_shell.is_tactical_map_visible(),
 		"the original M release phase opens the live minimap",
 	)
-	_push_key(KEY_M, true)
+	player.call("cancel_path")
+	var map_view: Control = main.game_shell._map_view
+	var map_rect: Rect2 = map_view.call("_map_rect")
+	var requested_world_position: Vector2 = (
+		(main.world_size as Vector2) * Vector2(0.72, 0.68)
+	)
+	var requested_map_position: Vector2 = map_view.call(
+		"_world_to_map",
+		requested_world_position,
+		map_rect,
+	)
+	main.camera_pan_velocity = Vector2(120.0, 120.0)
+	var map_click := InputEventMouseButton.new()
+	map_click.button_index = MOUSE_BUTTON_LEFT
+	map_click.pressed = true
+	map_click.position = requested_map_position
+	map_view.call("_gui_input", map_click)
+	var map_release := InputEventMouseButton.new()
+	map_release.button_index = MOUSE_BUTTON_LEFT
+	map_release.pressed = false
+	map_release.position = requested_map_position
+	map_view.call("_gui_input", map_release)
 	await process_frame
-	_push_key(KEY_M, false)
+	var expected_map_camera: Vector2 = main.LEVEL_VIEW.clamp_camera_center(
+		requested_world_position,
+		main.get_viewport_rect().size,
+		main.level_camera.zoom.x,
+		main.world_size,
+	)
+	_expect(
+		main.level_camera.position.is_equal_approx(expected_map_camera)
+			and main.camera_pan_velocity.is_zero_approx()
+			and (player.get("movement_path") as PackedVector2Array).is_empty(),
+		(
+			"a real minimap click moves only the camera and cancels stale edge velocity "
+			+ "(actual=%s expected=%s velocity=%s path=%d map_rect=%s global=%s)"
+		)
+			% [
+				str(main.level_camera.position),
+				str(expected_map_camera),
+				str(main.camera_pan_velocity),
+				(player.get("movement_path") as PackedVector2Array).size(),
+				str(map_rect),
+				str(map_view.get_global_rect()),
+			],
+	)
+	var minimap_button := (
+		main.game_shell._original_hud_action_buttons["minimap"]
+		as TextureButton
+	)
+	minimap_button.pressed.emit()
 	await process_frame
 	_expect(
-		not main.game_shell.is_tactical_map_visible(),
-		"a second complete M transition closes the minimap",
+		not main.game_shell.is_tactical_map_visible()
+			and (player.get("movement_path") as PackedVector2Array).is_empty(),
+		"the bottom minimap button works and never submits a world movement order "
+			+ "(visible=%s path=%d button=%s)"
+				% [
+					main.game_shell.is_tactical_map_visible(),
+					(player.get("movement_path") as PackedVector2Array).size(),
+					str(minimap_button.get_global_rect()),
+				],
 	)
 
 	var rescue_target: Node2D

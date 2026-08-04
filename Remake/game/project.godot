@@ -21,6 +21,7 @@ window/handheld/orientation=1
 [physics]
 
 common/physics_ticks_per_second=60
+common/physics_interpolation=true
 
 [rendering]
 

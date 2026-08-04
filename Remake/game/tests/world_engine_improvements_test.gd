@@ -24,6 +24,8 @@ var checks := 0
 func _init() -> void:
 	_test_world_audio_attenuation()
 	_test_smooth_viewport_local_camera_pan()
+	_test_physics_render_interpolation()
+	_test_row_sliced_actor_has_no_fallback_artifact()
 	_test_inventory_drop_interaction()
 	_test_inventory_drops_reset_with_level()
 	_test_patrol_formation_separation()
@@ -90,6 +92,24 @@ func _test_smooth_viewport_local_camera_pan() -> void:
 		diagonal.length() <= 1.00001,
 		"diagonal edge scrolling is normalized",
 	)
+	var vertical_outer: Vector2 = SMOOTH_CAMERA_PAN.edge_intent(
+		Vector2(640.0, 0.0),
+		viewport,
+		32.0,
+		48.0,
+	)
+	var vertical_mid: Vector2 = SMOOTH_CAMERA_PAN.edge_intent(
+		Vector2(640.0, 24.0),
+		viewport,
+		32.0,
+		48.0,
+	)
+	_expect(
+		vertical_outer.y < -0.99
+			and vertical_mid.y < 0.0
+			and absf(vertical_mid.y) < absf(vertical_outer.y),
+		"vertical scrolling uses the same smooth curve over a wider controllable band",
+	)
 	var velocity: Vector2 = SMOOTH_CAMERA_PAN.advance_velocity(
 		Vector2.ZERO, Vector2(600.0, 0.0), 1.0 / 60.0
 	)
@@ -101,6 +121,53 @@ func _test_smooth_viewport_local_camera_pan() -> void:
 			and slowing.x >= 0.0 and slowing.x < velocity.x,
 		"camera velocity accelerates and decelerates without pointer warping",
 	)
+	var horizontal_tail: Vector2 = SMOOTH_CAMERA_PAN.retain_edge_intent(
+		Vector2.RIGHT,
+		0.04,
+		0.10,
+	)
+	var vertical_tail: Vector2 = SMOOTH_CAMERA_PAN.retain_edge_intent(
+		Vector2.DOWN,
+		0.04,
+		0.10,
+	)
+	_expect(
+		horizontal_tail.x > 0.0
+			and vertical_tail.y > 0.0
+			and is_equal_approx(horizontal_tail.x, vertical_tail.y)
+			and SMOOTH_CAMERA_PAN.retain_edge_intent(
+				Vector2.DOWN,
+				0.10,
+				0.10,
+			).is_zero_approx(),
+		"horizontal and vertical edge loss use the same short eased release tail",
+	)
+
+
+func _test_physics_render_interpolation() -> void:
+	_expect(
+		bool(ProjectSettings.get_setting(
+			"physics/common/physics_interpolation",
+			false,
+		)),
+		"physics-driven actors are interpolated between fixed 60 Hz simulation ticks",
+	)
+
+
+func _test_row_sliced_actor_has_no_fallback_artifact() -> void:
+	var unit = SQUAD_UNIT.new()
+	unit.sprite_texture = null
+	unit.sprite_drawn_by_row_slices = true
+	_expect(
+		not unit.uses_fallback_silhouette(),
+		"a row-sliced imported actor never receives the missing-art i-shaped overlay",
+	)
+	unit.sprite_drawn_by_row_slices = false
+	_expect(
+		unit.uses_fallback_silhouette(),
+		"a genuinely missing actor texture still has a readable fallback silhouette",
+	)
+	unit.free()
 
 
 func _test_inventory_drop_interaction() -> void:

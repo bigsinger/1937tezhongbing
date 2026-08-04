@@ -484,6 +484,11 @@ func configure(
 		apply_idle_frame()
 	elif sprite_texture != null:
 		sprite_anchor = sprite_texture.get_size() * 0.5
+	if is_inside_tree():
+		# The actor is configured after entering the tree.  Reset interpolation so
+		# its first rendered frame starts at the authored spawn instead of blending
+		# from Node2D's temporary origin.
+		reset_physics_interpolation()
 	queue_redraw()
 
 
@@ -4839,7 +4844,7 @@ func _active_legacy_sprite_triplets() -> Dictionary:
 func _draw() -> void:
 	if sprite_texture != null and not sprite_drawn_by_row_slices:
 		draw_texture(sprite_texture, -sprite_anchor)
-	else:
+	elif uses_fallback_silhouette():
 		draw_flat_ellipse(
 			Vector2(0.0, 8.0),
 			Vector2(20.0, 10.0),
@@ -4896,6 +4901,13 @@ func _draw() -> void:
 		# Selection is communicated by the compact overhead health bar; the old
 		# ground ring obscured the imported sprite and was unlike the original UI.
 		pass
+
+
+func uses_fallback_silhouette() -> bool:
+	# A row-sliced sprite is drawn by OriginalRowSlices, so it must not also
+	# receive the missing-art silhouette. That duplicate was the stray "i" tile
+	# seen on some imported actors and objects.
+	return sprite_texture == null and not sprite_drawn_by_row_slices
 
 
 func draw_flat_ellipse(center: Vector2, radii: Vector2, color: Color) -> void:

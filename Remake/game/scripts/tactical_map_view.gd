@@ -15,6 +15,7 @@ var world_size := Vector2.ONE
 var actor_markers: Array[Dictionary] = []
 var mission_markers: Array[Dictionary] = []
 var camera_world_rect := Rect2()
+var map_dragging := false
 
 
 func configure(
@@ -47,16 +48,40 @@ func update_markers(
 
 
 func _gui_input(event: InputEvent) -> void:
-	if not event is InputEventMouseButton:
+	if event is InputEventMouseButton:
+		var mouse_event := event as InputEventMouseButton
+		if mouse_event.button_index != MOUSE_BUTTON_LEFT:
+			return
+		if mouse_event.pressed:
+			map_dragging = request_world_position_at(mouse_event.position)
+			if map_dragging:
+				accept_event()
+		elif map_dragging:
+			map_dragging = false
+			accept_event()
 		return
-	var mouse_event := event as InputEventMouseButton
-	if not mouse_event.pressed or mouse_event.button_index != MOUSE_BUTTON_LEFT:
-		return
+	if event is InputEventMouseMotion:
+		var motion := event as InputEventMouseMotion
+		if not map_dragging:
+			return
+		if (motion.button_mask & MOUSE_BUTTON_MASK_LEFT) == 0:
+			map_dragging = false
+			return
+		var map_rect := _map_rect()
+		var clamped_position := Vector2(
+			clampf(motion.position.x, map_rect.position.x, map_rect.end.x),
+			clampf(motion.position.y, map_rect.position.y, map_rect.end.y),
+		)
+		world_position_requested.emit(_map_to_world(clamped_position, map_rect))
+		accept_event()
+
+
+func request_world_position_at(map_position: Vector2) -> bool:
 	var map_rect := _map_rect()
-	if not map_rect.has_point(mouse_event.position):
-		return
-	world_position_requested.emit(_map_to_world(mouse_event.position, map_rect))
-	accept_event()
+	if not map_rect.has_point(map_position):
+		return false
+	world_position_requested.emit(_map_to_world(map_position, map_rect))
+	return true
 
 
 func _draw() -> void:
