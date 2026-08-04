@@ -650,11 +650,11 @@ func _test_main_special_action_lifecycle_without_assets(failures: Array[String])
 	_expect(
 		game.legacy_special_world_objects.size() == 1
 		and not bool(game.legacy_special_world_objects[0].call("has_original_texture"))
-		and game.legacy_crt_random_draw_index == 5
+		and game.legacy_crt_random_draw_index == 4
 		and bool(game.legacy_special_world_objects[0].get(
 			"original_factory_random_consumed"
 		)),
-		"Main creates actor 84 through the exact five-draw dynamic factory",
+		"Main creates actor 84 through the exact four-draw dynamic factory",
 		failures,
 	)
 	var triggered_object: Node2D = game.legacy_special_world_objects[0]
@@ -666,12 +666,11 @@ func _test_main_special_action_lifecycle_without_assets(failures: Array[String])
 		enemy.current_hit_points == 172
 		and game.legacy_explosion_effects.size() == 1
 		and bool(triggered_object.get("original_destructor_random_consumed"))
-		and trace_sites.slice(0, 5) == [
+		and trace_sites.slice(0, 4) == [
 			0x00050967,
 			0x00050980,
 			0x0005340B,
 			0x0005358B,
-			0x0005BBBC,
 		]
 		and trace_sites.slice(trace_sites.size() - 4) == [
 			0x00053655,

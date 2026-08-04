@@ -19,7 +19,14 @@
       "8": "0x0005D821",
       "10": "0x0005D855",
       "91": "0x0005D855"
-    }
+    },
+    "dynamic_constructor": [
+      "0x00050967",
+      "0x00050980",
+      "0x0005340B",
+      "0x0005358B"
+    ],
+    "saved_actor_facing": "0x0005BBBC"
   },
   "scenarios": [
     {
@@ -165,6 +172,92 @@
       "result_sha256": "2007A5F72241E379C4C7C72573D790173C052E6A42AA3C3E98A8036142A3A1D2",
       "expected_zero_random_command_sites": true,
       "records": []
+    },
+    {
+      "scenario_id": "m010-cigarette-drop-inventory-v1",
+      "level_id": "m010",
+      "action": "backpack_item_drop",
+      "telemetry_sha256": "37A9171221791C194A1C702A8E0B6D101DAB5D3D7856B10A789D5F3B4E4274F8",
+      "result_sha256": "440AB05F4D2A4FF1D088926696702F8179062AD73EEE12B942F33600B29C732E",
+      "records": [
+        {
+          "phase": "drop",
+          "sequence": 37988,
+          "tick_ms": 509327875,
+          "call_site_rva": "0x0005D7CF",
+          "family": "acknowledge",
+          "runtime_index": 99,
+          "scene_index": 1589,
+          "runtime_type": 1,
+          "faction_id": 3,
+          "value": 25305
+        }
+      ],
+      "dynamic_factory_records": [
+        {
+          "sequence": 39114,
+          "tick_ms": 509328125,
+          "call_site_rva": "0x00050967",
+          "caller_esi": "0x22139940",
+          "runtime_type": 83,
+          "value": 22775
+        },
+        {
+          "sequence": 39115,
+          "tick_ms": 509328125,
+          "call_site_rva": "0x00050980",
+          "caller_esi": "0x22139940",
+          "runtime_type": 83,
+          "value": 6706
+        },
+        {
+          "sequence": 39116,
+          "tick_ms": 509328125,
+          "call_site_rva": "0x0005340B",
+          "caller_esi": "0x22139940",
+          "runtime_type": 83,
+          "value": 19930
+        },
+        {
+          "sequence": 39117,
+          "tick_ms": 509328125,
+          "call_site_rva": "0x0005358B",
+          "caller_esi": "0x22139940",
+          "runtime_type": 83,
+          "value": 17484
+        }
+      ],
+      "expected_absent_factory_call_sites": ["0x0005BBBC"]
+    },
+    {
+      "scenario_id": "m000-save-load-random-v1",
+      "level_id": "m000",
+      "action": "save_then_load",
+      "telemetry_sha256": "720D9FB1C94D9CCB9123366C61BC0DA4955DEBE66532265C80051C972D789A01",
+      "result_sha256": "50EF3318D8B04919AA4AAE0EAE0C9A4A6B88DF151D5E6B327C5A0967E66CF32A",
+      "expected_zero_random_command_sites": true,
+      "records": [],
+      "boundary_summary": {
+        "source_entity_count": 1630,
+        "before_save_tick_ms": 510093531,
+        "after_save_tick_ms": 510093593,
+        "after_load_tick_ms": 510093984,
+        "save_interval_call_count": 245,
+        "save_interval_structural_call_count": 0,
+        "load_interval_call_count": 14443,
+        "load_interval_structural_counts": {
+          "0x00050967": 1631,
+          "0x00050980": 1631,
+          "0x0005340B": 1631,
+          "0x0005358B": 1631,
+          "0x00053655": 1631,
+          "0x000537A3": 1631,
+          "0x00050B64": 1631,
+          "0x00050B7D": 1631,
+          "0x0005BBBC": 1
+        },
+        "interpretation": "Saving itself adds no command/factory draw. Loading reconstructs the complete 1630-entity VWF/SAV world, including one failed-and-retried saved actor path; this process-global churn is an original serialization implementation detail rather than an in-level command transaction."
+      }
     }
   ]
 }

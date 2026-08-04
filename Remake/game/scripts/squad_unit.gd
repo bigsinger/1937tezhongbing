@@ -869,26 +869,20 @@ func initialize_dynamic_original_crt_random() -> bool:
 	var facing_value := next_original_crt_random_value(0x00050980)
 	var phase_value := next_original_crt_random_value(0x0005340B)
 	var reaction_value := next_original_crt_random_value(0x0005358B)
-	# sub_44A350 creates a runtime actor through the normal constructor and then
-	# sub_45B950(..., 0) replaces its facing with max(rand() % 9, 1).  Keep that
-	# fifth draw in the shared stream; authored startup actors remain checkpointed.
-	var loaded_facing_value := next_original_crt_random_value(0x0005BBBC)
 	if (
 		idle_value < 0
 		or facing_value < 0
 		or phase_value < 0
 		or reaction_value < 0
-		or loaded_facing_value < 0
 	):
 		return false
 	var constructor_facing := mini((facing_value % 9) + 1, 8)
-	var loaded_facing := maxi(loaded_facing_value % 9, 1)
 	original_crt_initialization_profile = {
 		"runtime_index": original_runtime_index,
 		"scene_index": scene_index,
 		"initial_idle_limit": idle_value % 160,
 		"constructor_facing_direction": constructor_facing,
-		"initial_facing_direction": loaded_facing,
+		"initial_facing_direction": constructor_facing,
 		"initial_ai_phase": phase_value % 60,
 		"initial_reaction_limit": (reaction_value % 40) + 40,
 	}
@@ -897,7 +891,7 @@ func initialize_dynamic_original_crt_random() -> bool:
 	original_ai_idle_tick_elapsed = 0.0
 	original_ai_previous_world_position = position
 	original_ai_shared_counter_last_physics_frame = -1
-	set_animation_group(loaded_facing - 1)
+	set_animation_group(constructor_facing - 1)
 	apply_idle_frame()
 	return true
 

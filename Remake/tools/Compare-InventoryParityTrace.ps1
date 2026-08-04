@@ -403,6 +403,23 @@ $scenarioDefinitions = @{
         target_scene = -1
         runtime_object_delta = 1
     }
+    'm010-cigarette-drop-inventory-v1' = [ordered]@{
+        level_id = 'm010'
+        selector_level = 11
+        engine_mission = 11
+        actor_scene = 1589
+        actor_database_entry = 924
+        checkpoints = @('before_drop', 'after_drop')
+        active_attack_type = 4
+        delta_container = 'item_entries'
+        delta_item_id = 83
+        delta_quantity = -1
+        expected_before_quantity = 1
+        expected_after_quantity = 0
+        target_scene = -1
+        runtime_object_delta = 1
+        scenario_kind = 'backpack_drop'
+    }
     'm007-chicken-world-item-v1' = [ordered]@{
         level_id = 'm007'
         selector_level = 8

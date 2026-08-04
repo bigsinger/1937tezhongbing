@@ -357,6 +357,7 @@ internal static class ModRegressionProbe
     {
         public string Id;
         public long ElapsedMilliseconds;
+        public long HostTickMilliseconds;
         public int CurrentActionId;
         public int CameraX;
         public int CameraY;
@@ -486,6 +487,7 @@ internal static class ModRegressionProbe
                 "[--identity-catalog=PATH --parity-patrol-only | " +
                 "--parity-contact-only | --parity-pickup-only | " +
                 "--parity-attack-only | --parity-world-item-only | " +
+                "--parity-drop-only | --parity-save-load-only | " +
                 "--parity-sb-only " +
                 "--parity-scenario=ID " +
                 "--patrol-observation-ms=MS " +
@@ -812,6 +814,18 @@ internal static class ModRegressionProbe
                 "--parity-sb-only",
                 StringComparison.OrdinalIgnoreCase);
         });
+        bool parityDropOnly = args.Any(delegate(string argument)
+        {
+            return argument.Equals(
+                "--parity-drop-only",
+                StringComparison.OrdinalIgnoreCase);
+        });
+        bool paritySaveLoadOnly = args.Any(delegate(string argument)
+        {
+            return argument.Equals(
+                "--parity-save-load-only",
+                StringComparison.OrdinalIgnoreCase);
+        });
         bool actorLayoutDump = args.Any(delegate(string argument)
         {
             return argument.Equals(
@@ -824,6 +838,8 @@ internal static class ModRegressionProbe
             (parityPickupOnly ? 1 : 0) +
             (parityAttackOnly ? 1 : 0) +
             (parityWorldItemOnly ? 1 : 0) +
+            (parityDropOnly ? 1 : 0) +
+            (paritySaveLoadOnly ? 1 : 0) +
             (paritySbOnly ? 1 : 0);
         if (parityModeCount > 1)
         {
@@ -2260,6 +2276,83 @@ internal static class ModRegressionProbe
                         stages,
                         perf,
                         transitionsLogged: false,
+                        replayConsumed: true,
+                        passed: exitCode == 0);
+                    return exitCode;
+                }
+                if (parityDropOnly || paritySaveLoadOnly)
+                {
+                    string focusedEvidence;
+                    bool focusedObserved = parityDropOnly
+                        ? ExerciseBackpackDropParity(
+                            process,
+                            imageBase,
+                            window,
+                            parityCheckpoints,
+                            clock,
+                            actorIdentities,
+                            parityScenarioOverride,
+                            out focusedEvidence)
+                        : ExerciseSaveLoadParity(
+                            gameDirectory,
+                            process,
+                            imageBase,
+                            window,
+                            selectorLevel,
+                            parityCheckpoints,
+                            clock,
+                            parityScenarioOverride,
+                            out focusedEvidence);
+                    AddStage(
+                        stages, game, process, imageBase, clock,
+                        parityDropOnly
+                            ? "original_backpack_drop_inventory_delta"
+                            : "original_save_load_round_trip",
+                        focusedObserved,
+                        focusedEvidence);
+                    samplerStop = true;
+                    sampler.Join(1500);
+                    bool focusedCursorClipSafe;
+                    lock (perf)
+                        focusedCursorClipSafe = perf.All(
+                            delegate(PerfSample sample)
+                            {
+                                return !sample.CursorClipRestricted;
+                            });
+                    bool focusedProcessResponsive = stages.All(
+                        delegate(Stage stage)
+                        {
+                            return stage.ProcessResponding;
+                        });
+                    int expectedCheckpointCount = parityDropOnly ? 2 : 3;
+                    bool focusedSnapshotsReady =
+                        parityCheckpoints.Count == expectedCheckpointCount;
+                    exitCode =
+                        missionStarted &&
+                        focusedObserved &&
+                        focusedSnapshotsReady &&
+                        focusedProcessResponsive &&
+                        focusedCursorClipSafe ? 0 : 1;
+                    WriteParityTrace(
+                        outputDirectory,
+                        selectorLevel,
+                        route.EngineMission,
+                        movementCellX,
+                        movementCellY,
+                        returnCellX,
+                        returnCellY,
+                        parityCheckpoints,
+                        parityScenarioOverride,
+                        actorIdentities,
+                        false,
+                        true);
+                    WriteArtifacts(
+                        outputDirectory,
+                        selectorLevel,
+                        route.EngineMission,
+                        stages,
+                        perf,
+                        transitionsLogged: paritySaveLoadOnly,
                         replayConsumed: true,
                         passed: exitCode == 0);
                     return exitCode;
@@ -6844,6 +6937,352 @@ internal static class ModRegressionProbe
             player.Dead == 0;
     }
 
+    private static bool ExerciseBackpackDropParity(
+        IntPtr process,
+        long imageBase,
+        IntPtr window,
+        List<ParityCheckpoint> checkpoints,
+        Stopwatch runClock,
+        Dictionary<int, RuntimeActorIdentity> actorIdentities,
+        string scenarioId,
+        out string evidence)
+    {
+        const string ExpectedScenarioId =
+            "m010-cigarette-drop-inventory-v1";
+        const int PlayerSceneIndex = 1589;
+        const int ItemId = 83;
+        const int DropWorldX = 176;
+        const int DropWorldY = 104;
+        if (!String.Equals(
+                scenarioId,
+                ExpectedScenarioId,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "Unsupported backpack-drop parity scenario: " +
+                (scenarioId ?? "<missing>"));
+        }
+
+        bool selected = PulseKey(window, DikF4);
+        Thread.Sleep(260);
+        ActorSnapshot player = null;
+        bool playerReady = WaitUntil(
+            delegate()
+            {
+                player = ReadResolvedActor(
+                    process,
+                    imageBase,
+                    actorIdentities,
+                    PlayerSceneIndex);
+                return player != null &&
+                    player.Dead == 0 &&
+                    ReadActorInventoryContainers(process, player);
+            },
+            TimeSpan.FromSeconds(2));
+        if (!playerReady || player == null)
+        {
+            evidence =
+                "scene 1589 backpack was not readable after F4 selection";
+            return false;
+        }
+
+        int beforeQuantity = InventoryQuantity(
+            player.ItemEntries, ItemId);
+        int beforeWorldCount = CountWorldActorsOfRuntimeType(
+            process, imageBase, ItemId);
+        CaptureParityCheckpoint(
+            checkpoints,
+            process,
+            imageBase,
+            runClock,
+            "before_drop",
+            true);
+
+        bool panelSelected = false;
+        bool clickSent = false;
+        bool dropObserved = false;
+        int afterQuantity = beforeQuantity;
+        int afterWorldCount = beforeWorldCount;
+        int lastGoalKind = player.GoalKind;
+        int actualCursorX = int.MinValue;
+        int actualCursorY = int.MinValue;
+        string panelEvidence = "";
+        int attempts = 0;
+        for (; attempts < 2 && !dropObserved; ++attempts)
+        {
+            player = ReadResolvedActor(
+                process,
+                imageBase,
+                actorIdentities,
+                PlayerSceneIndex);
+            if (player == null ||
+                player.Dead != 0 ||
+                !ReadActorInventoryContainers(process, player))
+                break;
+            afterQuantity = InventoryQuantity(
+                player.ItemEntries, ItemId);
+            if (afterQuantity <= 0)
+                break;
+
+            string attemptPanelEvidence;
+            bool attemptPanelSelected = SelectBackpackPanelItem(
+                process,
+                imageBase,
+                window,
+                player,
+                ItemId,
+                out attemptPanelEvidence);
+            panelSelected = attemptPanelSelected || panelSelected;
+            panelEvidence +=
+                (panelEvidence.Length == 0 ? "" : " | ") +
+                attemptPanelEvidence;
+            Thread.Sleep(180);
+            bool attemptClickSent =
+                attemptPanelSelected &&
+                ClickReplayWorldPoint(
+                    process,
+                    imageBase,
+                    window,
+                    DropWorldX,
+                    DropWorldY,
+                    out actualCursorX,
+                    out actualCursorY);
+            clickSent = attemptClickSent || clickSent;
+
+            Stopwatch wait = Stopwatch.StartNew();
+            while (attemptClickSent &&
+                   wait.ElapsedMilliseconds < 8000)
+            {
+                player = ReadResolvedActor(
+                    process,
+                    imageBase,
+                    actorIdentities,
+                    PlayerSceneIndex);
+                if (player == null || player.Dead != 0)
+                    break;
+                lastGoalKind = player.GoalKind;
+                if (ReadActorInventoryContainers(process, player))
+                {
+                    afterQuantity = InventoryQuantity(
+                        player.ItemEntries, ItemId);
+                }
+                afterWorldCount = CountWorldActorsOfRuntimeType(
+                    process, imageBase, ItemId);
+                dropObserved =
+                    afterQuantity == beforeQuantity - 1 &&
+                    afterWorldCount == beforeWorldCount + 1;
+                if (dropObserved)
+                    break;
+                Thread.Sleep(80);
+            }
+        }
+
+        player = ReadResolvedActor(
+            process,
+            imageBase,
+            actorIdentities,
+            PlayerSceneIndex);
+        if (player != null &&
+            ReadActorInventoryContainers(process, player))
+        {
+            afterQuantity = InventoryQuantity(
+                player.ItemEntries, ItemId);
+            lastGoalKind = player.GoalKind;
+        }
+        afterWorldCount = CountWorldActorsOfRuntimeType(
+            process, imageBase, ItemId);
+        dropObserved =
+            afterQuantity == beforeQuantity - 1 &&
+            afterWorldCount == beforeWorldCount + 1;
+        CaptureParityCheckpoint(
+            checkpoints,
+            process,
+            imageBase,
+            runClock,
+            "after_drop",
+            true);
+
+        evidence =
+            "scenario=" + ExpectedScenarioId +
+            "; input_isolation=process-local-DirectInput" +
+            "; player_scene=" + PlayerSceneIndex +
+            "; selected_f4=" + selected +
+            "; panel_selected=" + panelSelected +
+            "; panel={" + panelEvidence + "}" +
+            "; click_sent=" + clickSent +
+            "; attempts=" + attempts +
+            "; click_world=(" + DropWorldX + "," + DropWorldY + ")" +
+            "; cursor=(" + actualCursorX + "," + actualCursorY + ")" +
+            "; goal_kind=" + lastGoalKind +
+            "; item_83=" + beforeQuantity + "->" + afterQuantity +
+            "; world_type_83=" + beforeWorldCount + "->" +
+            afterWorldCount +
+            "; player_dead=" + (player == null ? -1 : player.Dead);
+        return selected &&
+            panelSelected &&
+            clickSent &&
+            beforeQuantity == 1 &&
+            dropObserved &&
+            player != null &&
+            player.Dead == 0;
+    }
+
+    private static bool ExerciseSaveLoadParity(
+        string gameDirectory,
+        IntPtr process,
+        long imageBase,
+        IntPtr window,
+        int selectorLevel,
+        List<ParityCheckpoint> checkpoints,
+        Stopwatch runClock,
+        string scenarioId,
+        out string evidence)
+    {
+        const string ExpectedScenarioId = "m000-save-load-random-v1";
+        if (!String.Equals(
+                scenarioId,
+                ExpectedScenarioId,
+                StringComparison.Ordinal) ||
+            selectorLevel != 1)
+        {
+            throw new InvalidOperationException(
+                "Save/load parity currently requires " +
+                ExpectedScenarioId + " on selector level 1.");
+        }
+
+        CaptureParityCheckpoint(
+            checkpoints,
+            process,
+            imageBase,
+            runClock,
+            "before_save",
+            true);
+        DateTime saveRequest = DateTime.UtcNow;
+        bool saveSent = SendReplay(window, ReplayMenuCommand, 7);
+        bool saveCreated = WaitUntil(
+            delegate()
+            {
+                return Directory.GetFiles(
+                    gameDirectory, "1937M*.SAV")
+                    .Any(delegate(string path)
+                    {
+                        return File.GetLastWriteTimeUtc(path) >=
+                            saveRequest.AddSeconds(-1);
+                    });
+            },
+            TimeSpan.FromSeconds(4));
+        CaptureParityCheckpoint(
+            checkpoints,
+            process,
+            imageBase,
+            runClock,
+            "after_save",
+            true);
+
+        ulong beforeLoadRead = ReadIoBytes(process);
+        bool loadSent = SendReplay(window, ReplayMenuCommand, 17);
+        bool loadCompleted = WaitUntil(
+            delegate()
+            {
+                return ReadIoBytes(process) > beforeLoadRead &&
+                    ReadWorldActorCount(process, imageBase) > 0;
+            },
+            TimeSpan.FromSeconds(6));
+        Thread.Sleep(320);
+        ulong afterLoadRead = ReadIoBytes(process);
+        int loadedActorCount = ReadWorldActorCount(process, imageBase);
+        CaptureParityCheckpoint(
+            checkpoints,
+            process,
+            imageBase,
+            runClock,
+            "after_load",
+            true);
+
+        evidence =
+            "scenario=" + ExpectedScenarioId +
+            "; input_isolation=process-local-menu-replay" +
+            "; save_sent=" + saveSent +
+            "; save_created=" + saveCreated +
+            "; load_sent=" + loadSent +
+            "; load_completed=" + loadCompleted +
+            "; read_delta=" +
+            (afterLoadRead - beforeLoadRead).ToString(
+                CultureInfo.InvariantCulture) +
+            "; loaded_actor_count=" + loadedActorCount;
+        return saveSent &&
+            saveCreated &&
+            loadSent &&
+            loadCompleted &&
+            afterLoadRead > beforeLoadRead &&
+            loadedActorCount > 0;
+    }
+
+    private static bool SelectBackpackPanelItem(
+        IntPtr process,
+        long imageBase,
+        IntPtr window,
+        ActorSnapshot player,
+        int itemId,
+        out string evidence)
+    {
+        evidence = "";
+        if (player == null ||
+            !ReadActorInventoryContainers(process, player))
+        {
+            evidence = "inventory-unreadable";
+            return false;
+        }
+        InventoryEntry entry = player.ItemEntries.FirstOrDefault(
+            delegate(InventoryEntry candidate)
+            {
+                return candidate.ItemId == itemId;
+            });
+        if (entry == null)
+        {
+            evidence = "item-not-found";
+            return false;
+        }
+        int screenWidth = ReadInt(
+            process, imageBase + EngineAddresses.ScreenWidth);
+        int screenHeight = ReadInt(
+            process, imageBase + EngineAddresses.ScreenHeight);
+        if (screenWidth <= 276 || screenHeight <= 483)
+        {
+            evidence =
+                "invalid-screen=" + screenWidth + "x" + screenHeight;
+            return false;
+        }
+        bool panelOpened = PulseKey(window, DikA);
+        Thread.Sleep(260);
+        int popupX = screenWidth - 276;
+        int popupY = screenHeight - 62 - 421;
+        int targetX =
+            popupX + 13 + 50 * (entry.InventoryIndex % 5) + 25;
+        int targetY =
+            popupY + 40 + 84 * (entry.InventoryIndex / 5) + 37;
+        int actualX;
+        int actualY;
+        bool cursorReached = MoveReplayCursor(
+            process,
+            imageBase,
+            window,
+            targetX,
+            targetY,
+            out actualX,
+            out actualY);
+        bool clickSent = cursorReached && PulseMouseButton(window, 0);
+        Thread.Sleep(260);
+        evidence =
+            "item=" + itemId +
+            "; inventory_index=" + entry.InventoryIndex +
+            "; panel_opened=" + panelOpened +
+            "; target=(" + targetX + "," + targetY + ")" +
+            "; actual=(" + actualX + "," + actualY + ")" +
+            "; click_sent=" + clickSent;
+        return panelOpened && cursorReached && clickSent;
+    }
+
     private static bool SelectWeaponPanelItem(
         IntPtr process,
         long imageBase,
@@ -9145,6 +9584,11 @@ internal static class ModRegressionProbe
         checkpoint.Id = checkpointId ?? "";
         checkpoint.ElapsedMilliseconds =
             clock == null ? 0 : clock.ElapsedMilliseconds;
+        // The native RNG telemetry records Win32 GetTickCount values. Keep
+        // the same unsigned 32-bit clock at every checkpoint so short input
+        // windows can be joined without guessing from wall-clock timestamps.
+        checkpoint.HostTickMilliseconds =
+            unchecked((uint)Environment.TickCount);
         checkpoint.CurrentActionId = ReadInt(
             process,
             imageBase + EngineAddresses.CurrentActionId);
@@ -9654,6 +10098,27 @@ internal static class ModRegressionProbe
         }
         else if (String.Equals(
                      scenarioId,
+                     "m010-cigarette-drop-inventory-v1",
+                     StringComparison.Ordinal))
+        {
+            scenarioDescription =
+                "Select Qiangzi scene 1589, open his original A backpack, " +
+                "click cigarette item 83, and place it at the verified " +
+                "walkable point (176,104) through process-local DirectInput; " +
+                "capture the state-9 approach and completed world item.";
+        }
+        else if (String.Equals(
+                     scenarioId,
+                     "m000-save-load-random-v1",
+                     StringComparison.Ordinal))
+        {
+            scenarioDescription =
+                "Save and reload the isolated first-level checkpoint through " +
+                "the original menu commands 7 and 17, with Win32 tick-aligned " +
+                "random telemetry and no gameplay-completion attempt.";
+        }
+        else if (String.Equals(
+                     scenarioId,
                      "m010-sight-direct-target-v1",
                      StringComparison.Ordinal))
         {
@@ -9778,13 +10243,14 @@ internal static class ModRegressionProbe
             json.AppendFormat(
                 CultureInfo.InvariantCulture,
                 "      \"id\":\"{0}\",\"sequence\":{1}," +
-                "\"elapsed_ms\":{2},\n",
+                "\"elapsed_ms\":{2},\"host_tick_ms\":{3},\n",
                 Escape(checkpoint.Id),
                 checkpointIndex,
                 Math.Max(
                     0,
                     checkpoint.ElapsedMilliseconds -
-                    checkpoints[0].ElapsedMilliseconds));
+                    checkpoints[0].ElapsedMilliseconds),
+                checkpoint.HostTickMilliseconds);
             json.AppendFormat(
                 CultureInfo.InvariantCulture,
                 "      \"camera\":{{\"position\":[{0},{1}]," +

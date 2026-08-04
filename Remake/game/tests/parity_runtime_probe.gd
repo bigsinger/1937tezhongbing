@@ -137,6 +137,7 @@ const HUMAN_INPUT_NATURAL_FAILURE_ROUTES := {
 }
 const SIGHT_DIRECT_TARGET_SCENARIO_ID := "m010-sight-direct-target-v1"
 const BURIAL_COMMAND_SCENARIO_ID := "m010-burial-command-v1"
+const BACKPACK_DROP_SCENARIO_ID := "m010-cigarette-drop-inventory-v1"
 const M010_CONTEXT_TARGET_SCENE_INDEX := 1126
 const M010_LAO_ZHAO_SCENE_INDEX := 1590
 const M010_DANIU_SCENE_INDEX := 1591
@@ -505,6 +506,9 @@ func _run_probe() -> void:
 		return
 	if WORLD_ITEM_SCENARIOS.has(scenario_id):
 		await _run_world_item_probe(main, trace, started, scenario_id)
+		return
+	if scenario_id == BACKPACK_DROP_SCENARIO_ID:
+		await _run_backpack_drop_probe(main, trace, started)
 		return
 	if scenario_id == SIGHT_DIRECT_TARGET_SCENARIO_ID:
 		await _run_sight_direct_target_probe(main, trace, started)
@@ -1615,6 +1619,99 @@ func _run_world_item_probe(
 	)
 
 
+func _run_backpack_drop_probe(
+	main: Node,
+	trace: RefCounted,
+	started: int,
+) -> void:
+	const PLAYER_SCENE := 1589
+	const ITEM_ID := 83
+	const DROP_WORLD := Vector2(176.0, 104.0)
+	var actor := _player_for_scene(main, PLAYER_SCENE)
+	_expect(actor != null, "m010 Qiangzi scene 1589 exists for backpack drop")
+	if actor != null:
+		main.call("select_only", actor)
+		var before_quantity := _inventory_quantity(
+			actor,
+			"item_entries",
+			ITEM_ID,
+		)
+		_expect(
+			before_quantity == 1,
+			"Qiangzi starts with one original cigarette item 83",
+		)
+		trace.call(
+			"capture_main",
+			"before_drop",
+			main,
+			_elapsed_ms(started),
+		)
+		main.call(
+			"_on_inventory_slot_requested",
+			{
+				"kind": "backpack_item",
+				"item_id": ITEM_ID,
+				"label": "香烟",
+			},
+		)
+		_expect(
+			int(main.get("selected_backpack_item_id")) == ITEM_ID,
+			"A-panel item selection arms the original one-shot placement mode",
+		)
+		_expect(
+			bool(main.call("drop_selected_item_at", DROP_WORLD)),
+			"backpack placement accepts the verified walkable point",
+		)
+		var dropped := false
+		for _frame_index: int in range(12 * 60):
+			if (
+				_inventory_quantity(actor, "item_entries", ITEM_ID) == 0
+				and _has_original_drop_pickup(main, PLAYER_SCENE, ITEM_ID)
+			):
+				dropped = true
+				break
+			await physics_frame
+		_expect(
+			dropped,
+			"state-9 approach removes one cigarette only after creating its world actor",
+		)
+		trace.call(
+			"capture_main",
+			"after_drop",
+			main,
+			_elapsed_ms(started),
+		)
+		_expect(
+			_inventory_quantity(actor, "item_entries", ITEM_ID) == 0
+				and _has_original_drop_pickup(main, PLAYER_SCENE, ITEM_ID),
+			"drop checkpoint preserves the exact item delta and source identity",
+		)
+	await _finish_inventory_probe(
+		main,
+		trace,
+		BACKPACK_DROP_SCENARIO_ID,
+	)
+
+
+func _has_original_drop_pickup(
+	main: Node,
+	source_scene_index: int,
+	item_id: int,
+) -> bool:
+	for pickup_value: Variant in main.get("mission_pickups") as Array:
+		var pickup := pickup_value as Node2D
+		if pickup == null or not is_instance_valid(pickup):
+			continue
+		var payload := pickup.get("item_payload") as Dictionary
+		if (
+			int(payload.get("item_id", 0)) == item_id
+			and int(payload.get("source_scene_index", -1)) == source_scene_index
+			and str(payload.get("original_inventory_kind", "")) == "backpack"
+		):
+			return true
+	return false
+
+
 func _wait_for_world_item_collection(
 	target: Node2D,
 	item_id: int,
@@ -2275,6 +2372,12 @@ func _scenario_description(scenario_id: String, level_id: String) -> String:
 				"description",
 				"World-item parity probe.",
 			)
+		)
+	if scenario_id == BACKPACK_DROP_SCENARIO_ID:
+		return (
+			"Select Qiangzi scene 1589, choose cigarette item 83 in the A backpack, "
+			+ "and submit the original state-9 placement at (176,104); capture "
+			+ "the item quantity and completed world actor."
 		)
 	if scenario_id == SIGHT_DIRECT_TARGET_SCENARIO_ID:
 		return (

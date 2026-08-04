@@ -200,7 +200,7 @@ DBL 1003/header[2] actor 53 仍明确归入可受伤汽油桶生命周期，不�
 固定；主爆炸伤害不查询地形视线遮挡。runtime type 102 无匹配 SPR，必须保留“消费随机数但不生成粒子”的
 语义。相关函数入口和 `SpecialAttentionSource` 全局量均由
 `address-catalog.json` 生成到 C++/C# 常量，补丁和 Remake 不再各自复制魔数。
-type 8/10 的部署物不能与爆炸 actor 合并：五次部署物工厂取数、独立
+type 8/10 的部署物不能与爆炸 actor 合并：四次局内部署物工厂取数、独立
 actor 62 工厂以及原部署物四次派生/基类析构取数的严格顺序见
 [原版动态 actor 工厂与析构顺序](docs/NativeDynamicActorLifecycle.md)。
 19 个直接工厂点、20 个直接删除点及其正式/检查点/失败回滚/不可达分类由

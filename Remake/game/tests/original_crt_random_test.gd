@@ -1763,7 +1763,7 @@ func _test_dynamic_actor_constructor_sequence() -> void:
 	game.legacy_crt_random_trace_enabled = true
 	var expected := _draw_values(
 		game.legacy_crt_random_state,
-		5,
+		4,
 	)
 	var actor = SQUAD_UNIT_SCRIPT.new()
 	actor.scene_index = 9000
@@ -1772,8 +1772,8 @@ func _test_dynamic_actor_constructor_sequence() -> void:
 	var values: Array = expected.get("values", [])
 	_expect(
 		initialized
-		and game.legacy_crt_random_draw_index == 8494,
-		"dynamic actor construction appends five draws to the global stream",
+		and game.legacy_crt_random_draw_index == 8493,
+		"dynamic actor construction appends four draws to the global stream",
 	)
 	_expect(
 		int(actor.original_crt_initialization_profile.get(
@@ -1783,7 +1783,7 @@ func _test_dynamic_actor_constructor_sequence() -> void:
 		and int(actor.original_crt_initialization_profile.get(
 			"initial_facing_direction",
 			-1,
-		)) == maxi(int(values[4]) % 9, 1)
+		)) == mini((int(values[1]) % 9) + 1, 8)
 		and int(actor.original_crt_initialization_profile.get(
 			"constructor_facing_direction",
 			-1,
@@ -1796,16 +1796,15 @@ func _test_dynamic_actor_constructor_sequence() -> void:
 			"initial_reaction_limit",
 			-1,
 		)) == (int(values[3]) % 40) + 40,
-		"dynamic actor uses the five recovered factory/load transforms",
+		"dynamic actor uses the four recovered in-level factory transforms",
 	)
 	var expected_sites := [
 		0x00050967,
 		0x00050980,
 		0x0005340B,
 		0x0005358B,
-		0x0005BBBC,
 	]
-	var sites_match: bool = game.legacy_crt_random_trace.size() == 5
+	var sites_match: bool = game.legacy_crt_random_trace.size() == 4
 	for index: int in range(game.legacy_crt_random_trace.size()):
 		sites_match = (
 			sites_match
@@ -1855,7 +1854,6 @@ func _test_disguise_replacement_random_sequence() -> void:
 			0x00050980,
 			0x0005340B,
 			0x0005358B,
-			0x0005BBBC,
 			0x00053655,
 			0x000537A3,
 			0x00050B64,
@@ -1874,9 +1872,9 @@ func _test_disguise_replacement_random_sequence() -> void:
 			)
 		_expect(
 			completed_items == [item_id]
-			and game.legacy_crt_random_draw_index == 8499
+			and game.legacy_crt_random_draw_index == 8498
 			and sites_match,
-			"type %d disguise replacement preserves pre-factory, factory/load and retired-destructor order"
+			"type %d disguise replacement preserves pre-factory, four-draw factory and retired-destructor order"
 				% actor_type,
 		)
 		actor.free()

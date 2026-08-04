@@ -154,8 +154,8 @@ func _test_real_document_exchange(main: Node) -> void:
 				false,
 			)
 		)
-		and (main.legacy_crt_random_trace as Array).size() == 5,
-		"handoff creates actor 101 at x-16 after exactly five factory draws",
+		and (main.legacy_crt_random_trace as Array).size() == 4,
+		"handoff creates actor 101 at x-16 after exactly four factory draws",
 	)
 	if document == null:
 		return

@@ -96,8 +96,8 @@ func configure(
 	pending_bursts_released = false
 	next_particle_audio_requester_id = 1
 	# sub_463F40 creates actor 61/62 through sub_44A350 before dispatching its
-	# child effects. This successful factory path consumes four constructor
-	# draws and one sub_45B950 loaded-facing draw.
+	# child effects. Native in-level traces fix this successful factory path at
+	# the four constructor draws; sub_45B950 is a separate SAV-load consumer.
 	var primary_factory_plan: Dictionary = (
 		VISUAL_RULES.build_dynamic_actor_factory_plan(
 			_active_random_state(),

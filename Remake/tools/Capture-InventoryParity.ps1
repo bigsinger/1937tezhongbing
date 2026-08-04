@@ -10,7 +10,9 @@ param(
 
     [switch]$AllowMismatch,
 
-    [switch]$KeepRuntime
+    [switch]$KeepRuntime,
+
+    [switch]$CaptureCrtRandom
 )
 
 $ErrorActionPreference = 'Stop'
@@ -232,6 +234,12 @@ $scenarios = @(
         parity_flag = '--parity-world-item-only'
     },
     [pscustomobject]@{
+        id = 'm010-cigarette-drop-inventory-v1'
+        level_id = 'm010'
+        selector_level = 11
+        parity_flag = '--parity-drop-only'
+    },
+    [pscustomobject]@{
         id = 'm010-sight-direct-target-v1'
         level_id = 'm010'
         selector_level = 11
@@ -268,6 +276,15 @@ if ($ScenarioId.Count -gt 0) {
 
 $results = [Collections.Generic.List[object]]::new()
 $completed = $false
+$previousRngTrace = [Environment]::GetEnvironmentVariable(
+    'M1937_RNG_TRACE',
+    [EnvironmentVariableTarget]::Process)
+if ($CaptureCrtRandom) {
+    [Environment]::SetEnvironmentVariable(
+        'M1937_RNG_TRACE',
+        '1',
+        [EnvironmentVariableTarget]::Process)
+}
 try {
     foreach ($scenario in $scenarios) {
         Get-ChildItem -LiteralPath $runtime -File -Force |
@@ -338,6 +355,19 @@ try {
         }
         if (-not $modProbePassed) {
             throw "Stable MOD inventory probe failed: $($scenario.id)"
+        }
+        $crtRandomTrace = ''
+        if ($CaptureCrtRandom) {
+            $runtimeTelemetry = Join-Path $runtime 'M1937Telemetry.jsonl'
+            if (-not (Test-Path -LiteralPath $runtimeTelemetry -PathType Leaf)) {
+                throw (
+                    'CRT random capture was requested, but the isolated MOD ' +
+                    "telemetry is missing: $runtimeTelemetry")
+            }
+            $crtRandomTrace = Join-Path $modOutput (
+                "crt-random-$($scenario.id).jsonl")
+            Copy-Item -LiteralPath $runtimeTelemetry `
+                -Destination $crtRandomTrace -Force
         }
         $modTrace = Join-Path $modOutput "mod-$($scenario.id).json"
         if (-not (Test-Path -LiteralPath $modTrace -PathType Leaf)) {
@@ -413,6 +443,7 @@ try {
             mod_trace = $modTrace
             remake_trace = $remakeTrace
             comparison = $comparisonJson
+            crt_random_trace = $crtRandomTrace
         })
     }
 
@@ -432,6 +463,10 @@ try {
     $completed = $true
 }
 finally {
+    [Environment]::SetEnvironmentVariable(
+        'M1937_RNG_TRACE',
+        $previousRngTrace,
+        [EnvironmentVariableTarget]::Process)
     if (-not $KeepRuntime -and
         (Test-Path -LiteralPath $runtime -PathType Container)) {
         $resolvedRuntime = [IO.Path]::GetFullPath($runtime)

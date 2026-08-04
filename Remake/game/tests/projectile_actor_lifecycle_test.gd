@@ -236,7 +236,6 @@ func _test_main_random_stream_sites() -> void:
 		0x00050980,
 		0x0005340B,
 		0x0005358B,
-		0x0005BBBC,
 	]
 	var destructor_sites := [
 		0x00053655,

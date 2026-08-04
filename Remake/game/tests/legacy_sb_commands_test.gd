@@ -137,8 +137,8 @@ func _test_observation_marker_is_singleton_and_one_shot(
 	_expect(
 		first == second
 		and second.position == Vector2(112.0, 0.0)
-		and game.legacy_crt_random_trace.size() == 5,
-		"S creates actor 90 once through the five-draw factory, then moves it in place",
+		and game.legacy_crt_random_trace.size() == 4,
+		"S creates actor 90 once through the four-draw factory, then moves it in place",
 		failures,
 	)
 	second.call("force_poll_result_for_tests", 1)
@@ -156,7 +156,6 @@ func _test_observation_marker_is_singleton_and_one_shot(
 			0x00050980,
 			0x0005340B,
 			0x0005358B,
-			0x0005BBBC,
 			0x00053655,
 			0x000537A3,
 			0x00050B64,
@@ -249,13 +248,12 @@ func _test_burial_tick_limit_cache_and_inventory_copy(
 			0x00050980,
 			0x0005340B,
 			0x0005358B,
-			0x0005BBBC,
 			0x00053655,
 			0x000537A3,
 			0x00050B64,
 			0x00050B7D,
 		],
-		"B creates actor 78 before retiring the corpse with the exact nine-draw order",
+		"B creates actor 78 before retiring the corpse with the exact eight-draw order",
 		failures,
 	)
 	var cache: Node2D = game.legacy_burial_caches[0]

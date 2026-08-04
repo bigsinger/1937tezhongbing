@@ -139,16 +139,15 @@ func _test_dynamic_actor_factory_lifecycle() -> void:
 			int((raw_draw as Dictionary).get("call_site_rva", 0))
 		)
 	_expect(
-		int(success.get("random_draw_count", 0)) == 5
-		and int(success.get("next_random_state", 0)) == 3403800452
+		int(success.get("random_draw_count", 0)) == 4
+		and int(success.get("next_random_state", 0)) == 3884216597
 		and success_sites == [
 			0x00050967,
 			0x00050980,
 			0x0005340B,
 			0x0005358B,
-			0x0005BBBC,
 		],
-		"successful dynamic effects consume constructor then loaded-facing draws",
+		"successful in-level dynamic effects consume four constructor draws",
 	)
 	var failure: Dictionary = RULES.build_dynamic_actor_factory_plan(
 		RULES.CRT_INITIAL_STATE,
@@ -173,6 +172,20 @@ func _test_dynamic_actor_factory_lifecycle() -> void:
 			0x00050B7D,
 		],
 		"failed dynamic effects destruct immediately without a loaded-facing draw",
+	)
+	var saved_facing: Dictionary = RULES.build_saved_actor_facing_plan(
+		RULES.CRT_INITIAL_STATE
+	)
+	var saved_facing_draws := saved_facing.get("random_draws", []) as Array
+	_expect(
+		int(saved_facing.get("random_draw_count", 0)) == 1
+		and int(saved_facing.get("next_random_state", 0)) == 2745024
+		and saved_facing_draws.size() == 1
+		and int(
+			(saved_facing_draws[0] as Dictionary).get("call_site_rva", 0)
+		) == 0x0005BBBC
+		and int((saved_facing_draws[0] as Dictionary).get("value", -1)) == 41,
+		"SAV actor restore owns its separate one-draw loaded-facing transaction",
 	)
 	var destructor: Dictionary = RULES.build_dynamic_actor_destructor_plan(
 		RULES.CRT_INITIAL_STATE
@@ -206,9 +219,9 @@ func _test_effect_11_burst_plan() -> void:
 	_expect(
 		int(plan.get("attempted_particle_count", 0)) == 2
 		and particles.size() == 2
-		and int(plan.get("next_random_state", 0)) == 4270317332
-		and int(plan.get("random_draw_count", 0)) == 21
-		and random_draws.size() == 21,
+		and int(plan.get("next_random_state", 0)) == 316395082
+		and int(plan.get("random_draw_count", 0)) == 19
+		and random_draws.size() == 19,
 		"effect 11 consumes scatter plus two successful actor factories",
 	)
 	var call_site_sequence: Array[int] = []
@@ -228,7 +241,6 @@ func _test_effect_11_burst_plan() -> void:
 			0x00050980,
 			0x0005340B,
 			0x0005358B,
-			0x0005BBBC,
 			0x0006476E,
 			0x000647FB,
 			0x0006480F,
@@ -238,7 +250,6 @@ func _test_effect_11_burst_plan() -> void:
 			0x00050980,
 			0x0005340B,
 			0x0005358B,
-			0x0005BBBC,
 		],
 		"effect 11 records scatter and factory calls in native execution order",
 	)
@@ -254,7 +265,7 @@ func _test_effect_11_burst_plan() -> void:
 	_expect(
 		int(second.get("runtime_actor_type", 0)) == 71
 		and int(second.get("gfl_index", -1)) == 23
-		and second.get("world_position", Vector2.ZERO) == Vector2(59.0, 89.0)
+		and second.get("world_position", Vector2.ZERO) == Vector2(41.0, 91.0)
 		and int(second.get("repeat_count", 0)) == 5,
 		"effect 11 second particle preserves variant, scatter, asset, and repeats",
 	)
@@ -275,15 +286,15 @@ func _test_global_stream_batch_commit() -> void:
 		)
 		and game.legacy_crt_random_state
 			== int(plan.get("next_random_state", 0))
-		and game.legacy_crt_random_draw_index == 21
-		and game.legacy_crt_random_trace.size() == 21,
+		and game.legacy_crt_random_draw_index == 19
+		and game.legacy_crt_random_trace.size() == 19,
 		"the session-global stream atomically commits and indexes a recovered batch",
 	)
 	var next_draw: Dictionary = game.next_legacy_crt_random(0x0005D15F)
 	_expect(
-		int(next_draw.get("draw_index", 0)) == 22
+		int(next_draw.get("draw_index", 0)) == 20
 		and int(next_draw.get("call_site_rva", 0)) == 0x0005D15F
-		and game.legacy_crt_random_draw_index == 22,
+		and game.legacy_crt_random_draw_index == 20,
 		"single draws continue the same process-global stream after a batch",
 	)
 	game.free()
@@ -333,8 +344,8 @@ func _test_persistent_scorch_and_debris_plans() -> void:
 	_expect(
 		int(scorch.get("attempted_particle_count", 0)) == 2
 		and scorch_particles.size() == 2
-		and int(scorch.get("random_draw_count", 0)) == 21
-		and int(scorch.get("next_random_state", 0)) == 4270317332,
+		and int(scorch.get("random_draw_count", 0)) == 19
+		and int(scorch.get("next_random_state", 0)) == 316395082,
 		"effect 10 creates two persistent scorch actors with full factory draws",
 	)
 	var scorch_types: Array[int] = []
@@ -351,7 +362,7 @@ func _test_persistent_scorch_and_debris_plans() -> void:
 		and (scorch_particles[1] as Dictionary).get(
 			"world_position",
 			Vector2.ZERO,
-		) == Vector2(59.0, 89.0),
+		) == Vector2(41.0, 91.0),
 		"effect 10 retains native variants, positions, and persistence",
 	)
 	var debris: Dictionary = RULES.build_debris_cluster_plan(
@@ -362,9 +373,9 @@ func _test_persistent_scorch_and_debris_plans() -> void:
 	_expect(
 		int(debris.get("attempted_particle_count", 0)) == 4
 		and debris_entries.size() == 4
-		and int(debris.get("random_draw_count", 0)) == 41
-		and int(debris.get("next_random_state", 0)) == 2346411599,
-		"effect 12 consumes count plus four exact ten-draw debris factories",
+		and int(debris.get("random_draw_count", 0)) == 37
+		and int(debris.get("next_random_state", 0)) == 2990262233,
+		"effect 12 consumes count plus four exact nine-draw debris factories",
 	)
 	var debris_types: Array[int] = []
 	var debris_angles: Array[int] = []
@@ -377,9 +388,9 @@ func _test_persistent_scorch_and_debris_plans() -> void:
 			(entry.get("path", PackedVector2Array()) as PackedVector2Array).size()
 		)
 	_expect(
-		debris_types == [74, 73, 74, 74]
-		and debris_angles == [95, 174, 28, 58]
-		and debris_path_sizes == [223, 382, 390, 326],
+		debris_types == [73, 72, 72, 73]
+		and debris_angles == [141, 112, 33, 357]
+		and debris_path_sizes == [405, 187, 293, 357],
 		"debris variants, retained angles, and native path lengths are deterministic",
 	)
 	var first_debris := debris_entries[0] as Dictionary
@@ -388,16 +399,16 @@ func _test_persistent_scorch_and_debris_plans() -> void:
 		PackedVector2Array(),
 	) as PackedVector2Array
 	_expect(
-		int(first_debris.get("gfl_index", -1)) == 868
+		int(first_debris.get("gfl_index", -1)) == 151
 		and int(first_debris.get("repeat_count", 0)) == 2
 		and first_path[0] == Vector2(100.0, 100.0)
-		and first_path[-1] == Vector2(134.0, -122.0),
+		and first_path[-1] == Vector2(504.0, -19.0),
 		"the first debris actor preserves its asset, flights, and exact endpoints",
 	)
 	var first_debris_sites: Array[int] = []
 	for raw_draw: Variant in (debris.get("random_draws", []) as Array).slice(
 		0,
-		11,
+		10,
 	):
 		first_debris_sites.append(
 			int((raw_draw as Dictionary).get("call_site_rva", 0))
@@ -411,7 +422,6 @@ func _test_persistent_scorch_and_debris_plans() -> void:
 			0x00050980,
 			0x0005340B,
 			0x0005358B,
-			0x0005BBBC,
 			0x0006458D,
 			0x00064604,
 			0x0006461C,
@@ -508,10 +518,10 @@ func _test_actor_61_effect_lifecycle() -> void:
 	)
 	var configure_draws: Array = effect.take_crt_random_draws()
 	_expect(
-		next_state == 3139824070
-		and configure_draws.size() == 47
-		and effect.persistent_scorch_count() == 1
-		and effect.remaining_debris_count() == 3
+		next_state == 3115572192
+		and configure_draws.size() == 33
+		and effect.persistent_scorch_count() == 2
+		and effect.remaining_debris_count() == 1
 		and effect.remaining_particle_count() == 0
 		and effect.pending_bursts.size() == 1,
 		"actor 61 constructs its primary, scorch, and debris before pending damage fire",
@@ -527,15 +537,15 @@ func _test_actor_61_effect_lifecycle() -> void:
 	_expect(
 		effect.primary_complete
 		and effect.primary_destructor_consumed
-		and effect.remaining_particle_count() == 2
-		and action_draws.size() == 29,
+		and effect.remaining_particle_count() == 1
+		and action_draws.size() == 14,
 		"tick 30 releases fire and retires the primary on the shared stream",
 	)
 	effect.advance_world_ticks(600)
 	_expect(
 		effect.remaining_particle_count() == 0
 		and effect.remaining_debris_count() == 0
-		and effect.persistent_scorch_count() == 1
+		and effect.persistent_scorch_count() == 2
 		and not effect.is_visual_complete()
 		and effect.is_persistable(),
 		"transient explosion actors retire while the native scorch remains persisted",
@@ -573,7 +583,7 @@ func _test_explosion_effect_animation_audio() -> void:
 		61,
 		catalog,
 		Vector2(1000.0, 1000.0),
-		RULES.CRT_INITIAL_STATE,
+		2,
 	)
 	effect.advance_world_ticks(3)
 	var primary_events := events.filter(
@@ -655,8 +665,8 @@ func _test_explosion_snapshot_lifecycles() -> void:
 		and restored_effect.remaining_particle_count() == 0
 		and source_effect.remaining_debris_count() == 0
 		and restored_effect.remaining_debris_count() == 0
-		and source_effect.persistent_scorch_count() == 1
-		and restored_effect.persistent_scorch_count() == 1
+		and source_effect.persistent_scorch_count() == 2
+		and restored_effect.persistent_scorch_count() == 2
 		and source_effect.snapshot() == restored_effect.snapshot(),
 		"restored actor 61 retires every transient on the same stream and keeps its scorch",
 	)

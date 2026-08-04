@@ -474,18 +474,14 @@ static func build_dynamic_actor_factory_plan(
 	asset_available: bool = true,
 ) -> Dictionary:
 	# sub_44A350 first constructs the 0x2A0-byte actor. The base and derived
-	# constructors consume four draws before SPR lookup. A successful lookup
-	# reaches sub_45B950 and consumes the loaded-facing draw. A failed lookup
-	# (notably runtime type 102) immediately invokes the derived/base destructor
-	# pair instead, consuming its four reset draws and no load-facing draw.
+	# constructors consume four draws before SPR lookup. Process-local runtime
+	# traces of item drops, burial actors and projectile/effect actors prove that
+	# a normal successful in-level insertion stops there. 0x5BBBC belongs to the
+	# separate SAV restore path, not to the ordinary factory transaction. A failed
+	# lookup (notably runtime type 102) immediately invokes the derived/base
+	# destructor pair and therefore consumes four constructor plus four reset
+	# draws.
 	if not _all_sites_registered(DYNAMIC_ACTOR_CONSTRUCTOR_CALL_SITES):
-		return {}
-	if (
-		asset_available
-		and CRT_CALL_SITE_CATALOG.metadata_for_rva(
-			DYNAMIC_ACTOR_LOAD_FACING_CALL_SITE
-		).is_empty()
-	):
 		return {}
 	if (
 		not asset_available
@@ -498,15 +494,7 @@ static func build_dynamic_actor_factory_plan(
 		var draw := next_crt_rand(state)
 		state = int(draw["state"])
 		_append_random_draw(random_draws, call_site, draw)
-	if asset_available:
-		var loaded_facing_draw := next_crt_rand(state)
-		state = int(loaded_facing_draw["state"])
-		_append_random_draw(
-			random_draws,
-			DYNAMIC_ACTOR_LOAD_FACING_CALL_SITE,
-			loaded_facing_draw,
-		)
-	else:
+	if not asset_available:
 		for call_site: int in DYNAMIC_ACTOR_DESTRUCTOR_CALL_SITES:
 			var reset_draw := next_crt_rand(state)
 			state = int(reset_draw["state"])
@@ -516,6 +504,28 @@ static func build_dynamic_actor_factory_plan(
 		"next_random_state": state,
 		"random_draws": random_draws,
 		"random_draw_count": random_draws.size(),
+	}
+
+
+static func build_saved_actor_facing_plan(initial_state: int) -> Dictionary:
+	# sub_45B950 is reached independently while an actor state from a SAV is
+	# applied. Keep the one-draw transaction explicit so ordinary dynamic actor
+	# creation cannot silently shift the process-global stream.
+	if CRT_CALL_SITE_CATALOG.metadata_for_rva(
+		DYNAMIC_ACTOR_LOAD_FACING_CALL_SITE
+	).is_empty():
+		return {}
+	var draw := next_crt_rand(initial_state & UINT32_MASK)
+	var random_draws: Array[Dictionary] = []
+	_append_random_draw(
+		random_draws,
+		DYNAMIC_ACTOR_LOAD_FACING_CALL_SITE,
+		draw,
+	)
+	return {
+		"next_random_state": int(draw["state"]),
+		"random_draws": random_draws,
+		"random_draw_count": 1,
 	}
 
 

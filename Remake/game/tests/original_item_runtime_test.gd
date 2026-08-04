@@ -441,9 +441,8 @@ func _test_drop_enemy_pickup_and_death_loot(main: Node) -> void:
 			0x00050980,
 			0x0005340B,
 			0x0005358B,
-			0x0005BBBC,
 		],
-		"manual drop creates the item actor through the exact five-draw factory",
+		"manual drop creates the item actor through the exact four-draw factory",
 	)
 	_expect(
 		bool(

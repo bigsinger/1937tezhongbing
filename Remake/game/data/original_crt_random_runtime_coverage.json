@@ -130,7 +130,7 @@
       "status": "exact_runtime",
       "missing_sites": [],
       "implementation_markers": [
-        {"path": "Remake/game/scripts/squad_unit.gd", "contains": "0x0005BBBC"}
+        {"path": "Remake/game/scripts/legacy_explosion_visual_rules.gd", "contains": "func build_saved_actor_facing_plan"}
       ]
     },
     {

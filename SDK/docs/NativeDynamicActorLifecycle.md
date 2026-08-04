@@ -1,8 +1,9 @@
 # 原版动态 actor 工厂与析构顺序
 
-本页记录 `M1937.exe` 已离线确认的动态 actor 生命周期，用于约束 SDK、MOD
-插件与 Remake 的共享 MSVCRT `rand()` 调用顺序。分析只读取
-`E:\1937\M1937-rand.i64`，没有启动游戏、控制鼠标或尝试通关。
+本页记录 `M1937.exe` 已确认的动态 actor 生命周期，用于约束 SDK、MOD
+插件与 Remake 的共享 MSVCRT `rand()` 调用顺序。静态调用图由
+`E:\1937\M1937-rand.i64` 恢复；成功工厂与存读档边界又由只向目标窗口发送
+消息、只挂接目标进程 DirectInput 的短探针校正，没有控制全局鼠标或尝试通关。
 
 ## type 8 / 10 部署链
 
@@ -11,14 +12,18 @@
 - `sub_44A350(x, 0, y, 84)`；
 - `sub_44A350(x, 0, y, 85)`。
 
-`sub_44A350` 先经 `sub_453850` 执行基类/派生类构造；成功解析 actor 资源并
-插入管理器后，再调用 `sub_45B950(actor, 0)`。因此一个成功部署严格消费：
+`sub_44A350` 先经 `sub_453850` 执行基类/派生类构造。进程内短探针已经证明，
+普通局内创建在成功解析 actor 资源并插入管理器后严格消费四次：
 
 1. `0x00050967`：基础 idle 上限；
 2. `0x00050980`：基础朝向；
 3. `0x0005340B`：AI phase；
-4. `0x0005358B`：reaction 上限；
-5. `0x0005BBBC`：载入后的最终朝向。
+4. `0x0005358B`：reaction 上限。
+
+`0x0005BBBC` 不属于普通成功工厂。它只在 `sub_45B950` 应用 SAV 中的 actor
+状态时单独消费一次“载入后朝向”随机数。m010 丢弃物品的原版实测在同一
+`caller_esi` 下连续命中上述四个构造点并明确没有命中 `0x0005BBBC`；m000
+存读档短探针则在完整世界重建区间只命中一次 `0x0005BBBC`。
 
 稳定产品包含 actor 84/GFL 470 与 actor 85/GFL 900，故正式内容走成功工厂
 路径。无原资源的合成测试仍按这条已知成功路径建模，不能把测试夹具中缺少纹理
@@ -42,19 +47,19 @@ actor 62 通过自己的 `sub_44A350` 成功工厂建立；其主动画、effect
 3. `0x00050B64`：基础 idle reset；
 4. `0x00050B7D`：基础 facing reset。
 
-因此可见顺序是“actor 84/85 五次工厂取数 → 触发时 actor 62 及其子效果工厂
+因此可见顺序是“actor 84/85 四次局内工厂取数 → 触发时 actor 62 及其子效果工厂
 取数 → actor 84/85 四次析构取数”，不能把两个 actor 合并后省略任一事务。
 
 ## Remake 门禁
 
-`main.gd::_spawn_legacy_special_world_object` 提交部署物五次工厂事务；
+`main.gd::_spawn_legacy_special_world_object` 提交部署物四次工厂事务；
 `LegacySpecialWorldObject` 只保存部署、触发/计时和所有者状态；
 `LegacyExplosionEffect` 独立承载 actor 62；`resolved`/`disarmed` 回调最后提交
 部署物四次析构事务。存档恢复不会重复消费已经包含在全局状态中的工厂取数。
 
 无界面门禁覆盖：
 
-- 五个构造调用点与四个析构调用点顺序；
+- 四个局内构造调用点、独立 SAV 朝向调用点与四个析构调用点顺序；
 - actor 84 请求独立 actor 62 后才析构；
 - type 10 第 100 world tick 触发；
 - 活跃部署物与独立 actor 62 的物理存读恢复；
@@ -67,10 +72,10 @@ actor 62 通过自己的 `sub_44A350` 成功工厂建立；其主动画、effect
 - `sub_4583F0` 在丢弃命令到达目标后先以 `sub_44A350` 创建“runtime type =
   item ID”的世界物品，再从角色容器强制移除一件；敌我角色成功收取时，经
   `sub_456AB0 → sub_449DA0 → sub_44D8A0` 消费四次析构取数；
-- `sub_456CD0` 在掩埋计数严格超过 100 后先标记旧尸体，随后以五次工厂取数
+- `sub_456CD0` 在掩埋计数严格超过 100 后先标记旧尸体，随后以四次工厂取数
   创建 actor 78/GFL 64，最后才消费尸体四次析构取数；actor 78 独立复制武器
   与背包两个容器；
-- 空地 S 命令首次创建唯一 actor 90/GFL 341 时消费五次工厂取数；后续点击
+- 空地 S 命令首次创建唯一 actor 90/GFL 341 时消费四次工厂取数；后续点击
   只移动同一 actor，不重复构造。第一次有效观察删除标记并消费四次析构取数；
 - `sub_45E2A0` 的尸体警报从最近 type 93 标记处依次创建两个 actor 6；每个
   增援各消费一次五取数工厂。Remake 的活动生成保留这两个事务，读档重建已
@@ -87,7 +92,7 @@ actor 62 通过自己的 `sub_44A350` 成功工厂建立；其主动画、effect
 对象不超过 32 时，原程序按以下顺序执行：
 
 1. 把 type 100 的当前生命字段写为 200；
-2. 调用 `sub_44A350(carrier.x-16, 0, carrier.y, 101)`，消费五次成功工厂取数；
+2. 调用 `sub_44A350(carrier.x-16, 0, carrier.y, 101)`，消费四次成功工厂取数；
 3. 从角色两个容器中移除物品 101。
 
 DBL 1021/runtime type 101 对应 GFL 246 `放在地上的文件袋.spr`。随后
@@ -113,11 +118,11 @@ SDK 的 `Mission7Exchange.hpp` 固定两处入口、scene/runtime type、32/256
 - effect 1 / mode 0 没有飞行 actor；
 - effect 8 经 `sub_465310 → sub_464060` 创建 actor 60 命中火花。
 
-actor 57/80/81 和 actor 60 的成功创建都走 `sub_44A350` 的五次工厂事务。
+actor 57/80/81 和 actor 60 的成功创建都走 `sub_44A350` 的四次局内工厂事务。
 `sub_463A00` 在命中、碰撞或终点先通过 `sub_449DA0` 删除飞行 actor，再请求
 effect 8 或 effect 4；actor 60 播放结束后由 `sub_4640B0` 删除。因此飞镖和
-弹弓的严格顺序是“飞行 actor 五次工厂 → 飞行 actor 四次析构 → actor 60
-五次工厂 → actor 60 四次析构”；手榴弹则先析构 actor 57，再请求独立 actor
+弹弓的严格顺序是“飞行 actor 四次工厂 → 飞行 actor 四次析构 → actor 60
+四次工厂 → actor 60 四次析构”；手榴弹则先析构 actor 57，再请求独立 actor
 61。普通子弹只消费 actor 60 的工厂/析构事务。
 
 Remake 的 `CombatProjectile` schema 3 显式保存当前由飞行 actor 还是 actor 60

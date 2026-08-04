@@ -3590,8 +3590,8 @@ func _on_original_disguise_transition_ready(
 		actor.cancel_original_disguise_transition()
 		return
 	# The original type 10 <-> 91 transition allocates a fresh actor through
-	# sub_44A350/sub_45B950 before copying the retained inventory/state fields.
-	# Reproduce the exact five-draw factory sequence and the four derived/base
+	# sub_44A350 before copying the retained inventory/state fields. Reproduce
+	# the exact four-draw in-level factory sequence and four derived/base
 	# destructor draws for the retired actor when this is a level-bound runtime
 	# actor; isolated fixtures keep their deterministic fallback.
 	if (
@@ -4245,7 +4245,7 @@ func _finish_burial() -> void:
 	var scene_index := int(burial_target.scene_index)
 	# sub_456CD0 marks the corpse for removal, creates actor 78 through the
 	# successful sub_44A350 path, and only then lets the manager run the old
-	# corpse's derived/base destructor. Keep that nine-draw transaction atomic.
+	# corpse's derived/base destructor. Keep that eight-draw transaction atomic.
 	if not _commit_original_dynamic_actor_factory("actor 78 藏尸处"):
 		_cancel_burial_command()
 		return
@@ -4597,7 +4597,7 @@ func _place_or_move_sight_beacon(world_point: Vector2) -> Node2D:
 		return sight_beacon
 	# The original empty-ground S command creates the unique type-90 actor via
 	# sub_44A350. Repositioning an existing marker mutates it in place and must
-	# not repeat these five constructor/load-facing draws.
+	# not repeat these four in-level constructor draws.
 	if not _commit_original_dynamic_actor_factory("actor 90 观察标记"):
 		return null
 	var marker: Node2D = LEGACY_OBSERVATION_BEACON_SCRIPT.new()
@@ -5207,7 +5207,7 @@ func _spawn_legacy_special_world_object(
 ) -> Node2D:
 	# sub_456DF0 creates actor 84/85 through sub_44A350. Both known actor
 	# resources exist in the stable product, so this is the successful factory
-	# path: four constructor draws followed by sub_45B950's loaded-facing draw.
+	# path: exactly four constructor draws. sub_45B950 is SAV restore only.
 	# Restoring a save passes false because the persisted process-global state
 	# already includes this transaction.
 	if (
@@ -6235,8 +6235,8 @@ func _complete_original_drop_order() -> bool:
 		_clear_original_drop_order()
 		return false
 	# sub_4583F0 creates runtime type == item ID with sub_44A350 before removing
-	# the item from the actor container. Known droppable item SPRs use the five-
-	# draw success path; the pickup later consumes the four destructor resets.
+	# the item from the actor container. The captured drop consumes the four
+	# constructor draws; pickup later consumes the four destructor resets.
 	if not _commit_original_dynamic_actor_factory(
 		"丢弃物品 actor %d" % item_id
 	):

@@ -8,7 +8,7 @@
     "create_world_actor_rva": "0x0004A350",
     "remove_world_actor_rva": "0x00049DA0",
     "effect_dispatch_rva": "0x000656C0",
-    "successful_factory_crt_draws": 5,
+    "successful_factory_crt_draws": 4,
     "successful_removal_crt_draws": 4
   },
   "summary": {

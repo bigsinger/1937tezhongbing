@@ -128,7 +128,7 @@ if ($addressByName.CreateWorldActor -ne
     $addressByName.EffectDispatch -ne
         (ConvertTo-NormalizedRva `
             ([string]$catalog.functions.effect_dispatch_rva)) -or
-    [int]$catalog.functions.successful_factory_crt_draws -ne 5 -or
+    [int]$catalog.functions.successful_factory_crt_draws -ne 4 -or
     [int]$catalog.functions.successful_removal_crt_draws -ne 4) {
     throw 'Lifecycle function identities disagree with SDK address catalog.'
 }
