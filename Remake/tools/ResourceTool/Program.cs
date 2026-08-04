@@ -42,6 +42,7 @@ internal static class Program
             "inspect-save" => InspectSave(args),
             "import-save" => ImportSave(args),
             "world-pickup-baseline" => WorldPickupBaseline(args),
+            "actor-field-audit" => ActorFieldAudit(args),
             "list-gfl" => ListGfl(args),
             "extract-gfl" => ExtractGfl(args),
             "strip-briefings" => StripBriefings(args),
@@ -98,6 +99,187 @@ internal static class Program
         Console.WriteLine($"Wrote: {outputPath}");
         return 0;
     }
+
+    private static int ActorFieldAudit(string[] args)
+    {
+        RequireArgumentCount(
+            args,
+            3,
+            3,
+            "actor-field-audit <game-directory> <output.json>");
+        var gameDirectory = System.IO.Path.GetFullPath(args[1]);
+        var outputPath = System.IO.Path.GetFullPath(args[2]);
+        var databasePath = System.IO.Path.Combine(
+            gameDirectory,
+            "1937Database.dbl");
+        var executablePath = System.IO.Path.Combine(
+            gameDirectory,
+            "M1937.exe");
+        if (!File.Exists(databasePath))
+        {
+            throw new FileNotFoundException(
+                "The original database is missing.",
+                databasePath);
+        }
+        if (!File.Exists(executablePath))
+        {
+            throw new FileNotFoundException(
+                "The supported executable is missing.",
+                executablePath);
+        }
+
+        var database = DblDatabase.Open(databasePath);
+        var levelAudits = new List<object>();
+        var totalEntities = 0;
+        var totalExtendedEntities = 0;
+        var runtime21CNonZeroEntities = 0;
+        var runtime274NonZeroEntities = 0;
+        var reservedTailNonZeroEntities = 0;
+        var reservedTailNonZeroValues = 0;
+        for (var levelIndex = 0; levelIndex < 12; levelIndex++)
+        {
+            var levelId = $"m{levelIndex:D3}";
+            var mapPath = System.IO.Path.Combine(
+                gameDirectory,
+                $"1937{levelId}.vwf");
+            if (!File.Exists(mapPath))
+            {
+                throw new FileNotFoundException(
+                    $"Formal world {levelId} is missing.",
+                    mapPath);
+            }
+
+            var sceneList = VwfSceneList.Open(mapPath, database);
+            var extendedEntities = sceneList.Entities.Count(
+                entity => entity.HasExtendedData);
+            var levelRuntime21CNonZero = sceneList.Entities.Count(
+                entity => entity.UnknownRuntime21C != 0);
+            var levelRuntime274NonZero = sceneList.Entities.Count(
+                entity => entity.UnknownRuntime274 != 0);
+            var levelReservedTailNonZeroEntities = sceneList.Entities.Count(
+                entity => entity.ExtendedReservedTailFields.Any(
+                    value => value != 0));
+            var levelReservedTailNonZeroValues = sceneList.Entities.Sum(
+                entity => entity.ExtendedReservedTailFields.Count(
+                    value => value != 0));
+
+            totalEntities += sceneList.Entities.Count;
+            totalExtendedEntities += extendedEntities;
+            runtime21CNonZeroEntities += levelRuntime21CNonZero;
+            runtime274NonZeroEntities += levelRuntime274NonZero;
+            reservedTailNonZeroEntities += levelReservedTailNonZeroEntities;
+            reservedTailNonZeroValues += levelReservedTailNonZeroValues;
+            levelAudits.Add(new
+            {
+                id = levelId,
+                map_file = System.IO.Path.GetFileName(mapPath),
+                map_sha256 = FileSha256(mapPath),
+                scene_entity_count = sceneList.Entities.Count,
+                extended_data_entity_count = extendedEntities,
+                unknown_runtime_21c_nonzero_entity_count =
+                    levelRuntime21CNonZero,
+                unknown_runtime_274_nonzero_entity_count =
+                    levelRuntime274NonZero,
+                reserved_tail_nonzero_entity_count =
+                    levelReservedTailNonZeroEntities,
+                reserved_tail_nonzero_value_count =
+                    levelReservedTailNonZeroValues,
+            });
+        }
+
+        var document = new
+        {
+            schema_version = 1,
+            catalog_id = "original-actor-dormant-fields-v1",
+            content_profile = "repository-mod-12-level-20260729",
+            source = new
+            {
+                database_file = System.IO.Path.GetFileName(databasePath),
+                database_sha256 = FileSha256(databasePath),
+                executable_file = System.IO.Path.GetFileName(executablePath),
+                executable_sha256 = FileSha256(executablePath),
+                loader = "M1937.exe sub_453FE0",
+            },
+            layout = new
+            {
+                entity_format_version = VwfSceneList.SupportedEntityVersion,
+                serialized_runtime_field_count =
+                    VwfActorExtendedLayoutV5.FieldCount,
+                runtime_destination_count =
+                    VwfActorExtendedLayoutV5.RuntimeOffsets.Count,
+                dormant_zero_fields = new object[]
+                {
+                    new
+                    {
+                        serialized_index =
+                            (int)VwfActorExtendedFieldV5.UnknownRuntime21C,
+                        name = nameof(
+                            VwfActorExtendedFieldV5.UnknownRuntime21C),
+                        runtime_offset_hex = "0x21C",
+                        semantic_status =
+                            "unknown_no_supported_executable_consumer",
+                    },
+                    new
+                    {
+                        serialized_index =
+                            (int)VwfActorExtendedFieldV5.UnknownRuntime274,
+                        name = nameof(
+                            VwfActorExtendedFieldV5.UnknownRuntime274),
+                        runtime_offset_hex = "0x274",
+                        semantic_status =
+                            "unknown_no_supported_executable_consumer",
+                    },
+                },
+                loader_discarded_tail = new
+                {
+                    serialized_value_count =
+                        VwfActorExtendedLayoutV5.ReservedTailFieldCount,
+                    runtime_destination_count = 0,
+                    preservation_policy =
+                        "retain_raw_values_for_audit_and_round_trip",
+                },
+            },
+            summary = new
+            {
+                level_count = levelAudits.Count,
+                scene_entity_count = totalEntities,
+                extended_data_entity_count = totalExtendedEntities,
+                unknown_runtime_21c_nonzero_entity_count =
+                    runtime21CNonZeroEntities,
+                unknown_runtime_274_nonzero_entity_count =
+                    runtime274NonZeroEntities,
+                reserved_tail_nonzero_entity_count =
+                    reservedTailNonZeroEntities,
+                reserved_tail_nonzero_value_count =
+                    reservedTailNonZeroValues,
+            },
+            levels = levelAudits,
+        };
+        var outputDirectory = System.IO.Path.GetDirectoryName(outputPath);
+        if (!string.IsNullOrEmpty(outputDirectory))
+        {
+            Directory.CreateDirectory(outputDirectory);
+        }
+        File.WriteAllText(
+            outputPath,
+            JsonSerializer.Serialize(document, JsonOptions) +
+                Environment.NewLine,
+            new System.Text.UTF8Encoding(
+                encoderShouldEmitUTF8Identifier: false));
+        Console.WriteLine(
+            $"Audited {totalEntities} entities across {levelAudits.Count} " +
+            "formal worlds; nonzero counts: " +
+            $"+0x21C={runtime21CNonZeroEntities}, " +
+            $"+0x274={runtime274NonZeroEntities}, " +
+            $"discarded-tail-values={reservedTailNonZeroValues}.");
+        Console.WriteLine($"Wrote: {outputPath}");
+        return 0;
+    }
+
+    private static string FileSha256(string path) =>
+        Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(
+                File.ReadAllBytes(path)));
 
     private static int InspectVwf(string[] args)
     {
@@ -965,6 +1147,8 @@ internal static class Program
             "  inspect-dbl <1937Database.dbl> [--id=N] [--runtime-type=N]");
         Console.WriteLine(
             "  world-pickup-baseline <1937db.dbl> <output.json>");
+        Console.WriteLine(
+            "  actor-field-audit <game-directory> <output.json>");
         Console.WriteLine(
             "  inspect-vwf <path.vwf> [1937db.dbl] [--entities] [--patrols] [--extended] [--auxiliary] [--scene=N]");
         Console.WriteLine(

@@ -112,12 +112,14 @@ internal static class VwfSceneListSyntheticTests
         Equal(2u, entity.MovementPathState, "SLIST1 path state ext16", ref checks);
         Equal(1u, entity.MovementMode, "SLIST1 movement mode ext17", ref checks);
         Equal(-32, entity.ResolvedGoalX, "SLIST1 signed resolved goal X ext18", ref checks);
+        Equal(0x21212121u, entity.UnknownRuntime21C, "SLIST1 unknown runtime +0x21C ext19", ref checks);
         Equal(168, entity.ResolvedGoalY, "SLIST1 resolved goal Y ext20", ref checks);
         Equal(65u, entity.SearchDelayLimit, "SLIST1 search limit ext21", ref checks);
         Equal(7u, entity.SearchDelayCounter, "SLIST1 search counter ext22", ref checks);
         Equal(3u, entity.SearchWanderStepCounter, "SLIST1 search step ext24", ref checks);
         Equal(80u, entity.PoisonCounterLimit, "SLIST1 poison limit ext27", ref checks);
         Equal(600u, entity.HypnosisCounterLimit, "SLIST1 hypnosis limit ext28", ref checks);
+        Equal(0x27272727u, entity.UnknownRuntime274, "SLIST1 unknown runtime +0x274 ext30", ref checks);
         Equal(1u, entity.NavigationOccupancyEnabled, "SLIST1 navigation occupancy ext31", ref checks);
         Equal(6u, entity.StationaryRouteFacingDirection, "SLIST1 stationary facing ext32", ref checks);
         Equal(1u, entity.StationaryRouteFacingRestoreEnabled, "SLIST1 stationary-facing restore ext33", ref checks);
@@ -266,6 +268,7 @@ internal static class VwfSceneListSyntheticTests
         extendedFields[16] = 2;
         extendedFields[17] = 1;
         extendedFields[18] = unchecked((uint)-32);
+        extendedFields[19] = 0x21212121;
         extendedFields[20] = 168;
         extendedFields[21] = 65;
         extendedFields[22] = 7;
@@ -273,6 +276,7 @@ internal static class VwfSceneListSyntheticTests
         extendedFields[24] = 3;
         extendedFields[27] = 80;
         extendedFields[28] = 600;
+        extendedFields[30] = 0x27272727;
         extendedFields[31] = 1;
         extendedFields[32] = 6;
         extendedFields[33] = 1;

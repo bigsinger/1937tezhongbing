@@ -145,6 +145,8 @@ public sealed record VwfSceneEntity(
     public uint MovementPathState => ExtendedField(VwfActorExtendedFieldV5.MovementPathState);
     public uint MovementMode => ExtendedField(VwfActorExtendedFieldV5.MovementMode);
     public int ResolvedGoalX => SignedExtendedField(VwfActorExtendedFieldV5.ResolvedGoalX);
+    public uint UnknownRuntime21C =>
+        ExtendedField(VwfActorExtendedFieldV5.UnknownRuntime21C);
     public int ResolvedGoalY => SignedExtendedField(VwfActorExtendedFieldV5.ResolvedGoalY);
     public uint SearchDelayLimit => ExtendedField(VwfActorExtendedFieldV5.SearchDelayLimit);
     public uint SearchDelayCounter => ExtendedField(VwfActorExtendedFieldV5.SearchDelayCounter);
@@ -156,6 +158,8 @@ public sealed record VwfSceneEntity(
     public uint PoisonCounterLimit => ExtendedField(VwfActorExtendedFieldV5.PoisonCounterLimit);
     public uint HypnosisCounterLimit => ExtendedField(VwfActorExtendedFieldV5.HypnosisCounterLimit);
     public uint HypnosisCounter => ExtendedField(VwfActorExtendedFieldV5.HypnosisCounter);
+    public uint UnknownRuntime274 =>
+        ExtendedField(VwfActorExtendedFieldV5.UnknownRuntime274);
     public uint NavigationOccupancyEnabled =>
         ExtendedField(VwfActorExtendedFieldV5.NavigationOccupancyEnabled);
     public uint StationaryRouteFacingDirection =>

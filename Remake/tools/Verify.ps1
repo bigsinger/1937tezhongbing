@@ -33,6 +33,7 @@ if ($LASTEXITCODE -ne 0) {
 & (Join-Path $PSScriptRoot 'Test-OriginalInitialWeaponInventory.ps1')
 & (Join-Path $PSScriptRoot 'Test-OriginalInitialItemInventory.ps1')
 & (Join-Path $PSScriptRoot 'Test-OriginalWorldPickups.ps1')
+& (Join-Path $PSScriptRoot 'Test-OriginalActorDormantFields.ps1')
 & (Join-Path $PSScriptRoot 'Test-OriginalRuntimeActorCatalog.ps1')
 & (Join-Path $PSScriptRoot 'Test-CrtRandomStartupBaseline.ps1')
 & (Join-Path $PSScriptRoot 'Test-CrtRandomRuntimeTimingBaseline.ps1')

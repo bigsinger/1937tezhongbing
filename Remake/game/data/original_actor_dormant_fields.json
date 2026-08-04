@@ -1,0 +1,179 @@
+{
+  "schema_version": 1,
+  "catalog_id": "original-actor-dormant-fields-v1",
+  "content_profile": "repository-mod-12-level-20260729",
+  "source": {
+    "database_file": "1937Database.dbl",
+    "database_sha256": "0017D8AB6A41F104BF0DE9A8282AB593B94E2BF7131038566AC281A8F15025D9",
+    "executable_file": "M1937.exe",
+    "executable_sha256": "F4DD1131DF6C993C01EA011F9439BC725E6DC6491B5FBBA47724D7D5B64DA3F3",
+    "loader": "M1937.exe sub_453FE0"
+  },
+  "layout": {
+    "entity_format_version": 5,
+    "serialized_runtime_field_count": 41,
+    "runtime_destination_count": 41,
+    "dormant_zero_fields": [
+      {
+        "serialized_index": 19,
+        "name": "UnknownRuntime21C",
+        "runtime_offset_hex": "0x21C",
+        "semantic_status": "unknown_no_supported_executable_consumer"
+      },
+      {
+        "serialized_index": 30,
+        "name": "UnknownRuntime274",
+        "runtime_offset_hex": "0x274",
+        "semantic_status": "unknown_no_supported_executable_consumer"
+      }
+    ],
+    "loader_discarded_tail": {
+      "serialized_value_count": 24,
+      "runtime_destination_count": 0,
+      "preservation_policy": "retain_raw_values_for_audit_and_round_trip"
+    }
+  },
+  "summary": {
+    "level_count": 12,
+    "scene_entity_count": 19199,
+    "extended_data_entity_count": 19199,
+    "unknown_runtime_21c_nonzero_entity_count": 0,
+    "unknown_runtime_274_nonzero_entity_count": 0,
+    "reserved_tail_nonzero_entity_count": 0,
+    "reserved_tail_nonzero_value_count": 0
+  },
+  "levels": [
+    {
+      "id": "m000",
+      "map_file": "1937m000.vwf",
+      "map_sha256": "C98E4347A1E69D79566DD790059D41E653DBBC3209AC0B73E2511803091B0E5C",
+      "scene_entity_count": 1630,
+      "extended_data_entity_count": 1630,
+      "unknown_runtime_21c_nonzero_entity_count": 0,
+      "unknown_runtime_274_nonzero_entity_count": 0,
+      "reserved_tail_nonzero_entity_count": 0,
+      "reserved_tail_nonzero_value_count": 0
+    },
+    {
+      "id": "m001",
+      "map_file": "1937m001.vwf",
+      "map_sha256": "3DD59A05BCA101A954D76716F89A532352F1D9B7A6DD909B651C88DCF8F266F8",
+      "scene_entity_count": 2525,
+      "extended_data_entity_count": 2525,
+      "unknown_runtime_21c_nonzero_entity_count": 0,
+      "unknown_runtime_274_nonzero_entity_count": 0,
+      "reserved_tail_nonzero_entity_count": 0,
+      "reserved_tail_nonzero_value_count": 0
+    },
+    {
+      "id": "m002",
+      "map_file": "1937m002.vwf",
+      "map_sha256": "2454CF53BA0FA3780BB472BE549F3BE0FFD9F45D863B901691BBAEC2DABA082F",
+      "scene_entity_count": 898,
+      "extended_data_entity_count": 898,
+      "unknown_runtime_21c_nonzero_entity_count": 0,
+      "unknown_runtime_274_nonzero_entity_count": 0,
+      "reserved_tail_nonzero_entity_count": 0,
+      "reserved_tail_nonzero_value_count": 0
+    },
+    {
+      "id": "m003",
+      "map_file": "1937m003.vwf",
+      "map_sha256": "BB279AD66F1368D7B0F7A1E1474F81745DD4BB543B36B8C6E57042EE55F0B3AF",
+      "scene_entity_count": 1254,
+      "extended_data_entity_count": 1254,
+      "unknown_runtime_21c_nonzero_entity_count": 0,
+      "unknown_runtime_274_nonzero_entity_count": 0,
+      "reserved_tail_nonzero_entity_count": 0,
+      "reserved_tail_nonzero_value_count": 0
+    },
+    {
+      "id": "m004",
+      "map_file": "1937m004.vwf",
+      "map_sha256": "06355CF3E2F7E868D83CA6BC6AB76F5AC8BD952AA541EBE70D5342ED13FEBA43",
+      "scene_entity_count": 2721,
+      "extended_data_entity_count": 2721,
+      "unknown_runtime_21c_nonzero_entity_count": 0,
+      "unknown_runtime_274_nonzero_entity_count": 0,
+      "reserved_tail_nonzero_entity_count": 0,
+      "reserved_tail_nonzero_value_count": 0
+    },
+    {
+      "id": "m005",
+      "map_file": "1937m005.vwf",
+      "map_sha256": "3BB1BFBABA3AEDF465E07476191E7791413412446C4CCEECB345ACCFED5DA44E",
+      "scene_entity_count": 771,
+      "extended_data_entity_count": 771,
+      "unknown_runtime_21c_nonzero_entity_count": 0,
+      "unknown_runtime_274_nonzero_entity_count": 0,
+      "reserved_tail_nonzero_entity_count": 0,
+      "reserved_tail_nonzero_value_count": 0
+    },
+    {
+      "id": "m006",
+      "map_file": "1937m006.vwf",
+      "map_sha256": "28A48B7295A8C390BB4D35DE1E2D6B154FA0F7536ACB7A9DA3EB8D5C7CEE2090",
+      "scene_entity_count": 1470,
+      "extended_data_entity_count": 1470,
+      "unknown_runtime_21c_nonzero_entity_count": 0,
+      "unknown_runtime_274_nonzero_entity_count": 0,
+      "reserved_tail_nonzero_entity_count": 0,
+      "reserved_tail_nonzero_value_count": 0
+    },
+    {
+      "id": "m007",
+      "map_file": "1937m007.vwf",
+      "map_sha256": "E482D66F0E57E3A970D82FAD5270620563519E3EA58C83FE74AB8B97FF68E87C",
+      "scene_entity_count": 2408,
+      "extended_data_entity_count": 2408,
+      "unknown_runtime_21c_nonzero_entity_count": 0,
+      "unknown_runtime_274_nonzero_entity_count": 0,
+      "reserved_tail_nonzero_entity_count": 0,
+      "reserved_tail_nonzero_value_count": 0
+    },
+    {
+      "id": "m008",
+      "map_file": "1937m008.vwf",
+      "map_sha256": "10801B71778D21A88B5C4134A8E0C48DD35375E515273021CEE972201EBC7ED7",
+      "scene_entity_count": 805,
+      "extended_data_entity_count": 805,
+      "unknown_runtime_21c_nonzero_entity_count": 0,
+      "unknown_runtime_274_nonzero_entity_count": 0,
+      "reserved_tail_nonzero_entity_count": 0,
+      "reserved_tail_nonzero_value_count": 0
+    },
+    {
+      "id": "m009",
+      "map_file": "1937m009.vwf",
+      "map_sha256": "32245944731DB2EF0E46C965893E29B4189B55589FBA21CB7382007FF403ACAC",
+      "scene_entity_count": 1720,
+      "extended_data_entity_count": 1720,
+      "unknown_runtime_21c_nonzero_entity_count": 0,
+      "unknown_runtime_274_nonzero_entity_count": 0,
+      "reserved_tail_nonzero_entity_count": 0,
+      "reserved_tail_nonzero_value_count": 0
+    },
+    {
+      "id": "m010",
+      "map_file": "1937m010.vwf",
+      "map_sha256": "577927C7939B88F053106BE2C991C7B872F9C304B4EB9900202CB6DFF0960E0F",
+      "scene_entity_count": 1629,
+      "extended_data_entity_count": 1629,
+      "unknown_runtime_21c_nonzero_entity_count": 0,
+      "unknown_runtime_274_nonzero_entity_count": 0,
+      "reserved_tail_nonzero_entity_count": 0,
+      "reserved_tail_nonzero_value_count": 0
+    },
+    {
+      "id": "m011",
+      "map_file": "1937m011.vwf",
+      "map_sha256": "5BB97802376BC965A85F55E3D11698B94D1403D06055E931C18055056865EDAA",
+      "scene_entity_count": 1368,
+      "extended_data_entity_count": 1368,
+      "unknown_runtime_21c_nonzero_entity_count": 0,
+      "unknown_runtime_274_nonzero_entity_count": 0,
+      "reserved_tail_nonzero_entity_count": 0,
+      "reserved_tail_nonzero_value_count": 0
+    }
+  ]
+}
