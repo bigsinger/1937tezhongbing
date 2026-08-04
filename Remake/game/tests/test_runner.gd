@@ -735,7 +735,16 @@ func _init() -> void:
 	blocked_start_navigation.prepare_astar()
 	expect(
 		blocked_start_navigation.find_path(Vector2(16, 8), Vector2(80, 8)).is_empty(),
-		"a blocked start is rejected instead of being snapped through a wall",
+		"generic A* rejects a blocked start instead of snapping through a wall",
+		failures,
+	)
+	expect(
+		not blocked_start_navigation.find_path(
+			Vector2(16, 8),
+			Vector2(80, 8),
+			true,
+		).is_empty(),
+		"a registered live actor can route out when a legacy grove footprint covers its current cell",
 		failures,
 	)
 	var occupied_start_navigation: NavigationGridData = NAVIGATION_GRID_DATA.create_for_tests(

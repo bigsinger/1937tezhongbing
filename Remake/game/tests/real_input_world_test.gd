@@ -14,6 +14,11 @@ func _init() -> void:
 
 
 func _run() -> void:
+	# Headless SceneTree windows may start at a tiny implementation-defined size.
+	# Use the shipped viewport so CanvasLayer anchors and real GUI hit testing
+	# exercise the same coordinates as a windowed player session.
+	root.size = Vector2i(1280, 720)
+	await process_frame
 	var main = MAIN_SCENE.instantiate()
 	root.add_child(main)
 	main.set_process(false)
@@ -32,6 +37,18 @@ func _run() -> void:
 		return
 
 	var player: Node2D = main.units[0]
+	var player_spawn := player.position
+	var player_occupancy := (
+		main.dynamic_occupancy.actors.get(
+			int(player.get("scene_index")),
+			{},
+		) as Dictionary
+	)
+	_expect(
+		bool(player.get("use_compact_navigation_footprint"))
+			and player_occupancy.get("movement_offsets", []) == [Vector2i.ZERO],
+		"m000 human navigation keeps one stable foot cell instead of changing with each animation frame",
+	)
 	main.clear_selection()
 	main.level_camera.position = main.world_size * 0.5
 	_push_key(KEY_F4, true)
@@ -44,13 +61,32 @@ func _run() -> void:
 	)
 	var expected_camera: Vector2 = main.LEVEL_VIEW.clamp_camera_center(
 		player.position,
-		main.get_viewport_rect().size,
+		main._gameplay_viewport_size(),
 		main.level_camera.zoom.x,
 		main.world_size,
 	)
 	_expect(
 		main.level_camera.position.is_equal_approx(expected_camera),
 		"keyboard actor selection recenters the level camera",
+	)
+	main.level_camera.force_update_scroll()
+	await process_frame
+	var safe_screen_rect: Rect2 = main.game_shell.gameplay_screen_rect(
+		main.get_viewport_rect().size,
+	)
+	var camera_target_screen: Vector2 = (
+		main.get_global_transform_with_canvas() * main.level_camera.position
+	)
+	_expect(
+		camera_target_screen.distance_to(safe_screen_rect.get_center()) <= 1.0,
+		(
+			"camera targets are visually centred above the HUD instead of behind it "
+			+ "(target=%s safe_center=%s offset=%s)"
+		) % [
+			str(camera_target_screen),
+			str(safe_screen_rect.get_center()),
+			str(main.level_camera.offset),
+		],
 	)
 
 	var requested_destination := player.position + Vector2(128.0, 64.0)
@@ -63,10 +99,12 @@ func _run() -> void:
 		var destination := route[-1]
 		var click := InputEventMouseButton.new()
 		click.button_index = MOUSE_BUTTON_LEFT
+		click.button_mask = MOUSE_BUTTON_MASK_LEFT
 		click.pressed = true
 		click.position = (
 			main.get_global_transform_with_canvas() * destination
 		)
+		click.global_position = click.position
 		# The synthetic event is already expressed in this viewport's local
 		# coordinates. `true` prevents Viewport from treating it as an embedded
 		# host-window coordinate and applying the stretch transform a second time.
@@ -86,6 +124,58 @@ func _run() -> void:
 				]
 			),
 		)
+		var click_release := InputEventMouseButton.new()
+		click_release.button_index = MOUSE_BUTTON_LEFT
+		click_release.button_mask = 0
+		click_release.pressed = false
+		click_release.position = click.position
+		click_release.global_position = click.position
+		root.push_input(click_release, true)
+		await process_frame
+
+	# The first grove surrounds the m000 spawn approach. Traverse out through
+	# that vegetation cluster and return on the real Layer 3/dynamic grid; this
+	# catches the old direction-frame footprint growth that trapped the player.
+	player.call("cancel_path")
+	player.set("original_crt_random_source", null)
+	var grove_route: PackedVector2Array = main.dynamic_occupancy.find_path_for_scene(
+		int(player.get("scene_index")),
+		player.position,
+		Vector2(672.0, 320.0),
+	)
+	var grove_outbound_complete := false
+	if not grove_route.is_empty():
+		player.call("issue_path", grove_route)
+		grove_outbound_complete = _advance_unit_route(player, main.dynamic_occupancy, 600)
+	var grove_return_complete := false
+	if grove_outbound_complete:
+		var grove_return: PackedVector2Array = main.dynamic_occupancy.find_path_for_scene(
+			int(player.get("scene_index")),
+			player.position,
+			player_spawn,
+		)
+		if not grove_return.is_empty():
+			player.call("issue_path", grove_return)
+			grove_return_complete = _advance_unit_route(
+				player,
+				main.dynamic_occupancy,
+				600,
+			)
+	_expect(
+		grove_outbound_complete
+			and grove_return_complete
+			and player.position.distance_to(player_spawn) <= 1.0,
+		(
+			"m000 player traverses the first grove and returns without becoming "
+			+ "trapped (out=%s return=%s position=%s spawn=%s route=%d)"
+		) % [
+			grove_outbound_complete,
+			grove_return_complete,
+			str(player.position),
+			str(player_spawn),
+			grove_route.size(),
+		],
+	)
 
 	_push_key(KEY_M, true)
 	await process_frame
@@ -103,38 +193,69 @@ func _run() -> void:
 	var map_view: Control = main.game_shell._map_view
 	var map_rect: Rect2 = map_view.call("_map_rect")
 	var requested_world_position: Vector2 = (
-		(main.world_size as Vector2) * Vector2(0.72, 0.68)
+		(main.world_size as Vector2) * Vector2(0.72, 0.98)
 	)
 	var requested_map_position: Vector2 = map_view.call(
 		"_world_to_map",
 		requested_world_position,
 		map_rect,
 	)
+	var observed_map_button_events: Array[Dictionary] = []
+	map_view.gui_input.connect(
+		func(event: InputEvent) -> void:
+			if event is InputEventMouseButton:
+				observed_map_button_events.append({
+					"pressed": (event as InputEventMouseButton).pressed,
+					"position": (event as InputEventMouseButton).position,
+				})
+	)
 	main.camera_pan_velocity = Vector2(120.0, 120.0)
+	var map_screen_position := (
+		map_view.get_global_rect().position + requested_map_position
+	)
+	var map_motion := InputEventMouseMotion.new()
+	map_motion.position = map_screen_position
+	map_motion.global_position = map_screen_position
+	root.push_input(map_motion, true)
+	await process_frame
 	var map_click := InputEventMouseButton.new()
 	map_click.button_index = MOUSE_BUTTON_LEFT
+	map_click.button_mask = MOUSE_BUTTON_MASK_LEFT
 	map_click.pressed = true
-	map_click.position = requested_map_position
-	map_view.call("_gui_input", map_click)
+	map_click.position = map_screen_position
+	map_click.global_position = map_click.position
+	root.push_input(map_click, true)
+	await process_frame
 	var map_release := InputEventMouseButton.new()
 	map_release.button_index = MOUSE_BUTTON_LEFT
+	map_release.button_mask = 0
 	map_release.pressed = false
-	map_release.position = requested_map_position
-	map_view.call("_gui_input", map_release)
+	map_release.position = map_click.position
+	map_release.global_position = map_release.position
+	root.push_input(map_release, true)
 	await process_frame
 	var expected_map_camera: Vector2 = main.LEVEL_VIEW.clamp_camera_center(
 		requested_world_position,
-		main.get_viewport_rect().size,
+		main._gameplay_viewport_size(),
 		main.level_camera.zoom.x,
 		main.world_size,
+	)
+	main.level_camera.force_update_scroll()
+	await process_frame
+	camera_target_screen = (
+		main.get_global_transform_with_canvas() * main.level_camera.position
 	)
 	_expect(
 		main.level_camera.position.is_equal_approx(expected_map_camera)
 			and main.camera_pan_velocity.is_zero_approx()
-			and (player.get("movement_path") as PackedVector2Array).is_empty(),
+			and (player.get("movement_path") as PackedVector2Array).is_empty()
+			and observed_map_button_events.size() == 2
+			and camera_target_screen.distance_to(safe_screen_rect.get_center()) <= 1.0,
 		(
-			"a real minimap click moves only the camera and cancels stale edge velocity "
-			+ "(actual=%s expected=%s velocity=%s path=%d map_rect=%s global=%s)"
+			"an actual viewport-dispatched minimap click moves only the camera and "
+			+ "cancels stale edge velocity "
+			+ "(actual=%s expected=%s velocity=%s path=%d map_rect=%s global=%s "
+			+ "events=%s)"
 		)
 			% [
 				str(main.level_camera.position),
@@ -143,23 +264,58 @@ func _run() -> void:
 				(player.get("movement_path") as PackedVector2Array).size(),
 				str(map_rect),
 				str(map_view.get_global_rect()),
+				str(observed_map_button_events),
 			],
 	)
 	var minimap_button := (
 		main.game_shell._original_hud_action_buttons["minimap"]
 		as TextureButton
 	)
-	minimap_button.pressed.emit()
+	var observed_minimap_events: Array[Dictionary] = []
+	minimap_button.gui_input.connect(
+		func(event: InputEvent) -> void:
+			if event is InputEventMouseButton:
+				observed_minimap_events.append({
+					"pressed": (event as InputEventMouseButton).pressed,
+					"position": (event as InputEventMouseButton).position,
+				})
+	)
+	var minimap_button_position := minimap_button.get_global_rect().get_center()
+	var minimap_motion := InputEventMouseMotion.new()
+	minimap_motion.position = minimap_button_position
+	minimap_motion.global_position = minimap_button_position
+	root.push_input(minimap_motion, true)
+	await process_frame
+	var hovered_minimap_control: Control = root.gui_get_hovered_control()
+	var minimap_press := InputEventMouseButton.new()
+	minimap_press.button_index = MOUSE_BUTTON_LEFT
+	minimap_press.button_mask = MOUSE_BUTTON_MASK_LEFT
+	minimap_press.pressed = true
+	minimap_press.position = minimap_button_position
+	minimap_press.global_position = minimap_button_position
+	root.push_input(minimap_press, true)
+	await process_frame
+	var minimap_release := InputEventMouseButton.new()
+	minimap_release.button_index = MOUSE_BUTTON_LEFT
+	minimap_release.button_mask = 0
+	minimap_release.pressed = false
+	minimap_release.position = minimap_button_position
+	minimap_release.global_position = minimap_button_position
+	root.push_input(minimap_release, true)
 	await process_frame
 	_expect(
 		not main.game_shell.is_tactical_map_visible()
-			and (player.get("movement_path") as PackedVector2Array).is_empty(),
+			and (player.get("movement_path") as PackedVector2Array).is_empty()
+			and hovered_minimap_control == minimap_button
+			and observed_minimap_events.size() == 2,
 		"the bottom minimap button works and never submits a world movement order "
-			+ "(visible=%s path=%d button=%s)"
+			+ "(visible=%s path=%d button=%s hovered=%s events=%s)"
 				% [
 					main.game_shell.is_tactical_map_visible(),
 					(player.get("movement_path") as PackedVector2Array).size(),
 					str(minimap_button.get_global_rect()),
+					str(hovered_minimap_control.get_path()) if hovered_minimap_control != null else "<none>",
+					str(observed_minimap_events),
 				],
 	)
 
@@ -306,6 +462,20 @@ func _push_key(keycode: Key, pressed: bool) -> void:
 	event.keycode = keycode
 	event.pressed = pressed
 	root.push_input(event)
+
+
+func _advance_unit_route(
+	unit: Node2D,
+	occupancy: RefCounted,
+	maximum_ticks: int,
+) -> bool:
+	for _tick: int in range(maximum_ticks):
+		occupancy.set("accepted_moves_physics_frame", -1)
+		unit.call("_physics_process", 1.0 / 60.0)
+		var path := unit.get("movement_path") as PackedVector2Array
+		if int(unit.get("movement_path_index")) >= path.size():
+			return true
+	return false
 
 
 func _trace_contains_call_site(

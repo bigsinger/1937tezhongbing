@@ -2,8 +2,13 @@ class_name SquadUnit
 extends Node2D
 
 const BASE_SPRITE_TICK_SECONDS := 0.085
-const MODERN_MOVEMENT_MIN_FRAME_SECONDS := 1.0 / 120.0
-const MODERN_MOVEMENT_MAX_FRAME_SECONDS := 0.12
+## The archived ten-frame run cycles become comically fast when their small
+## per-tick movement triplet is interpreted as one complete sprite stride.
+## Modern pixel-animation practice keeps locomotion readable at roughly 18 fps
+## while still allowing slower authored holds. A full ten-frame run cycle is
+## therefore about 0.56 seconds instead of the former 0.08..0.12 seconds.
+const MODERN_MOVEMENT_MIN_FRAME_SECONDS := 1.0 / 18.0
+const MODERN_MOVEMENT_MAX_FRAME_SECONDS := 0.14
 ## A timestamped process-local trace of 710 consecutive m000 update rounds
 ## measured a 16.686 ms steady interval (59.930 Hz). Observation-marker and
 ## primary candidate-scan rand() calls therefore follow the 60 Hz actor
@@ -222,6 +227,11 @@ var original_first_gameplay_navigation_applied := false
 var dynamic_occupancy: RefCounted
 var dynamic_registered := false
 var active_sprite_footprint_key := ""
+## Modern navigation uses a stable capsule-like grid footprint for biped
+## characters. Their visible SPR raster can change by direction and action,
+## but collision must not grow around their feet and trap them in a doorway or
+## grove after they have already entered it.
+var use_compact_navigation_footprint := false
 ## Stable-MOD patrol timelines can opt into original-style soft actor
 ## separation. Static movement layers remain authoritative; only other live
 ## actors and their transient goal reservations are ignored.
@@ -437,6 +447,7 @@ func configure(
 	blocked_elapsed = 0.0
 	dynamic_registered = false
 	active_sprite_footprint_key = ""
+	use_compact_navigation_footprint = false
 	combat_target = null
 	combat_target_forced = false
 	auto_combat_enabled = false
@@ -4629,6 +4640,8 @@ func _apply_dynamic_sprite_footprint(group: Dictionary) -> bool:
 				]
 			),
 		]
+	if use_compact_navigation_footprint:
+		profile_key = "compact-biped|%s" % profile_key
 	if profile_key == active_sprite_footprint_key:
 		return true
 	var source_navigation: Variant = dynamic_occupancy.get("navigation")
@@ -4645,6 +4658,8 @@ func _apply_dynamic_sprite_footprint(group: Dictionary) -> bool:
 			cell_size,
 		)
 	)
+	if use_compact_navigation_footprint:
+		movement_offsets = [Vector2i.ZERO]
 	var sight_offsets: Array[Vector2i] = (
 		SPR_ANIMATION_RULES.lookup_footprint_offsets(
 			group,
@@ -4665,12 +4680,34 @@ func _apply_dynamic_sprite_footprint(group: Dictionary) -> bool:
 	return true
 
 
+func configure_modern_navigation_footprint(enabled: bool = true) -> bool:
+	use_compact_navigation_footprint = enabled
+	active_sprite_footprint_key = ""
+	if movement_groups.size() < 8:
+		return false
+	var group := movement_groups[clampi(animation_group_index, 0, 7)]
+	if group.is_empty():
+		return false
+	return _apply_dynamic_sprite_footprint(group)
+
+
+static func runtime_actor_uses_compact_biped_navigation(actor_type: int) -> bool:
+	# Types 1..27 are human actors in the recovered runtime catalog except type
+	# 14 (motorcycle). Types 28+ are carts, animals and vehicles whose larger
+	# authored footprint remains meaningful.
+	return actor_type >= 1 and actor_type <= 27 and actor_type != 14
+
+
 func patrol_movement_footprint_profiles() -> Array:
 	var profiles: Array = []
 	if (
 		dynamic_occupancy == null
 		or movement_groups.is_empty()
 	):
+		return profiles
+	if use_compact_navigation_footprint:
+		var compact_profile: Array[Vector2i] = [Vector2i.ZERO]
+		profiles.append(compact_profile)
 		return profiles
 	var source_navigation: Variant = dynamic_occupancy.get("navigation")
 	if source_navigation == null:

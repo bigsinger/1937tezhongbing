@@ -127,6 +127,10 @@ func _check_layout(shell: GameShell, viewport_size: Vector2i) -> void:
 	_expect(not expected.is_empty(), "%s HUD baseline exists" % viewport_key)
 	var expected_bar := _rect_from_record(expected.get("bar_rect", {}) as Dictionary)
 	_expect(bool(layout.get("assets_ready", false)), "HUD assets remain ready")
+	_expect(
+		shell.process_mode == Node.PROCESS_MODE_ALWAYS,
+		"live HUD and minimap accept GUI input both during gameplay and while paused",
+	)
 	_expect(bool(layout.get("visible", false)), "HUD remains visible")
 	_expect(bool(layout.get("top_visible", false)), "top ammo HUD remains visible")
 	_expect(
@@ -150,6 +154,37 @@ func _check_layout(shell: GameShell, viewport_size: Vector2i) -> void:
 			gameplay_size,
 		).y > 0.0,
 		"hovering just above the HUD produces downward vertical scrolling",
+	)
+	var edge_weapon_rect: Rect2 = shell._original_hud_weapon_panel.get_global_rect()
+	var empty_hud_point := Vector2(
+		(260.0 + edge_weapon_rect.position.x) * 0.5,
+		bar.end.y - 1.0,
+	)
+	var mapped_bottom_edge := shell.edge_scroll_pointer_position(
+		empty_hud_point,
+		Vector2(viewport_size),
+	)
+	_expect(
+		mapped_bottom_edge.x >= 0.0
+			and mapped_bottom_edge.y < gameplay_size.y
+			and SMOOTH_CAMERA_PAN.edge_intent(
+				mapped_bottom_edge,
+				gameplay_size,
+			).y > 0.0,
+		"empty bottom-bar stonework maps to the safe battlefield edge for down-scroll",
+	)
+	_expect(
+		shell.edge_scroll_pointer_position(
+			edge_weapon_rect.get_center(),
+			Vector2(viewport_size),
+		).x < 0.0,
+		"weapon controls remain interactive and never trigger edge scrolling",
+	)
+	_expect(
+		shell.gameplay_screen_rect(Vector2(viewport_size)).size == gameplay_size
+			and shell.gameplay_camera_offset(Vector2(viewport_size))
+				.is_equal_approx(Vector2(0.0, HUD_HEIGHT * 0.5)),
+		"camera framing centres the world above the HUD instead of behind it",
 	)
 	_expect(
 		shell._original_hud_background.axis_stretch_horizontal

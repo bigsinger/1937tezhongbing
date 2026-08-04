@@ -36,6 +36,7 @@ const PATROL_FORMATION_MIN_SEPARATION := 28.0
 const MODERN_PATROL_FOLLOW_REPLAN_SECONDS := 0.28
 const MODERN_PATROL_SLOT_TOLERANCE := 18.0
 const MODERN_PATROL_ROUTE_REFRESH_DISTANCE := 20.0
+const MODERN_PATROL_REVERSE_HOLD_DISTANCE := 44.0
 ## m000..m011 include original runtime patrol/controller motion that is not
 ## represented by the VWF waypoint records. Stable, read-only MOD process
 ## captures provide a short deterministic timeline for those actors. Its path
@@ -1179,6 +1180,7 @@ func _update_modern_patrol_follower(delta: float) -> void:
 	)
 	modern_patrol_replan_elapsed += maxf(delta, 0.0)
 	var distance := position.distance_to(destination)
+	var slot_delta := destination - position
 	var leader_path: Variant = modern_patrol_leader.get("movement_path")
 	var leader_moving := (
 		leader_path is PackedVector2Array
@@ -1189,6 +1191,22 @@ func _update_modern_patrol_follower(delta: float) -> void:
 		float(modern_patrol_leader.get("move_speed")),
 		STABLE_MOD_BASE_PATROL_SPEED,
 	)
+	# Near a moving formation slot, do not reverse for a few pixels every time
+	# the leader advances or turns. Holding briefly lets the slot move ahead and
+	# removes the visible forward/backward oscillation without teleporting or
+	# changing the authored leader route.
+	if (
+		leader_moving
+		and slot_delta.dot(heading) < 0.0
+		and distance <= MODERN_PATROL_REVERSE_HOLD_DISTANCE
+	):
+		move_speed = leader_speed
+		if movement_path_index < movement_path.size():
+			cancel_path()
+		set_animation_group(direction_group_index(heading))
+		apply_idle_frame()
+		queue_redraw()
+		return
 	move_speed = leader_speed * (
 		1.0 + clampf(
 			(distance - MODERN_PATROL_SLOT_TOLERANCE) / 180.0,

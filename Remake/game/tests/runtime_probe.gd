@@ -81,15 +81,20 @@ func run_probe() -> void:
 		if enemy.patrol_enabled:
 			patrolling_enemy_count += 1
 	expect(
-		patrolling_enemy_count == 43,
-		"all 43 non-empty m000 enemy patrol routes are active",
+		patrolling_enemy_count == main.enemies.size(),
+		"every m000 guard participates in the modern patrol/idle controller",
 		failures,
 	)
 	expect(
 		main.dynamic_occupancy != null
 		and main.dynamic_occupancy.actors.size()
-		== main.units.size() + main.escorts.size() + main.enemies.size(),
-		"the squad, escorts, and every enemy share one dynamic occupancy overlay",
+		== (
+			main.units.size()
+			+ main.escorts.size()
+			+ main.enemies.size()
+			+ main.ambient_units.size()
+		),
+		"all live squad, escort, enemy and ambient actors share one occupancy overlay",
 		failures,
 	)
 	expect(
@@ -157,6 +162,34 @@ func run_probe() -> void:
 	var camera_pan_distance: float = main.level_camera.position.x - camera_start.x
 	expect(camera_pan_distance > 200.0, "keyboard camera pan advances at runtime", failures)
 
+	# Send a viewport-local motion event to empty stonework at the physical
+	# bottom edge. This never moves or confines the desktop pointer, but it does
+	# exercise the same live polling path used by a real windowed mouse.
+	main.level_camera.position = main.world_size * 0.5
+	main.clamp_level_camera()
+	main.camera_pan_velocity = Vector2.ZERO
+	main._reset_camera_edge_intent()
+	var downward_start: Vector2 = main.level_camera.position
+	var bottom_motion := InputEventMouseMotion.new()
+	bottom_motion.position = Vector2(root.size.x * 0.5, root.size.y - 1.0)
+	bottom_motion.global_position = bottom_motion.position
+	root.push_input(bottom_motion, true)
+	await create_timer(CAMERA_PAN_SECONDS).timeout
+	var downward_pan_distance: float = main.level_camera.position.y - downward_start.y
+	expect(
+		downward_pan_distance > 120.0,
+		"windowed bottom-edge mouse motion scrolls the camera downward",
+		failures,
+	)
+	var neutral_motion := InputEventMouseMotion.new()
+	neutral_motion.position = main.game_shell.gameplay_screen_rect(
+		Vector2(root.size),
+	).get_center()
+	neutral_motion.global_position = neutral_motion.position
+	root.push_input(neutral_motion, true)
+	main.camera_pan_velocity = Vector2.ZERO
+	main._reset_camera_edge_intent()
+
 	var zoom_before: float = main.level_camera.zoom.x
 	var zoom_event := InputEventMouseButton.new()
 	zoom_event.button_index = MOUSE_BUTTON_WHEEL_DOWN
@@ -188,14 +221,17 @@ func run_probe() -> void:
 
 	main.level_camera.position = Vector2(-1000.0, -1000.0)
 	main.clamp_level_camera()
+	var gameplay_viewport_size: Vector2 = main._gameplay_viewport_size()
 	expect(
-		main.level_camera.position.x + 0.01 >= root.size.x / (2.0 * zoom_after),
+		main.level_camera.position.x + 0.01
+			>= gameplay_viewport_size.x / (2.0 * zoom_after),
 		"camera clamps to the terrain left edge",
 		failures
 	)
 	expect(
-		main.level_camera.position.y + 0.01 >= root.size.y / (2.0 * zoom_after),
-		"camera clamps to the terrain top edge",
+		main.level_camera.position.y + 0.01
+			>= gameplay_viewport_size.y / (2.0 * zoom_after),
+		"camera clamps to the safe terrain top edge above the HUD",
 		failures
 	)
 
@@ -207,7 +243,14 @@ func run_probe() -> void:
 		"multi-selection selects the full squad",
 		failures
 	)
-	main.issue_formation_move(Vector2(650.0, 620.0))
+	# Keep this render/animation smoke movement near the safe spawn. Long obstacle
+	# routes and grove round-trips are covered by deterministic real-input tests;
+	# allowing active guards to turn this probe into a combat scenario made the
+	# former 650,620 timeout unrelated to animation correctness.
+	var movement_probe_destination: Vector2 = (
+		main.units[0].position + Vector2(128.0, 64.0)
+	)
+	main.issue_formation_move(movement_probe_destination)
 	for unit in main.units:
 		expect(
 			not unit.movement_path.is_empty(), "A* emits a waypoint path for the squad", failures
@@ -228,9 +271,12 @@ func run_probe() -> void:
 	expect(squad_arrived(main), "the full squad reaches its formation targets", failures)
 	expect(saw_animated_frame, "movement advances imported SPR animation frames", failures)
 	for unit in main.units:
+		var unit_depth_reference: float = unit.position.y
+		if bool(unit.get("uniform_row_depth_enabled")):
+			unit_depth_reference += float(unit.get("uniform_row_depth_offset"))
 		expect(
-			unit.z_index == WORLD_DEPTH.normal_z(unit.position.y, 1),
-			"unit z-order follows y",
+			unit.z_index == WORLD_DEPTH.normal_z(unit_depth_reference, 1),
+			"unit z-order follows its recovered row-depth baseline",
 			failures
 		)
 
@@ -353,6 +399,7 @@ func run_probe() -> void:
 		"scene_ready_ms": scene_ready_ms,
 		"first_rendered_frame_ms": first_rendered_frame_ms,
 		"camera_pan_distance": camera_pan_distance,
+		"downward_pan_distance": downward_pan_distance,
 		"camera_scan_distance": scan_distance,
 		"unit_move_ms": unit_move_ms,
 		"sample_frames": frame_intervals_ms.size(),

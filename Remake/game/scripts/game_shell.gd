@@ -235,7 +235,12 @@ var _suppress_release_keycode := 0
 
 func _ready() -> void:
 	layer = 180
-	process_mode = Node.PROCESS_MODE_WHEN_PAUSED
+	# This layer owns both paused menus and the live bottom HUD/minimap. WHEN_PAUSED
+	# made the live controls hoverable but silently excluded their GUI events
+	# during gameplay. ALWAYS keeps both surfaces interactive; each handler still
+	# gates itself by overlay_mode and the world has an explicit no-click-through
+	# boundary below this CanvasLayer.
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	_build_interface()
 	set_settings({})
 
@@ -537,10 +542,75 @@ func set_original_hud_visible(visible: bool) -> void:
 
 
 func gameplay_viewport_size(full_viewport_size: Vector2) -> Vector2:
-	var result := full_viewport_size.max(Vector2.ONE)
+	return gameplay_screen_rect(full_viewport_size).size
+
+
+func gameplay_screen_rect(full_viewport_size: Vector2) -> Rect2:
+	var safe_size := full_viewport_size.max(Vector2.ONE)
 	if _original_bottom_hud != null and _original_bottom_hud.visible:
-		result.y = maxf(result.y - ORIGINAL_BOTTOM_HUD_HEIGHT, 1.0)
-	return result
+		safe_size.y = maxf(safe_size.y - ORIGINAL_BOTTOM_HUD_HEIGHT, 1.0)
+	return Rect2(Vector2.ZERO, safe_size)
+
+
+func gameplay_camera_offset(full_viewport_size: Vector2, zoom: float = 1.0) -> Vector2:
+	var safe_rect := gameplay_screen_rect(full_viewport_size)
+	var obscured_height := maxf(full_viewport_size.y - safe_rect.size.y, 0.0)
+	return Vector2(0.0, obscured_height * 0.5 / maxf(zoom, 0.001))
+
+
+func edge_scroll_pointer_position(
+	screen_position: Vector2,
+	full_viewport_size: Vector2,
+) -> Vector2:
+	var safe_rect := gameplay_screen_rect(full_viewport_size)
+	if (
+		screen_position.x < safe_rect.position.x
+		or screen_position.x >= safe_rect.end.x
+		or screen_position.y < safe_rect.position.y
+		or screen_position.y >= full_viewport_size.y
+	):
+		return Vector2(-1.0, -1.0)
+	if screen_position.y < safe_rect.end.y:
+		return screen_position
+	# Empty stonework in the bottom bar acts as the physical lower edge of the
+	# battlefield. Buttons, portraits, the weapon switcher and the minimap remain
+	# ordinary interactive controls and never start edge scrolling.
+	if is_screen_point_over_edge_scroll_blocker(screen_position):
+		return Vector2(-1.0, -1.0)
+	return Vector2(screen_position.x, safe_rect.end.y - 0.5)
+
+
+func is_screen_point_over_edge_scroll_blocker(screen_position: Vector2) -> bool:
+	if (
+		_map_panel != null
+		and _map_panel.visible
+		and _map_panel.get_global_rect().has_point(screen_position)
+	):
+		return true
+	if (
+		_original_hud_weapon_panel != null
+		and _original_hud_weapon_panel.visible
+		and _original_hud_weapon_panel.get_global_rect().has_point(screen_position)
+	):
+		return true
+	for controls_value: Variant in _original_hud_portrait_controls.values():
+		var controls := controls_value as Dictionary
+		var button := controls.get("button") as Control
+		if (
+			button != null
+			and button.visible
+			and button.get_global_rect().has_point(screen_position)
+		):
+			return true
+	for button_value: Variant in _original_hud_action_buttons.values():
+		var button := button_value as Control
+		if (
+			button != null
+			and button.visible
+			and button.get_global_rect().has_point(screen_position)
+		):
+			return true
+	return false
 
 
 func is_screen_point_over_gameplay_ui(screen_position: Vector2) -> bool:
@@ -1837,7 +1907,6 @@ func _build_original_hud_portrait(actor_name: String) -> void:
 	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	button.tooltip_text = "选择%s并将视图定位到该角色" % actor_name
 	button.pressed.connect(_on_original_hud_actor_pressed.bind(actor_name))
-	button.gui_input.connect(_consume_original_hud_pointer_input)
 	container.add_child(button)
 
 	var health_back := ColorRect.new()
@@ -1878,7 +1947,6 @@ func _build_original_hud_action(descriptor: Dictionary) -> void:
 	button.toggle_mode = bool(descriptor.get("toggle", false))
 	button.tooltip_text = str(descriptor.get("tooltip", action))
 	button.pressed.connect(_on_original_hud_action_pressed.bind(action))
-	button.gui_input.connect(_consume_original_hud_pointer_input)
 	_original_hud_action_row.add_child(button)
 	_original_hud_action_buttons[action] = button
 
@@ -1899,11 +1967,6 @@ func _on_original_hud_weapon_gui_input(event: InputEvent) -> void:
 	if not mouse_event.pressed or mouse_event.button_index != MOUSE_BUTTON_LEFT:
 		return
 	inventory_cycle_requested.emit(1)
-
-
-func _consume_original_hud_pointer_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton or event is InputEventMouseMotion:
-		get_viewport().set_input_as_handled()
 
 
 func _update_original_hud_portrait_textures() -> void:
@@ -2443,7 +2506,11 @@ func _build_map_panel() -> void:
 	_map_panel.offset_top = -(ORIGINAL_BOTTOM_HUD_HEIGHT + 158.0)
 	_map_panel.offset_right = 0.0
 	_map_panel.offset_bottom = -ORIGINAL_BOTTOM_HUD_HEIGHT
-	_map_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	# The child map view owns pointer input. PASS keeps that child in the GUI
+	# hit-test chain while allowing any unclaimed decorative-border event to
+	# reach Main's explicit no-click-through boundary. IGNORE on this container
+	# can exclude its descendants from viewport GUI picking on some renderers.
+	_map_panel.mouse_filter = Control.MOUSE_FILTER_PASS
 	_map_panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	_hud_root.add_child(_map_panel)
 	_map_view = TACTICAL_MAP_VIEW_SCRIPT.new()

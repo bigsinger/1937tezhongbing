@@ -361,6 +361,10 @@ var edge_scroll_strength := 0.0
 var edge_scroll_last_direction := Vector2.ZERO
 var edge_scroll_release_elapsed := EDGE_SCROLL_RELEASE_GRACE_SECONDS
 var camera_pan_velocity := Vector2.ZERO
+## Viewport-local pointer coordinates observed through the ordinary input
+## stream. Polling DisplayServer/Viewport directly can report a stale desktop
+## position while a live HUD control owns hover in a windowed game.
+var pointer_screen_position := Vector2(-1.0, -1.0)
 var legacy_cursor_presenter: RefCounted = LEGACY_CURSOR_PRESENTER.new()
 var original_force_target_held := false
 var sight_observation_mode := false
@@ -2723,6 +2727,11 @@ func spawn_squad() -> void:
 			)
 		)
 		unit.configure_runtime_actor_type(entity)
+		unit.configure_modern_navigation_footprint(
+			SQUAD_UNIT.runtime_actor_uses_compact_biped_navigation(
+				unit.runtime_actor_type
+			)
+		)
 		_bind_original_crt_random_actor(unit)
 		unit.configure_movement_modes(run_groups, walk_groups, crawl_groups)
 		if not entity.is_empty():
@@ -3283,6 +3292,11 @@ func _spawn_escorts() -> void:
 			dynamic_occupancy,
 			attack_groups,
 		)
+		escort.configure_modern_navigation_footprint(
+			SQUAD_UNIT.runtime_actor_uses_compact_biped_navigation(
+				escort.runtime_actor_type
+			)
+		)
 		_bind_original_crt_random_actor(escort)
 		escort.configure_original_rescue_rule(
 			LEGACY_ESCORT_RULES.rule_for(
@@ -3345,6 +3359,11 @@ func _spawn_enemies() -> void:
 			attack_groups,
 			death_groups,
 		)
+		enemy.configure_modern_navigation_footprint(
+			SQUAD_UNIT.runtime_actor_uses_compact_biped_navigation(
+				enemy.runtime_actor_type
+			)
+		)
 		_bind_original_crt_random_actor(enemy)
 		enemy.configure_original_ai_idle_animation(stand_action_groups)
 		enemy.original_mission_number = int(
@@ -3390,6 +3409,11 @@ func _spawn_ambient_units() -> void:
 			idle_groups,
 			death_groups,
 			dynamic_occupancy,
+		)
+		ambient.configure_modern_navigation_footprint(
+			SQUAD_UNIT.runtime_actor_uses_compact_biped_navigation(
+				ambient.runtime_actor_type
+			)
 		)
 		_bind_original_crt_random_actor(ambient)
 		ambient.configure_original_ai_idle_animation(stand_action_groups)
@@ -3444,6 +3468,7 @@ func _process(delta: float) -> void:
 		)
 	if level_camera == null:
 		return
+	_sync_level_camera_safe_area()
 	var keyboard_direction := Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
 	# Up is an original held-state force-target key, not a camera key. Mouse
 	# edge scrolling remains the faithful camera control; left/right/down arrow
@@ -3994,17 +4019,18 @@ func _mouse_edge_scroll_direction() -> Vector2:
 		or right_dragging
 		or camera_dragging
 		or (game_shell != null and game_shell.is_overlay_open())
-		or _pointer_over_interactive_control()
 	):
 		return Vector2.ZERO
-	var viewport_size := get_viewport_rect().size
-	# The bottom HUD consumes mouse clicks, so the physical window bottom is not
-	# reachable by the world controller.  Treat the HUD's top edge as the
-	# battlefield bottom edge: hovering just above it scrolls down, while moving
-	# onto a button keeps that button stable and never submits a world command.
-	if game_shell != null and game_shell.has_method("gameplay_viewport_size"):
-		viewport_size = game_shell.gameplay_viewport_size(viewport_size)
-	var mouse_position := get_viewport().get_mouse_position()
+	var full_viewport_size := get_viewport_rect().size
+	var viewport_size := _gameplay_viewport_size()
+	var mouse_position := pointer_screen_position
+	if game_shell != null and game_shell.has_method("edge_scroll_pointer_position"):
+		mouse_position = game_shell.edge_scroll_pointer_position(
+			mouse_position,
+			full_viewport_size,
+		)
+	elif _pointer_over_interactive_control():
+		return Vector2.ZERO
 	return SMOOTH_CAMERA_PAN.edge_intent(
 		mouse_position,
 		viewport_size,
@@ -4021,7 +4047,7 @@ func _advance_mouse_edge_scroll(delta: float) -> Vector2:
 		or right_dragging
 		or camera_dragging
 		or (game_shell != null and game_shell.is_overlay_open())
-		or _pointer_over_interactive_control()
+		or _pointer_blocks_camera_edge_scroll()
 	):
 		_reset_camera_edge_intent()
 		return Vector2.ZERO
@@ -4040,6 +4066,17 @@ func _advance_mouse_edge_scroll(delta: float) -> Vector2:
 			edge_scroll_last_direction = Vector2.ZERO
 	edge_scroll_strength = clampf(requested_direction.length(), 0.0, 1.0)
 	return requested_direction
+
+
+func _pointer_blocks_camera_edge_scroll() -> bool:
+	if game_shell == null:
+		return _pointer_over_interactive_control()
+	if game_shell.has_method("is_screen_point_over_edge_scroll_blocker"):
+		return bool(game_shell.call(
+			"is_screen_point_over_edge_scroll_blocker",
+			pointer_screen_position,
+		))
+	return _pointer_over_interactive_control()
 
 
 func _reset_camera_edge_intent() -> void:
@@ -4062,6 +4099,9 @@ static func edge_scroll_direction_for_position(
 
 
 func _input(event: InputEvent) -> void:
+	if event is InputEventMouse:
+		# Observation only: never warp, capture, confine or resend the pointer.
+		pointer_screen_position = (event as InputEventMouse).position
 	if is_fullscreen_toggle_event(event):
 		_toggle_fullscreen_window_mode()
 		get_viewport().set_input_as_handled()
@@ -4412,9 +4452,46 @@ func _unit_for_original_character_slot(slot_index: int) -> SQUAD_UNIT:
 func clamp_level_camera() -> void:
 	if level_camera == null:
 		return
+	_sync_level_camera_safe_area()
 	level_camera.position = LEVEL_VIEW.clamp_camera_center(
-		level_camera.position, get_viewport_rect().size, level_camera.zoom.x, world_size
+		level_camera.position,
+		_gameplay_viewport_size(),
+		level_camera.zoom.x,
+		world_size,
 	)
+
+
+func _gameplay_viewport_size() -> Vector2:
+	var full_size := (
+		get_viewport_rect().size if is_inside_tree() else DEFAULT_WORLD_SIZE
+	)
+	if game_shell != null and game_shell.has_method("gameplay_viewport_size"):
+		return game_shell.gameplay_viewport_size(full_size)
+	return full_size.max(Vector2.ONE)
+
+
+func _sync_level_camera_safe_area() -> void:
+	if level_camera == null or not is_inside_tree():
+		return
+	var full_size := get_viewport_rect().size.max(Vector2.ONE)
+	var safe_size := _gameplay_viewport_size()
+	var zoom := maxf(level_camera.zoom.x, 0.001)
+	var hidden_height := maxf(full_size.y - safe_size.y, 0.0)
+	level_camera.offset = (
+		game_shell.gameplay_camera_offset(full_size, zoom)
+		if game_shell != null and game_shell.has_method("gameplay_camera_offset")
+		else Vector2(0.0, hidden_height * 0.5 / zoom)
+	)
+	# The safe battlefield ends above the HUD. Its hidden continuation may extend
+	# below the authored map without exposing black pixels to the player.
+	level_camera.limit_left = 0
+	# Camera2D applies limits to its un-offset full-viewport centre, then applies
+	# `offset`. Allow that base centre to rise by the same world-space amount at
+	# the map top; otherwise the full-viewport top clamp and the HUD offset both
+	# shift the target upward. floor avoids exposing even a sub-pixel black row.
+	level_camera.limit_top = -floori(level_camera.offset.y)
+	level_camera.limit_right = int(ceilf(world_size.x))
+	level_camera.limit_bottom = int(ceilf(world_size.y + hidden_height / zoom))
 
 
 func handle_selection(world_point: Vector2, additive: bool) -> void:
@@ -7837,9 +7914,7 @@ func _on_direction_camera_requested(_beat_id: String, camera: Dictionary) -> voi
 	var target_zoom := clampf(
 		float(camera.get("zoom", level_camera.zoom.x)), LEVEL_VIEW.MIN_ZOOM, LEVEL_VIEW.MAX_ZOOM
 	)
-	var viewport_size := (
-		get_viewport_rect().size if is_inside_tree() else Vector2.ONE
-	)
+	var viewport_size := _gameplay_viewport_size() if is_inside_tree() else Vector2.ONE
 	target_position = LEVEL_VIEW.clamp_camera_center(
 		target_position, viewport_size, target_zoom, world_size
 	)
@@ -8573,7 +8648,7 @@ func _use_original_backpack_item(
 func _camera_world_rect() -> Rect2:
 	if level_camera == null:
 		return Rect2()
-	var visible_size := get_viewport_rect().size / maxf(level_camera.zoom.x, 0.001)
+	var visible_size := _gameplay_viewport_size() / maxf(level_camera.zoom.x, 0.001)
 	return Rect2(level_camera.position - visible_size * 0.5, visible_size)
 
 

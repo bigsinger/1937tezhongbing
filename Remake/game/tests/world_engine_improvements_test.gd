@@ -31,7 +31,8 @@ func _init() -> void:
 	_test_patrol_formation_separation()
 	_test_modern_patrol_leadership()
 	_test_patrol_speed_round_trip()
-	_test_distance_synchronized_walk_animation()
+	_test_readable_movement_animation_cadence()
+	_test_compact_biped_navigation_footprints()
 	if failures.is_empty():
 		print("World engine improvement tests passed (%d checks)." % checks)
 		quit(0)
@@ -307,11 +308,32 @@ func _test_modern_patrol_leadership() -> void:
 			and follower.stable_mod_patrol_timeline.is_empty(),
 		"a patrol group has one route-owning leader and stable trailing slots",
 	)
+	leader.position = Vector2(100.0, 100.0)
+	leader.movement_path = PackedVector2Array([Vector2(200.0, 100.0)])
+	leader.movement_path_index = 0
+	var heading: Vector2 = leader.modern_patrol_heading()
+	var lateral: Vector2 = Vector2(-heading.y, heading.x)
+	var follower_slot: Vector2 = (
+		leader.position
+		+ lateral * follower.modern_patrol_local_offset.x
+		- heading * follower.modern_patrol_local_offset.y
+	)
+	follower.position = follower_slot + heading * 20.0
+	follower.issue_path(PackedVector2Array([follower_slot - heading * 20.0]))
+	follower.call("_update_modern_patrol_follower", 1.0 / 60.0)
+	# A following tick with no active path must continue holding; otherwise the
+	# replanner immediately recreates the same tiny backward step.
+	follower.call("_update_modern_patrol_follower", 1.0 / 60.0)
+	_expect(
+		follower.movement_path.is_empty()
+			and follower.position.is_equal_approx(follower_slot + heading * 20.0),
+		"a nearby patrol follower holds instead of visibly reversing while its leader advances",
+	)
 	leader.free()
 	follower.free()
 
 
-func _test_distance_synchronized_walk_animation() -> void:
+func _test_readable_movement_animation_cadence() -> void:
 	var group := {
 		"frame_hold_ticks": 2,
 		"secondary_triplet": [2, 1, 1],
@@ -322,15 +344,26 @@ func _test_distance_synchronized_walk_animation() -> void:
 		group,
 		speed,
 	)
-	var animated_cycle_distance: float = speed * frame_seconds * 10.0
-	var authored_cycle_distance: float = Vector2(2.0, 1.0).length() * 2.0 * 10.0
 	_expect(
-		frame_seconds < 0.05
-			and is_equal_approx(
-				animated_cycle_distance,
-				authored_cycle_distance,
-			),
-		"walk frames advance from travelled distance instead of producing foot sliding",
+		is_equal_approx(
+			frame_seconds,
+			SQUAD_UNIT.MODERN_MOVEMENT_MIN_FRAME_SECONDS,
+		)
+			and frame_seconds * 10.0 >= 0.5,
+		(
+			"fast ten-frame run cycles are capped at a readable modern cadence "
+			+ "instead of flickering through a full cycle in under half a second"
+		),
+	)
+
+
+func _test_compact_biped_navigation_footprints() -> void:
+	_expect(
+		SQUAD_UNIT.runtime_actor_uses_compact_biped_navigation(1)
+			and SQUAD_UNIT.runtime_actor_uses_compact_biped_navigation(27)
+			and not SQUAD_UNIT.runtime_actor_uses_compact_biped_navigation(14)
+			and not SQUAD_UNIT.runtime_actor_uses_compact_biped_navigation(28),
+		"human actors use a stable compact navigation footprint while motorcycles and large props retain authored masks",
 	)
 
 

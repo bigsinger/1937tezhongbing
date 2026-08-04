@@ -409,9 +409,14 @@ func find_path(
 	# including the actor's current origin. Only exempt that additional mask;
 	# an authored/static AStar solid retains the original occupied-start rule.
 	if astar.is_point_solid(start_cell):
-		var start_value := movement_value(start_cell)
-		if not allow_scene_occupied_start or start_value < 1000:
+		if not allow_scene_occupied_start:
 			return PackedVector2Array()
+		# A live actor can occasionally end a movement tick inside a cell that a
+		# later animation footprint, opened/closed prop or repaired legacy overlay
+		# marks solid. Treat its registered current origin as an escape-only start:
+		# only this cell is opened for this query, while all neighbouring collision
+		# remains authoritative. Without this recovery, a character can enter a
+		# narrow grove or doorway and then be unable to plan any route back out.
 		astar.set_point_solid(start_cell, false)
 		temporarily_opened_start = true
 	var path := PackedVector2Array()
@@ -476,6 +481,9 @@ func find_path(
 	var resolved_destination_cell := world_to_cell(path[-1])
 	if resolved_destination_cell == start_cell and destination_cell != start_cell:
 		return PackedVector2Array()
+	# Exact-origin nodes are redundant. An off-centre start-cell node is not:
+	# dynamic right-of-way may deliberately use it to centre an actor before a
+	# diagonal sidestep through a narrow passage, so preserve that geometry.
 	if path[0].is_equal_approx(world_start):
 		path.remove_at(0)
 	var requested_destination_cell := world_to_cell(world_destination)
