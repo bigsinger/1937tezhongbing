@@ -207,10 +207,20 @@ func _draw() -> void:
 	if consumed or has_original_texture():
 		return
 	var color := _fallback_color_for_grant()
-	draw_circle(Vector2.ZERO, 11.0, Color(0.06, 0.07, 0.05, 0.88))
-	draw_rect(Rect2(-8.0, -6.0, 16.0, 12.0), color, true)
-	draw_line(Vector2(-5.0, 0.0), Vector2(5.0, 0.0), Color.WHITE, 1.5)
-	draw_arc(Vector2.ZERO, 15.0, 0.0, TAU, 24, color.lightened(0.3), 1.5)
+	# Modern fallback parcel: readable as an item without the old circular
+	# outline and minus sign that players mistook for a blocked interaction.
+	draw_rect(Rect2(-10.0, 3.0, 22.0, 5.0), Color(0.02, 0.02, 0.015, 0.38), true)
+	draw_colored_polygon(
+		PackedVector2Array([
+			Vector2(-9.0, -6.0),
+			Vector2(8.0, -8.0),
+			Vector2(10.0, 5.0),
+			Vector2(-8.0, 7.0),
+		]),
+		color.darkened(0.22),
+	)
+	draw_rect(Rect2(-7.0, -5.0, 14.0, 10.0), color, true)
+	draw_rect(Rect2(-1.5, -5.0, 3.0, 10.0), color.lightened(0.32), true)
 
 
 func _fallback_color_for_grant() -> Color:

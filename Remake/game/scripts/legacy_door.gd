@@ -103,6 +103,7 @@ func bind_dynamic_occupancy(occupancy: RefCounted) -> void:
 				scene_index,
 				movement_release_cells,
 				sight_release_cells,
+				true,
 			)
 	_apply_navigation_state()
 
@@ -143,6 +144,14 @@ func contains_parent_point(parent_point: Vector2) -> bool:
 		expansion.x,
 		expansion.y,
 	).has_point(local)
+
+
+func contains_approach_point(parent_point: Vector2, margin: float = 36.0) -> bool:
+	if is_open or closed_texture == null:
+		return false
+	var local := parent_point - position
+	var source_rect := Rect2(-closed_anchor, closed_texture.get_size())
+	return source_rect.grow(maxf(margin, 0.0)).has_point(local)
 
 
 func snapshot() -> Dictionary:
@@ -251,6 +260,14 @@ func _derive_release_cells(
 	var result: Array[Vector2i] = []
 	if closed_texture == null or open_texture == null:
 		return result
+	if source_navigation.has_method("source_cells_for_scene"):
+		for source_cell: Vector2i in source_navigation.call(
+			"source_cells_for_scene",
+			layer_id,
+			scene_index,
+		) as Array[Vector2i]:
+			if not result.has(source_cell):
+				result.append(source_cell)
 	var closed_image := closed_texture.get_image()
 	var open_image := open_texture.get_image()
 	if closed_image == null or open_image == null:
@@ -292,7 +309,7 @@ func _derive_release_cells(
 				cell,
 				cell_size,
 			)
-			if open_pixels == 0:
+			if open_pixels == 0 and not result.has(cell):
 				result.append(cell)
 	result.sort()
 	return result

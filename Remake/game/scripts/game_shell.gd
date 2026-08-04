@@ -536,6 +536,13 @@ func set_original_hud_visible(visible: bool) -> void:
 	_update_original_hud_visibility()
 
 
+func gameplay_viewport_size(full_viewport_size: Vector2) -> Vector2:
+	var result := full_viewport_size.max(Vector2.ONE)
+	if _original_bottom_hud != null and _original_bottom_hud.visible:
+		result.y = maxf(result.y - ORIGINAL_BOTTOM_HUD_HEIGHT, 1.0)
+	return result
+
+
 func update_original_hud(actor_states: Array) -> void:
 	var by_name: Dictionary = {}
 	var selected_state: Dictionary = {}
@@ -561,6 +568,15 @@ func update_original_hud(actor_states: Array) -> void:
 		)
 		_original_hud_weapon_ammo.text = str(
 			selected_state.get("weapon_ammo_text", "")
+		)
+		_original_hud_weapon_panel.tooltip_text = (
+			"当前武器：%s　%s\n点击切换下一件武器（Tab）"
+			% [
+				_original_hud_weapon_name.text,
+				_original_hud_weapon_ammo.text,
+			]
+			if not selected_state.is_empty()
+			else ""
 		)
 	for actor_name: String in _original_hud_status_controls:
 		var status_controls := (
@@ -632,6 +648,8 @@ func original_hud_layout_snapshot() -> Dictionary:
 		portraits[actor_name] = {
 			"visible": container.visible,
 			"rect": container.get_global_rect(),
+			"tooltip": (controls.get("button") as TextureButton).tooltip_text,
+			"mouse_filter": (controls.get("button") as TextureButton).mouse_filter,
 		}
 	var actions: Dictionary = {}
 	for action: String in _original_hud_action_buttons:
@@ -640,6 +658,8 @@ func original_hud_layout_snapshot() -> Dictionary:
 			"visible": button.visible,
 			"rect": button.get_global_rect(),
 			"pressed": button.button_pressed,
+			"tooltip": button.tooltip_text,
+			"mouse_filter": button.mouse_filter,
 		}
 	var weapon := {
 		"visible": false,
@@ -655,6 +675,8 @@ func original_hud_layout_snapshot() -> Dictionary:
 			"name": _original_hud_weapon_name.text,
 			"ammo_text": _original_hud_weapon_ammo.text,
 			"has_icon": _original_hud_weapon_icon.texture != null,
+			"tooltip": _original_hud_weapon_panel.tooltip_text,
+			"mouse_filter": _original_hud_weapon_panel.mouse_filter,
 		}
 	return {
 		"assets_ready": _original_hud_assets_ready,
@@ -662,6 +684,11 @@ func original_hud_layout_snapshot() -> Dictionary:
 		"status_cells": status_cells,
 		"visible": _original_bottom_hud != null and _original_bottom_hud.visible,
 		"height": ORIGINAL_BOTTOM_HUD_HEIGHT,
+		"mouse_filter": (
+			_original_bottom_hud.mouse_filter
+			if _original_bottom_hud != null
+			else Control.MOUSE_FILTER_IGNORE
+		),
 		"bar_rect": (
 			_original_bottom_hud.get_global_rect()
 			if _original_bottom_hud != null
@@ -1708,12 +1735,17 @@ func _build_original_bottom_hud() -> void:
 
 	_original_hud_weapon_panel = Panel.new()
 	_original_hud_weapon_panel.name = "OriginalHudWeapon"
-	_original_hud_weapon_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	_original_hud_weapon_panel.offset_left = 270.0
+	_original_hud_weapon_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_original_hud_weapon_panel.offset_left = -372.0
 	_original_hud_weapon_panel.offset_top = 6.0
-	_original_hud_weapon_panel.offset_right = 472.0
+	_original_hud_weapon_panel.offset_right = -170.0
 	_original_hud_weapon_panel.offset_bottom = 56.0
-	_original_hud_weapon_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_original_hud_weapon_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	_original_hud_weapon_panel.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	_original_hud_weapon_panel.tooltip_text = "点击切换下一件武器（Tab）"
+	_original_hud_weapon_panel.gui_input.connect(
+		_on_original_hud_weapon_gui_input
+	)
 	_original_hud_weapon_panel.visible = false
 	var weapon_style := StyleBoxFlat.new()
 	weapon_style.bg_color = Color(0.035, 0.045, 0.031, 0.82)
@@ -1835,6 +1867,16 @@ func _on_original_hud_action_pressed(action: String) -> void:
 
 func _on_original_hud_actor_pressed(actor_name: String) -> void:
 	original_hud_actor_requested.emit(actor_name)
+
+
+func _on_original_hud_weapon_gui_input(event: InputEvent) -> void:
+	if not event is InputEventMouseButton:
+		return
+	var mouse_event := event as InputEventMouseButton
+	if not mouse_event.pressed or mouse_event.button_index != MOUSE_BUTTON_LEFT:
+		return
+	inventory_cycle_requested.emit(1)
+	get_viewport().set_input_as_handled()
 
 
 func _update_original_hud_portrait_textures() -> void:

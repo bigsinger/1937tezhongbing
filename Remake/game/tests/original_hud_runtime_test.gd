@@ -1,6 +1,7 @@
 extends SceneTree
 
 const GAME_SHELL_SCRIPT: Script = preload("res://scripts/game_shell.gd")
+const SMOOTH_CAMERA_PAN: Script = preload("res://scripts/smooth_camera_pan.gd")
 const HUD_BASELINE_PATH := "res://data/original_hud_layout_baseline.json"
 const OVERLAY_BASELINE_PATH := "res://data/original_overlay_asset_baseline.json"
 const HUD_HEIGHT := 62.0
@@ -129,6 +130,21 @@ func _check_layout(shell: GameShell, viewport_size: Vector2i) -> void:
 	_expect(bool(layout.get("visible", false)), "HUD remains visible")
 	_expect(bool(layout.get("top_visible", false)), "top ammo HUD remains visible")
 	_expect(
+		int(layout.get("mouse_filter", Control.MOUSE_FILTER_IGNORE))
+			== Control.MOUSE_FILTER_STOP
+			and shell.gameplay_viewport_size(Vector2(viewport_size))
+			== Vector2(float(viewport_size.x), float(viewport_size.y) - HUD_HEIGHT),
+		"the HUD consumes pointer input and exposes the true gameplay edge",
+	)
+	var gameplay_size := shell.gameplay_viewport_size(Vector2(viewport_size))
+	_expect(
+		SMOOTH_CAMERA_PAN.edge_intent(
+			Vector2(gameplay_size.x * 0.5, gameplay_size.y - 1.0),
+			gameplay_size,
+		).y > 0.0,
+		"hovering just above the HUD produces downward vertical scrolling",
+	)
+	_expect(
 		shell._original_hud_background.axis_stretch_horizontal
 		== NinePatchRect.AXIS_STRETCH_MODE_TILE
 		and shell._original_hud_border.axis_stretch_horizontal
@@ -156,6 +172,12 @@ func _check_layout(shell: GameShell, viewport_size: Vector2i) -> void:
 			_expect(
 				rect.size.is_equal_approx(Vector2(50.0, 50.0)),
 				"%s portrait keeps the original contiguous 50x50 slot" % actor_name,
+			)
+			_expect(
+				not str(portrait.get("tooltip", "")).is_empty()
+					and int(portrait.get("mouse_filter", Control.MOUSE_FILTER_IGNORE))
+						== Control.MOUSE_FILTER_STOP,
+				"%s portrait is a self-contained hinted button" % actor_name,
 			)
 	_expect(visible_portraits == 5, "all five supplied actor portraits are visible")
 	var status_cells := layout.get("status_cells", {}) as Dictionary
@@ -200,6 +222,12 @@ func _check_layout(shell: GameShell, viewport_size: Vector2i) -> void:
 			rect.size.is_equal_approx(Vector2(50.0, 50.0)),
 			"%s keeps the original 50x50 hit target" % action,
 		)
+		_expect(
+			not str(action_state.get("tooltip", "")).is_empty()
+				and int(action_state.get("mouse_filter", Control.MOUSE_FILTER_IGNORE))
+					== Control.MOUSE_FILTER_STOP,
+			"%s provides a tooltip and owns its click" % action,
+		)
 		var expected_action := _rect_from_record(
 			((expected.get("action_rects", {}) as Dictionary).get(action, {}) as Dictionary)
 		)
@@ -231,6 +259,13 @@ func _check_layout(shell: GameShell, viewport_size: Vector2i) -> void:
 		weapon_rect.position.x >= portrait_right
 			and weapon_rect.end.x <= action_left,
 		"weapon panel stays between portrait and action clusters",
+	)
+	_expect(
+		is_equal_approx(weapon_rect.end.x, action_left - 10.0)
+			and not str(weapon.get("tooltip", "")).is_empty()
+			and int(weapon.get("mouse_filter", Control.MOUSE_FILTER_IGNORE))
+				== Control.MOUSE_FILTER_STOP,
+		"weapon control sits beside the right actions, is hinted, and owns its click",
 	)
 	await process_frame
 
@@ -555,19 +590,35 @@ func _rect_from_record(record: Dictionary) -> Rect2:
 func _check_action_and_actor_signals(shell: GameShell) -> void:
 	var actions: Array[String] = []
 	var actors: Array[String] = []
+	var weapon_cycles: Array[int] = []
 	shell.original_hud_action_requested.connect(
 		func(action: String) -> void: actions.append(action)
 	)
 	shell.original_hud_actor_requested.connect(
 		func(actor_name: String) -> void: actors.append(actor_name)
 	)
-	(shell._original_hud_action_buttons["system"] as TextureButton).pressed.emit()
+	shell.inventory_cycle_requested.connect(
+		func(direction: int) -> void: weapon_cycles.append(direction)
+	)
+	for action: String in ["observation", "minimap", "system"]:
+		(shell._original_hud_action_buttons[action] as TextureButton).pressed.emit()
 	(
 		(shell._original_hud_portrait_controls["老赵"] as Dictionary)["button"]
 		as TextureButton
 	).pressed.emit()
-	_expect(actions == ["system"], "system button emits only its scoped HUD action")
+	var weapon_click := InputEventMouseButton.new()
+	weapon_click.button_index = MOUSE_BUTTON_LEFT
+	weapon_click.pressed = true
+	shell._original_hud_weapon_panel.gui_input.emit(weapon_click)
+	_expect(
+		actions == ["observation", "minimap", "system"],
+		"every bottom action button emits its scoped gameplay action",
+	)
 	_expect(actors == ["老赵"], "portrait button emits only its actor selection")
+	_expect(
+		weapon_cycles == [1],
+		"weapon panel click cycles the selected actor weapon once",
+	)
 	_expect(
 		Input.mouse_mode == Input.MOUSE_MODE_VISIBLE,
 		"HUD interaction never captures or confines the system pointer",

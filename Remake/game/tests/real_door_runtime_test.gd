@@ -24,7 +24,7 @@ const LEVEL_IDS: Array[String] = [
 const EXPECTED_SUPPORTED_DOOR_COUNT := 177
 const EXPECTED_CLOSED_DOOR_COUNT := 97
 const EXPECTED_AUTHORED_OPEN_DOOR_COUNT := 80
-const EXPECTED_NAVIGATION_DOOR_COUNT := 166
+const EXPECTED_NAVIGATION_DOOR_COUNT := 167
 ## Counts come from the hash-locked VWF Layer 3 data. "Static" means that the
 ## encoded scene is not one of the 772 exact RuntimeActor identities; closed
 ## doors, pickups and historical orphan footprints therefore stay in this
@@ -100,6 +100,11 @@ func _run_tests() -> void:
 			)
 			if not movement_cells.is_empty():
 				navigation_doors += 1
+				_expect(
+					not _any_solid(main.navigation_grid, movement_cells),
+					"%s scene %d is an A* portal in both visual states"
+						% [level_id, scene_index],
+				)
 			_expect(
 				door.call("active_visual_texture") != null
 					and door.get("closed_anchor") is Vector2
@@ -125,6 +130,19 @@ func _run_tests() -> void:
 					"%s scene %d authored opening is immediately traversable"
 						% [level_id, scene_index],
 				)
+			else:
+				_expect(
+					not main.dynamic_occupancy.is_source_scene_disabled(scene_index)
+						and (
+							sight_cells.is_empty()
+							or _any_line_of_sight_blocked(
+								main.navigation_grid,
+								sight_cells,
+							)
+						),
+					"%s scene %d keeps its closed art and sight occlusion"
+						% [level_id, scene_index],
+				)
 			if _uses_original_row_slices(door):
 				closed_row_sliced_doors += 1
 			door.call("set_open", true, false)
@@ -144,9 +162,9 @@ func _run_tests() -> void:
 	_expect(
 		navigation_doors == EXPECTED_NAVIGATION_DOOR_COUNT,
 		(
-			"%d real door states own at least one closed-only VWF movement cell"
+			"%d/%d real door states own at least one A* portal cell"
 		)
-			% EXPECTED_NAVIGATION_DOOR_COUNT,
+			% [navigation_doors, EXPECTED_NAVIGATION_DOOR_COUNT],
 	)
 	_expect(
 		closed_row_sliced_doors == EXPECTED_SUPPORTED_DOOR_COUNT,
@@ -179,6 +197,21 @@ func _run_tests() -> void:
 	)
 
 	main.switch_level(0, false, false)
+	var modern_group_count := int(
+		main.call("_configure_modern_enemy_patrol_groups", true)
+	)
+	var modern_leaders := 0
+	var modern_followers := 0
+	for enemy_value: Variant in main.enemies as Array:
+		var role := str((enemy_value as Node).get("modern_patrol_group_role"))
+		modern_leaders += 1 if role == "leader" else 0
+		modern_followers += 1 if role == "follower" else 0
+	_expect(
+		modern_group_count > 0
+			and modern_leaders == modern_group_count
+			and modern_followers >= modern_group_count,
+		"m000 forms officer-led patrol groups with one or more trailing soldiers",
+	)
 	var checkpoint_door := _first_door_with_source_footprint(main)
 	_expect(checkpoint_door != null, "m000 exposes a door checkpoint target")
 	if checkpoint_door != null:
@@ -191,8 +224,12 @@ func _run_tests() -> void:
 			checkpoint_door.get("movement_release_cells") as Array[Vector2i]
 		)
 		_expect(
-			_any_solid(main.navigation_grid, movement_cells),
-			"closed real door blocks at least one recovered passage cell",
+			not _any_solid(main.navigation_grid, movement_cells),
+			"closed real door leaves every recovered passage cell routable",
+		)
+		_expect(
+			_has_short_path_through_door(main.navigation_grid, movement_cells),
+			"a real m000 A* route crosses the closed door portal",
 		)
 		_expect(
 			_click_world(main, checkpoint_door.position)
@@ -202,7 +239,22 @@ func _run_tests() -> void:
 		)
 		_expect(
 			not _any_solid(main.navigation_grid, movement_cells),
-			"opening clears every recovered passage cell from A*",
+			"opening keeps every recovered passage cell available to A*",
+		)
+		checkpoint_door.call("set_open", false, false)
+		var moving_unit := _first_live_unit(main)
+		if moving_unit != null:
+			moving_unit.position = checkpoint_door.position
+			moving_unit.set(
+				"movement_path",
+				PackedVector2Array([checkpoint_door.position + Vector2(96.0, 0.0)]),
+			)
+			moving_unit.set("movement_path_index", 0)
+		_expect(
+			moving_unit != null
+				and int(main.call("_advance_automatic_door_interactions")) >= 1
+				and bool(checkpoint_door.get("is_open")),
+			"a moving actor opens the real door automatically on approach",
 		)
 		var checkpoint: Dictionary = GAME_SESSION_STATE.capture(main)
 		main.switch_level(0, false, false)
@@ -283,17 +335,18 @@ func _audit_static_navigation_footprints(
 	)
 	var static_scenes: Dictionary = {}
 	var actor_scenes: Dictionary = {}
-	var authored_open_scenes: Dictionary = {}
-	var authored_open_cells: Dictionary = {}
+	var door_portal_scenes: Dictionary = {}
+	var door_portal_cells: Dictionary = {}
 	for door_value: Variant in main.legacy_doors as Array:
 		var door := door_value as Node2D
-		if not bool(door.get("starts_open")):
-			continue
-		authored_open_scenes[int(door.get("scene_index"))] = true
-		for release_cell: Vector2i in (
+		var movement_cells := (
 			door.get("movement_release_cells") as Array[Vector2i]
-		):
-			authored_open_cells[release_cell] = true
+		)
+		if movement_cells.is_empty():
+			continue
+		door_portal_scenes[int(door.get("scene_index"))] = true
+		for release_cell: Vector2i in movement_cells:
+			door_portal_cells[release_cell] = true
 	var static_state_violations := 0
 	var static_state_examples: Array[String] = []
 	var live_actor_state_violations := 0
@@ -306,7 +359,7 @@ func _audit_static_navigation_footprints(
 			counts["anonymous_static_cells"] = (
 				int(counts["anonymous_static_cells"]) + 1
 			)
-			var anonymous_should_be_open := authored_open_cells.has(cell)
+			var anonymous_should_be_open := door_portal_cells.has(cell)
 			var anonymous_is_released := navigation.is_source_cell_released(
 				NavigationGridData.MOVEMENT_LAYER_ID,
 				cell,
@@ -354,8 +407,8 @@ func _audit_static_navigation_footprints(
 		)
 		static_scenes[source_scene] = true
 		var encoded_should_be_open := (
-			authored_open_scenes.has(source_scene)
-			or authored_open_cells.has(cell)
+			door_portal_scenes.has(source_scene)
+			or door_portal_cells.has(cell)
 		)
 		var encoded_is_released := (
 			navigation.is_source_cell_released(
@@ -404,7 +457,7 @@ func _audit_static_navigation_footprints(
 	)
 	_expect(
 		static_state_violations == 0,
-		"%s opens only cells owned by authored open door passages: %s"
+		"%s releases only cells owned by interactive door portals: %s"
 			% [level_id, str(static_state_examples)],
 	)
 	_expect(
@@ -457,6 +510,14 @@ func _door_by_scene(main: Node, scene_index: int) -> Node2D:
 	return null
 
 
+func _first_live_unit(main: Node) -> Node2D:
+	for unit_value: Variant in main.units as Array:
+		var unit := unit_value as Node2D
+		if unit != null and bool(unit.get("is_alive")):
+			return unit
+	return null
+
+
 func _uses_original_row_slices(door: Node2D) -> bool:
 	var renderer: Variant = door.get("row_slice_renderer")
 	return (
@@ -471,6 +532,44 @@ func _any_solid(navigation: RefCounted, cells: Array[Vector2i]) -> bool:
 	for cell: Vector2i in cells:
 		if navigation.get("astar").is_point_solid(cell):
 			return true
+	return false
+
+
+func _any_line_of_sight_blocked(
+	navigation: RefCounted,
+	cells: Array[Vector2i],
+) -> bool:
+	for cell: Vector2i in cells:
+		if bool(navigation.call("is_line_of_sight_blocked", cell)):
+			return true
+	return false
+
+
+func _has_short_path_through_door(
+	navigation: RefCounted,
+	door_cells: Array[Vector2i],
+) -> bool:
+	var astar := navigation.get("astar") as AStarGrid2D
+	if astar == null:
+		return false
+	var portal_lookup: Dictionary = {}
+	for portal_cell: Vector2i in door_cells:
+		portal_lookup[portal_cell] = true
+	for portal_cell: Vector2i in door_cells:
+		for axis: Vector2i in [Vector2i.RIGHT, Vector2i.DOWN]:
+			var start := portal_cell - axis
+			var finish := portal_cell + axis
+			if (
+				not bool(navigation.call("is_valid_cell", start))
+				or not bool(navigation.call("is_valid_cell", finish))
+				or astar.is_point_solid(start)
+				or astar.is_point_solid(finish)
+			):
+				continue
+			var path: Array[Vector2i] = astar.get_id_path(start, finish)
+			for path_cell: Vector2i in path:
+				if portal_lookup.has(path_cell):
+					return true
 	return false
 
 

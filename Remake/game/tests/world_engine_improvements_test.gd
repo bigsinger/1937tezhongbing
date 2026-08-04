@@ -15,6 +15,7 @@ const DYNAMIC_OCCUPANCY_GRID: Script = preload(
 	"res://scripts/dynamic_occupancy_grid.gd"
 )
 const ENEMY_UNIT: Script = preload("res://scripts/enemy_unit.gd")
+const SQUAD_UNIT: Script = preload("res://scripts/squad_unit.gd")
 
 var failures: Array[String] = []
 var checks := 0
@@ -26,7 +27,9 @@ func _init() -> void:
 	_test_inventory_drop_interaction()
 	_test_inventory_drops_reset_with_level()
 	_test_patrol_formation_separation()
+	_test_modern_patrol_leadership()
 	_test_patrol_speed_round_trip()
+	_test_distance_synchronized_walk_animation()
 	if failures.is_empty():
 		print("World engine improvement tests passed (%d checks)." % checks)
 		quit(0)
@@ -210,6 +213,58 @@ func _test_patrol_speed_round_trip() -> void:
 		"restoring a patrol cursor preserves its captured in-flight speed",
 	)
 	enemy.free()
+
+
+func _test_modern_patrol_leadership() -> void:
+	var leader = ENEMY_UNIT.new()
+	var follower = ENEMY_UNIT.new()
+	leader.is_alive = true
+	follower.is_alive = true
+	leader.stable_mod_patrol_timeline.assign([
+		{"elapsed_seconds": 0.0, "position": Vector2.ZERO},
+		{"elapsed_seconds": 1.0, "position": Vector2(32.0, 0.0)},
+	])
+	follower.stable_mod_patrol_timeline = leader.stable_mod_patrol_timeline.duplicate(true)
+	_expect(
+		leader.configure_modern_patrol_formation(7, leader)
+			and follower.configure_modern_patrol_formation(
+				7,
+				leader,
+				Vector2(-24.0, 38.0),
+			)
+			and str(leader.modern_patrol_group_role) == "leader"
+			and str(follower.modern_patrol_group_role) == "follower"
+			and follower.modern_patrol_leader == leader
+			and follower.modern_patrol_local_offset == Vector2(-24.0, 38.0)
+			and leader.stable_mod_patrol_timeline.is_empty()
+			and follower.stable_mod_patrol_timeline.is_empty(),
+		"a patrol group has one route-owning leader and stable trailing slots",
+	)
+	leader.free()
+	follower.free()
+
+
+func _test_distance_synchronized_walk_animation() -> void:
+	var group := {
+		"frame_hold_ticks": 2,
+		"secondary_triplet": [2, 1, 1],
+		"frames": [null, null, null, null, null, null, null, null, null, null],
+	}
+	var speed: float = 134.16407864998737
+	var frame_seconds: float = SQUAD_UNIT.movement_animation_frame_seconds_for_speed(
+		group,
+		speed,
+	)
+	var animated_cycle_distance: float = speed * frame_seconds * 10.0
+	var authored_cycle_distance: float = Vector2(2.0, 1.0).length() * 2.0 * 10.0
+	_expect(
+		frame_seconds < 0.05
+			and is_equal_approx(
+				animated_cycle_distance,
+				authored_cycle_distance,
+			),
+		"walk frames advance from travelled distance instead of producing foot sliding",
+	)
 
 
 func _expect(condition: bool, message: String) -> void:

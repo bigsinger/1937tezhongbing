@@ -42,6 +42,22 @@ func collect_into(inventory: RefCounted, collector: Node = null) -> int:
 func _draw() -> void:
 	if consumed:
 		return
-	draw_circle(Vector2.ZERO, 10.0, Color(0.86, 0.66, 0.18, 0.95))
-	draw_rect(Rect2(-6.0, -4.0, 12.0, 8.0), Color(0.24, 0.20, 0.13), true)
-	draw_line(Vector2(-4.0, 0.0), Vector2(4.0, 0.0), Color(0.95, 0.88, 0.54), 2.0)
+	# Compact ammunition crate fallback.  The former circle with a horizontal
+	# stroke looked like a prohibited-action marker on the map.
+	draw_colored_polygon(
+		PackedVector2Array([
+			Vector2(-11.0, 5.0),
+			Vector2(-5.0, 9.0),
+			Vector2(11.0, 4.0),
+			Vector2(5.0, 1.0),
+		]),
+		Color(0.02, 0.02, 0.015, 0.42),
+	)
+	draw_rect(Rect2(-10.0, -7.0, 20.0, 13.0), Color(0.24, 0.20, 0.13), true)
+	draw_rect(Rect2(-9.0, -6.0, 18.0, 11.0), Color(0.66, 0.49, 0.16), true)
+	for cartridge_x: float in [-5.0, 0.0, 5.0]:
+		draw_rect(
+			Rect2(cartridge_x - 1.5, -4.0, 3.0, 7.0),
+			Color(0.96, 0.83, 0.40),
+			true,
+		)

@@ -33,6 +33,9 @@ const STABLE_MOD_BASE_PATROL_SPEED := 134.16407864998737
 ## the stable process capture instead of letting three guards depart early.
 const STABLE_MOD_PATROL_WAYPOINT_HOLD_SECONDS := 2.1
 const PATROL_FORMATION_MIN_SEPARATION := 28.0
+const MODERN_PATROL_FOLLOW_REPLAN_SECONDS := 0.28
+const MODERN_PATROL_SLOT_TOLERANCE := 18.0
+const MODERN_PATROL_ROUTE_REFRESH_DISTANCE := 20.0
 ## m000..m011 include original runtime patrol/controller motion that is not
 ## represented by the VWF waypoint records. Stable, read-only MOD process
 ## captures provide a short deterministic timeline for those actors. Its path
@@ -172,6 +175,12 @@ var attack_recheck_seconds := ATTACK_RECHECK_MIN_SECONDS
 var attack_count := 0
 var path_request_delay_remaining := 0.0
 var patrol_path_retry_seconds := PATROL_PATH_RETRY_MIN_SECONDS
+var modern_patrol_group_id := -1
+var modern_patrol_group_role := "solo"
+var modern_patrol_leader: Node2D
+var modern_patrol_local_offset := Vector2.ZERO
+var modern_patrol_replan_elapsed := 0.0
+var modern_patrol_last_destination := Vector2(INF, INF)
 var tactical_ranges_visible := false
 var tactical_outer_outline := PackedVector2Array()
 var tactical_inner_outline := PackedVector2Array()
@@ -364,6 +373,12 @@ func configure_enemy(
 	)
 	patrol_wait_remaining = 0.0
 	patrol_path_in_flight = false
+	modern_patrol_group_id = -1
+	modern_patrol_group_role = "solo"
+	modern_patrol_leader = null
+	modern_patrol_local_offset = Vector2.ZERO
+	modern_patrol_replan_elapsed = 0.0
+	modern_patrol_last_destination = Vector2(INF, INF)
 	legacy_effect_random_state = int(
 		(scene_index * 1103515245 + 12345) & 0x7fffffff
 	)
@@ -939,6 +954,8 @@ func _acquire_visible_live_target(target: Node2D) -> bool:
 func _update_behavior(delta: float) -> void:
 	if behavior_state != BehaviorState.PATROL:
 		minimum_actor_separation = -1.0
+		if modern_patrol_group_role == "follower":
+			move_speed = STABLE_MOD_BASE_PATROL_SPEED
 	if (
 		behavior_state != BehaviorState.PATROL
 		and not stable_mod_patrol_timeline.is_empty()
@@ -1043,6 +1060,9 @@ func _update_behavior(delta: float) -> void:
 
 
 func _update_patrol(delta: float) -> void:
+	if _is_modern_patrol_follower():
+		_update_modern_patrol_follower(delta)
+		return
 	if not stable_mod_patrol_timeline.is_empty():
 		# The process-captured trajectory already contains the original group's
 		# spacing. Applying a second minimum-distance constraint can push a guard
@@ -1083,6 +1103,127 @@ func _update_patrol(delta: float) -> void:
 	patrol_path_in_flight = _issue_path_to(destination)
 	if patrol_path_in_flight:
 		set_original_route_update_active(false)
+
+
+func configure_modern_patrol_formation(
+	group_id: int,
+	leader: Node2D,
+	local_offset: Vector2 = Vector2.ZERO,
+) -> bool:
+	if group_id < 0 or leader == null or not is_instance_valid(leader):
+		return false
+	modern_patrol_group_id = group_id
+	modern_patrol_leader = leader
+	modern_patrol_local_offset = local_offset
+	modern_patrol_group_role = "leader" if leader == self else "follower"
+	modern_patrol_replan_elapsed = 0.0
+	modern_patrol_last_destination = Vector2(INF, INF)
+	# Runtime-capture interpolation made nearby soldiers look like unrelated
+	# skaters.  A modern formation has one authored route owner; followers use
+	# live A* slots behind that leader and therefore share every pause and turn.
+	stable_mod_patrol_timeline.clear()
+	stable_mod_patrol_segment_issued = false
+	stable_mod_patrol_segment_prepared = false
+	use_soft_dynamic_occupancy = false
+	use_recorded_patrol_relocation = false
+	use_recorded_patrol_final_relocation = false
+	patrol_enabled = true
+	patrol_wait_remaining = 0.0
+	patrol_path_in_flight = false
+	path_request_delay_remaining = 0.0
+	set_original_route_update_active(false)
+	cancel_path()
+	return true
+
+
+func _is_modern_patrol_follower() -> bool:
+	return (
+		modern_patrol_group_role == "follower"
+		and modern_patrol_leader != null
+		and is_instance_valid(modern_patrol_leader)
+		and bool(modern_patrol_leader.get("is_alive"))
+	)
+
+
+func modern_patrol_heading() -> Vector2:
+	if movement_path_index < movement_path.size():
+		var route_direction := movement_path[movement_path_index] - position
+		if not route_direction.is_zero_approx():
+			return route_direction.normalized()
+	var direction_index := clampi(original_direction_index, 1, 8)
+	var degrees: float = TACTICAL_SENSES.original_direction_center_degrees(
+		direction_index
+	)
+	return Vector2.RIGHT.rotated(deg_to_rad(degrees)).normalized()
+
+
+func _update_modern_patrol_follower(delta: float) -> void:
+	minimum_actor_separation = 18.0
+	use_soft_dynamic_occupancy = false
+	use_recorded_patrol_relocation = false
+	use_recorded_patrol_final_relocation = false
+	if not _is_modern_patrol_follower():
+		modern_patrol_group_role = "solo"
+		modern_patrol_leader = null
+		return
+	if int(modern_patrol_leader.get("behavior_state")) != BehaviorState.PATROL:
+		return
+	var heading: Vector2 = modern_patrol_leader.call("modern_patrol_heading")
+	if heading.is_zero_approx():
+		heading = Vector2.DOWN
+	var lateral := Vector2(-heading.y, heading.x)
+	var destination := (
+		modern_patrol_leader.position
+		+ lateral * modern_patrol_local_offset.x
+		- heading * modern_patrol_local_offset.y
+	)
+	modern_patrol_replan_elapsed += maxf(delta, 0.0)
+	var distance := position.distance_to(destination)
+	var leader_path: Variant = modern_patrol_leader.get("movement_path")
+	var leader_moving := (
+		leader_path is PackedVector2Array
+		and int(modern_patrol_leader.get("movement_path_index"))
+			< (leader_path as PackedVector2Array).size()
+	)
+	var leader_speed := maxf(
+		float(modern_patrol_leader.get("move_speed")),
+		STABLE_MOD_BASE_PATROL_SPEED,
+	)
+	move_speed = leader_speed * (
+		1.0 + clampf(
+			(distance - MODERN_PATROL_SLOT_TOLERANCE) / 180.0,
+			0.0,
+			0.18,
+		)
+	)
+	if distance <= MODERN_PATROL_SLOT_TOLERANCE:
+		move_speed = leader_speed
+		if movement_path_index < movement_path.size():
+			cancel_path()
+		if not leader_moving:
+			set_animation_group(direction_group_index(heading))
+			apply_idle_frame()
+			queue_redraw()
+		return
+	var destination_changed := (
+		modern_patrol_last_destination.x == INF
+		or modern_patrol_last_destination.distance_to(destination)
+			>= MODERN_PATROL_ROUTE_REFRESH_DISTANCE
+	)
+	if (
+		movement_path_index < movement_path.size()
+		and modern_patrol_replan_elapsed < MODERN_PATROL_FOLLOW_REPLAN_SECONDS
+		and not destination_changed
+	):
+		return
+	if (
+		modern_patrol_replan_elapsed < MODERN_PATROL_FOLLOW_REPLAN_SECONDS
+		and movement_path_index >= movement_path.size()
+	):
+		return
+	modern_patrol_replan_elapsed = 0.0
+	if _issue_path_to(destination):
+		modern_patrol_last_destination = destination
 
 
 func _update_stable_mod_patrol_timeline(delta: float) -> void:
@@ -2949,11 +3090,17 @@ static func next_unreached_patrol_index(
 
 
 func _draw() -> void:
+	combat_health_visible = (
+		is_alive
+		and behavior_state in [
+			BehaviorState.CHASE,
+			BehaviorState.ATTACK,
+			BehaviorState.SEARCH,
+		]
+	)
 	super._draw()
 	if tactical_ranges_visible and is_alive:
 		_draw_tactical_ranges()
-	if behavior_state in [BehaviorState.CHASE, BehaviorState.ATTACK, BehaviorState.SEARCH]:
-		draw_arc(Vector2.ZERO, 24.0, 0.0, TAU, 32, Color(0.95, 0.20, 0.12), 2.0)
 
 
 func _draw_tactical_ranges() -> void:

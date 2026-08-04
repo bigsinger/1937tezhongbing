@@ -1753,21 +1753,10 @@ func _should_show_startup_level_selector() -> bool:
 
 
 func _should_play_original_startup_media() -> bool:
-	if (
-		not startup_level_selection_pending
-		or media_director == null
-		or DisplayServer.get_name() == "headless"
-		or OS.get_environment("M1937_REMAKE_SKIP_STARTUP_MEDIA") == "1"
-	):
-		return false
-	for argument: String in OS.get_cmdline_args() + OS.get_cmdline_user_args():
-		if argument == "--skip-startup-media":
-			return false
-		# Automated probes must remain short and deterministic even when local
-		# converted movies are present (the historical film is about 140 s).
-		if argument.contains("res://tests/") or argument.contains("\\tests\\"):
-			return false
-	return true
+	# The modern edition starts directly at level selection.  The two legacy
+	# startup films were long blocking media, delayed the first interactive
+	# frame, and are deliberately excluded from distributable builds.
+	return false
 
 
 func _begin_original_startup_media_sequence() -> void:
@@ -2798,6 +2787,11 @@ func spawn_squad() -> void:
 		Time.get_ticks_usec() - spawn_phase_started_usec
 	)
 	spawn_phase_started_usec = Time.get_ticks_usec()
+	_configure_modern_enemy_patrol_groups()
+	last_squad_spawn_phase_usec["modern_patrol_groups"] = (
+		Time.get_ticks_usec() - spawn_phase_started_usec
+	)
+	spawn_phase_started_usec = Time.get_ticks_usec()
 	if dynamic_occupancy != null:
 		_prewarm_authored_patrol_paths()
 	last_squad_spawn_phase_usec["patrol_prewarm"] = (
@@ -2906,6 +2900,101 @@ func _stage_loaded_animation_footprint_profiles() -> int:
 			if dynamic_occupancy.stage_footprint_clearance(movement_offsets):
 				staged_count += 1
 	return staged_count
+
+
+func _configure_modern_enemy_patrol_groups(force_for_test: bool = false) -> int:
+	if not force_for_test and not _modern_patrol_groups_enabled():
+		return 0
+	var candidates: Array[ENEMY_UNIT] = []
+	for enemy: ENEMY_UNIT in enemies:
+		if not enemy.is_alive or not _patrol_route_has_extent(enemy):
+			continue
+		candidates.append(enemy)
+	candidates.sort_custom(
+		func(first: ENEMY_UNIT, second: ENEMY_UNIT) -> bool:
+			var first_rank := _modern_patrol_leader_rank(first.display_name)
+			var second_rank := _modern_patrol_leader_rank(second.display_name)
+			if first_rank != second_rank:
+				return first_rank > second_rank
+			return first.scene_index < second.scene_index
+	)
+	var assigned: Dictionary = {}
+	var group_id := 0
+	var follower_offsets: Array[Vector2] = [
+		Vector2(-24.0, 38.0),
+		Vector2(24.0, 38.0),
+		Vector2(0.0, 72.0),
+	]
+	for leader: ENEMY_UNIT in candidates:
+		if assigned.has(leader.get_instance_id()):
+			continue
+		var nearby: Array[ENEMY_UNIT] = []
+		for candidate: ENEMY_UNIT in candidates:
+			if (
+				candidate == leader
+				or assigned.has(candidate.get_instance_id())
+				or leader.position.distance_to(candidate.position) > 220.0
+			):
+				continue
+			nearby.append(candidate)
+		nearby.sort_custom(
+			func(first: ENEMY_UNIT, second: ENEMY_UNIT) -> bool:
+				var first_distance := leader.position.distance_squared_to(first.position)
+				var second_distance := leader.position.distance_squared_to(second.position)
+				if not is_equal_approx(first_distance, second_distance):
+					return first_distance < second_distance
+				return first.scene_index < second.scene_index
+		)
+		if nearby.is_empty():
+			continue
+		group_id += 1
+		leader.configure_modern_patrol_formation(group_id, leader)
+		assigned[leader.get_instance_id()] = true
+		for follower_index: int in range(mini(nearby.size(), follower_offsets.size())):
+			var follower := nearby[follower_index]
+			follower.configure_modern_patrol_formation(
+				group_id,
+				leader,
+				follower_offsets[follower_index],
+			)
+			assigned[follower.get_instance_id()] = true
+	return group_id
+
+
+func _modern_patrol_groups_enabled() -> bool:
+	if OS.get_environment("M1937_REMAKE_DISABLE_MODERN_PATROLS") == "1":
+		return false
+	for argument: String in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if argument == "--enable-modern-patrol-groups":
+			return true
+		if argument.contains("res://tests/") or argument.contains("\\tests\\"):
+			return false
+	return not _is_runtime_probe()
+
+
+static func _patrol_route_has_extent(enemy: ENEMY_UNIT) -> bool:
+	var waypoints := enemy.patrol_waypoints
+	if waypoints.size() < 2:
+		return false
+	var origin := waypoints[0]
+	for waypoint: Vector2 in waypoints:
+		if origin.distance_to(waypoint) >= 24.0:
+			return true
+	return false
+
+
+static func _modern_patrol_leader_rank(display_name: String) -> int:
+	if display_name in ["山本", "龟田"]:
+		return 50
+	if display_name == "一等兵":
+		return 30
+	if display_name == "二等兵":
+		return 20
+	if display_name == "三等兵":
+		return 10
+	# Named specialists and collaborators lead generic rank-and-file actors,
+	# while recognized officers still take precedence.
+	return 40
 
 
 func _prewarm_authored_patrol_paths() -> void:
@@ -3314,6 +3403,7 @@ func _process(delta: float) -> void:
 
 
 func _physics_process(_delta: float) -> void:
+	_advance_automatic_door_interactions()
 	_advance_original_global_alarm()
 	_advance_original_escort_rescue_proximity()
 	_advance_original_m006_document_exchange()
@@ -3808,10 +3898,17 @@ func _mouse_edge_scroll_direction() -> Vector2:
 		or not DisplayServer.window_is_focused()
 		or right_dragging
 		or camera_dragging
+		or (game_shell != null and game_shell.is_overlay_open())
 		or _pointer_over_interactive_control()
 	):
 		return Vector2.ZERO
 	var viewport_size := get_viewport_rect().size
+	# The bottom HUD consumes mouse clicks, so the physical window bottom is not
+	# reachable by the world controller.  Treat the HUD's top edge as the
+	# battlefield bottom edge: hovering just above it scrolls down, while moving
+	# onto a button keeps that button stable and never submits a world command.
+	if game_shell != null and game_shell.has_method("gameplay_viewport_size"):
+		viewport_size = game_shell.gameplay_viewport_size(viewport_size)
 	var mouse_position := get_viewport().get_mouse_position()
 	return SMOOTH_CAMERA_PAN.edge_intent(
 		mouse_position,
@@ -3850,6 +3947,10 @@ static func edge_scroll_direction_for_position(
 
 
 func _input(event: InputEvent) -> void:
+	if is_fullscreen_toggle_event(event):
+		_toggle_fullscreen_window_mode()
+		get_viewport().set_input_as_handled()
+		return
 	if not legacy_crt_recurring_evidence_replay_active:
 		return
 	var affects_evidence := (
@@ -3867,6 +3968,43 @@ func _input(event: InputEvent) -> void:
 		# This observer does not handle, warp, capture or resend the event. The
 		# normal GUI/world input path receives it unchanged.
 		invalidate_original_recurring_evidence("player_input")
+
+
+static func is_fullscreen_toggle_event(event: InputEvent) -> bool:
+	if not event is InputEventKey:
+		return false
+	var key_event := event as InputEventKey
+	return (
+		key_event.pressed
+		and not key_event.echo
+		and key_event.alt_pressed
+		and key_event.keycode in [KEY_ENTER, KEY_KP_ENTER]
+	)
+
+
+func _toggle_fullscreen_window_mode() -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	var currently_windowed := (
+		DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_WINDOWED
+	)
+	var next_settings := runtime_settings.duplicate(true)
+	if currently_windowed:
+		var current_size := DisplayServer.window_get_size()
+		next_settings["window_width"] = current_size.x
+		next_settings["window_height"] = current_size.y
+		next_settings["display_mode"] = "fullscreen"
+		next_settings["fullscreen"] = true
+	else:
+		next_settings["display_mode"] = "windowed"
+		next_settings["fullscreen"] = false
+	_on_shell_settings_changed(next_settings)
+	if game_shell != null:
+		game_shell.set_settings(runtime_settings)
+	update_status(
+		"显示模式：%s（Alt+Enter 可随时切换）"
+		% ("全屏" if currently_windowed else "窗口")
+	)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -4527,6 +4665,38 @@ func _on_legacy_door_state_changed(door: Node2D, open: bool) -> void:
 		for enemy: ENEMY_UNIT in enemies:
 			enemy.path_request_delay_remaining = 0.0
 			enemy.chase_replan_elapsed = enemy.CHASE_REPLAN_SECONDS
+
+
+func _advance_automatic_door_interactions() -> int:
+	if legacy_doors.is_empty():
+		return 0
+	var moving_actors: Array[Node2D] = []
+	for actor: Node2D in _all_active_runtime_actors():
+		if not bool(actor.get("is_alive")):
+			continue
+		var path_value: Variant = actor.get("movement_path")
+		if not path_value is PackedVector2Array:
+			continue
+		if int(actor.get("movement_path_index")) >= (path_value as PackedVector2Array).size():
+			continue
+		moving_actors.append(actor)
+	if moving_actors.is_empty():
+		return 0
+	var opened_count := 0
+	for door: Node2D in legacy_doors:
+		if (
+			door == null
+			or not is_instance_valid(door)
+			or bool(door.get("is_open"))
+			or not door.has_method("contains_approach_point")
+		):
+			continue
+		for actor: Node2D in moving_actors:
+			if bool(door.call("contains_approach_point", actor.position)):
+				if bool(door.call("open")):
+					opened_count += 1
+				break
+	return opened_count
 
 
 func restore_legacy_door_states(records: Array) -> int:

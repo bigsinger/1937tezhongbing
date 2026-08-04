@@ -12,6 +12,7 @@ func _init() -> void:
 	_validate_scan_codes_and_phases(failures)
 	_validate_mouse_transitions(failures)
 	_validate_edge_scroll(failures)
+	_validate_fullscreen_shortcut(failures)
 	_validate_cursor_modes(failures)
 	_validate_pointer_safety_source_guards(failures)
 	if failures.is_empty():
@@ -233,6 +234,31 @@ func _validate_edge_scroll(failures: Array[String]) -> void:
 		LEGACY_INPUT_RULES.advance_original_integer_scroll_velocity(0, 64, true) == 8
 		and LEGACY_INPUT_RULES.advance_original_integer_scroll_velocity(64, 64, false) == 56,
 		"integer velocity preserves the original limit/8 step",
+		failures,
+	)
+
+
+func _validate_fullscreen_shortcut(failures: Array[String]) -> void:
+	var shortcut := InputEventKey.new()
+	shortcut.keycode = KEY_ENTER
+	shortcut.alt_pressed = true
+	shortcut.pressed = true
+	_expect(
+		MAIN_SCRIPT.is_fullscreen_toggle_event(shortcut),
+		"Alt+Enter toggles the modern display mode",
+		failures,
+	)
+	shortcut.echo = true
+	_expect(
+		not MAIN_SCRIPT.is_fullscreen_toggle_event(shortcut),
+		"held Alt+Enter never toggles repeatedly",
+		failures,
+	)
+	shortcut.echo = false
+	shortcut.alt_pressed = false
+	_expect(
+		not MAIN_SCRIPT.is_fullscreen_toggle_event(shortcut),
+		"plain Enter remains available to the game UI",
 		failures,
 	)
 

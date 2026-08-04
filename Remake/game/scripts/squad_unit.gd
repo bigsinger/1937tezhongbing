@@ -2,6 +2,8 @@ class_name SquadUnit
 extends Node2D
 
 const BASE_SPRITE_TICK_SECONDS := 0.085
+const MODERN_MOVEMENT_MIN_FRAME_SECONDS := 1.0 / 120.0
+const MODERN_MOVEMENT_MAX_FRAME_SECONDS := 0.12
 ## A timestamped process-local trace of 710 consecutive m000 update rounds
 ## measured a 16.686 ms steady interval (59.930 Hz). Observation-marker and
 ## primary candidate-scan rand() calls therefore follow the 60 Hz actor
@@ -119,6 +121,7 @@ signal ammo_changed(unit: Node2D, magazine: int, reserve: int)
 var display_name: String = "队员"
 var body_color: Color = Color.WHITE
 var selected: bool = false
+var combat_health_visible := false
 var action_progress_ratio := -1.0
 var target_position: Vector2
 var movement_path := PackedVector2Array()
@@ -4519,7 +4522,7 @@ func advance_animation(delta: float) -> void:
 	var frames := group["frames"] as Array[Texture2D]
 	if frames.size() <= 1:
 		return
-	var frame_seconds := animation_frame_seconds(group)
+	var frame_seconds := movement_animation_frame_seconds(group)
 	animation_elapsed += maxf(delta, 0.0)
 	while animation_elapsed >= frame_seconds:
 		animation_elapsed -= frame_seconds
@@ -4529,6 +4532,35 @@ func advance_animation(delta: float) -> void:
 
 static func animation_frame_seconds(group: Dictionary) -> float:
 	return BASE_SPRITE_TICK_SECONDS * maxi(int(group.get("frame_hold_ticks", 1)), 1)
+
+
+func movement_animation_frame_seconds(group: Dictionary) -> float:
+	return movement_animation_frame_seconds_for_speed(group, move_speed)
+
+
+static func movement_animation_frame_seconds_for_speed(
+	group: Dictionary,
+	speed: float,
+) -> float:
+	var hold_ticks := maxi(int(group.get("frame_hold_ticks", 1)), 1)
+	var secondary_value: Variant = group.get("secondary_triplet", [])
+	var stride := Vector2.ZERO
+	if secondary_value is Array and (secondary_value as Array).size() >= 3:
+		stride = Vector2(
+			absf(float((secondary_value as Array)[0])),
+			absf(float((secondary_value as Array)[2])),
+		)
+	var safe_speed := maxf(speed, 0.001)
+	var seconds := (
+		stride.length() * float(hold_ticks) / safe_speed
+		if not stride.is_zero_approx()
+		else float(hold_ticks) / ORIGINAL_MOVEMENT_TICKS_PER_SECOND
+	)
+	return clampf(
+		seconds,
+		MODERN_MOVEMENT_MIN_FRAME_SECONDS,
+		MODERN_MOVEMENT_MAX_FRAME_SECONDS,
+	)
 
 
 func update_animation_frame() -> void:
@@ -4813,10 +4845,29 @@ func _draw() -> void:
 			Vector2(20.0, 10.0),
 			Color(0.0, 0.0, 0.0, 0.35),
 		)
-		draw_circle(Vector2.ZERO, 15.0, body_color)
-		draw_circle(Vector2(0.0, -12.0), 8.0, body_color.lightened(0.18))
-		draw_line(Vector2(-8.0, 1.0), Vector2(11.0, 1.0), Color(0.13, 0.12, 0.09), 4.0)
-	if maximum_hit_points > 0 and (selected or current_hit_points < maximum_hit_points):
+		# Missing local art uses a neutral human silhouette.  The former circle
+		# plus horizontal stroke looked like a prohibition/selection marker and
+		# was easily confused with gameplay state.
+		draw_colored_polygon(
+			PackedVector2Array([
+				Vector2(0.0, -19.0),
+				Vector2(10.0, -3.0),
+				Vector2(7.0, 14.0),
+				Vector2(-7.0, 14.0),
+				Vector2(-10.0, -3.0),
+			]),
+			body_color,
+		)
+		draw_rect(
+			Rect2(-6.0, -31.0, 12.0, 10.0),
+			body_color.lightened(0.18),
+			true,
+		)
+	if maximum_hit_points > 0 and (
+		selected
+		or combat_health_visible
+		or current_hit_points < maximum_hit_points
+	):
 		var health_ratio := clampf(
 			float(current_hit_points) / float(maximum_hit_points), 0.0, 1.0
 		)

@@ -69,7 +69,11 @@ func _test_visual_navigation_and_snapshot_lifecycle() -> void:
 	sight.resize(15)
 	var door_cell := Vector2i(2, 1)
 	var door_index := door_cell.y * 5 + door_cell.x
+	# Seal the rows above and below so the only route between the left and
+	# right rooms is the interactive door portal itself.
+	movement[Vector2i(2, 0).y * 5 + 2] = 1
 	movement[door_index] = 1012
+	movement[Vector2i(2, 2).y * 5 + 2] = 1
 	sight[door_index] = 1012
 	var navigation = NAVIGATION_GRID_DATA.create_for_tests(
 		5,
@@ -78,23 +82,12 @@ func _test_visual_navigation_and_snapshot_lifecycle() -> void:
 		movement,
 		sight,
 	)
-	navigation.prepare_astar()
 	var occupancy = DYNAMIC_OCCUPANCY_GRID.new()
 	occupancy.configure(navigation)
 	occupancy.register_scene(
 		20,
 		navigation.cell_to_world(Vector2i(4, 2)),
 	)
-	occupancy.finalize_registration()
-	_expect(
-		occupancy.prewarm_path_for_scene(
-			20,
-			navigation.cell_to_world(Vector2i(4, 2)),
-			navigation.cell_to_world(Vector2i(3, 2)),
-		),
-		"an unrelated authored route is cached before a door changes",
-	)
-	var astar_before_open: AStarGrid2D = navigation.astar
 	var texture := _texture(Color.WHITE)
 	var open_texture := _texture(Color(0.4, 0.8, 0.4))
 	var profile: Dictionary = DOOR_CATALOG.profile_for_entity(
@@ -120,9 +113,10 @@ func _test_visual_navigation_and_snapshot_lifecycle() -> void:
 		"door configures from original scene identity",
 	)
 	door.bind_dynamic_occupancy(occupancy)
+	occupancy.finalize_registration()
 	_expect(
-		navigation.astar.is_point_solid(door_cell),
-		"closed door keeps original L3 footprint blocked",
+		not navigation.astar.is_point_solid(door_cell),
+		"closed interactive door is already available to A* route planning",
 	)
 	_expect(
 		not occupancy.has_line_of_sight(
@@ -132,14 +126,23 @@ func _test_visual_navigation_and_snapshot_lifecycle() -> void:
 		"closed door keeps original L2 footprint blocked",
 	)
 	_expect(
+		occupancy.prewarm_path_for_scene(
+			20,
+			navigation.cell_to_world(Vector2i(4, 2)),
+			navigation.cell_to_world(Vector2i(3, 2)),
+		),
+		"an unrelated authored route is cached before a door changes",
+	)
+	var astar_before_open: AStarGrid2D = navigation.astar
+	_expect(
 		door.contains_parent_point(door.position),
 		"closed door exposes a bounded click target",
 	)
 	_expect(door.open(), "door opens once")
 	_expect(
 		not navigation.astar.is_point_solid(door_cell)
-		and occupancy.is_source_scene_disabled(12),
-		"opening releases exact scene L3 footprint",
+			and occupancy.is_source_scene_disabled(12),
+		"opening preserves the planned L3 portal and releases the source state",
 	)
 	_expect(
 		navigation.astar == astar_before_open
@@ -152,7 +155,7 @@ func _test_visual_navigation_and_snapshot_lifecycle() -> void:
 			navigation.cell_to_world(Vector2i(1, 1)),
 			navigation.cell_to_world(Vector2i(3, 1)),
 		).is_empty(),
-		"incremental component merging makes the opened passage immediately routable",
+		"the planned door passage remains immediately routable after opening",
 	)
 	_expect(
 		occupancy.has_line_of_sight(
@@ -166,6 +169,16 @@ func _test_visual_navigation_and_snapshot_lifecycle() -> void:
 		and not door.contains_parent_point(door.position),
 		"opening swaps to original open art and removes click target",
 	)
+	door.set_open(false, false)
+	_expect(
+		not navigation.astar.is_point_solid(door_cell)
+			and not occupancy.has_line_of_sight(
+				Vector2(48, 24),
+				Vector2(112, 24),
+			),
+		"closing restores visual occlusion without invalidating the A* portal",
+	)
+	door.open()
 	var snapshot: Dictionary = door.snapshot()
 	var restored = DOOR_SCRIPT.new()
 	restored.configure(

@@ -189,6 +189,20 @@ func finalize_registration() -> void:
 	scene_indices.sort()
 	var movement_release_lookup: Dictionary = {}
 	var sight_release_lookup: Dictionary = {}
+	# Modern door planning treats a closed, interactive door as a traversable
+	# portal.  Its visual and line-of-sight state remain closed until an actor
+	# approaches or the player clicks it, but A* can plan the complete route up
+	# front instead of stopping at the wall and losing the original destination.
+	for footprint_value: Variant in source_scene_footprints.values():
+		if not footprint_value is Dictionary:
+			continue
+		var permanent_footprint := footprint_value as Dictionary
+		if not bool(permanent_footprint.get("permanent_movement_release", false)):
+			continue
+		for cell: Vector2i in (
+			permanent_footprint.get("movement", []) as Array[Vector2i]
+		):
+			movement_release_lookup[cell] = true
 	for scene_index: int in scene_indices:
 		if not source_scene_footprints.has(scene_index):
 			continue
@@ -219,12 +233,14 @@ func register_source_scene_footprint(
 	scene_index: int,
 	movement_cells: Array[Vector2i],
 	sight_cells: Array[Vector2i],
+	permanent_movement_release: bool = false,
 ) -> bool:
 	if navigation == null or scene_index < 0:
 		return false
 	source_scene_footprints[scene_index] = {
 		"movement": movement_cells.duplicate(),
 		"sight": sight_cells.duplicate(),
+		"permanent_movement_release": permanent_movement_release,
 	}
 	return not movement_cells.is_empty() or not sight_cells.is_empty()
 

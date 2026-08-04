@@ -46,6 +46,7 @@ var layers: Dictionary = {}
 var astar: AStarGrid2D
 var ignored_scene_indices: Dictionary = {}
 var source_scene_cells_by_layer: Dictionary = {}
+var base_released_source_cells_by_layer: Dictionary = {}
 var released_source_cells_by_layer: Dictionary = {}
 var runtime_release_owners_by_layer: Dictionary = {}
 var static_component_by_cell := PackedInt32Array()
@@ -172,10 +173,13 @@ func prepare_astar(
 	for scene_index in scene_indices_to_ignore:
 		if scene_index >= 0:
 			ignored_scene_indices[scene_index] = true
-	released_source_cells_by_layer = {
+	base_released_source_cells_by_layer = {
 		MOVEMENT_LAYER_ID: _cell_lookup(movement_cells_to_release),
 		LINE_OF_SIGHT_LAYER_ID: _cell_lookup(sight_cells_to_release),
 	}
+	released_source_cells_by_layer = (
+		base_released_source_cells_by_layer.duplicate(true)
+	)
 	runtime_release_owners_by_layer = {
 		MOVEMENT_LAYER_ID: {},
 		LINE_OF_SIGHT_LAYER_ID: {},
@@ -283,6 +287,9 @@ func _update_runtime_release_owners(
 	var released_lookup := (
 		released_source_cells_by_layer.get(layer_id, {}) as Dictionary
 	)
+	var base_released_lookup := (
+		base_released_source_cells_by_layer.get(layer_id, {}) as Dictionary
+	)
 	for cell: Vector2i in cells:
 		var owners := layer_owners.get(cell, {}) as Dictionary
 		if disabled:
@@ -293,7 +300,10 @@ func _update_runtime_release_owners(
 		owners.erase(scene_index)
 		if owners.is_empty():
 			layer_owners.erase(cell)
-			released_lookup.erase(cell)
+			if base_released_lookup.has(cell):
+				released_lookup[cell] = true
+			else:
+				released_lookup.erase(cell)
 		else:
 			layer_owners[cell] = owners
 	runtime_release_owners_by_layer[layer_id] = layer_owners

@@ -240,6 +240,27 @@ if ($AssetMode -eq 'Junction') {
 } else {
     New-Item -ItemType Directory -Path $outputAssets -Force | Out-Null
     Copy-Item -LiteralPath $convertedAssets -Destination $outputAssets -Recurse -Force
+    # The modern product no longer plays the blocking startup logo/history CG.
+    # Keep analysis/source conversions intact, but omit those large files from
+    # portable copies so the playable package benefits from the removal too.
+    $copiedConvertedRoot = Join-Path $outputAssets 'converted'
+    foreach ($relativeStartupMovie in @(
+            'media\video\logo.ogv',
+            'media\video\historical_intro.ogv')) {
+        $startupMovie = [System.IO.Path]::GetFullPath(
+            (Join-Path $copiedConvertedRoot $relativeStartupMovie))
+        $safePrefix =
+            [System.IO.Path]::GetFullPath($copiedConvertedRoot).TrimEnd('\', '/') +
+            [System.IO.Path]::DirectorySeparatorChar
+        if (-not $startupMovie.StartsWith(
+                $safePrefix,
+                [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Unsafe startup media path: $startupMovie"
+        }
+        if (Test-Path -LiteralPath $startupMovie -PathType Leaf) {
+            Remove-Item -LiteralPath $startupMovie -Force
+        }
+    }
 }
 
 $launcher = @'
@@ -262,6 +283,8 @@ $buildInfo = [ordered]@{
     godot_version = $version
     build_kind = $buildKind
     asset_mode = $AssetMode
+    startup_media_playback_disabled = $true
+    startup_media_files_omitted = ($AssetMode -eq 'Copy')
     asset_content_profile = $assetProfile
     asset_manifest_sha256 = (
         Get-FileHash -LiteralPath $assetManifestPath -Algorithm SHA256).Hash
@@ -278,6 +301,8 @@ $playableReadme = @"
 Run: double-click Play-1937-Remake.cmd.
 Level selection: use the native startup/menu selector, or launch directly with
 Play-1937-Remake.cmd -- --level=m007 (m000 through m011).
+The legacy startup CG is disabled. Press Alt+Enter at any time to switch between
+fullscreen and the saved window size.
 
 Keep game and LocalAssets in their current relative locations. The launcher fixes the working
 directory so the exported program can find the locally converted assets.

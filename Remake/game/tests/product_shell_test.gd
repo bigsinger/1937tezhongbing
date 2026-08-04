@@ -656,6 +656,11 @@ func _run() -> void:
 	)
 
 	var main: Node = MAIN_SCENE.instantiate()
+	expect(
+		not bool(main.call("_should_play_original_startup_media")),
+		"modern product startup bypasses the legacy logo and historical CG",
+		failures,
+	)
 	main.runtime_settings = {
 		"fullscreen": true,
 		"display_mode": "borderless",
