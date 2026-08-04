@@ -133,6 +133,8 @@ func _run() -> void:
 	# selection would incorrectly make F5 choose Lao Zhao.
 	main.switch_level(1, false, false)
 	_disable_autonomous_world(main)
+	main.legacy_crt_random_trace_enabled = true
+	main.legacy_crt_random_trace.clear()
 	var gu_ming: Node2D
 	for unit_value: Variant in main.units:
 		var level_unit := unit_value as Node2D
@@ -145,12 +147,21 @@ func _run() -> void:
 	_expect(
 		gu_ming != null
 			and main.selected_units.size() == 1
-			and main.selected_units[0] == gu_ming,
-		"m001 actual F5 press selects fixed Gu Ming scene 1994 despite missing slots",
+			and main.selected_units[0] == gu_ming
+			and _trace_contains_call_site(
+				main,
+				0x0005D6D6,
+			),
+		(
+			"m001 actual F5 press selects fixed Gu Ming scene 1994 despite "
+			+ "missing slots and consumes his original selection variant"
+		),
 	)
 
 	main.switch_level(2, false, false)
 	_disable_autonomous_world(main)
+	main.legacy_crt_random_trace_enabled = true
+	main.legacy_crt_random_trace.clear()
 	var lao_zhao: Node2D
 	var distant_guard: Node2D
 	for unit_value: Variant in main.units:
@@ -177,6 +188,14 @@ func _run() -> void:
 			) == 1,
 		"m002 real F2 and digit 5 input select Lao Zhao and his pistol",
 	)
+	_expect(
+		lao_zhao != null
+			and _trace_contains_call_site(
+				main,
+				0x0005D64F,
+			),
+		"m002 actual F2 selection consumes Lao Zhao's original voice variant",
+	)
 	if lao_zhao != null and distant_guard != null:
 		main.level_camera.position = distant_guard.position
 		main.clamp_level_camera()
@@ -191,8 +210,14 @@ func _run() -> void:
 		await process_frame
 		_expect(
 			lao_zhao.get("combat_target") == distant_guard
-				and bool(lao_zhao.get("combat_target_forced")),
-			"Ctrl-modified viewport click reaches the original forced-target command path",
+				and bool(lao_zhao.get("combat_target_forced"))
+				and int(
+					lao_zhao.get("original_pending_acknowledgement_count")
+				) == 1,
+			(
+				"Ctrl-modified viewport click reaches the original forced-target "
+				+ "command path and queues one acknowledgement"
+			),
 		)
 
 	_finish(main)
@@ -218,6 +243,19 @@ func _push_key(keycode: Key, pressed: bool) -> void:
 	event.keycode = keycode
 	event.pressed = pressed
 	root.push_input(event)
+
+
+func _trace_contains_call_site(
+	main: Node,
+	call_site_rva: int,
+) -> bool:
+	for draw_value: Variant in main.legacy_crt_random_trace:
+		if not draw_value is Dictionary:
+			continue
+		var draw := draw_value as Dictionary
+		if int(draw.get("call_site_rva", 0)) == call_site_rva:
+			return true
+	return false
 
 
 func _expect(condition: bool, description: String) -> void:

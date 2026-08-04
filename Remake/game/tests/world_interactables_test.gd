@@ -346,6 +346,11 @@ func _test_original_click_pickup_order_without_assets(
 		"world pickup click submits an automatic approach order",
 		failures,
 	)
+	_expect(
+		collector.original_pending_acknowledgement_count == 1,
+		"accepted pickup click queues one actor-slot acknowledgement",
+		failures,
+	)
 	for _frame_index: int in range(180):
 		if not is_instance_valid(pickup) or bool(pickup.get("consumed")):
 			break
@@ -353,8 +358,12 @@ func _test_original_click_pickup_order_without_assets(
 	_expect(
 		collector.ammo_item_count(43) == 3
 		and main.original_pickup_order_target == null
-		and main.field_pickups.is_empty(),
-		"automatic approach reaches, transfers one mine, and clears the one-shot order",
+		and main.field_pickups.is_empty()
+		and collector.original_acknowledgement_serial == 1,
+		(
+			"automatic approach consumes one acknowledgement, reaches, transfers "
+			+ "one mine, and clears the one-shot order"
+		),
 		failures,
 	)
 	arena.queue_free()

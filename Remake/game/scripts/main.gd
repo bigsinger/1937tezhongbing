@@ -4076,6 +4076,10 @@ func _handle_original_key_action(action: String, key_event: InputEventKey) -> bo
 		var original_slot_unit := _unit_for_original_character_slot(index)
 		if original_slot_unit != null and original_slot_unit.is_alive:
 			select_only(original_slot_unit)
+			_play_original_actor_audio(
+				LEGACY_ACTOR_AUDIO_RULES.FAMILY_SELECTED,
+				original_slot_unit,
+			)
 			update_status("已选择%s" % original_slot_unit.display_name)
 		return true
 	match action:
@@ -4225,6 +4229,7 @@ func _try_bury_at(world_point: Vector2) -> bool:
 	burial_worker.clear_combat_target()
 	if not is_original_burial_range(burial_worker.position, corpse.position):
 		_issue_burial_approach_path()
+	burial_worker.queue_original_acknowledgement()
 	update_status("已下达掩埋命令，队员将先接近目标")
 	return true
 
@@ -4793,6 +4798,7 @@ func _try_issue_legacy_world_object_deployment(world_position: Vector2) -> bool:
 		legacy_deployment_targets.append(target)
 		target.tree_exited.connect(_on_legacy_deployment_target_exited.bind(target))
 		if unit.issue_attack(target, true):
+			unit.queue_original_acknowledgement()
 			update_status(
 				"%s前往部署%s → (%d, %d)"
 				% [unit.display_name, str(WEAPON_NAMES.get(attack_type, "特殊物品")), resolved_position.x, resolved_position.y]
@@ -5047,6 +5053,7 @@ func issue_attack_order(target: Node2D, force_target: bool = false) -> void:
 			target,
 			force_target or disguised_player_attack,
 		):
+			unit.queue_original_acknowledgement()
 			issued += 1
 	var target_name := (
 		str(target.display_name)
@@ -6132,6 +6139,7 @@ func drop_selected_item_at(world_position: Vector2) -> bool:
 	if not restore_original_drop_order(actor, item_id, world_position):
 		update_status("没有通往放置位置的可行路线")
 		return false
+	actor.queue_original_acknowledgement()
 	var item_name: String = (
 		ORIGINAL_INITIAL_ITEM_INVENTORY.item_display_name(item_id)
 	)
@@ -9245,6 +9253,7 @@ func issue_original_pickup_order(pickup: Node2D) -> bool:
 	collector.clear_combat_target()
 	original_pickup_order_target = pickup
 	original_pickup_order_collector = collector
+	collector.queue_original_acknowledgement()
 	if bool(pickup.call("can_collect", collector)):
 		return _complete_original_pickup_order()
 	var path := PackedVector2Array()

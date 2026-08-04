@@ -219,8 +219,14 @@ func _test_burial_tick_limit_cache_and_inventory_copy(
 	game.units.append(worker)
 	game.enemies.append(corpse)
 	game.selected_units.append(worker)
-	game.burial_worker = worker
-	game.burial_target = corpse
+	_expect(
+		bool(game.call("_try_bury_at", corpse.position))
+		and game.burial_worker == worker
+		and game.burial_target == corpse
+		and int(worker.get("original_pending_acknowledgement_count")) == 1,
+		"an accepted B command queues one deferred worker acknowledgement",
+		failures,
+	)
 	for unused_tick: int in range(100):
 		game.call("_advance_burial_command_world_tick")
 	_expect(

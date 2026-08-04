@@ -1,0 +1,170 @@
+{
+  "schema_version": 1,
+  "catalog_id": "original-crt-random-command-evidence-v1",
+  "content_profile": "repository-mod-12-level-20260729",
+  "capture_date": "2026-08-04",
+  "input_isolation": "target-window messages and process-local DirectInput only; no global cursor APIs",
+  "scope": "Short load-one-level, submit-one-command, capture-and-exit probes. These records are not playthroughs and do not claim mission completion.",
+  "call_site_families": {
+    "selected": {
+      "2": "0x0005D64F",
+      "8": "0x0005D67C",
+      "9": "0x0005D6A9",
+      "10": "0x0005D6D6",
+      "91": "0x0005D6D6"
+    },
+    "acknowledge": {
+      "1": "0x0005D7CF",
+      "2": "0x0005D7F8",
+      "8": "0x0005D821",
+      "10": "0x0005D855",
+      "91": "0x0005D855"
+    }
+  },
+  "scenarios": [
+    {
+      "scenario_id": "m000-pistol-attack-inventory-v1",
+      "level_id": "m000",
+      "action": "pistol_attack",
+      "telemetry_sha256": "557B880F6C50657308AC7A47C382FAEA20A11870C760D5F2FF2833968C520B7F",
+      "result_sha256": "EBBAF7400D55596701570871F9C189ABFEDDD2499044CD99D9C3D380C72D28F2",
+      "records": [
+        {
+          "phase": "attack_attempt_1",
+          "sequence": 47687,
+          "tick_ms": 506379750,
+          "call_site_rva": "0x0005D7CF",
+          "family": "acknowledge",
+          "runtime_index": 18,
+          "scene_index": 1436,
+          "runtime_type": 1,
+          "faction_id": 3,
+          "value": 144
+        },
+        {
+          "phase": "attack_attempt_2",
+          "sequence": 62613,
+          "tick_ms": 506384015,
+          "call_site_rva": "0x0005D7CF",
+          "family": "acknowledge",
+          "runtime_index": 18,
+          "scene_index": 1436,
+          "runtime_type": 1,
+          "faction_id": 3,
+          "value": 28495
+        }
+      ]
+    },
+    {
+      "scenario_id": "m001-mine-pickup-inventory-v1",
+      "level_id": "m001",
+      "action": "world_item_pickup",
+      "telemetry_sha256": "034C11F3847110A94F78D1F8A972E350BC8E0DB7E5A9F6FC6D5981DE93688092",
+      "result_sha256": "45967E111DFA3D75B338D66C844D863CADD45D81222D3635D669E59048901FF0",
+      "records": [
+        {
+          "phase": "select_collector",
+          "sequence": 52959,
+          "tick_ms": 506698546,
+          "call_site_rva": "0x0005D64F",
+          "family": "selected",
+          "runtime_index": 38,
+          "scene_index": 2280,
+          "runtime_type": 2,
+          "faction_id": 3,
+          "value": 29675
+        },
+        {
+          "phase": "pickup_attempt_1",
+          "sequence": 59199,
+          "tick_ms": 506699968,
+          "call_site_rva": "0x0005D7F8",
+          "family": "acknowledge",
+          "runtime_index": 38,
+          "scene_index": 2280,
+          "runtime_type": 2,
+          "faction_id": 3,
+          "value": 845
+        },
+        {
+          "phase": "pickup_attempt_2",
+          "sequence": 81065,
+          "tick_ms": 506704765,
+          "call_site_rva": "0x0005D7F8",
+          "family": "acknowledge",
+          "runtime_index": 38,
+          "scene_index": 2280,
+          "runtime_type": 2,
+          "faction_id": 3,
+          "value": 24094
+        }
+      ]
+    },
+    {
+      "scenario_id": "m010-burial-command-v1",
+      "level_id": "m010",
+      "action": "prepare_corpse_then_bury",
+      "telemetry_sha256": "44E35EB9CB8B2D6892A906309931C8139BC2317EFECC0535DA2041F2C5AE8AB1",
+      "result_sha256": "5159E89BA2FB211EF660B4C30534FF1D82E11D3C97E7F202172E0699171FDCE0",
+      "records": [
+        {
+          "phase": "select_attack_setup_actor",
+          "sequence": 27735,
+          "tick_ms": 506815546,
+          "call_site_rva": "0x0005D67C",
+          "family": "selected",
+          "runtime_index": 101,
+          "scene_index": 1591,
+          "runtime_type": 8,
+          "faction_id": 3,
+          "value": 4719
+        },
+        {
+          "phase": "attack_setup",
+          "sequence": 34639,
+          "tick_ms": 506817062,
+          "call_site_rva": "0x0005D821",
+          "family": "acknowledge",
+          "runtime_index": 101,
+          "scene_index": 1591,
+          "runtime_type": 8,
+          "faction_id": 3,
+          "value": 1019
+        },
+        {
+          "phase": "select_burial_worker",
+          "sequence": 42438,
+          "tick_ms": 506818781,
+          "call_site_rva": "0x0005D64F",
+          "family": "selected",
+          "runtime_index": 100,
+          "scene_index": 1590,
+          "runtime_type": 2,
+          "faction_id": 3,
+          "value": 467
+        },
+        {
+          "phase": "bury",
+          "sequence": 49345,
+          "tick_ms": 506820265,
+          "call_site_rva": "0x0005D7F8",
+          "family": "acknowledge",
+          "runtime_index": 100,
+          "scene_index": 1590,
+          "runtime_type": 2,
+          "faction_id": 3,
+          "value": 14447
+        }
+      ]
+    },
+    {
+      "scenario_id": "m010-sight-direct-target-v1",
+      "level_id": "m010",
+      "action": "sight_direct_target",
+      "telemetry_sha256": "EE90A21E3004E92C34BE97612F853F24E81FA631D2A15E04FAB6F4B10BCA4C76",
+      "result_sha256": "2007A5F72241E379C4C7C72573D790173C052E6A42AA3C3E98A8036142A3A1D2",
+      "expected_zero_random_command_sites": true,
+      "records": []
+    }
+  ]
+}

@@ -164,8 +164,12 @@ func _test_m001_gu_ming_disguise(main: Node) -> void:
 	_expect(
 		living_enemy != null
 		and gu_ming.get("combat_target") == living_enemy
-		and bool(gu_ming.get("combat_target_forced")),
-		"disguised faction-1 Gu Ming can still receive a normal player attack order",
+		and bool(gu_ming.get("combat_target_forced"))
+		and int(gu_ming.get("original_pending_acknowledgement_count")) == 1,
+		(
+			"disguised faction-1 Gu Ming receives a normal player attack "
+			+ "order and one deferred acknowledgement"
+		),
 	)
 	gu_ming.call("clear_combat_target")
 	living_enemy.position = gu_ming.position - Vector2(16.0, 0.0)
@@ -350,6 +354,10 @@ func _test_drop_enemy_pickup_and_death_loot(main: Node) -> void:
 	_expect(
 		bool(main.call("drop_selected_item_at", carrier.position)),
 		"selected actor accepts exact backpack-item placement order",
+	)
+	_expect(
+		int(source.get("original_pending_acknowledgement_count")) == 1,
+		"accepted backpack placement queues one actor-slot acknowledgement",
 	)
 	_expect(
 		(main.mission_pickups as Array).size() == before_pickup_count,

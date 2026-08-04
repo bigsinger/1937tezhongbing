@@ -39,6 +39,7 @@ if ($LASTEXITCODE -ne 0) {
 & (Join-Path $PSScriptRoot 'Test-CrtRandomRuntimeTimingBaseline.ps1')
 & (Join-Path $PSScriptRoot 'Test-CrtRandomRecurringTimingBaseline.ps1')
 & (Join-Path $PSScriptRoot 'Test-CrtRandomInputBranchTimingBaseline.ps1')
+& (Join-Path $PSScriptRoot 'Test-CrtRandomCommandEvidence.ps1')
 & (Join-Path $PSScriptRoot 'Test-CrtRandomLocalSearchTimingBaseline.ps1')
 & (Join-Path $PSScriptRoot 'Test-CrtRandomActorEventTimingBaseline.ps1')
 & (Join-Path $PSScriptRoot 'Test-CrtRandomRuntimeStateBaseline.ps1')
