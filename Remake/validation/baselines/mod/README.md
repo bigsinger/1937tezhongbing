@@ -120,7 +120,7 @@ patrol phases. Canonical ordered inventory contents, modes, active attack type,
 the required quantity transition, and target HP in scenarios that require a
 committed hit are strict.
 
-Run `Remake/tools/Capture-InventoryParity.ps1` to recapture all eighteen MOD traces,
+Run `Remake/tools/Capture-InventoryParity.ps1` to recapture all twenty-two MOD traces,
 replay every scenario in Remake and produce JSON/Markdown comparisons. Pass
 `-ScenarioId ID` to isolate one scenario while developing. The runner copies
 the MOD to an isolated `E:\1937` runtime, sends input only to the target
@@ -135,6 +135,15 @@ that `B` followed by the corpse click assigns the original goal kind 4 without
 creating type 78 immediately. `Compare-ContextualCommandParity.ps1` treats
 identity, life state, selection/goal transitions and runtime-object lifecycle
 as strict; patrol phase and elapsed time remain diagnostic.
+
+`m010-burial-completion-v1.json` continues the same command through its real
+strict `counter > 100` boundary. To keep unrelated opening combat from killing
+the worker, the opt-in replay fixture prepares scene 1126 through the original
+`sub_458700` damage entry and relocates only that already-dead corpse beside
+Lao Zhao inside the isolated process. The normal game never enables either
+fixture command. The five checkpoints prove no premature cache, removal of the
+source corpse, creation of exactly one type-78 cache and the original worker's
+retained `GoalKind=4`; Remake matches the stable MOD with zero strict mismatch.
 
 `m010-briefing-left-click-dismissal-v1.json` is captured separately by
 `Capture-BriefingInputParity.ps1`. With the original game held on its in-window

@@ -64,6 +64,10 @@ volatile LONG g_replay_disguise_transition_pending = 0;
 volatile LONG g_replay_weapon_selection_pending = 0;
 volatile LONG g_replay_special_attention_commit_pending = 0;
 volatile LONG g_replay_fatal_damage_scene_pending = 0;
+volatile LONG g_replay_actor_relocation_scene = 0;
+volatile LONG g_replay_actor_relocation_x = 0;
+volatile LONG g_replay_actor_relocation_y = 0;
+volatile LONG g_replay_actor_relocation_pending = 0;
 WNDPROC g_original_replay_window_proc = nullptr;
 HWND g_replay_subclass_window = nullptr;
 volatile LONG g_extension_briefing_pending = 0;
@@ -96,6 +100,8 @@ enum WindowReplayCommand : WPARAM {
     replay_select_weapon_inventory_item = 14,
     replay_commit_special_attention = 15,
     replay_apply_fatal_damage = 16,
+    replay_stage_actor_relocation = 17,
+    replay_commit_actor_relocation = 18,
 };
 
 struct DiagnosticEntry {
@@ -4102,6 +4108,8 @@ void HandleWindowReplayMessage(const MSG &message) {
             &g_replay_special_attention_commit_pending, 0);
         InterlockedExchange(
             &g_replay_fatal_damage_scene_pending, 0);
+        InterlockedExchange(&g_replay_actor_relocation_scene, 0);
+        InterlockedExchange(&g_replay_actor_relocation_pending, 0);
         break;
     case replay_ai_alert: {
         m1937::sdk::RuntimeActorV1 **actors = nullptr;
@@ -4344,6 +4352,42 @@ void HandleWindowReplayMessage(const MSG &message) {
             supported ? static_cast<LONG>(argument) : 0);
         RecordDiagnostic(
             "replay_fatal_damage",
+            supported ? "queued" : "rejected",
+            "isolated_probe_only");
+        break;
+    }
+    case replay_stage_actor_relocation: {
+        // A two-message transaction keeps the authored scene identity and
+        // packed world point explicit. It is accepted only by the opt-in
+        // isolated replay channel and committed at the next safe input poll.
+        const bool supported = argument > 0 && argument <= 0xFFFF;
+        InterlockedExchange(
+            &g_replay_actor_relocation_scene,
+            supported ? static_cast<LONG>(argument) : 0);
+        RecordDiagnostic(
+            "replay_actor_relocation",
+            supported ? "staged" : "rejected",
+            "isolated_probe_only");
+        break;
+    }
+    case replay_commit_actor_relocation: {
+        const int world_x =
+            static_cast<unsigned short>(LOWORD(message.lParam));
+        const int world_y =
+            static_cast<unsigned short>(HIWORD(message.lParam));
+        const int target_scene = static_cast<int>(
+            InterlockedCompareExchange(
+                &g_replay_actor_relocation_scene, 0, 0));
+        const bool supported = target_scene > 0;
+        if (supported) {
+            InterlockedExchange(&g_replay_actor_relocation_x, world_x);
+            InterlockedExchange(&g_replay_actor_relocation_y, world_y);
+        }
+        InterlockedExchange(
+            &g_replay_actor_relocation_pending,
+            supported ? target_scene : 0);
+        RecordDiagnostic(
+            "replay_actor_relocation",
             supported ? "queued" : "rejected",
             "isolated_probe_only");
         break;
@@ -4701,7 +4745,7 @@ void ProcessPendingReplayFatalDamage() {
 
     bool applied = false;
     if (target &&
-        target->faction_id == 3 &&
+        (target->faction_id == 1 || target->faction_id == 3) &&
         target->dead_or_disabled == 0 &&
         target->current_hit_points > 0) {
         using ApplyActorDamageFn =
@@ -4711,7 +4755,10 @@ void ProcessPendingReplayFatalDamage() {
                 g_executable_base +
                 m1937::sdk::rva::apply_actor_damage);
         // Damage 32 is the original unconditional threshold and therefore
-        // also covers the special actor-type immunity branch.
+        // also covers the special actor-type immunity branch.  Faction 1 is
+        // accepted only by this opt-in isolated replay path so an S/B probe
+        // can prepare a real corpse without raising an unrelated gunshot
+        // alert; normal gameplay never enables the replay channel.
         apply_actor_damage(target, 32);
         applied =
             target->current_hit_points == 0 ||
@@ -4721,6 +4768,69 @@ void ProcessPendingReplayFatalDamage() {
         "replay_fatal_damage",
         applied ? "applied" : "unavailable",
         "original_sub_458700_at_safe_input_poll_boundary");
+}
+
+void ProcessPendingReplayActorRelocation() {
+    const int target_scene = static_cast<int>(
+        InterlockedExchange(&g_replay_actor_relocation_pending, 0));
+    if (target_scene == 0 || !g_executable_base) {
+        return;
+    }
+    const int world_x = static_cast<int>(
+        InterlockedCompareExchange(&g_replay_actor_relocation_x, 0, 0));
+    const int world_y = static_cast<int>(
+        InterlockedCompareExchange(&g_replay_actor_relocation_y, 0, 0));
+
+    m1937::sdk::RuntimeActorV1 *target = nullptr;
+    m1937::sdk::RuntimeActorV1 **actors = nullptr;
+    int actor_count = 0;
+    if (RuntimeActors(&actors, &actor_count)) {
+        for (int index = 0; index < actor_count; ++index) {
+            auto *candidate = actors[index];
+            if (candidate &&
+                IsReadableRange(candidate, sizeof(*candidate)) &&
+                candidate->world_scene_index == target_scene) {
+                target = candidate;
+                break;
+            }
+        }
+    }
+
+    bool relocated = false;
+    auto **controller_slot =
+        reinterpret_cast<m1937::sdk::RuntimeViewportControllerV1 **>(
+            g_executable_base + m1937::sdk::rva::viewport_controller);
+    auto *controller =
+        IsReadableRange(controller_slot, sizeof(*controller_slot))
+            ? *controller_slot
+            : nullptr;
+    if (target && controller &&
+        IsReadableRange(controller, sizeof(*controller)) &&
+        target->faction_id == 1 &&
+        target->dead_or_disabled != 0 &&
+        world_x >= 0 && world_y >= 0 &&
+        world_x < controller->world_width &&
+        world_y < controller->world_height) {
+        // This fixture-only relocation keeps the corpse's real runtime type,
+        // inventory, state machine and hit box. Moving it beside the worker
+        // removes unrelated enemy-fire timing from the burial lifecycle
+        // probe; it is never active in a normal game process.
+        target->world_x = world_x;
+        target->world_y = world_y;
+        target->previous_world_x = world_x;
+        target->previous_world_y = world_y;
+        target->navigation_cell_x = world_x / 32;
+        target->navigation_cell_y = world_y / 16;
+        target->goal_x = world_x;
+        target->goal_y = world_y;
+        target->resolved_goal_x = world_x;
+        target->resolved_goal_y = world_y;
+        relocated = true;
+    }
+    RecordDiagnostic(
+        "replay_actor_relocation",
+        relocated ? "relocated" : "unavailable",
+        "dead_faction1_fixture_only");
 }
 
 LRESULT CALLBACK ReplayWindowProcedure(
@@ -4824,6 +4934,7 @@ void PumpWindowMessages() {
     ProcessPendingReplayInventoryMutations();
     ProcessPendingReplayWorldItem();
     ProcessPendingReplayFatalDamage();
+    ProcessPendingReplayActorRelocation();
     InterlockedExchangeAdd(
         &g_telemetry.pump_messages, dispatched);
     AddTiming(

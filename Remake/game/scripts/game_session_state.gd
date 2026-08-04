@@ -161,6 +161,11 @@ static func _capture_actor(actor: Node2D, group_name: String) -> Dictionary:
 		"y": actor.position.y,
 		"faction_id": int(actor.get("faction_id")),
 		"runtime_actor_type": int(actor.get("runtime_actor_type")),
+		"original_command_goal_kind_latch": int(
+			actor.get("original_command_goal_kind_latch")
+			if _has_property(actor, "original_command_goal_kind_latch")
+			else 0
+		),
 		"original_pursuit_actor_scene_index": int(
 			actor.get("original_pursuit_target_scene_index")
 		),
@@ -690,6 +695,11 @@ static func _restore_actor(game: Node, actor: Node2D, record: Dictionary, group_
 		"runtime_actor_type",
 		int(record.get("runtime_actor_type", actor.get("runtime_actor_type"))),
 	)
+	if _has_property(actor, "original_command_goal_kind_latch"):
+		actor.set(
+			"original_command_goal_kind_latch",
+			int(record.get("original_command_goal_kind_latch", 0)),
+		)
 	var saved_pursuit_scene_index := int(
 		record.get(
 			"original_pursuit_actor_scene_index",
@@ -1652,6 +1662,8 @@ static func _restore_pending_burial_command(
 	var action_started := bool(record.get("action_started", false))
 	game.set("burial_target", target)
 	game.set("burial_worker", worker)
+	if _has_property(worker, "original_command_goal_kind_latch"):
+		worker.set("original_command_goal_kind_latch", 4)
 	if _has_property(game, "burial_progress_ticks"):
 		game.set("burial_progress_ticks", progress_ticks)
 	if _has_property(game, "burial_action_started"):

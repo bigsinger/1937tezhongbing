@@ -243,6 +243,7 @@ func _test_burial_tick_limit_cache_and_inventory_copy(
 		not corpse.visible
 		and game.buried_enemy_scene_indices.has(212)
 		and game.legacy_burial_caches.size() == 1
+		and worker.original_command_goal_kind_latch == 4
 		and burial_sites == [
 			0x00050967,
 			0x00050980,
@@ -279,6 +280,12 @@ func _test_burial_tick_limit_cache_and_inventory_copy(
 		"the selected squad member can recover both copied containers from actor 78",
 		failures,
 	)
+	worker.issue_move(Vector2(96.0, 32.0))
+	_expect(
+		worker.original_command_goal_kind_latch == 0,
+		"the next movement command overwrites the original retained B goal kind",
+		failures,
+	)
 	game.free()
 
 
@@ -301,6 +308,7 @@ func _test_sb_save_contract(failures: Array[String]) -> void:
 	game.burial_target = corpse
 	game.burial_progress_ticks = 37
 	game.burial_action_started = true
+	worker.original_command_goal_kind_latch = 4
 	game.call("_place_or_move_sight_beacon", Vector2(120.0, 0.0))
 	game.call(
 		"_spawn_legacy_burial_cache",
@@ -317,6 +325,7 @@ func _test_sb_save_contract(failures: Array[String]) -> void:
 	)
 	var session: Dictionary = GAME_SESSION_STATE.capture(game)
 	var world := session["world"] as Dictionary
+	var squad_record := (session["squad"] as Array)[0] as Dictionary
 	var pending := world["pending_burial_command"] as Dictionary
 	_expect(
 		int(pending.get("worker_scene_index", -1)) == 31
@@ -324,6 +333,11 @@ func _test_sb_save_contract(failures: Array[String]) -> void:
 		and int(pending.get("progress_ticks", -1)) == 37
 		and bool(pending.get("action_started", false)),
 		"save data preserves the in-progress original B command counters and identities",
+		failures,
+	)
+	_expect(
+		int(squad_record.get("original_command_goal_kind_latch", 0)) == 4,
+		"save data preserves the original B command-kind latch",
 		failures,
 	)
 	_expect(
@@ -358,6 +372,7 @@ func _test_sb_save_contract(failures: Array[String]) -> void:
 		and restored_game.burial_target == restored_corpse
 		and restored_game.burial_progress_ticks == 37
 		and restored_game.burial_action_started
+		and restored_worker.original_command_goal_kind_latch == 4
 		and restored_game.sight_beacon == null,
 		"load rebuilds actor 78 and resumes B exactly while leaving actor 90 absent",
 		failures,

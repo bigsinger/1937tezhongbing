@@ -1043,11 +1043,17 @@ func _update_behavior(delta: float) -> void:
 
 
 func _update_patrol(delta: float) -> void:
-	minimum_actor_separation = PATROL_FORMATION_MIN_SEPARATION
 	if not stable_mod_patrol_timeline.is_empty():
+		# The process-captured trajectory already contains the original group's
+		# spacing. Applying a second minimum-distance constraint can push a guard
+		# onto the wrong side of a narrow gate (m002 scene 870) and turn a proven
+		# combat route into a long wall search. Reserve modern formation spacing
+		# for authored patrols that have no stronger runtime trajectory evidence.
+		minimum_actor_separation = -1.0
 		use_soft_dynamic_occupancy = true
 		_update_stable_mod_patrol_timeline(delta)
 		return
+	minimum_actor_separation = PATROL_FORMATION_MIN_SEPARATION
 	use_soft_dynamic_occupancy = false
 	use_recorded_patrol_relocation = false
 	use_recorded_patrol_final_relocation = false
@@ -1410,7 +1416,11 @@ func _enter_patrol() -> void:
 	stable_mod_patrol_transition_delay_ticks = 0
 	move_speed = STABLE_MOD_BASE_PATROL_SPEED
 	use_soft_dynamic_occupancy = not stable_mod_patrol_timeline.is_empty()
-	minimum_actor_separation = PATROL_FORMATION_MIN_SEPARATION
+	minimum_actor_separation = (
+		-1.0
+		if not stable_mod_patrol_timeline.is_empty()
+		else PATROL_FORMATION_MIN_SEPARATION
+	)
 	use_recorded_patrol_relocation = false
 	use_recorded_patrol_final_relocation = false
 	cancel_path()

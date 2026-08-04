@@ -42,6 +42,8 @@ internal static class ModRegressionProbe
     private const int ReplaySelectWeaponInventoryItem = 14;
     private const int ReplayCommitSpecialAttention = 15;
     private const int ReplayApplyFatalDamage = 16;
+    private const int ReplayStageActorRelocation = 17;
+    private const int ReplayCommitActorRelocation = 18;
     private const uint WmActivate = 0x0006;
     private const uint WmSetFocus = 0x0007;
     private const uint WmActivateApp = 0x001C;
@@ -82,6 +84,7 @@ internal static class ModRegressionProbe
     private const int ActorSpriteWidthOffset = 0x05C;
     private const int ActorSpriteHeightOffset = 0x060;
     private const int ActorRuntimeTypeOffset = 0x064;
+    private const int ActorWorldSceneIndexOffset = 0x040;
     private const int ActorFactionOffset = 0x074;
     private const int ActorWorldXOffset = 0x0D8;
     private const int ActorWorldYOffset = 0x0E0;
@@ -294,6 +297,7 @@ internal static class ModRegressionProbe
     private sealed class ActorSnapshot
     {
         public int SceneIndex;
+        public int WorldSceneIndex;
         public long Address;
         public int RuntimeType;
         public int Faction;
@@ -4914,6 +4918,8 @@ internal static class ModRegressionProbe
         return new ActorSnapshot
         {
             Address = actor,
+            WorldSceneIndex = ReadInt(
+                process, actor + ActorWorldSceneIndexOffset),
             RuntimeType = ReadInt(
                 process, actor + ActorRuntimeTypeOffset),
             Faction = ReadInt(process, actor + ActorFactionOffset),
@@ -5082,6 +5088,8 @@ internal static class ModRegressionProbe
         return actors.FirstOrDefault(
             delegate(ActorSnapshot actor)
             {
+                if (actor.WorldSceneIndex == sceneIndex)
+                    return true;
                 RuntimeActorIdentity identity;
                 return actorIdentities.TryGetValue(
                            actor.SceneIndex, out identity) &&
@@ -5114,20 +5122,31 @@ internal static class ModRegressionProbe
         int count = ReadInt(process, world + 0x3C);
         if (actorArrayValue == 0 ||
             actorArrayValue == int.MinValue ||
-            identity.RuntimeIndex < 0 ||
-            identity.RuntimeIndex >= count)
+            count <= 0 ||
+            count > 4096)
             return null;
-        int actorValue = ReadInt(
-            process,
-            (long)(uint)actorArrayValue +
-            identity.RuntimeIndex * 4L);
-        if (actorValue == 0 || actorValue == int.MinValue)
-            return null;
-        ActorSnapshot actor = ReadActor(
-            process, (long)(uint)actorValue);
-        if (actor != null)
-            actor.SceneIndex = identity.RuntimeIndex;
-        return actor;
+        long actorArray = (long)(uint)actorArrayValue;
+        for (int runtimeIndex = 0;
+             runtimeIndex < count;
+             ++runtimeIndex)
+        {
+            int actorValue = ReadInt(
+                process,
+                actorArray + runtimeIndex * 4L);
+            if (actorValue == 0 || actorValue == int.MinValue)
+                continue;
+            long actorAddress = (long)(uint)actorValue;
+            if (ReadInt(
+                    process,
+                    actorAddress + ActorWorldSceneIndexOffset) !=
+                sceneIndex)
+                continue;
+            ActorSnapshot actor = ReadActor(process, actorAddress);
+            if (actor != null)
+                actor.SceneIndex = runtimeIndex;
+            return actor;
+        }
+        return null;
     }
 
     private static ActorSnapshot ReadPlayerActorSlot(
@@ -6170,6 +6189,10 @@ internal static class ModRegressionProbe
             String.Equals(
                 scenarioId,
                 "m010-burial-command-v1",
+                StringComparison.Ordinal) ||
+            String.Equals(
+                scenarioId,
+                "m010-burial-completion-v1",
                 StringComparison.Ordinal);
         if (!supported)
         {
@@ -6218,6 +6241,7 @@ internal static class ModRegressionProbe
             checkpoints,
             runClock,
             actorIdentities,
+            scenarioId,
             out evidence);
     }
 
@@ -6341,39 +6365,128 @@ internal static class ModRegressionProbe
         List<ParityCheckpoint> checkpoints,
         Stopwatch runClock,
         Dictionary<int, RuntimeActorIdentity> actorIdentities,
+        string scenarioId,
         out string evidence)
     {
+        bool requireCompletion = String.Equals(
+            scenarioId,
+            "m010-burial-completion-v1",
+            StringComparison.Ordinal);
         const int attackerSceneIndex = 1591;
         const int workerSceneIndex = 1590;
         const int targetSceneIndex = 1126;
-        var attackSetup = new WeaponAttackParityScenario
-        {
-            Id = "m010-burial-dagger-setup-v1",
-            Description =
-                "Use Daniu scene 1591 and the original dagger to create " +
-                "the nearby faction-1 corpse at scene 1126.",
-            StageName = "original_burial_dagger_setup",
-            SelectorLevel = 11,
-            PlayerSceneIndex = attackerSceneIndex,
-            PlayerSelectionDik = DikF6,
-            WeaponSelectionDik = DikDigit1,
-            AttackType = 4,
-            ItemId = 39,
-            ExpectedBeforeQuantity = 1,
-            ExpectedAfterQuantity = 1,
-            TargetSceneIndex = targetSceneIndex,
-            RequiresTargetDamage = true
-        };
         string attackEvidence;
-        bool targetKilled = ExerciseWeaponAttackParity(
-            process,
-            imageBase,
-            window,
-            checkpoints,
-            runClock,
-            actorIdentities,
-            attackSetup,
-            out attackEvidence);
+        bool targetKilled;
+        if (requireCompletion)
+        {
+            ActorSnapshot setupTarget = ReadResolvedActor(
+                process,
+                imageBase,
+                actorIdentities,
+                targetSceneIndex);
+            CaptureParityCheckpoint(
+                checkpoints,
+                process,
+                imageBase,
+                runClock,
+                "before_attack");
+            bool fatalDamageQueued =
+                setupTarget != null &&
+                setupTarget.Faction == 1 &&
+                setupTarget.Dead == 0 &&
+                setupTarget.CurrentHitPoints > 0 &&
+                SendReplay(
+                    window,
+                    ReplayApplyFatalDamage,
+                    targetSceneIndex);
+            targetKilled = fatalDamageQueued && WaitUntil(
+                delegate()
+                {
+                    setupTarget = ReadResolvedActor(
+                        process,
+                        imageBase,
+                        actorIdentities,
+                        targetSceneIndex);
+                    return setupTarget != null &&
+                        setupTarget.Dead != 0 &&
+                        setupTarget.CurrentHitPoints == 0;
+                },
+                TimeSpan.FromSeconds(3));
+            const int relocatedTargetX = 144;
+            const int relocatedTargetY = 64;
+            bool relocationStaged = targetKilled && SendReplay(
+                window,
+                ReplayStageActorRelocation,
+                targetSceneIndex);
+            int packedRelocation =
+                (relocatedTargetY << 16) | relocatedTargetX;
+            bool relocationQueued = relocationStaged && SendReplay(
+                window,
+                ReplayCommitActorRelocation,
+                packedRelocation);
+            bool relocationObserved = relocationQueued && WaitUntil(
+                delegate()
+                {
+                    setupTarget = ReadResolvedActor(
+                        process,
+                        imageBase,
+                        actorIdentities,
+                        targetSceneIndex);
+                    return setupTarget != null &&
+                        setupTarget.WorldX == relocatedTargetX &&
+                        setupTarget.WorldY == relocatedTargetY;
+                },
+                TimeSpan.FromSeconds(3));
+            targetKilled = targetKilled && relocationObserved;
+            CaptureParityCheckpoint(
+                checkpoints,
+                process,
+                imageBase,
+                runClock,
+                "after_attack");
+            attackEvidence =
+                "setup=original-sub_458700-fatal-damage" +
+                "; target_scene=" + targetSceneIndex +
+                "; target_faction=1" +
+                "; replay_isolation=process-local" +
+                "; queued=" + fatalDamageQueued +
+                "; killed=" + targetKilled +
+                "; relocation_staged=" + relocationStaged +
+                "; relocation_queued=" + relocationQueued +
+                "; relocation_observed=" + relocationObserved +
+                "; relocated_world=(" + relocatedTargetX + "," +
+                relocatedTargetY + ")";
+        }
+        else
+        {
+            var attackSetup = new WeaponAttackParityScenario
+            {
+                Id = "m010-burial-dagger-setup-v1",
+                Description =
+                    "Use Daniu scene 1591 and the original dagger to create " +
+                    "the nearby faction-1 corpse at scene 1126.",
+                StageName = "original_burial_dagger_setup",
+                SelectorLevel = 11,
+                PlayerSceneIndex = attackerSceneIndex,
+                PlayerSelectionDik = DikF6,
+                WeaponSelectionDik = DikDigit1,
+                AttackType = 4,
+                ItemId = 39,
+                ExpectedBeforeQuantity = 1,
+                ExpectedAfterQuantity = 1,
+                TargetSceneIndex = targetSceneIndex,
+                RequiresTargetDamage = true
+            };
+            targetKilled = ExerciseWeaponAttackParity(
+                process,
+                imageBase,
+                window,
+                checkpoints,
+                runClock,
+                actorIdentities,
+                attackSetup,
+                out attackEvidence);
+        }
         ActorSnapshot worker = ReadResolvedActor(
             process,
             imageBase,
@@ -6455,8 +6568,45 @@ internal static class ModRegressionProbe
             imageBase,
             actorIdentities,
             workerSceneIndex);
+        bool completionObserved = false;
+        bool corpseRetired = false;
+        int cacheCountAfterCommand =
+            CountWorldActorsOfRuntimeType(process, imageBase, 78);
+        if (requireCompletion && commandAccepted)
+        {
+            completionObserved = WaitUntil(
+                delegate()
+                {
+                    return CountWorldActorsOfRuntimeType(
+                        process,
+                        imageBase,
+                        78) == cacheCountBefore + 1 &&
+                        ReadResolvedActor(
+                            process,
+                            imageBase,
+                            actorIdentities,
+                            targetSceneIndex) == null;
+                },
+                TimeSpan.FromSeconds(40));
+            corpseRetired = ReadResolvedActor(
+                process,
+                imageBase,
+                actorIdentities,
+                targetSceneIndex) == null;
+            CaptureParityCheckpoint(
+                checkpoints,
+                process,
+                imageBase,
+                runClock,
+                "burial_completed");
+            worker = ReadResolvedActor(
+                process,
+                imageBase,
+                actorIdentities,
+                workerSceneIndex);
+        }
         evidence =
-            "scenario=m010-burial-command-v1" +
+            "scenario=" + scenarioId +
             "; input_isolation=process-local-DirectInput" +
             "; attack={" + attackEvidence + "}" +
             "; worker_scene=" + workerSceneIndex +
@@ -6472,19 +6622,30 @@ internal static class ModRegressionProbe
             "; worker_goal_kind=" +
             (worker == null ? -1 : worker.GoalKind) +
             "; immediate_type_78_count=" + cacheCountBefore + "->" +
+            cacheCountAfterCommand +
+            "; completion_required=" + requireCompletion +
+            "; completion_observed=" + completionObserved +
+            "; corpse_retired=" + corpseRetired +
+            "; final_type_78_count=" +
             CountWorldActorsOfRuntimeType(process, imageBase, 78) +
             "; final_action_id=" + ReadInt(
                 process,
                 imageBase + EngineAddresses.CurrentActionId);
-        return targetKilled &&
+        bool commandResult = targetKilled &&
             workerSelected &&
             keySent &&
             armed &&
             clickSent &&
             commandAccepted &&
-            CountWorldActorsOfRuntimeType(
-                process, imageBase, 78) == cacheCountBefore &&
+            cacheCountAfterCommand == cacheCountBefore &&
             worker != null;
+        if (!requireCompletion)
+            return commandResult;
+        return commandResult &&
+            completionObserved &&
+            corpseRetired &&
+            CountWorldActorsOfRuntimeType(
+                process, imageBase, 78) == cacheCountBefore + 1;
     }
 
     private static bool ExerciseWeaponAttackParity(
@@ -9708,6 +9869,28 @@ internal static class ModRegressionProbe
         return matches;
     }
 
+    private static bool TryResolveActorIdentity(
+        ActorSnapshot actor,
+        Dictionary<int, RuntimeActorIdentity> actorIdentities,
+        out RuntimeActorIdentity identity)
+    {
+        identity = null;
+        if (actor == null || actorIdentities == null)
+            return false;
+        if (actor.WorldSceneIndex > 0)
+        {
+            identity = actorIdentities.Values.FirstOrDefault(
+                delegate(RuntimeActorIdentity candidate)
+                {
+                    return candidate.SceneIndex == actor.WorldSceneIndex;
+                });
+            return identity != null;
+        }
+        return actorIdentities.TryGetValue(
+            actor.SceneIndex,
+            out identity);
+    }
+
     private static void AttachObservedPositions(
         List<ParityCheckpoint> checkpoints,
         IEnumerable<Point> positions)
@@ -10137,6 +10320,19 @@ internal static class ModRegressionProbe
                 "and click the corpse through process-local DirectInput; verify " +
                 "one-shot consumption and command kind 4 without instant completion.";
         }
+        else if (String.Equals(
+                     scenarioId,
+                     "m010-burial-completion-v1",
+                     StringComparison.Ordinal))
+        {
+            scenarioDescription =
+                "Prepare scene 1126 through the original sub_458700 damage " +
+                "entry and relocate only that dead test fixture beside Lao " +
+                "Zhao inside the opt-in replay process; release B and click " +
+                "the corpse through process-local DirectInput, then wait for " +
+                "the real strict counter to retire it and create exactly one " +
+                "runtime type-78 burial cache.";
+        }
         else if (resolvedActorScope)
         {
             scenarioDescription =
@@ -10204,13 +10400,21 @@ internal static class ModRegressionProbe
                 outputActors = checkpoint.Actors.Where(
                     delegate(ActorSnapshot actor)
                     {
-                        return actorIdentities.ContainsKey(
-                            actor.SceneIndex);
+                        RuntimeActorIdentity identity;
+                        return TryResolveActorIdentity(
+                            actor,
+                            actorIdentities,
+                            out identity);
                     }).OrderBy(
                     delegate(ActorSnapshot actor)
                     {
-                        return actorIdentities[
-                            actor.SceneIndex].SceneIndex;
+                        RuntimeActorIdentity identity;
+                        return TryResolveActorIdentity(
+                            actor,
+                            actorIdentities,
+                            out identity)
+                                ? identity.SceneIndex
+                                : int.MaxValue;
                     }).ToList();
             }
             else if (resolvedEnemyScope)
@@ -10219,14 +10423,21 @@ internal static class ModRegressionProbe
                     delegate(ActorSnapshot actor)
                     {
                         RuntimeActorIdentity identity;
-                        return actorIdentities.TryGetValue(
-                                   actor.SceneIndex, out identity) &&
+                        return TryResolveActorIdentity(
+                                   actor,
+                                   actorIdentities,
+                                   out identity) &&
                                identity.VwfFactionId == 1;
                     }).OrderBy(
                     delegate(ActorSnapshot actor)
                     {
-                        return actorIdentities[
-                            actor.SceneIndex].SceneIndex;
+                        RuntimeActorIdentity identity;
+                        return TryResolveActorIdentity(
+                            actor,
+                            actorIdentities,
+                            out identity)
+                                ? identity.SceneIndex
+                                : int.MaxValue;
                     }).ToList();
             }
             else
@@ -10278,8 +10489,10 @@ internal static class ModRegressionProbe
                 ActorSnapshot actor =
                     outputActors[actorIndex];
                 RuntimeActorIdentity identity;
-                bool hasIdentity = actorIdentities.TryGetValue(
-                    actor.SceneIndex, out identity);
+                bool hasIdentity = TryResolveActorIdentity(
+                    actor,
+                    actorIdentities,
+                    out identity);
                 int traceSceneIndex = hasIdentity
                     ? identity.SceneIndex
                     : selectorLevel == 1 && actor.Faction == 3

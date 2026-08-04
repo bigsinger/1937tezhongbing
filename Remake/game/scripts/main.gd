@@ -4229,6 +4229,7 @@ func _try_bury_at(world_point: Vector2) -> bool:
 	burial_worker.clear_combat_target()
 	if not is_original_burial_range(burial_worker.position, corpse.position):
 		_issue_burial_approach_path()
+	burial_worker.original_command_goal_kind_latch = 4
 	burial_worker.queue_original_acknowledgement()
 	update_status("已下达掩埋命令，队员将先接近目标")
 	return true
@@ -4265,7 +4266,7 @@ func _finish_burial() -> void:
 	burial_target.process_mode = Node.PROCESS_MODE_DISABLED
 	_refresh_enemy_corpse_candidates()
 	update_status("掩埋完成：已生成原版藏尸处，尸体物品保留其中")
-	_cancel_burial_command()
+	_cancel_burial_command(true)
 
 
 func _advance_burial_command_world_tick() -> void:
@@ -4354,11 +4355,14 @@ func _issue_burial_approach_path() -> void:
 		update_status("无法到达该尸体附近")
 		return
 	burial_worker.issue_path(path)
+	burial_worker.original_command_goal_kind_latch = 4
 
 
-func _cancel_burial_command() -> void:
+func _cancel_burial_command(preserve_completed_goal: bool = false) -> void:
 	if burial_worker != null and is_instance_valid(burial_worker):
 		burial_worker.set_action_progress(-1.0)
+		if not preserve_completed_goal:
+			burial_worker.original_command_goal_kind_latch = 0
 	if burial_target != null and is_instance_valid(burial_target):
 		burial_target.set_action_progress(-1.0)
 	burial_target = null

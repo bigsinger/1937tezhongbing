@@ -172,8 +172,29 @@ func _test_patrol_formation_separation() -> void:
 		not occupancy.try_relocate_from_runtime_evidence(
 			3, Vector2(24.0, 24.0), 28.0
 		),
-		"captured patrol relocation also preserves group spacing",
+		"runtime relocation can enforce explicit modern patrol spacing",
 	)
+	var evidenced_enemy = ENEMY_UNIT.new()
+	evidenced_enemy.stable_mod_patrol_timeline.assign([
+		{"elapsed_seconds": 0.0, "position": Vector2.ZERO},
+		{"elapsed_seconds": 1.0, "position": Vector2(32.0, 16.0)},
+	])
+	evidenced_enemy.call("_update_patrol", 0.0)
+	_expect(
+		float(evidenced_enemy.minimum_actor_separation) < 0.0,
+		"process-captured patrols do not receive a second spacing displacement",
+	)
+	var authored_enemy = ENEMY_UNIT.new()
+	authored_enemy.call("_update_patrol", 0.0)
+	_expect(
+		is_equal_approx(
+			float(authored_enemy.minimum_actor_separation),
+			28.0,
+		),
+		"authored patrols without runtime evidence keep modern formation spacing",
+	)
+	evidenced_enemy.free()
+	authored_enemy.free()
 
 
 func _test_patrol_speed_round_trip() -> void:

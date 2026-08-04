@@ -575,6 +575,38 @@ if ((-not $SkipRealAssetChecks) -and
                 "$($inventoryScenario.id) with exit code $LASTEXITCODE.")
         }
     }
+    foreach ($contextualScenarioId in @(
+        'm010-sight-direct-target-v1',
+        'm010-burial-command-v1',
+        'm010-burial-completion-v1'
+    )) {
+        & $GodotExecutable --headless --path $game `
+            --max-fps 60 --disable-vsync `
+            --script 'res://tests/parity_runtime_probe.gd' -- `
+            "--output-dir=$parityProbeOutput" `
+            '--level-id=m010' `
+            "--scenario-id=$contextualScenarioId"
+        if ($LASTEXITCODE -ne 0) {
+            throw (
+                'Godot contextual-command parity probe failed for ' +
+                "$contextualScenarioId with exit code $LASTEXITCODE.")
+        }
+        & (Join-Path $PSScriptRoot 'Compare-ContextualCommandParity.ps1') `
+            -ReferenceTrace (
+                Join-Path $remakeRoot (
+                    'validation\baselines\mod\' +
+                    $contextualScenarioId +
+                    '.json')) `
+            -CandidateTrace (
+                Join-Path $parityProbeOutput (
+                    'remake-' + $contextualScenarioId + '.json')) `
+            -OutputJson (
+                Join-Path $parityProbeOutput (
+                    $contextualScenarioId + '-comparison.json')) `
+            -OutputMarkdown (
+                Join-Path $parityProbeOutput (
+                    $contextualScenarioId + '-comparison.md')) | Out-Null
+    }
     foreach ($parityScenarioId in @(
         'm000-basic-movement-v1',
         'm000-obstacle-route-v1'

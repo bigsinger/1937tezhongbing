@@ -137,6 +137,7 @@ const HUMAN_INPUT_NATURAL_FAILURE_ROUTES := {
 }
 const SIGHT_DIRECT_TARGET_SCENARIO_ID := "m010-sight-direct-target-v1"
 const BURIAL_COMMAND_SCENARIO_ID := "m010-burial-command-v1"
+const BURIAL_COMPLETION_SCENARIO_ID := "m010-burial-completion-v1"
 const BACKPACK_DROP_SCENARIO_ID := "m010-cigarette-drop-inventory-v1"
 const M010_CONTEXT_TARGET_SCENE_INDEX := 1126
 const M010_LAO_ZHAO_SCENE_INDEX := 1590
@@ -513,8 +514,16 @@ func _run_probe() -> void:
 	if scenario_id == SIGHT_DIRECT_TARGET_SCENARIO_ID:
 		await _run_sight_direct_target_probe(main, trace, started)
 		return
-	if scenario_id == BURIAL_COMMAND_SCENARIO_ID:
-		await _run_burial_command_probe(main, trace, started)
+	if scenario_id in [
+		BURIAL_COMMAND_SCENARIO_ID,
+		BURIAL_COMPLETION_SCENARIO_ID,
+	]:
+		await _run_burial_command_probe(
+			main,
+			trace,
+			started,
+			scenario_id == BURIAL_COMPLETION_SCENARIO_ID,
+		)
 		return
 	if scenario_id == _enemy_patrol_scenario_id(level_id):
 		await _run_enemy_patrol_probe(
@@ -918,6 +927,7 @@ func _run_human_input_natural_failure_probe(
 	var viewport_input_events := 0
 	var input_sequence: Array[Dictionary] = []
 	var post_shot_world_used := Vector2.ZERO
+	var attacker_runtime_samples: Array[Dictionary] = []
 
 	if player != null:
 		# The stable-MOD capture checks five seconds of spawn safety before it
@@ -1170,6 +1180,57 @@ func _run_human_input_natural_failure_probe(
 					attacker_scene_indices.append(
 						int(enemy.get("scene_index"))
 					)
+				if (
+					_frame_index % 30 == 0
+					and (
+						enemy.get("current_target") == player
+						or attacker_scene_indices.has(
+							int(enemy.get("scene_index"))
+						)
+						or (
+							int(enemy.get("behavior_state")) != 0
+							and enemy.position.distance_to(player.position) < 1000.0
+						)
+					)
+				):
+					var path := enemy.get("movement_path") as PackedVector2Array
+					var live_target: Variant = enemy.get("current_target")
+					attacker_runtime_samples.append({
+						"frame": _frame_index,
+						"scene_index": int(enemy.get("scene_index")),
+						"position": [enemy.position.x, enemy.position.y],
+						"behavior_state": int(enemy.get("behavior_state")),
+						"target_scene_index": int(
+							live_target.get("scene_index")
+							if live_target is Node2D and is_instance_valid(live_target)
+							else -1
+						),
+						"can_attack": bool(enemy.call("_can_attack_current_target")),
+						"attack_count": int(enemy.get("attack_count")),
+						"attack_recheck_elapsed": float(
+							enemy.get("attack_recheck_elapsed")
+						),
+						"attack_recheck_seconds": float(
+							enemy.get("attack_recheck_seconds")
+						),
+						"combat_action": int(enemy.get("combat_action")),
+						"action_finished": bool(enemy.get("action_finished")),
+						"movement_path_remaining": maxi(
+							path.size() - int(enemy.get("movement_path_index")),
+							0,
+						),
+						"target_position": [
+							(enemy.get("target_position") as Vector2).x,
+							(enemy.get("target_position") as Vector2).y,
+						],
+						"last_known_target_position": [
+							(enemy.get("last_known_target_position") as Vector2).x,
+							(enemy.get("last_known_target_position") as Vector2).y,
+						],
+						"use_soft_dynamic_occupancy": bool(
+							enemy.get("use_soft_dynamic_occupancy")
+						),
+					})
 			if (
 				not bool(player.get("is_alive"))
 				or int(player.get("current_hit_points")) <= 0
@@ -1253,6 +1314,7 @@ func _run_human_input_natural_failure_probe(
 		"damage_taken_total": (
 			int(player.get("damage_taken_total")) if player != null else 0
 		),
+		"attacker_runtime_samples": attacker_runtime_samples,
 	}
 	trace_document["passed"] = failures.is_empty()
 	var trace_path := ""
@@ -1869,6 +1931,7 @@ func _run_burial_command_probe(
 	main: Node,
 	trace: RefCounted,
 	started: int,
+	require_completion: bool = false,
 ) -> void:
 	var attacker := _player_for_scene(main, M010_DANIU_SCENE_INDEX)
 	var worker := _player_for_scene(main, M010_LAO_ZHAO_SCENE_INDEX)
@@ -1877,20 +1940,32 @@ func _run_burial_command_probe(
 	_expect(worker != null, "m010 Lao Zhao scene 1590 exists")
 	_expect(target != null, "m010 burial target scene 1126 exists")
 	if attacker != null and worker != null and target != null:
-		main.call("select_only", attacker)
-		_expect(
-			bool(attacker.call("equip_attack_type", 4)),
-			"Daniu equips the original durable dagger",
-		)
 		trace.call("capture_main", "before_attack", main, _elapsed_ms(started))
-		# The dagger outcome already has its own stable-MOD differential. Keep
-		# that verified setup deterministic here so this scenario measures the
-		# contextual B release/corpse click rather than duplicating attack input.
-		main.call("issue_attack_order", target, false)
-		var target_killed := await _wait_for_target_hit_points(target, 0, 12.0)
-		_expect(target_killed, "the original dagger kills scene 1126")
-		attacker.call("clear_combat_target")
-		attacker.call("cancel_path")
+		var target_killed := false
+		if require_completion:
+			var applied := int(target.call("take_damage", 32, null))
+			target_killed = not bool(target.get("is_alive"))
+			target.position = Vector2(144.0, 64.0)
+			_expect(
+				applied == 8
+					and target_killed
+					and target.position == Vector2(144.0, 64.0),
+				"the isolated original damage threshold prepares and relocates scene 1126",
+			)
+		else:
+			main.call("select_only", attacker)
+			_expect(
+				bool(attacker.call("equip_attack_type", 4)),
+				"Daniu equips the original durable dagger",
+			)
+			# The dagger outcome already has its own stable-MOD differential. Keep
+			# that verified setup deterministic here so this scenario measures the
+			# contextual B release/corpse click rather than duplicating attack input.
+			main.call("issue_attack_order", target, false)
+			target_killed = await _wait_for_target_hit_points(target, 0, 12.0)
+			_expect(target_killed, "the original dagger kills scene 1126")
+			attacker.call("clear_combat_target")
+			attacker.call("cancel_path")
 		trace.call("capture_main", "after_attack", main, _elapsed_ms(started))
 
 		main.call("select_only", worker)
@@ -1912,7 +1987,69 @@ func _run_burial_command_probe(
 			(main.get("legacy_burial_caches") as Array).is_empty(),
 			"B command does not create type 78 before the strict >100 timer",
 		)
-	await _finish_contextual_probe(main, trace, BURIAL_COMMAND_SCENARIO_ID)
+		if require_completion:
+			var completed := await _wait_for_burial_completion(
+				main,
+				target,
+				40.0,
+			)
+			_expect(
+				completed,
+				"the accepted B command reaches the strict >100 completion",
+			)
+			_expect(
+				(main.get("legacy_burial_caches") as Array).size() == 1
+					and not target.visible
+					and (main.get("buried_enemy_scene_indices") as Dictionary).has(
+						M010_CONTEXT_TARGET_SCENE_INDEX
+					),
+				"B completion retires the corpse and creates one actor-78 cache",
+			)
+			trace.call(
+				"capture_main",
+				"burial_completed",
+				main,
+				_elapsed_ms(started),
+			)
+	await _finish_contextual_probe(
+		main,
+		trace,
+		BURIAL_COMPLETION_SCENARIO_ID
+		if require_completion
+		else BURIAL_COMMAND_SCENARIO_ID,
+	)
+
+
+func _wait_for_burial_completion(
+	main: Node,
+	target: Node2D,
+	deadline_seconds: float,
+) -> bool:
+	var ticks_per_second := maxi(
+		int(
+			ProjectSettings.get_setting(
+				"physics/common/physics_ticks_per_second",
+				60,
+			)
+		),
+		1,
+	)
+	var frame_count := maxi(
+		ceili(maxf(deadline_seconds, 0.0) * float(ticks_per_second)),
+		1,
+	)
+	for _frame_index: int in range(frame_count):
+		if (
+			(main.get("legacy_burial_caches") as Array).size() == 1
+			and is_instance_valid(target)
+			and not target.visible
+			and (main.get("buried_enemy_scene_indices") as Dictionary).has(
+				M010_CONTEXT_TARGET_SCENE_INDEX
+			)
+		):
+			return true
+		await physics_frame
+	return false
 
 
 func _finish_contextual_probe(
@@ -2384,7 +2521,17 @@ func _scenario_description(scenario_id: String, level_id: String) -> String:
 			"Release S and click living faction-1 scene 1126; verify one-shot "
 			+ "direct enemy selection without creating actor 90."
 		)
-	if scenario_id == BURIAL_COMMAND_SCENARIO_ID:
+	if scenario_id in [
+		BURIAL_COMMAND_SCENARIO_ID,
+		BURIAL_COMPLETION_SCENARIO_ID,
+	]:
+		if scenario_id == BURIAL_COMPLETION_SCENARIO_ID:
+			return (
+				"Prepare scene 1126 through the original damage threshold and "
+				+ "relocate only that dead test fixture beside Lao Zhao; release "
+				+ "B, click it, then wait for the strict counter to retire it and "
+				+ "create exactly one actor-78 burial cache."
+			)
 		return (
 			"Kill scene 1126 with Daniu's original dagger, release B "
 			+ "and click the corpse; verify one-shot command kind 4 without "

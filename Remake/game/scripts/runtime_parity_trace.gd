@@ -102,6 +102,11 @@ func write_to_file(path: String) -> Error:
 func _capture_main_actors(main: Node) -> Array[Dictionary]:
 	var records: Array[Dictionary] = []
 	var selected_units: Array = _read_property(main, "selected_units", []) as Array
+	var buried_scene_indices: Dictionary = _read_property(
+		main,
+		"buried_enemy_scene_indices",
+		{},
+	) as Dictionary
 	var sight_target: Variant = _read_property(
 		main,
 		"sight_observation_target",
@@ -117,6 +122,11 @@ func _capture_main_actors(main: Node) -> Array[Dictionary]:
 		var field: String = str(role_and_field[1])
 		for raw_actor: Variant in _read_property(main, field, []) as Array:
 			if raw_actor is Node2D:
+				var actor_scene_index := int(
+					_read_property(raw_actor, "scene_index", -1)
+				)
+				if role == "enemy" and buried_scene_indices.has(actor_scene_index):
+					continue
 				records.append(
 					_capture_actor(
 						raw_actor as Node2D,
@@ -173,6 +183,8 @@ func _capture_actor(
 		and is_instance_valid(burial_target)
 	)
 	if burial_pending:
+		goal_kind = 4
+	elif int(_read_property(actor, "original_command_goal_kind_latch", 0)) == 4:
 		goal_kind = 4
 	var record := {
 		"actor_id": "scene:%d" % scene_index,

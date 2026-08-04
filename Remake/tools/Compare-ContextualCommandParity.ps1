@@ -163,6 +163,20 @@ $scenarioDefinitions = @{
         selector_level = 11
         engine_mission = 11
     }
+    'm010-burial-completion-v1' = [ordered]@{
+        checkpoints = @(
+            'before_attack',
+            'after_attack',
+            'burial_mode_armed',
+            'burial_commanded',
+            'burial_completed'
+        )
+        target_scene = 1126
+        worker_scene = 1590
+        level_id = 'm010'
+        selector_level = 11
+        engine_mission = 11
+    }
 }
 if (-not $scenarioDefinitions.ContainsKey($scenarioId)) {
     throw "Unsupported contextual-command parity scenario: $scenarioId"
@@ -219,12 +233,31 @@ foreach ($checkpointId in @($definition.checkpoints)) {
             'stable MOD/Remake exact contextual state'
     }
 
-    $referenceTarget = Require-Actor `
-        $mismatches $referenceCheckpoint 'reference' `
-        $checkpointId ([int]$definition.target_scene)
-    $candidateTarget = Require-Actor `
-        $mismatches $candidateCheckpoint 'candidate' `
-        $checkpointId ([int]$definition.target_scene)
+    $completionCheckpoint = (
+        $scenarioId -eq 'm010-burial-completion-v1' -and
+        $checkpointId -eq 'burial_completed')
+    if ($completionCheckpoint) {
+        $referenceTarget = Actor-At `
+            $referenceCheckpoint ([int]$definition.target_scene)
+        $candidateTarget = Actor-At `
+            $candidateCheckpoint ([int]$definition.target_scene)
+        Compare-Exact $mismatches `
+            "reference.checkpoints.$checkpointId.target" `
+            'absent' $(if ($null -eq $referenceTarget) { 'absent' } else { 'present' }) `
+            'completed burial retires the original corpse'
+        Compare-Exact $mismatches `
+            "candidate.checkpoints.$checkpointId.target" `
+            'absent' $(if ($null -eq $candidateTarget) { 'absent' } else { 'present' }) `
+            'completed burial retires the original corpse'
+    }
+    else {
+        $referenceTarget = Require-Actor `
+            $mismatches $referenceCheckpoint 'reference' `
+            $checkpointId ([int]$definition.target_scene)
+        $candidateTarget = Require-Actor `
+            $mismatches $candidateCheckpoint 'candidate' `
+            $checkpointId ([int]$definition.target_scene)
+    }
     if ($null -ne $referenceTarget -and $null -ne $candidateTarget) {
         foreach ($field in @(
                 'actor_id',
@@ -347,7 +380,7 @@ else {
         Compare-Exact $mismatches `
             "$($traceCase.label).burial.target_after_hp" `
             0 $afterTarget.hit_points.current `
-            'original dagger outcome'
+            'original damage-path corpse outcome'
         Compare-Exact $mismatches `
             "$($traceCase.label).burial.armed_action" `
             0 (Tag-Value $armed 'current_action_id') `
@@ -368,6 +401,24 @@ else {
             "$($traceCase.label).burial.type78_immediate" `
             0 (Tag-Value $commanded 'runtime_type_78_count') `
             'command kind 4 does not complete before its strict timer'
+        if ($scenarioId -eq 'm010-burial-completion-v1') {
+            $completed = $traceCase.map['burial_completed']
+            $completedWorker = Actor-At $completed 1590
+            Compare-Exact $mismatches `
+                "$($traceCase.label).burial.type78_completed" `
+                1 (Tag-Value $completed 'runtime_type_78_count') `
+                'strict timer creates exactly one actor 78'
+            Compare-Exact $mismatches `
+                "$($traceCase.label).burial.target_retired" `
+                0 @((Actor-At $completed 1126)).Count `
+                'completed burial removes the corpse from the active world'
+            if ($null -ne $completedWorker) {
+                Compare-Exact $mismatches `
+                    "$($traceCase.label).burial.completed_goal_kind" `
+                    4 $completedWorker.native.goal_kind `
+                    'original worker retains command kind 4 after completion'
+            }
+        }
     }
 }
 
@@ -384,7 +435,9 @@ $result = [pscustomobject][ordered]@{
         'Actor position and elapsed time remain diagnostic because live patrol ' +
         'phase differs between isolated launches; target identity, contextual ' +
         'mode action state after S/B, selection/command state, HP, goal kind, ' +
-        'and absence of a premature actor 78 are strict. The transient weapon ' +
+        'absence of a premature actor 78, and (for the completion scenario) ' +
+        'corpse retirement plus the single replacement actor 78 are strict. ' +
+        'The transient weapon ' +
         'selection action before the burial setup is diagnostic.')
     mismatches = @($mismatches)
 }

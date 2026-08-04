@@ -250,6 +250,12 @@ $scenarios = @(
         level_id = 'm010'
         selector_level = 11
         parity_flag = '--parity-sb-only'
+    },
+    [pscustomobject]@{
+        id = 'm010-burial-completion-v1'
+        level_id = 'm010'
+        selector_level = 11
+        parity_flag = '--parity-sb-only'
     }
 )
 if ($ScenarioId.Count -gt 0) {
@@ -390,7 +396,8 @@ try {
         $comparisonToolName = 'Compare-InventoryParityTrace.ps1'
         if ($scenario.id -in @(
                 'm010-sight-direct-target-v1',
-                'm010-burial-command-v1')) {
+                'm010-burial-command-v1',
+                'm010-burial-completion-v1')) {
             $comparisonToolName = 'Compare-ContextualCommandParity.ps1'
         }
         $comparisonTool = Join-Path $PSScriptRoot $comparisonToolName
@@ -453,7 +460,9 @@ try {
         input_isolation = (
             'target-window messages and process-local DirectInput only; ' +
             'world-item scenarios use the opt-in original actor factory ' +
-            'inside the isolated process; no global cursor APIs')
+            'inside the isolated process; burial completion uses the original ' +
+            'damage entry plus a dead-fixture-only local relocation to remove ' +
+            'unrelated combat timing; no global cursor APIs')
         result_count = $results.Count
         passed = @($results | Where-Object { -not $_.passed }).Count -eq 0
         results = @($results)

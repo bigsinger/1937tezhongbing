@@ -206,6 +206,9 @@ var original_first_gameplay_update_serial := 0
 var original_first_gameplay_semantic_effects: Array[String] = []
 var original_first_gameplay_call_sites := PackedInt32Array()
 var original_first_gameplay_goal_kind := 0
+## The original actor field is not cleared when a successful B command
+## retires its corpse; the next movement/combat command overwrites it.
+var original_command_goal_kind_latch := 0
 var original_first_gameplay_command_variant := 0
 var original_first_gameplay_movement_path_state := 0
 var original_first_gameplay_movement_mode := 0
@@ -410,6 +413,7 @@ func configure(
 	original_first_gameplay_semantic_effects.clear()
 	original_first_gameplay_call_sites.clear()
 	original_first_gameplay_goal_kind = 0
+	original_command_goal_kind_latch = 0
 	original_first_gameplay_command_variant = 0
 	original_first_gameplay_movement_path_state = 0
 	original_first_gameplay_movement_mode = 0
@@ -3288,6 +3292,7 @@ func _consume_original_pending_acknowledgement() -> bool:
 
 
 func issue_path(path: PackedVector2Array) -> void:
+	original_command_goal_kind_latch = 0
 	movement_path = path.duplicate()
 	movement_path_index = 0
 	blocked_elapsed = 0.0
@@ -3391,6 +3396,7 @@ func _face_special_control_source() -> void:
 func issue_attack(target: Node2D, force_target: bool = false) -> bool:
 	if not is_alive or not _target_is_alive(target) or weapon_profile.is_empty():
 		return false
+	original_command_goal_kind_latch = 0
 	combat_target = target
 	combat_target_forced = force_target
 	auto_combat_enabled = true

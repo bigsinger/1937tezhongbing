@@ -224,6 +224,14 @@ func _run() -> void:
 
 
 func _disable_autonomous_world(main: Node) -> void:
+	# The frame-input contract is about key/mouse routing, not the independently
+	# ticking ambient-particle simulation.  That field can consume more than 500
+	# original CRT rand() draws per physics frame; on a loaded CI worker it could
+	# evict the just-recorded actor voice draw from the bounded diagnostic trace
+	# before the following assertion, making the test timing-dependent.
+	if main.legacy_ambient_particle_field != null:
+		main.legacy_ambient_particle_field.set_process(false)
+		main.legacy_ambient_particle_field.set_physics_process(false)
 	if main.mission_direction_runtime != null:
 		main.mission_direction_runtime.free()
 		main.mission_direction_runtime = null
