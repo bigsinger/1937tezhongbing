@@ -29,7 +29,9 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 & (Join-Path $PSScriptRoot 'Test-ModParityContract.ps1')
+& (Join-Path $PSScriptRoot 'Test-ContentManifest.ps1')
 & (Join-Path $PSScriptRoot 'Test-CampaignPerformanceBaseline.ps1')
+& (Join-Path $PSScriptRoot 'Test-StabilityBaseline.ps1')
 & (Join-Path $PSScriptRoot 'Test-OriginalInitialWeaponInventory.ps1')
 & (Join-Path $PSScriptRoot 'Test-OriginalInitialItemInventory.ps1')
 & (Join-Path $PSScriptRoot 'Test-OriginalWorldPickups.ps1')
@@ -112,9 +114,26 @@ if ($LASTEXITCODE -ne 0) {
     throw "Godot project initialization failed with exit code $LASTEXITCODE."
 }
 
+& $GodotExecutable --headless --path $game `
+    --script 'res://tests/display_accessibility_matrix_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot display/accessibility matrix failed with exit code $LASTEXITCODE."
+}
+
+$nonEntryPointScripts = @(
+    # This fixture inherits the game's Main scene so tests can instantiate it.
+    # Godot's --script loader only accepts SceneTree/MainLoop entry points,
+    # even with --check-only. It is compiled through the tests that preload it.
+    'res://tests/main_input_harness.gd'
+)
+
 Get-ChildItem -LiteralPath $game -Recurse -Filter '*.gd' | ForEach-Object {
     $relativePath = ($_.FullName.Substring($game.Length) -replace '^[\\/]+', '') -replace '\\', '/'
     $resourcePath = "res://$relativePath"
+    if ($nonEntryPointScripts -contains $resourcePath) {
+        Write-Host "Godot parse check: fixture covered by preload: $resourcePath"
+        return
+    }
     & $GodotExecutable --headless --path $game --script $resourcePath --check-only
     if ($LASTEXITCODE -ne 0) {
         throw "Godot parse check failed for $resourcePath with exit code $LASTEXITCODE."
@@ -134,6 +153,11 @@ if ($LASTEXITCODE -ne 0) {
 & $GodotExecutable --headless --path $game --script 'res://tests/world_engine_improvements_test.gd'
 if ($LASTEXITCODE -ne 0) {
     throw "Godot global world-engine improvement tests failed with exit code $LASTEXITCODE."
+}
+
+& $GodotExecutable --headless --path $game --script 'res://tests/modernization_systems_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot modernization system tests failed with exit code $LASTEXITCODE."
 }
 
 & $GodotExecutable --headless --path $game --script 'res://tests/original_hud_runtime_test.gd'
@@ -760,7 +784,7 @@ if ((-not $SkipRealAssetChecks) -and
             New-Item -ItemType Directory -Force -Path $viewportOutput | Out-Null
             & $GodotExecutable --windowed --path $game `
                 --resolution $productUiViewport `
-                --position '30000,30000' `
+                --position '100,100' `
                 --max-fps 60 `
                 --disable-vsync `
                 --log-file (Join-Path $viewportOutput 'godot.log') `
@@ -772,6 +796,8 @@ if ((-not $SkipRealAssetChecks) -and
                     "with exit code $LASTEXITCODE.")
             }
         }
+        & (Join-Path $PSScriptRoot 'Test-ProductScreenshots.ps1') `
+            -ScreenshotRoot $productUiProbeOutput
         if (Test-Path -LiteralPath $localOcrScript -PathType Leaf) {
             Get-ChildItem -LiteralPath $productUiProbeOutput -Filter '*.jpg' -File -Recurse |
                 ForEach-Object {

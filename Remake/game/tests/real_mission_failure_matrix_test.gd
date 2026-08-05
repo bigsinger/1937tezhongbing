@@ -200,7 +200,8 @@ func _validate_profile(main: Node, level_index: int, rule_mode: String) -> void:
 
 func _load_profile(main: Node, level_index: int, rule_mode: String) -> void:
 	main.runtime_settings["mission_rule_mode"] = rule_mode
-	main.runtime_settings["difficulty_mode"] = "original"
+	main.runtime_settings["ruleset_mode"] = "classic"
+	main.runtime_settings["difficulty_mode"] = "normal"
 	main.switch_level(level_index, false, false)
 	_prepare_level(main)
 	var expected_id := LEVEL_IDS[level_index]

@@ -15,13 +15,25 @@ param(
     [ValidateRange(600, 4320)]
     [int]$Height = 1080,
 
-    [string]$WindowPosition = '30000,30000',
+    # Keep the probe mostly outside the primary working area without using an
+    # extreme coordinate. Some Windows virtual-display drivers crash Godot
+    # while creating an OpenGL window at positions such as 30000,30000.
+    [string]$WindowPosition = '1880,0',
 
     [ValidateRange(1, 100)]
     [double]$MaximumP95Ms = 20,
 
     [ValidateRange(1, 100)]
     [double]$MaximumP99Ms = 25,
+
+    [ValidateRange(1, 100)]
+    [double]$MaximumUiActionMs = 25,
+
+    [ValidateRange(100, 60000)]
+    [double]$MaximumColdLevelLoadMs = 6000,
+
+    [ValidateRange(100, 60000)]
+    [double]$MaximumWarmLevelLoadMs = 3500,
 
     [ValidateRange(1, 1000000)]
     [int]$MinimumPerLevelP99Samples = 600,
@@ -36,7 +48,9 @@ param(
 
     [string]$ProfileId = 'twelve-level-windowed-10-minute-v1',
 
-    [string]$Levels = ''
+    [string]$Levels = '',
+
+    [switch]$ActorPhysicsProfile
 )
 
 $ErrorActionPreference = 'Stop'
@@ -53,6 +67,11 @@ $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 $reportPath = Join-Path $OutputDirectory 'campaign-performance.json'
 $logPath = Join-Path $OutputDirectory 'campaign-performance.log'
+foreach ($staleOutput in @($reportPath, $logPath)) {
+    if (Test-Path -LiteralPath $staleOutput -PathType Leaf) {
+        Remove-Item -LiteralPath $staleOutput -Force
+    }
+}
 
 $probeArguments = @(
     "--output=$reportPath"
@@ -60,6 +79,9 @@ $probeArguments = @(
     "--passes=$Passes"
     "--max-p95-ms=$MaximumP95Ms"
     "--max-p99-ms=$MaximumP99Ms"
+    "--max-ui-action-ms=$MaximumUiActionMs"
+    "--max-cold-level-load-ms=$MaximumColdLevelLoadMs"
+    "--max-warm-level-load-ms=$MaximumWarmLevelLoadMs"
     "--min-per-level-p99-samples=$MinimumPerLevelP99Samples"
     "--max-over-50-per-level=$MaximumOver50PerLevel"
     "--max-second-pass-growth-mib=$MaximumSecondPassGrowthMiB"
@@ -69,13 +91,15 @@ $probeArguments = @(
 if (-not [string]::IsNullOrWhiteSpace($Levels)) {
     $probeArguments += "--levels=$Levels"
 }
+if ($ActorPhysicsProfile) {
+    $probeArguments += '--profile-actor-physics'
+}
 
 & $GodotExecutable `
     --path $gameDirectory `
     --windowed `
     --resolution "$($Width)x$($Height)" `
     --position $WindowPosition `
-    --max-fps 60 `
     --disable-vsync `
     --log-file $logPath `
     --script 'res://tests/campaign_performance_probe.gd' `
@@ -89,6 +113,9 @@ $report = Get-Content -LiteralPath $reportPath -Raw -Encoding UTF8 |
     ConvertFrom-Json
 
 $rows = foreach ($level in @($report.levels)) {
+    $coldVisit = @($level.visits | Where-Object { [int]$_.pass_index -eq 0 } |
+        Select-Object -First 1)
+    $warmVisits = @($level.visits | Where-Object { [int]$_.pass_index -gt 0 })
     [pscustomobject]@{
         Level = [string]$level.level_id
         Samples = [int]$level.metrics.sample_count
@@ -98,6 +125,14 @@ $rows = foreach ($level in @($report.levels)) {
         Over50 = [int]$level.metrics.frames_over_50_ms
         MovedEnemies = [int]$level.moved_enemy_max
         InputEvents = [int]$level.viewport_input_events
+        ColdLoadMs = if ($coldVisit.Count -gt 0) {
+            [math]::Round([double]$coldVisit[0].load_ms, 1)
+        } else { 0.0 }
+        MaxWarmLoadMs = if ($warmVisits.Count -gt 0) {
+            [math]::Round(
+                [double](($warmVisits | Measure-Object -Property load_ms -Maximum).Maximum),
+                1)
+        } else { 0.0 }
     }
 }
 $rows | Format-Table -AutoSize
@@ -109,6 +144,8 @@ $rows | Format-Table -AutoSize
     P99Ms = [math]::Round([double]$report.aggregate_metrics.p99_ms, 3)
     InputEvents = [int]$report.viewport_input_events
     GlobalPointerControl = [bool]$report.global_pointer_control
+    FrameCap = [int]$report.runtime.frame_cap_during_measurement
+    FirstActionLatencyMs = ($report.first_action_latencies_ms | ConvertTo-Json -Compress)
     Report = $reportPath
 } | Format-List
 

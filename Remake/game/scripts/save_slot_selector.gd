@@ -82,10 +82,19 @@ func _rebuild_rows() -> void:
 					summaries_by_id[special_slot_id] as Dictionary,
 				)
 		var imported_slot_ids: Array[String] = []
+		var checkpoint_slot_ids: Array[String] = []
 		for raw_slot_id: Variant in summaries_by_id.keys():
 			var candidate := str(raw_slot_id)
 			if candidate.begins_with("legacy_"):
 				imported_slot_ids.append(candidate)
+			elif candidate.begins_with("checkpoint_"):
+				checkpoint_slot_ids.append(candidate)
+		checkpoint_slot_ids.sort()
+		for checkpoint_slot_id: String in checkpoint_slot_ids:
+			_add_slot_button(
+				checkpoint_slot_id,
+				summaries_by_id[checkpoint_slot_id] as Dictionary,
+			)
 		imported_slot_ids.sort()
 		for imported_slot_id: String in imported_slot_ids:
 			_add_slot_button(
@@ -146,6 +155,10 @@ static func _display_slot_name(slot_id: String) -> String:
 		return "快速存档"
 	if slot_id == "autosave":
 		return "自动存档"
+	if slot_id.begins_with("checkpoint_"):
+		return str(
+			TranslationServer.translate(StringName("UI_CHECKPOINT_SLOT_FORMAT"))
+		) % int(slot_id.trim_prefix("checkpoint_"))
 	if slot_id.begins_with("legacy_"):
 		return "原版导入 %s" % slot_id.trim_prefix("legacy_").to_upper()
 	if slot_id.begins_with("slot_"):

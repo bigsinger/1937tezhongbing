@@ -605,6 +605,7 @@ func _test_alert_propagation(failures: Array[String]) -> void:
 		"faction-1 death emits the recovered 256-radius coordinate pulse",
 		failures,
 	)
+	main.runtime_settings["ruleset_mode"] = "modern"
 	main.runtime_settings["difficulty_mode"] = "normal"
 	var editorial_dead_enemy = _make_alert_enemy(
 		"editorial dead source", Vector2(260.0, 0.0), clear_sight
@@ -1343,6 +1344,7 @@ func _test_mission_media_cues(failures: Array[String]) -> void:
 		"original difficulty suppresses explicitly editorial mission dialogue",
 		failures,
 	)
+	main.runtime_settings["ruleset_mode"] = "modern"
 	main.runtime_settings["difficulty_mode"] = "normal"
 	_expect(
 		main._play_mission_media_cue("on_start")

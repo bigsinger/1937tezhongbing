@@ -45,9 +45,16 @@ func _ready() -> void:
 
 
 func configure(new_model: Dictionary, new_mode: String = "items") -> void:
-	model = new_model.duplicate(true)
-	mode = new_mode if new_mode in ["weapons", "items"] else "items"
-	if is_node_ready():
+	var normalized_mode := (
+		new_mode if new_mode in ["weapons", "items"] else "items"
+	)
+	var normalized_model := new_model.duplicate(true)
+	var presentation_unchanged := (
+		mode == normalized_mode and model == normalized_model
+	)
+	model = normalized_model
+	mode = normalized_mode
+	if is_node_ready() and not presentation_unchanged:
 		_rebuild()
 
 
@@ -116,6 +123,7 @@ func _rebuild() -> void:
 	_slot_buttons.clear()
 	_slot_visuals.clear()
 	for child: Node in _groups.get_children():
+		_groups.remove_child(child)
 		child.queue_free()
 	var visible_slots: Array[Dictionary] = []
 	for raw_group: Variant in model.get("groups", []):

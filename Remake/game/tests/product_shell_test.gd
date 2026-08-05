@@ -158,7 +158,14 @@ func _run() -> void:
 	escape_release.keycode = KEY_ESCAPE
 	escape_release.pressed = false
 	shell._unhandled_input(escape_release)
-	expect(not paused and not shell._root.visible, "released Esc closes pause and restores gameplay", failures)
+	expect(
+		not paused
+			and shell._root.visible
+			and shell._root.mouse_filter == Control.MOUSE_FILTER_IGNORE
+			and not shell._dim.visible,
+		"released Esc leaves the prewarmed overlay tree inert and restores gameplay",
+		failures,
+	)
 	shell.show_pause_menu(false, "右键返回测试")
 	var right_release := InputEventMouseButton.new()
 	right_release.button_index = MOUSE_BUTTON_RIGHT

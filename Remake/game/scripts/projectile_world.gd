@@ -25,6 +25,7 @@ const LEGACY_COMBAT_RULES: Script = preload("res://scripts/legacy_combat_rules.g
 var combatants: Array[Node2D] = []
 var navigation_grid: Variant
 var dynamic_occupancy: Variant
+var spatial_index: Variant
 var visual_catalog: Dictionary = {}
 var dynamic_actor_factory_commit := Callable()
 var dynamic_actor_destructor_commit := Callable()
@@ -36,9 +37,11 @@ func configure_runtime(
 	new_visual_catalog: Dictionary = {},
 	new_dynamic_actor_factory_commit: Callable = Callable(),
 	new_dynamic_actor_destructor_commit: Callable = Callable(),
+	new_spatial_index: Variant = null,
 ) -> void:
 	navigation_grid = new_navigation_grid
 	dynamic_occupancy = new_dynamic_occupancy
+	spatial_index = new_spatial_index
 	visual_catalog = new_visual_catalog.duplicate()
 	dynamic_actor_factory_commit = new_dynamic_actor_factory_commit
 	dynamic_actor_destructor_commit = new_dynamic_actor_destructor_commit
@@ -106,6 +109,7 @@ func launch_for_weapon(
 		dynamic_actor_factory_commit,
 		dynamic_actor_destructor_commit,
 		consume_factory_random,
+		spatial_index,
 	):
 		projectile.queue_free()
 		return null

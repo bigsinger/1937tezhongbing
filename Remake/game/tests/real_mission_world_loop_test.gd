@@ -63,6 +63,10 @@ func _run() -> void:
 	main.set_process(false)
 	main.set_physics_process(false)
 	main.runtime_settings["controls"] = GAME_INPUT_BINDINGS.default_bindings()
+	main.runtime_settings["ruleset_mode"] = "classic"
+	main.runtime_settings["difficulty_mode"] = "normal"
+	main.runtime_settings["control_scheme"] = "classic"
+	main.runtime_settings["mission_rule_mode"] = "stable_mod"
 	disk_test_root = "user://real-mission-objective-disk-%d" % OS.get_process_id()
 	_cleanup_disk_test_root()
 	disk_store = GAME_SAVE_STORE.new(disk_test_root)

@@ -31,6 +31,15 @@ const DIRECTION_KEYS: Array[String] = [
 	"none", "north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"
 ]
 
+# Converted sprite manifests are immutable content for the lifetime of a game
+# process.  A single actor asks for several actions (stand, walk, attack,
+# death...), and every action lives in the same, often sizeable, sprite.json.
+# Keeping the parsed document avoids reopening and reparsing that file for each
+# action during a cold mission load.  Callers only read the cached dictionary.
+static var _manifest_document_cache: Dictionary = {}
+static var _manifest_document_read_count := 0
+static var _manifest_document_hit_count := 0
+
 
 static func legacy_group_index_for_direction(direction_index: int) -> int:
 	if direction_index < 1 or direction_index > DIRECTION_GROUP_COUNT:
@@ -60,17 +69,13 @@ static func sprite_manifest_path(preview_path: String) -> String:
 	)
 
 
-static func load_draw_order_profile(
-	preview_path: String,
-	group_index: int = 0,
-) -> Dictionary:
-	var manifest_path := sprite_manifest_path(preview_path)
-	if (
-		manifest_path.is_empty()
-		or group_index < 0
-		or not FileAccess.file_exists(manifest_path)
-	):
+static func load_manifest_document(manifest_path: String) -> Dictionary:
+	if manifest_path.is_empty() or not FileAccess.file_exists(manifest_path):
 		return {}
+	var cache_key := manifest_path.simplify_path().replace("\\", "/").to_lower()
+	if _manifest_document_cache.has(cache_key):
+		_manifest_document_hit_count += 1
+		return _manifest_document_cache[cache_key] as Dictionary
 	var file := FileAccess.open(manifest_path, FileAccess.READ)
 	if file == null:
 		return {}
@@ -84,6 +89,41 @@ static func load_draw_order_profile(
 	var raw_groups: Variant = manifest.get("groups")
 	if not raw_groups is Array:
 		return {}
+	_manifest_document_cache[cache_key] = manifest
+	_manifest_document_read_count += 1
+	return manifest
+
+
+static func clear_manifest_document_cache() -> void:
+	_manifest_document_cache.clear()
+	_manifest_document_read_count = 0
+	_manifest_document_hit_count = 0
+
+
+static func manifest_document_cache_stats() -> Dictionary:
+	return {
+		"documents": _manifest_document_cache.size(),
+		"disk_reads": _manifest_document_read_count,
+		"cache_hits": _manifest_document_hit_count,
+	}
+
+
+static func load_draw_order_profile(
+	preview_path: String,
+	group_index: int = 0,
+) -> Dictionary:
+	var manifest_path := sprite_manifest_path(preview_path)
+	if (
+		manifest_path.is_empty()
+		or group_index < 0
+		or not FileAccess.file_exists(manifest_path)
+	):
+		return {}
+	var manifest := load_manifest_document(manifest_path)
+	if manifest.is_empty():
+		return {}
+	var schema_version := int(manifest.get("schema_version", 0))
+	var raw_groups: Variant = manifest.get("groups")
 	for raw_group: Variant in raw_groups as Array:
 		if not raw_group is Dictionary:
 			return {}
@@ -135,19 +175,11 @@ static func load_action_groups(
 	var manifest_path := sprite_manifest_path(preview_path)
 	if manifest_path.is_empty() or not FileAccess.file_exists(manifest_path):
 		return []
-	var file := FileAccess.open(manifest_path, FileAccess.READ)
-	if file == null:
+	var manifest := load_manifest_document(manifest_path)
+	if manifest.is_empty():
 		return []
-	var json := JSON.new()
-	if json.parse(file.get_as_text()) != OK or not json.data is Dictionary:
-		return []
-	var manifest := json.data as Dictionary
 	var schema_version := int(manifest.get("schema_version", 0))
-	if schema_version < MIN_SCHEMA_VERSION or schema_version > MAX_SCHEMA_VERSION:
-		return []
 	var raw_groups: Variant = manifest.get("groups")
-	if not raw_groups is Array:
-		return []
 
 	var sprite_directory := manifest_path.get_base_dir().simplify_path()
 	var groups: Array[Dictionary] = []

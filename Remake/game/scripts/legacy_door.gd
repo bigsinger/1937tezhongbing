@@ -154,6 +154,21 @@ func contains_approach_point(parent_point: Vector2, margin: float = 36.0) -> boo
 	return source_rect.grow(maxf(margin, 0.0)).has_point(local)
 
 
+func approach_radius_from_origin(margin: float = 36.0) -> float:
+	if closed_texture == null:
+		return 0.0
+	var bounds := Rect2(-closed_anchor, closed_texture.get_size()).grow(
+		maxf(margin, 0.0)
+	)
+	return maxf(
+		maxf(bounds.position.length(), bounds.end.length()),
+		maxf(
+			Vector2(bounds.end.x, bounds.position.y).length(),
+			Vector2(bounds.position.x, bounds.end.y).length(),
+		),
+	)
+
+
 func snapshot() -> Dictionary:
 	return {
 		"scene_index": scene_index,

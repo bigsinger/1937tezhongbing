@@ -43,6 +43,12 @@ var crt_random_draws: Array[Dictionary] = []
 var original_crt_random_source: Node
 var configured := false
 var next_particle_audio_requester_id := 1
+var reduced_flash_mode := false
+
+
+func set_reduce_flashes(value: bool) -> void:
+	reduced_flash_mode = value
+	modulate = Color(0.82, 0.82, 0.82, 0.92) if value else Color.WHITE
 
 
 func configure(

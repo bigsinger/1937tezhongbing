@@ -402,6 +402,52 @@ func _init() -> void:
 		"sprite animation manifest rejects nonnumeric preview names",
 		failures
 	)
+	var manifest_cache_fixture_path := "user://sprite-manifest-cache-test.json"
+	var manifest_cache_fixture := FileAccess.open(
+		manifest_cache_fixture_path,
+		FileAccess.WRITE,
+	)
+	expect(
+		manifest_cache_fixture != null,
+		"sprite manifest cache fixture can be created",
+		failures,
+	)
+	if manifest_cache_fixture != null:
+		manifest_cache_fixture.store_string(
+			JSON.stringify({"schema_version": 4, "groups": []})
+		)
+		manifest_cache_fixture.close()
+		IMPORTED_SPRITE_ANIMATION.clear_manifest_document_cache()
+		var first_manifest: Dictionary = (
+			IMPORTED_SPRITE_ANIMATION.load_manifest_document(
+				manifest_cache_fixture_path
+			)
+		)
+		var second_manifest: Dictionary = (
+			IMPORTED_SPRITE_ANIMATION.load_manifest_document(
+				manifest_cache_fixture_path
+			)
+		)
+		var manifest_cache_stats: Dictionary = (
+			IMPORTED_SPRITE_ANIMATION.manifest_document_cache_stats()
+		)
+		expect(
+			first_manifest == second_manifest
+			and int(first_manifest.get("schema_version", 0)) == 4,
+			"sprite manifest cache returns the parsed immutable document",
+			failures,
+		)
+		expect(
+			int(manifest_cache_stats.get("documents", 0)) == 1
+			and int(manifest_cache_stats.get("disk_reads", 0)) == 1
+			and int(manifest_cache_stats.get("cache_hits", 0)) == 1,
+			"sprite manifest cache parses a repeated document only once",
+			failures,
+		)
+		IMPORTED_SPRITE_ANIMATION.clear_manifest_document_cache()
+		DirAccess.remove_absolute(
+			ProjectSettings.globalize_path(manifest_cache_fixture_path)
+		)
 	expect(
 		(
 			IMPORTED_SPRITE_ANIMATION
@@ -650,6 +696,23 @@ func _init() -> void:
 		"every densely sampled A* path segment stays outside Layer 3 obstacles",
 		failures,
 	)
+	navigation.native_runtime_paths_enabled = true
+	var modern_routed_path: PackedVector2Array = navigation.find_path(
+		navigation.cell_to_world(Vector2i(0, 1)),
+		navigation.cell_to_world(Vector2i(6, 1)),
+	)
+	expect(
+		not modern_routed_path.is_empty()
+			and navigation.world_to_cell(modern_routed_path[-1]) == Vector2i(6, 1)
+			and path_is_clear(
+				navigation,
+				navigation.cell_to_world(Vector2i(0, 1)),
+				modern_routed_path,
+			),
+		"modern native A* reaches the same legal destination without crossing Layer 3",
+		failures,
+	)
+	navigation.native_runtime_paths_enabled = false
 
 	var corner_layer := PackedInt64Array([0, 1, 1, 0])
 	var corner_navigation: NavigationGridData = NAVIGATION_GRID_DATA.create_for_tests(
@@ -1891,10 +1954,77 @@ func _init() -> void:
 		(
 			bulk_cache_was_deferred
 			and bool(bulk_grid.registration_finalized)
-			and not bulk_grid.footprint_blocked_origins.is_empty()
+			and not bulk_grid.footprint_blocked_origin_lookups.is_empty()
+			and bulk_grid.footprint_blocked_origins.is_empty()
 			and bulk_grid.staged_footprint_offsets_by_key.is_empty()
 		),
-		"bulk actor construction defers multi-cell whole-map clearance until one final precompute",
+		"bulk actor construction defers multi-cell whole-map clearance and keeps the final cache packed until an array consumer needs it",
+		failures,
+	)
+	var cached_navigation_a: NavigationGridData = NAVIGATION_GRID_DATA.create_for_tests(
+		5,
+		3,
+		Vector2i(32, 16),
+		PackedInt64Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+	)
+	var cached_grid_a: RefCounted = DYNAMIC_OCCUPANCY_GRID.new()
+	cached_grid_a.configure(cached_navigation_a, "test-packed-clearance")
+	cached_grid_a.register_scene(
+		91,
+		cached_navigation_a.cell_to_world(Vector2i(2, 1)),
+	)
+	cached_grid_a.update_scene_footprint(91, bulk_movement, bulk_sight)
+	cached_grid_a.finalize_registration()
+	var cached_navigation_b: NavigationGridData = NAVIGATION_GRID_DATA.create_for_tests(
+		5,
+		3,
+		Vector2i(32, 16),
+		PackedInt64Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+	)
+	var cached_grid_b: RefCounted = DYNAMIC_OCCUPANCY_GRID.new()
+	cached_grid_b.configure(cached_navigation_b, "test-packed-clearance")
+	cached_grid_b.register_scene(
+		91,
+		cached_navigation_b.cell_to_world(Vector2i(2, 1)),
+	)
+	cached_grid_b.update_scene_footprint(91, bulk_movement, bulk_sight)
+	cached_grid_b.finalize_registration()
+	var cached_profile_key := str(
+		cached_grid_b.footprint_blocked_origin_lookups.keys()[0]
+	)
+	var local_cached_lookup := (
+		cached_grid_b.footprint_blocked_origin_lookups[cached_profile_key]
+		as PackedByteArray
+	)
+	local_cached_lookup[0] = 1
+	cached_grid_b.footprint_blocked_origin_lookups[cached_profile_key] = (
+		local_cached_lookup
+	)
+	var cached_navigation_c: NavigationGridData = NAVIGATION_GRID_DATA.create_for_tests(
+		5,
+		3,
+		Vector2i(32, 16),
+		PackedInt64Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+	)
+	var cached_grid_c: RefCounted = DYNAMIC_OCCUPANCY_GRID.new()
+	cached_grid_c.configure(cached_navigation_c, "test-packed-clearance")
+	cached_grid_c.register_scene(
+		91,
+		cached_navigation_c.cell_to_world(Vector2i(2, 1)),
+	)
+	cached_grid_c.update_scene_footprint(91, bulk_movement, bulk_sight)
+	cached_grid_c.finalize_registration()
+	var restored_cached_lookup := (
+		cached_grid_c.footprint_blocked_origin_lookups[cached_profile_key]
+		as PackedByteArray
+	)
+	expect(
+		(
+			int(cached_grid_b.footprint_clearance_cache_hit_count) == 1
+			and int(cached_grid_c.footprint_clearance_cache_hit_count) == 1
+			and restored_cached_lookup[0] == 0
+		),
+		"packed footprint clearance is reused across reconstruction without sharing mutable door state",
 		failures,
 	)
 	mask_grid.finalize_registration()

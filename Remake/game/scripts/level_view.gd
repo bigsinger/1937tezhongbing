@@ -26,8 +26,14 @@ static func load_imported_terrain(level_id: String = DEFAULT_LEVEL_ID) -> Dictio
 		push_warning("无法加载已转换地形：%s（错误 %d）" % [absolute_path, error])
 		return {}
 
+	return terrain_from_image(image, absolute_path)
+
+
+static func terrain_from_image(image: Image, source_path: String = "") -> Dictionary:
+	if image == null or image.is_empty():
+		return {}
 	return {
-		"path": absolute_path,
+		"path": source_path,
 		"size": Vector2(image.get_width(), image.get_height()),
 		"texture": ImageTexture.create_from_image(image),
 	}
@@ -51,5 +57,10 @@ static func clamp_camera_center(
 
 
 static func stepped_zoom(current_zoom: float, zoom_in: bool) -> float:
-	var multiplier := 1.15 if zoom_in else 1.0 / 1.15
+	return zoom_with_step(current_zoom, zoom_in, 0.15)
+
+
+static func zoom_with_step(current_zoom: float, zoom_in: bool, step: float) -> float:
+	var safe_step := clampf(step, 0.05, 0.50)
+	var multiplier := 1.0 + safe_step if zoom_in else 1.0 / (1.0 + safe_step)
 	return clampf(current_zoom * multiplier, MIN_ZOOM, MAX_ZOOM)

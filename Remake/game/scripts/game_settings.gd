@@ -4,7 +4,7 @@ extends RefCounted
 const ATOMIC_JSON_STORE: Script = preload("res://scripts/atomic_json_store.gd")
 const GAME_INPUT_BINDINGS: Script = preload("res://scripts/game_input_bindings.gd")
 
-const SCHEMA_VERSION := 5
+const SCHEMA_VERSION := 7
 const DEFAULT_PATH := "user://settings.json"
 const DISPLAY_MODES: Array[String] = ["windowed", "fullscreen", "borderless"]
 const RESOLUTION_POLICIES: Array[String] = ["desktop", "custom"]
@@ -12,13 +12,25 @@ const AUDIO_CHANNELS: Array[String] = ["master", "music", "sfx", "voice"]
 const HINT_KEYS: Array[String] = ["controls", "objectives", "interactions"]
 const INTERFACE_KEYS: Array[String] = [
 	"subtitles",
+	"environment_captions",
 	"show_briefings",
 	"edge_scroll",
 	"reduce_camera_motion",
+	"reduce_flashes",
 	"large_cursor",
+	"high_contrast",
+	"colorblind_patterns",
+	"pause_on_focus_loss",
+	"educational_mode",
+	"reduced_violence",
+	"history_notes",
 ]
-const DIFFICULTY_MODES: Array[String] = ["original", "easy", "normal", "hard"]
+const RULESET_MODES: Array[String] = ["classic", "modern"]
+const DIFFICULTY_MODES: Array[String] = ["story", "normal", "hard", "custom"]
+const LEGACY_DIFFICULTY_MODES: Array[String] = ["original", "easy"]
+const CONTROL_SCHEMES: Array[String] = ["classic", "modern"]
 const MISSION_RULE_MODES: Array[String] = ["stable_mod", "repaired"]
+const LOCALES: Array[String] = ["system", "zh_CN", "en"]
 
 var values: Dictionary = default_document()
 var last_result: Dictionary = {}
@@ -27,6 +39,7 @@ var last_result: Dictionary = {}
 static func default_document() -> Dictionary:
 	return {
 		"schema_version": SCHEMA_VERSION,
+		"localization": {"locale": "system"},
 		"audio": {
 			"master": 1.0,
 			"music": 0.80,
@@ -42,6 +55,8 @@ static func default_document() -> Dictionary:
 			"window_width": 1280,
 			"window_height": 720,
 			"vsync": true,
+			"max_fps": 60,
+			"monitor_index": -1,
 		},
 		"hints": {
 			"controls": true,
@@ -50,15 +65,39 @@ static func default_document() -> Dictionary:
 		},
 		"interface": {
 			"subtitles": true,
+			"environment_captions": true,
 			"show_briefings": true,
 			"edge_scroll": true,
 			"reduce_camera_motion": false,
+			"reduce_flashes": false,
 			"large_cursor": false,
+			"high_contrast": false,
+			"colorblind_patterns": true,
+			"pause_on_focus_loss": true,
+			"educational_mode": true,
+			"reduced_violence": false,
+			"history_notes": true,
+			"ui_scale": 1.0,
+			"text_scale": 1.0,
+			"edge_scroll_speed": 720.0,
+			"edge_scroll_margin": 32.0,
+			"zoom_step": 0.25,
 		},
 		"gameplay": {
-			# "original" is the auditable MOD/reference contract.  The other
-			# modes are explicitly optional Remake balancing profiles.
-			"difficulty_mode": "original",
+			# Rules and difficulty are independent. Classic preserves the audited
+			# simulation contract; modern enables phased perception and modern
+			# balancing while keeping the same maps and mission data.
+			"ruleset_mode": "classic",
+			"difficulty_mode": "normal",
+			"control_scheme": "classic",
+			"custom_difficulty": {
+				"enemy_accuracy": 0.70,
+				"reaction_multiplier": 1.0,
+				"perception_multiplier": 1.0,
+				"search_multiplier": 1.0,
+				"alert_multiplier": 1.0,
+				"reinforcement_multiplier": 1.0,
+			},
 			# Task control-flow is independent from combat difficulty. The
 			# shipped default reproduces what the stable MOD actually evaluates;
 			# repaired restores briefing/editorial intent for the explicit
@@ -120,6 +159,20 @@ func set_muted(muted: bool) -> void:
 	(values["audio"] as Dictionary)["muted"] = muted
 
 
+func set_locale(locale: String) -> bool:
+	if locale not in LOCALES:
+		return false
+	(values["localization"] as Dictionary)["locale"] = locale
+	return true
+
+
+func locale() -> String:
+	var selected := str(
+		(values.get("localization", {}) as Dictionary).get("locale", "system")
+	)
+	return selected if selected in LOCALES else "system"
+
+
 func is_muted() -> bool:
 	return bool((values["audio"] as Dictionary).get("muted", false))
 
@@ -148,6 +201,16 @@ func set_vsync(enabled: bool) -> void:
 	(values["display"] as Dictionary)["vsync"] = enabled
 
 
+func set_max_fps(max_fps: int) -> void:
+	(values["display"] as Dictionary)["max_fps"] = (
+		0 if max_fps <= 0 else clampi(max_fps, 30, 360)
+	)
+
+
+func set_monitor_index(monitor_index: int) -> void:
+	(values["display"] as Dictionary)["monitor_index"] = clampi(monitor_index, -1, 31)
+
+
 func display_settings() -> Dictionary:
 	return (values["display"] as Dictionary).duplicate(true)
 
@@ -174,16 +237,98 @@ func interface_enabled(interface_key: String) -> bool:
 	return bool((values["interface"] as Dictionary).get(interface_key, false))
 
 
+func set_interface_scale(key: String, value: float) -> bool:
+	if key not in ["ui_scale", "text_scale"]:
+		return false
+	(values["interface"] as Dictionary)[key] = clampf(value, 0.75, 2.0)
+	return true
+
+
+func interface_scale(key: String) -> float:
+	if key not in ["ui_scale", "text_scale"]:
+		return 1.0
+	return float((values["interface"] as Dictionary).get(key, 1.0))
+
+
+func set_camera_setting(key: String, value: float) -> bool:
+	var ranges := {
+		"edge_scroll_speed": Vector2(240.0, 1800.0),
+		"edge_scroll_margin": Vector2(8.0, 96.0),
+		"zoom_step": Vector2(0.05, 0.50),
+	}
+	if not ranges.has(key):
+		return false
+	var limits := ranges[key] as Vector2
+	(values["interface"] as Dictionary)[key] = clampf(value, limits.x, limits.y)
+	return true
+
+
+func camera_setting(key: String, fallback: float = 0.0) -> float:
+	return float((values["interface"] as Dictionary).get(key, fallback))
+
+
+func set_ruleset_mode(mode: String) -> bool:
+	if mode not in RULESET_MODES:
+		return false
+	(values["gameplay"] as Dictionary)["ruleset_mode"] = mode
+	return true
+
+
+func ruleset_mode() -> String:
+	var mode := str((values["gameplay"] as Dictionary).get("ruleset_mode", "classic"))
+	return mode if mode in RULESET_MODES else "classic"
+
+
 func set_difficulty_mode(mode: String) -> bool:
-	if not mode in DIFFICULTY_MODES:
+	# Accept pre-schema-6 names at API boundaries so old test harnesses and
+	# user scripts migrate without silently losing their intent.
+	if mode == "original":
+		set_ruleset_mode("classic")
+		mode = "normal"
+	elif mode == "easy":
+		set_ruleset_mode("modern")
+		mode = "story"
+	if mode not in DIFFICULTY_MODES:
 		return false
 	(values["gameplay"] as Dictionary)["difficulty_mode"] = mode
 	return true
 
 
 func difficulty_mode() -> String:
-	var mode := str((values["gameplay"] as Dictionary).get("difficulty_mode", "original"))
-	return mode if mode in DIFFICULTY_MODES else "original"
+	var mode := str((values["gameplay"] as Dictionary).get("difficulty_mode", "normal"))
+	return mode if mode in DIFFICULTY_MODES else "normal"
+
+
+func effective_legacy_difficulty_mode() -> String:
+	if ruleset_mode() == "classic":
+		return "original"
+	var mode := difficulty_mode()
+	return "easy" if mode == "story" else "normal" if mode == "custom" else mode
+
+
+func set_control_scheme(scheme: String) -> bool:
+	if scheme not in CONTROL_SCHEMES:
+		return false
+	(values["gameplay"] as Dictionary)["control_scheme"] = scheme
+	return true
+
+
+func control_scheme() -> String:
+	var scheme := str((values["gameplay"] as Dictionary).get("control_scheme", "classic"))
+	return scheme if scheme in CONTROL_SCHEMES else "classic"
+
+
+func set_custom_difficulty(values_override: Dictionary) -> void:
+	var custom := (values["gameplay"] as Dictionary)["custom_difficulty"] as Dictionary
+	for key: String in custom.keys():
+		if values_override.get(key) is int or values_override.get(key) is float:
+			custom[key] = clampf(float(values_override[key]), 0.25, 2.0)
+
+
+func custom_difficulty() -> Dictionary:
+	return (
+		(values["gameplay"] as Dictionary).get("custom_difficulty", {}) as Dictionary
+	).duplicate(true)
 
 
 func set_mission_rule_mode(mode: String) -> bool:
@@ -264,9 +409,13 @@ static func _ensure_audio_buses() -> void:
 
 func apply_display_to_runtime() -> void:
 	if DisplayServer.get_name() == "headless":
+		Engine.max_fps = int((values["display"] as Dictionary).get("max_fps", 60))
 		return
 	var display := values["display"] as Dictionary
 	var mode := str(display["mode"])
+	var requested_screen := int(display.get("monitor_index", -1))
+	if requested_screen >= 0 and requested_screen < DisplayServer.get_screen_count():
+		DisplayServer.window_set_current_screen(requested_screen)
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, mode == "borderless")
 	match mode:
 		"fullscreen":
@@ -275,12 +424,22 @@ func apply_display_to_runtime() -> void:
 			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MAXIMIZED)
 		_:
 			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
-			DisplayServer.window_set_size(
-				Vector2i(int(display["window_width"]), int(display["window_height"]))
+			var requested_size := Vector2i(
+				int(display["window_width"]), int(display["window_height"])
 			)
+			if str(display.get("resolution_policy", "desktop")) == "desktop":
+				var usable := DisplayServer.screen_get_usable_rect(
+					DisplayServer.window_get_current_screen()
+				)
+				requested_size = Vector2i(
+					maxi(800, floori(float(usable.size.x) * 0.85)),
+					maxi(600, floori(float(usable.size.y) * 0.85)),
+				)
+			DisplayServer.window_set_size(requested_size)
 	DisplayServer.window_set_vsync_mode(
 		DisplayServer.VSYNC_ENABLED if bool(display["vsync"]) else DisplayServer.VSYNC_DISABLED
 	)
+	Engine.max_fps = int(display.get("max_fps", 60))
 
 
 func _is_loadable_document(value: Variant) -> bool:
@@ -296,7 +455,7 @@ func _is_loadable_document(value: Variant) -> bool:
 		)
 	if not _is_number(document["schema_version"]):
 		return false
-	return int(document["schema_version"]) in [0, 1, 2, 3, 4, SCHEMA_VERSION]
+	return int(document["schema_version"]) in [0, 1, 2, 3, 4, 5, 6, SCHEMA_VERSION]
 
 
 func _normalize_document(document: Dictionary) -> Dictionary:
@@ -306,6 +465,16 @@ func _normalize_document(document: Dictionary) -> Dictionary:
 	var version := int(document.get("schema_version", 0))
 	if version == 0:
 		return _migrate_v0(document)
+	var raw_localization_value: Variant = document.get("localization", {})
+	var raw_localization := (
+		raw_localization_value as Dictionary
+		if raw_localization_value is Dictionary
+		else {}
+	)
+	var locale_value := str(raw_localization.get("locale", "system"))
+	(defaults["localization"] as Dictionary)["locale"] = (
+		locale_value if locale_value in LOCALES else "system"
+	)
 
 	var raw_audio_value: Variant = document.get("audio", {})
 	var raw_audio: Dictionary = raw_audio_value as Dictionary if raw_audio_value is Dictionary else {}
@@ -330,6 +499,13 @@ func _normalize_document(document: Dictionary) -> Dictionary:
 		raw_display.get("window_height"), int(display["window_height"]), 600, 4320
 	)
 	display["vsync"] = _normalized_bool(raw_display.get("vsync"), bool(display["vsync"]))
+	var raw_max_fps := _normalized_int(
+		raw_display.get("max_fps"), int(display["max_fps"]), 0, 360
+	)
+	display["max_fps"] = 0 if raw_max_fps <= 0 else maxi(raw_max_fps, 30)
+	display["monitor_index"] = _normalized_int(
+		raw_display.get("monitor_index"), int(display["monitor_index"]), -1, 31
+	)
 
 	var raw_hints_value: Variant = document.get("hints", {})
 	var raw_hints: Dictionary = raw_hints_value as Dictionary if raw_hints_value is Dictionary else {}
@@ -343,15 +519,59 @@ func _normalize_document(document: Dictionary) -> Dictionary:
 		interface[interface_key] = _normalized_bool(
 			raw_interface.get(interface_key), bool(interface[interface_key])
 		)
+	for scale_key: String in ["ui_scale", "text_scale"]:
+		interface[scale_key] = _normalized_float(
+			raw_interface.get(scale_key), float(interface[scale_key]), 0.75, 2.0
+		)
+	interface["edge_scroll_speed"] = _normalized_float(
+		raw_interface.get("edge_scroll_speed"),
+		float(interface["edge_scroll_speed"]),
+		240.0,
+		1800.0,
+	)
+	interface["edge_scroll_margin"] = _normalized_float(
+		raw_interface.get("edge_scroll_margin"),
+		float(interface["edge_scroll_margin"]),
+		8.0,
+		96.0,
+	)
+	interface["zoom_step"] = _normalized_float(
+		raw_interface.get("zoom_step"),
+		float(interface["zoom_step"]),
+		0.05,
+		0.50,
+	)
 	var raw_gameplay_value: Variant = document.get("gameplay", {})
 	var raw_gameplay: Dictionary = (
 		raw_gameplay_value as Dictionary if raw_gameplay_value is Dictionary else {}
 	)
 	var gameplay := defaults["gameplay"] as Dictionary
+	var ruleset_mode := str(raw_gameplay.get("ruleset_mode", gameplay["ruleset_mode"]))
 	var difficulty_mode := str(raw_gameplay.get("difficulty_mode", gameplay["difficulty_mode"]))
+	# Schema 0..5 encoded the classic contract as a difficulty named original.
+	if difficulty_mode == "original":
+		ruleset_mode = "classic"
+		difficulty_mode = "normal"
+	elif difficulty_mode == "easy":
+		ruleset_mode = "modern"
+		difficulty_mode = "story"
+	gameplay["ruleset_mode"] = (
+		ruleset_mode if ruleset_mode in RULESET_MODES else gameplay["ruleset_mode"]
+	)
 	gameplay["difficulty_mode"] = (
 		difficulty_mode if difficulty_mode in DIFFICULTY_MODES else gameplay["difficulty_mode"]
 	)
+	var control_scheme := str(raw_gameplay.get("control_scheme", gameplay["control_scheme"]))
+	gameplay["control_scheme"] = (
+		control_scheme if control_scheme in CONTROL_SCHEMES else gameplay["control_scheme"]
+	)
+	var raw_custom_value: Variant = raw_gameplay.get("custom_difficulty", {})
+	var raw_custom := raw_custom_value as Dictionary if raw_custom_value is Dictionary else {}
+	var custom := gameplay["custom_difficulty"] as Dictionary
+	for custom_key: String in custom.keys():
+		custom[custom_key] = _normalized_float(
+			raw_custom.get(custom_key), float(custom[custom_key]), 0.25, 2.0
+		)
 	var mission_rule_mode := str(
 		raw_gameplay.get("mission_rule_mode", gameplay["mission_rule_mode"])
 	)

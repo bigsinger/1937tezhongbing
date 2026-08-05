@@ -66,7 +66,8 @@ func _exercise_level(level_index: int, level: Dictionary) -> void:
 	main.set_physics_process(false)
 	main.runtime_settings["show_briefings"] = false
 	main.runtime_settings["mission_rule_mode"] = "stable_mod"
-	main.runtime_settings["difficulty_mode"] = "original"
+	main.runtime_settings["ruleset_mode"] = "classic"
+	main.runtime_settings["difficulty_mode"] = "normal"
 	var trace_started := bool(main.begin_legacy_crt_random_parity_trace())
 	main.switch_level(level_index, false, false)
 	if main.game_shell != null:

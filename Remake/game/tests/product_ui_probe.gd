@@ -35,11 +35,23 @@ func _run() -> void:
 		"normal product startup opens the native twelve-mission selector",
 	)
 	_expect(await _wait_for_render_frame(), "startup level-selector frame renders")
+	# The selector is opened by Main's deferred startup sequence. Let its
+	# containers complete one additional layout/draw pass before snapshotting;
+	# otherwise the overlay mode can already be active while the previous dark
+	# frame is still resident in the root texture.
+	await process_frame
+	_expect(await _wait_for_render_frame(), "startup selector layout settles")
+	var startup_selector_layout: Dictionary = (
+		main.game_shell.original_overlay_layout_snapshot()
+	)
+	var startup_selector_matches := _original_selector_layout_matches_viewport(
+		startup_selector_layout,
+		Vector2(root.size),
+	)
+	if not startup_selector_matches:
+		print("Startup selector layout snapshot: ", startup_selector_layout)
 	_expect(
-		_original_selector_layout_matches_viewport(
-			main.game_shell.original_overlay_layout_snapshot(),
-			Vector2(root.size),
-		),
+		startup_selector_matches,
 		"startup selector uses all twelve matching original mission labels",
 	)
 	_capture("startup-level-selector.jpg")
@@ -156,6 +168,41 @@ func _run() -> void:
 		"Esc uses the recovered eight-button pause layout and undimmed grayscale",
 	)
 	_capture("pause-menu.jpg")
+	main.game_shell._classic_settings_button.pressed.emit()
+	paused = false
+	_expect(await _wait_for_render_frame(), "modern settings overview renders")
+	_expect(
+		main.game_shell.overlay_mode == GAME_SHELL_SCRIPT.OverlayMode.MODERN_MENU,
+		"original settings entry reaches the modern product settings overview",
+	)
+	_capture("modern-settings.jpg")
+	main.game_shell._show_history_archive_from_menu()
+	paused = false
+	_expect(await _wait_for_render_frame(), "history archive frame renders")
+	_expect(
+		main.game_shell.overlay_mode == GAME_SHELL_SCRIPT.OverlayMode.HISTORY_ARCHIVE
+			and main.game_shell._history_mission_option.item_count == 12
+			and main.game_shell._history_text.text.contains("史实与艺术加工"),
+		"history archive exposes all twelve educational entries",
+	)
+	_capture("history-archive.jpg")
+	main.game_shell.close_active_overlay()
+	main.game_shell._show_settings()
+	# Exercise the visual state without emitting settings_changed: a screenshot
+	# probe must neither persist developer-machine preferences nor let a saved
+	# fullscreen mode override its requested viewport midway through the run.
+	main.game_shell._high_contrast_toggle.set_pressed_no_signal(true)
+	main.game_shell._text_scale_slider.set_value_no_signal(1.25)
+	var accessibility_preferences: Dictionary = main.runtime_settings.duplicate(true)
+	accessibility_preferences["high_contrast"] = true
+	accessibility_preferences["text_scale"] = 1.25
+	main.game_shell.apply_visual_preferences(accessibility_preferences)
+	paused = false
+	_expect(await _wait_for_render_frame(), "accessibility settings frame renders")
+	_capture("accessibility-settings.jpg")
+	main.game_shell.close_active_overlay()
+	main.game_shell.close_active_overlay()
+	main.game_shell.show_pause_menu(false)
 	main.game_shell._classic_credits_button.pressed.emit()
 	paused = false
 	_expect(await _wait_for_render_frame(), "credits frame renders")
@@ -205,6 +252,17 @@ func _run() -> void:
 	)
 	_capture("failure-menu.jpg")
 	main.game_shell.close_for_state_change()
+
+	main.set_developer_debug_enabled(true)
+	main.developer_debug_overlay.visible = true
+	_expect(await _wait_for_render_frame(), "developer diagnostics frame renders")
+	_expect(
+		main.developer_world_debug_overlay.visible,
+		"developer diagnostics enables its world perception/path layer",
+	)
+	_capture("developer-diagnostics.jpg")
+	main.developer_debug_overlay.visible = false
+	main.set_developer_debug_enabled(false)
 
 	root.remove_child(main)
 	main.free()

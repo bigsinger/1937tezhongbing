@@ -17,6 +17,17 @@ const LEGACY_ACTOR_AUDIO_RULES: Script = preload(
 	"res://scripts/legacy_actor_audio_rules.gd"
 )
 const SENSE_INTERVAL_SECONDS := 0.20
+## Modern AI decisions do not need to run at the 60 Hz movement cadence.
+## Twenty deterministic, phase-staggered decisions per second preserve a
+## responsive 50 ms upper bound while keeping dense missions from entering a
+## physics catch-up spiral. Movement, animation and combat-frame resolution
+## remain at the project physics rate.
+## High-level decisions do not need to run at the 60 Hz movement cadence.
+## Ten deterministic updates per second keep reaction/memory timers exact while
+## leaving enough headroom for dense 70+ guard missions at 1080p. Perception
+## remains independently phased at 5 Hz and movement still runs every physics
+## tick, so this does not make guards step or animate less smoothly.
+const MODERN_BEHAVIOR_INTERVAL_SECONDS := 1.0 / 10.0
 const CHASE_REPLAN_SECONDS := 0.50
 const SEARCH_TIMEOUT_SECONDS := 2.50
 const PATROL_PATH_RETRY_MIN_SECONDS := 0.75
@@ -145,6 +156,9 @@ var legacy_reinforcement_serial := 0
 var legacy_reinforcement_leader_scene_index := -1
 var last_known_target_position := Vector2.ZERO
 var sense_elapsed := 0.0
+var perception_schedule_slot_count := 1
+var perception_schedule_initial_elapsed := 0.0
+var modern_behavior_elapsed := 0.0
 var chase_replan_elapsed := 0.0
 var search_elapsed := 0.0
 var legacy_search_active := false
@@ -179,6 +193,8 @@ var modern_patrol_local_offset := Vector2.ZERO
 var modern_patrol_replan_elapsed := 0.0
 var modern_patrol_last_destination := Vector2(INF, INF)
 var tactical_ranges_visible := false
+var tactical_patterns_enabled := true
+var tactical_high_contrast := false
 var tactical_outer_outline := PackedVector2Array()
 var tactical_inner_outline := PackedVector2Array()
 var tactical_cache_cell := Vector2i(-1, -1)
@@ -187,6 +203,7 @@ var tactical_cache_refresh_remaining := 0.0
 var tactical_range_cache_rebuild_count := 0
 var tactical_range_cache_rebuild_usec := 0
 var mission_ai_coordinator: Node
+var world_spatial_index: RefCounted
 ## No miss dispersion is applied until an explicitly editorial difficulty
 ## profile configures it.  Original-parity mode therefore uses the recovered
 ## hit/damage path without a remake-only random miss layer.
@@ -200,6 +217,13 @@ var editorial_posture := ""
 var editorial_ai_tags: Array[String] = []
 var editorial_search_role := ""
 var editorial_search_command_serial := 0
+var editorial_suspicion := 0.0
+var editorial_suspicion_gain_per_second := 1.25
+var editorial_suspicion_decay_per_second := 0.38
+var editorial_memory_remaining := 0.0
+var editorial_memory_seconds := 4.5
+var editorial_search_timeout_seconds := SEARCH_TIMEOUT_SECONDS
+var editorial_suspicion_target_scene_index := -1
 var regroup_remaining := 0.0
 var last_editorial_aim_miss := false
 var _pending_editorial_aim_miss := false
@@ -217,6 +241,20 @@ func set_tactical_ranges_visible(value: bool) -> void:
 		_refresh_tactical_range_cache(true)
 	else:
 		tactical_cache_refresh_remaining = 0.0
+	queue_redraw()
+
+
+func configure_tactical_accessibility(
+	patterns_enabled: bool,
+	high_contrast_enabled: bool,
+) -> void:
+	if (
+		tactical_patterns_enabled == patterns_enabled
+		and tactical_high_contrast == high_contrast_enabled
+	):
+		return
+	tactical_patterns_enabled = patterns_enabled
+	tactical_high_contrast = high_contrast_enabled
 	queue_redraw()
 
 
@@ -508,6 +546,30 @@ func set_potential_targets(targets: Array[Node2D]) -> void:
 	potential_targets = targets.duplicate()
 
 
+func configure_perception_schedule(
+	initial_elapsed: float,
+	schedule_slot_count: int,
+) -> void:
+	perception_schedule_slot_count = maxi(schedule_slot_count, 1)
+	perception_schedule_initial_elapsed = clampf(
+		initial_elapsed,
+		0.0,
+		SENSE_INTERVAL_SECONDS,
+	)
+	sense_elapsed = perception_schedule_initial_elapsed
+	# Reuse the stable scene-specific perception phase at the shorter behavior
+	# cadence. This distributes a large patrol across three physics frames
+	# instead of moving every guard's decision work onto one frame.
+	modern_behavior_elapsed = fmod(
+		perception_schedule_initial_elapsed,
+		MODERN_BEHAVIOR_INTERVAL_SECONDS,
+	)
+
+
+func configure_world_spatial_index(index: RefCounted) -> void:
+	world_spatial_index = index
+
+
 func set_potential_world_items(items: Array) -> void:
 	potential_world_items.clear()
 	for item_value: Variant in items:
@@ -528,6 +590,7 @@ func configure_editorial_ai(
 	cooperation: Dictionary,
 ) -> void:
 	mission_ai_coordinator = coordinator
+	legacy_actor_scheduler_enabled = coordinator == null
 	editorial_aim_error_multiplier = maxf(
 		0.0, float(applied_values.get("aim_error_multiplier", 1.0))
 	)
@@ -550,6 +613,18 @@ func configure_editorial_ai(
 	editorial_regroup_seconds = maxf(
 		0.0, float(cooperation.get("regroup_seconds", 0.0))
 	)
+	editorial_suspicion_gain_per_second = 1.25 * maxf(
+		0.10,
+		float(applied_values.get("suspicion_gain_multiplier", 1.0)),
+	)
+	editorial_memory_seconds = maxf(
+		1.0,
+		float(applied_values.get("memory_seconds", 4.5)),
+	)
+	editorial_search_timeout_seconds = SEARCH_TIMEOUT_SECONDS * maxf(
+		0.25,
+		float(applied_values.get("search_duration_multiplier", 1.0)),
+	)
 	editorial_ai_tags.clear()
 	for raw_tag: Variant in cooperation.get("tags", []) as Array:
 		editorial_ai_tags.append(str(raw_tag))
@@ -560,6 +635,7 @@ func configure_editorial_ai(
 func clear_editorial_ai_coordinator(source: Node = null) -> void:
 	if source == null or mission_ai_coordinator == source:
 		mission_ai_coordinator = null
+		legacy_actor_scheduler_enabled = true
 
 
 func apply_editorial_ai_posture(posture: String, tags: Array[String] = []) -> void:
@@ -604,12 +680,21 @@ static func deterministic_aim_sample(enemy_scene_index: int, attack_serial: int)
 
 
 func _physics_process(delta: float) -> void:
+	var enemy_logic_started_usec := (
+		Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
+	)
 	var safe_delta := maxf(delta, 0.0)
 	legacy_contact_acquired_this_tick = false
 	var command_serial_at_update_start := original_actor_command_serial
-	_advance_original_crt_actor_random_tick(safe_delta)
-	_advance_original_tracked_target_face_gate(safe_delta)
+	var legacy_pre_started_usec := (
+		Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
+	)
+	if legacy_actor_scheduler_enabled:
+		_advance_original_crt_actor_random_tick(safe_delta)
+		_advance_original_tracked_target_face_gate(safe_delta)
+	_record_debug_physics_section("enemy_legacy_pre", legacy_pre_started_usec)
 	if not is_alive or combat_action != CombatAction.NONE or hurt_remaining > 0.0:
+		_record_debug_physics_section("enemy_logic", enemy_logic_started_usec)
 		super._physics_process(safe_delta)
 		_advance_tactical_range_cache(safe_delta)
 		return
@@ -620,6 +705,7 @@ func _physics_process(delta: float) -> void:
 	)
 	if legacy_effect_blocked_at_start:
 		advance_legacy_world_item_effect_ticks(1)
+		_record_debug_physics_section("enemy_logic", enemy_logic_started_usec)
 		super._physics_process(safe_delta)
 		original_direction_index = (
 			IMPORTED_SPRITE_ANIMATION.direction_index_for_legacy_group(
@@ -634,17 +720,44 @@ func _physics_process(delta: float) -> void:
 	attack_recheck_elapsed += safe_delta
 	if sense_elapsed >= SENSE_INTERVAL_SECONDS and behavior_state != BehaviorState.REGROUP:
 		sense_elapsed = fmod(sense_elapsed, SENSE_INTERVAL_SECONDS)
+		var detection_started_usec := (
+			Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
+		)
 		_update_detection()
+		_record_debug_physics_section("enemy_detection", detection_started_usec)
 	var attention_holds_idle := (
 		is_special_controlled()
 		and behavior_state == BehaviorState.PATROL
 		and current_target == null
 	)
-	if not attention_holds_idle:
-		_update_behavior(safe_delta)
+	var behavior_delta := safe_delta
+	var behavior_update_due := true
+	if mission_ai_coordinator != null:
+		modern_behavior_elapsed += safe_delta
+		behavior_update_due = (
+			modern_behavior_elapsed + 0.000001
+			>= MODERN_BEHAVIOR_INTERVAL_SECONDS
+		)
+		if behavior_update_due:
+			behavior_delta = modern_behavior_elapsed
+			modern_behavior_elapsed = fmod(
+				modern_behavior_elapsed,
+				MODERN_BEHAVIOR_INTERVAL_SECONDS,
+			)
+	if not attention_holds_idle and behavior_update_due:
+		var behavior_started_usec := (
+			Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
+		)
+		_update_behavior(behavior_delta)
+		_record_debug_physics_section("enemy_behavior", behavior_started_usec)
+	var pending_alert_started_usec := (
+		Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
+	)
 	_consume_pending_original_coordinate_alert(
 		command_serial_at_update_start
 	)
+	_record_debug_physics_section("enemy_pending_alert", pending_alert_started_usec)
+	_record_debug_physics_section("enemy_logic", enemy_logic_started_usec)
 	super._physics_process(safe_delta)
 	if attention_holds_idle and is_special_controlled():
 		_face_special_control_source()
@@ -807,7 +920,7 @@ func _update_detection() -> void:
 	var nearest_visible: Node2D
 	var nearest_distance_squared := INF
 	if _original_recurring_evidence_allows_new_live_contact():
-		for target: Node2D in potential_targets:
+		for target: Node2D in _nearby_potential_targets():
 			if not _is_hostile_target(target):
 				continue
 			var disguise_mode := _disguise_detection_mode(target)
@@ -837,7 +950,10 @@ func _update_detection() -> void:
 				nearest_distance_squared = distance_squared
 				nearest_visible = target
 	if nearest_visible != null:
-		_acquire_visible_live_target(nearest_visible)
+		if mission_ai_coordinator == null:
+			_acquire_visible_live_target(nearest_visible)
+		else:
+			_update_editorial_suspicion(nearest_visible)
 	elif current_target != null and behavior_state in [BehaviorState.CHASE, BehaviorState.ATTACK]:
 		_release_special_control_for_combat()
 		if mission_ai_coordinator == null:
@@ -847,6 +963,18 @@ func _update_detection() -> void:
 			behavior_state = BehaviorState.SEARCH
 			search_elapsed = 0.0
 			_issue_path_to(last_known_target_position)
+	elif mission_ai_coordinator != null:
+		editorial_suspicion = maxf(
+			0.0,
+			editorial_suspicion
+				- editorial_suspicion_decay_per_second * SENSE_INTERVAL_SECONDS,
+		)
+		editorial_memory_remaining = maxf(
+			0.0,
+			editorial_memory_remaining - SENSE_INTERVAL_SECONDS,
+		)
+		if editorial_suspicion <= 0.0:
+			editorial_suspicion_target_scene_index = -1
 	elif (
 		behavior_state in [
 			BehaviorState.PATROL,
@@ -865,6 +993,57 @@ func _update_detection() -> void:
 			var visible_world_item := _first_visible_allowed_world_item()
 			if visible_world_item != null:
 				_begin_legacy_world_item_investigation(visible_world_item)
+
+
+func _nearby_potential_targets() -> Array[Node2D]:
+	if world_spatial_index == null:
+		return potential_targets
+	var radius := maxf(
+		float(sense_profile.get("horizontal_radius", 0.0)),
+		float(sense_profile.get("vertical_radius", 0.0)),
+	)
+	if radius <= 0.0:
+		return potential_targets
+	var result: Array[Node2D] = []
+	for raw_candidate: Variant in world_spatial_index.query_radius(
+		position,
+		radius,
+		["combatant"],
+	):
+		if raw_candidate is Node2D:
+			result.append(raw_candidate as Node2D)
+	return result
+
+
+func _update_editorial_suspicion(target: Node2D) -> void:
+	var target_scene_index := int(target.get("scene_index"))
+	if editorial_suspicion_target_scene_index != target_scene_index:
+		editorial_suspicion = minf(editorial_suspicion, 0.25)
+		editorial_suspicion_target_scene_index = target_scene_index
+	var near_ratio := clampf(
+		float(sense_profile.get("near_band_ratio", 0.5)), 0.1, 1.0
+	)
+	var horizontal_radius := maxf(
+		float(sense_profile.get("horizontal_radius", 1.0)), 1.0
+	)
+	var normalized_distance := position.distance_to(target.position) / horizontal_radius
+	var posture_factor := 1.0
+	if bool(target.get("is_crawling")):
+		posture_factor = 0.65
+	var near_factor := 1.65 if normalized_distance <= near_ratio else 1.0
+	editorial_suspicion = clampf(
+		editorial_suspicion
+			+ editorial_suspicion_gain_per_second
+			* posture_factor
+			* near_factor
+			* SENSE_INTERVAL_SECONDS,
+		0.0,
+		1.0,
+	)
+	last_known_target_position = target.position
+	editorial_memory_remaining = editorial_memory_seconds
+	if editorial_suspicion >= 1.0:
+		_acquire_visible_live_target(target)
 
 
 func _original_recurring_evidence_allows_new_live_contact() -> bool:
@@ -962,7 +1141,14 @@ func _update_behavior(delta: float) -> void:
 			if current_target == null or not is_instance_valid(current_target):
 				_enter_patrol()
 				return
-			if _can_attack_current_target():
+			var chase_range_started_usec := (
+				Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
+			)
+			var chase_can_attack := _can_attack_current_target()
+			_record_debug_physics_section(
+				"enemy_attack_range_check", chase_range_started_usec
+			)
+			if chase_can_attack:
 				behavior_state = BehaviorState.ATTACK
 				cancel_path()
 				return
@@ -991,7 +1177,14 @@ func _update_behavior(delta: float) -> void:
 			if current_target == null or not is_instance_valid(current_target):
 				_enter_patrol()
 				return
-			if not _can_attack_current_target():
+			var attack_range_started_usec := (
+				Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
+			)
+			var attack_can_continue := _can_attack_current_target()
+			_record_debug_physics_section(
+				"enemy_attack_range_check", attack_range_started_usec
+			)
+			if not attack_can_continue:
 				behavior_state = BehaviorState.CHASE
 				chase_replan_elapsed = CHASE_REPLAN_SECONDS
 				return
@@ -999,6 +1192,9 @@ func _update_behavior(delta: float) -> void:
 				attack_recheck_elapsed = 0.0
 				attack_recheck_seconds = (
 					_sample_original_attack_interval()
+				)
+				var permission_started_usec := (
+					Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
 				)
 				if (
 					mission_ai_coordinator != null
@@ -1010,19 +1206,35 @@ func _update_behavior(delta: float) -> void:
 						)
 					)
 				):
+					_record_debug_physics_section(
+						"enemy_attack_permission", permission_started_usec
+					)
 					_enter_regroup()
 					return
+				_record_debug_physics_section(
+					"enemy_attack_permission", permission_started_usec
+				)
 				_pending_editorial_aim_miss = will_editorial_attack_miss(
 					current_target, attack_count
 				)
 				last_editorial_aim_miss = _pending_editorial_aim_miss
+				var attack_start_started_usec := (
+					Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
+				)
 				if try_start_attack(
 					current_target,
 					_is_identified_disguise_target(current_target),
 				):
+					_record_debug_physics_section(
+						"enemy_attack_start", attack_start_started_usec
+					)
 					attack_count += 1
 					attack_committed.emit(
 						self, current_target, int(weapon_profile.get("attack_type", 0))
+					)
+				else:
+					_record_debug_physics_section(
+						"enemy_attack_start", attack_start_started_usec
 					)
 		BehaviorState.SEARCH:
 			if legacy_search_active or legacy_search_finishing:
@@ -1031,7 +1243,7 @@ func _update_behavior(delta: float) -> void:
 			if movement_path_index < movement_path.size():
 				return
 			search_elapsed += delta
-			if search_elapsed >= SEARCH_TIMEOUT_SECONDS:
+			if search_elapsed >= editorial_search_timeout_seconds:
 				current_target = null
 				_enter_patrol()
 		BehaviorState.REGROUP:
@@ -2329,6 +2541,9 @@ func editorial_ai_state_snapshot() -> Dictionary:
 		"search_role": editorial_search_role,
 		"search_command_serial": editorial_search_command_serial,
 		"hit_chance": editorial_hit_chance,
+		"suspicion": editorial_suspicion,
+		"suspicion_target_scene_index": editorial_suspicion_target_scene_index,
+		"memory_remaining": editorial_memory_remaining,
 	}
 
 
@@ -2346,7 +2561,31 @@ func restore_editorial_ai_state(state: Dictionary) -> bool:
 			0.0,
 			1.0,
 		)
+	editorial_suspicion = clampf(
+		float(state.get("suspicion", 0.0)), 0.0, 1.0
+	)
+	editorial_suspicion_target_scene_index = int(
+		state.get("suspicion_target_scene_index", -1)
+	)
+	editorial_memory_remaining = clampf(
+		float(state.get("memory_remaining", 0.0)),
+		0.0,
+		editorial_memory_seconds,
+	)
 	return true
+
+
+func modern_ai_debug_snapshot() -> Dictionary:
+	return {
+		"scene_index": scene_index,
+		"behavior": BehaviorState.keys()[behavior_state],
+		"suspicion": editorial_suspicion,
+		"memory_seconds": editorial_memory_remaining,
+		"last_known_position": last_known_target_position,
+		"search_role": editorial_search_role,
+		"formation_role": modern_patrol_group_role,
+		"hit_chance": editorial_hit_chance,
+	}
 
 
 func restore_legacy_enemy_ai_state(state: Dictionary) -> bool:
@@ -2938,6 +3177,12 @@ func _resolve_pending_hit() -> void:
 		# rejected. Projectile attacks likewise produce no homing projectile.
 		pending_hit_resolved = true
 		_pending_editorial_aim_miss = false
+		attack_missed.emit(
+			self,
+			pending_hit_target,
+			int(weapon_profile.get("attack_type", 0)),
+			"accuracy",
+		)
 		return
 	super._resolve_pending_hit()
 	_pending_editorial_aim_miss = false
@@ -3119,20 +3364,68 @@ func _draw() -> void:
 func _draw_tactical_ranges() -> void:
 	# The green far band and red near band deliberately draw only outlines. Their
 	# L2 clipping was already cached outside the CanvasItem draw callback.
+	var outer_color := (
+		Color(0.18, 0.88, 1.0, 0.96)
+		if tactical_high_contrast
+		else Color(0.20, 0.96, 0.42, 0.82)
+	)
+	var inner_color := (
+		Color(1.0, 0.58, 0.08, 0.98)
+		if tactical_high_contrast
+		else Color(0.92, 0.22, 0.16, 0.90)
+	)
+	var line_width := 2.5 if tactical_high_contrast else 1.5
 	if tactical_outer_outline.size() >= 3:
 		draw_polyline(
 			tactical_outer_outline,
-			Color(0.20, 0.96, 0.42, 0.82),
-			1.5,
+			outer_color,
+			line_width,
 			true,
 		)
 	if tactical_inner_outline.size() >= 3:
-		draw_polyline(
-			tactical_inner_outline,
-			Color(0.92, 0.22, 0.16, 0.90),
-			1.5,
-			true,
-		)
+		if tactical_patterns_enabled:
+			_draw_dashed_outline(
+				tactical_inner_outline,
+				inner_color,
+				line_width,
+			)
+		else:
+			draw_polyline(
+				tactical_inner_outline,
+				inner_color,
+				line_width,
+				true,
+			)
+
+
+func _draw_dashed_outline(
+	points: PackedVector2Array,
+	color: Color,
+	width: float,
+) -> void:
+	# A broken near-band outline remains distinguishable when red/green hues
+	# cannot be perceived.  Drawing short cached segments is cheap and avoids a
+	# shader/material allocation for every observed guard.
+	const DASH_LENGTH := 7.0
+	const GAP_LENGTH := 4.0
+	for index: int in range(points.size() - 1):
+		var segment_start := points[index]
+		var segment_end := points[index + 1]
+		var length := segment_start.distance_to(segment_end)
+		if length <= 0.001:
+			continue
+		var direction := (segment_end - segment_start) / length
+		var offset := 0.0
+		while offset < length:
+			var dash_end := minf(offset + DASH_LENGTH, length)
+			draw_line(
+				segment_start + direction * offset,
+				segment_start + direction * dash_end,
+				color,
+				width,
+				true,
+			)
+			offset += DASH_LENGTH + GAP_LENGTH
 func _advance_tactical_range_cache(delta: float) -> void:
 	if not tactical_ranges_visible:
 		return

@@ -29,6 +29,33 @@ static func capture(game: Node) -> Dictionary:
 	session["mission_rule_mode"] = str(
 		current_mission.get("rule_mode", "stable_mod")
 	)
+	var settings := _dictionary_property(game, "runtime_settings")
+	var content_validation := _dictionary_property(
+		game,
+		"content_package_validation",
+	)
+	var content_identity := str(
+		content_validation.get("content_identity_sha256", "")
+	)
+	if content_identity.is_empty():
+		content_identity = str(
+			content_validation.get("status", "development_unmanifested")
+		)
+	session["runtime_profile"] = {
+		"ruleset_mode": str(settings.get("ruleset_mode", "classic")),
+		"difficulty_mode": str(settings.get("difficulty_mode", "normal")),
+		"control_scheme": str(settings.get("control_scheme", "classic")),
+		"mission_rule_mode": str(session["mission_rule_mode"]),
+		"custom_difficulty": _json_dictionary(
+			settings.get("custom_difficulty", {})
+		),
+		"content_identity": (
+			content_identity
+			if not content_identity.is_empty()
+			else "development_unmanifested"
+		),
+	}
+	session["player_workspace"] = _capture_player_workspace(game)
 	var mission_state: Variant = game.get("current_mission_state")
 	if mission_state != null:
 		session["elapsed_seconds"] = maxf(float(mission_state.get("elapsed_seconds")), 0.0)
@@ -109,6 +136,10 @@ static func apply_after_level_loaded(game: Node, session: Dictionary) -> Diction
 	if game.has_method("_bind_restored_enemy_corpse_targets"):
 		game.call("_bind_restored_enemy_corpse_targets")
 	_restore_selection(game)
+	_restore_player_workspace(
+		game,
+		session.get("player_workspace", {}) as Dictionary,
+	)
 	_sync_projectile_combatants(game)
 	_restore_camera(game, session.get("camera", {}) as Dictionary)
 	if game.has_method("_refresh_mission_ui"):
@@ -123,6 +154,85 @@ static func apply_after_level_loaded(game: Node, session: Dictionary) -> Diction
 			world_restore.get("mission_direction_restored", false)
 		),
 	}
+
+
+static func _capture_player_workspace(game: Node) -> Dictionary:
+	var groups_output: Dictionary = {}
+	var raw_groups := _dictionary_property(game, "control_groups")
+	for raw_key: Variant in raw_groups.keys():
+		var group_number := int(raw_key)
+		if group_number < 1 or group_number > 9:
+			continue
+		var raw_members: Variant = raw_groups[raw_key]
+		if not raw_members is Array:
+			continue
+		var members: Array[int] = []
+		for raw_member: Variant in raw_members as Array:
+			var scene_index := int(raw_member)
+			if not members.has(scene_index):
+				members.append(scene_index)
+		groups_output[str(group_number)] = members
+	var bookmarks_output: Dictionary = {}
+	var raw_bookmarks := _dictionary_property(game, "camera_bookmarks")
+	for raw_key: Variant in raw_bookmarks.keys():
+		var bookmark_number := int(raw_key)
+		if bookmark_number < 1 or bookmark_number > 9:
+			continue
+		var raw_position: Variant = raw_bookmarks[raw_key]
+		if raw_position is Vector2:
+			var position := raw_position as Vector2
+			bookmarks_output[str(bookmark_number)] = {
+				"x": position.x,
+				"y": position.y,
+			}
+	return {
+		"control_groups": groups_output,
+		"camera_bookmarks": bookmarks_output,
+	}
+
+
+static func _restore_player_workspace(game: Node, workspace: Dictionary) -> void:
+	if not _has_property(game, "control_groups"):
+		return
+	var groups: Dictionary = {}
+	var raw_groups: Variant = workspace.get("control_groups", {})
+	if raw_groups is Dictionary:
+		for raw_key: Variant in (raw_groups as Dictionary).keys():
+			var group_number := int(raw_key)
+			var raw_members: Variant = (raw_groups as Dictionary)[raw_key]
+			if group_number < 1 or group_number > 9 or not raw_members is Array:
+				continue
+			var members: Array[int] = []
+			for raw_member: Variant in raw_members as Array:
+				var scene_index := int(raw_member)
+				if not members.has(scene_index):
+					members.append(scene_index)
+			groups[group_number] = members
+	game.set("control_groups", groups)
+	if not _has_property(game, "camera_bookmarks"):
+		return
+	var bookmarks: Dictionary = {}
+	var raw_bookmarks: Variant = workspace.get("camera_bookmarks", {})
+	if raw_bookmarks is Dictionary:
+		for raw_key: Variant in (raw_bookmarks as Dictionary).keys():
+			var bookmark_number := int(raw_key)
+			var raw_position: Variant = (raw_bookmarks as Dictionary)[raw_key]
+			if (
+				bookmark_number < 1
+				or bookmark_number > 9
+				or not raw_position is Dictionary
+			):
+				continue
+			var position := raw_position as Dictionary
+			if not position.get("x") is int and not position.get("x") is float:
+				continue
+			if not position.get("y") is int and not position.get("y") is float:
+				continue
+			bookmarks[bookmark_number] = Vector2(
+				float(position["x"]),
+				float(position["y"]),
+			)
+	game.set("camera_bookmarks", bookmarks)
 
 
 static func _capture_mission(game: Node, mission_state: Variant) -> Dictionary:

@@ -76,14 +76,21 @@ func configure_ambient(
 
 
 func _physics_process(delta: float) -> void:
+	var ambient_logic_started_usec := (
+		Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
+	)
 	var safe_delta := maxf(delta, 0.0)
-	_advance_original_crt_actor_random_tick(safe_delta)
+	# SquadUnit owns the legacy actor scheduler. Calling the CRT dispatcher here
+	# as well made ambient actors traverse the same guarded event machinery twice
+	# per physics frame; the guards prevented duplicate outcomes but not the CPU
+	# work. Keep one authoritative scheduler invocation in the base class.
 	path_request_delay_remaining = maxf(
 		path_request_delay_remaining - safe_delta,
 		0.0,
 	)
 	if is_alive and combat_action == CombatAction.NONE and hurt_remaining <= 0.0:
 		_update_patrol(safe_delta)
+	_record_debug_physics_section("ambient_logic", ambient_logic_started_usec)
 	super._physics_process(safe_delta)
 
 

@@ -20,6 +20,9 @@ const MISSION_STATE: Script = preload("res://scripts/mission_state.gd")
 const MISSION_RUNTIME_SCRIPT: Script = preload("res://scripts/mission_runtime.gd")
 const MISSION_DIRECTION_RUNTIME_SCRIPT: Script = preload("res://scripts/mission_direction_runtime.gd")
 const MISSION_AI_COORDINATOR_SCRIPT: Script = preload("res://scripts/mission_ai_coordinator.gd")
+const MODERN_DIFFICULTY_POLICY: Script = preload(
+	"res://scripts/modern_difficulty_policy.gd"
+)
 const COMBAT_PROFILES: Script = preload("res://scripts/combat_profiles.gd")
 const ORIGINAL_INITIAL_WEAPON_INVENTORY: Script = preload(
 	"res://scripts/original_initial_weapon_inventory.gd"
@@ -35,6 +38,19 @@ const PROJECTILE_WORLD_SCRIPT: Script = preload("res://scripts/projectile_world.
 const MEDIA_DIRECTOR_SCRIPT: Script = preload("res://scripts/media_director.gd")
 const GAME_SHELL_SCRIPT: Script = preload("res://scripts/game_shell.gd")
 const GAME_SETTINGS_SCRIPT: Script = preload("res://scripts/game_settings.gd")
+const LOCALIZATION_SERVICE_SCRIPT: Script = preload(
+	"res://scripts/localization_service.gd"
+)
+const HISTORY_ARCHIVE_SCRIPT: Script = preload("res://scripts/history_archive.gd")
+const MISSION_STATISTICS_SCRIPT: Script = preload(
+	"res://scripts/mission_statistics.gd"
+)
+const DEVELOPER_DEBUG_OVERLAY_SCRIPT: Script = preload(
+	"res://scripts/developer_debug_overlay.gd"
+)
+const DEVELOPER_WORLD_DEBUG_OVERLAY_SCRIPT: Script = preload(
+	"res://scripts/developer_world_debug_overlay.gd"
+)
 const GAME_SAVE_STORE_SCRIPT: Script = preload("res://scripts/game_save_store.gd")
 const CAMPAIGN_PROGRESS_SCRIPT: Script = preload("res://scripts/campaign_progress.gd")
 const GAME_SESSION_STATE_SCRIPT: Script = preload("res://scripts/game_session_state.gd")
@@ -43,6 +59,31 @@ const LEGACY_INPUT_RULES: Script = preload("res://scripts/legacy_input_rules.gd"
 const SMOOTH_CAMERA_PAN: Script = preload("res://scripts/smooth_camera_pan.gd")
 const WORLD_AUDIO_SPATIALIZER: Script = preload(
 	"res://scripts/world_audio_spatializer.gd"
+)
+const WORLD_SPATIAL_INDEX_SCRIPT: Script = preload(
+	"res://scripts/world_spatial_index.gd"
+)
+const PERCEPTION_SCHEDULER_SCRIPT: Script = preload(
+	"res://scripts/perception_scheduler.gd"
+)
+const RUNTIME_PERFORMANCE_MONITOR_SCRIPT: Script = preload(
+	"res://scripts/runtime_performance_monitor.gd"
+)
+const CHECKPOINT_MANAGER_SCRIPT: Script = preload(
+	"res://scripts/checkpoint_manager.gd"
+)
+const RUNTIME_DIAGNOSTICS_SCRIPT: Script = preload(
+	"res://scripts/runtime_diagnostics.gd"
+)
+const CONTENT_PACKAGE_VALIDATOR: Script = preload(
+	"res://scripts/content_package_validator.gd"
+)
+const RUNTIME_SERVICE_HUB_SCRIPT: Script = preload(
+	"res://scripts/runtime_service_hub.gd"
+)
+const COMBAT_FEEDBACK: Script = preload("res://scripts/combat_feedback.gd")
+const LEVEL_LOAD_PIPELINE_SCRIPT: Script = preload(
+	"res://scripts/level_load_pipeline.gd"
 )
 const LEGACY_CURSOR_PRESENTER: Script = preload(
 	"res://scripts/legacy_cursor_presenter.gd"
@@ -344,6 +385,8 @@ var next_legacy_reinforcement_serial := 1
 var legacy_global_alarm_active := false
 var legacy_global_alarm_counter := 0
 var selected_units: Array[SQUAD_UNIT] = []
+var control_groups: Dictionary = {}
+var camera_bookmarks: Dictionary = {}
 var status_label: Label
 var badge_label: Label
 var objective_label: Label
@@ -371,6 +414,7 @@ var sight_observation_mode := false
 var sight_target_pending := false
 var sight_beacon: Node2D
 var sight_observation_target: ENEMY_UNIT
+var tactical_visible_enemies: Dictionary = {}
 var burial_mode := false
 var burial_target: ENEMY_UNIT
 var burial_worker: SQUAD_UNIT
@@ -391,9 +435,21 @@ var enemy_entities: Array[Dictionary] = []
 var ambient_entities: Array[Dictionary] = []
 var imported_texture_cache: Dictionary = {}
 var imported_animation_cache: Dictionary = {}
+## Animation resources are retained across missions, but collision-footprint
+## staging must only inspect the groups used by the level being constructed.
+## Otherwise every previous mission's directional masks are recomputed against
+## the new navigation grid and level-switch cost grows throughout a campaign.
+var current_level_animation_cache_keys: Dictionary = {}
 var inventory_icon_cache: Dictionary = {}
 var current_level_directory := ""
 var converted_root := ""
+var content_package_validation: Dictionary = {}
+var context_cursor_cached_serial := LEGACY_INPUT_RULES.CursorSerial.NORMAL
+var context_cursor_last_screen_position := Vector2(INF, INF)
+var context_cursor_last_state := -1
+var context_cursor_refresh_elapsed := 0.0
+var combat_preview_refresh_elapsed := 0.0
+var combat_preview_visible := false
 var current_mission: Dictionary = {}
 var current_mission_state: RefCounted
 var mission_runtime: Node
@@ -457,6 +513,7 @@ var legacy_ai_control_effects: Array[Node] = []
 var legacy_deployment_targets: Array[Node2D] = []
 var legacy_burial_caches: Array[Node2D] = []
 var legacy_doors: Array[Node2D] = []
+var automatic_door_broadphase_radius := 0.0
 var legacy_navigation_passages: Array[Dictionary] = []
 var dormant_destruction_effects_by_scene: Dictionary = {}
 var buried_enemy_scene_indices: Dictionary = {}
@@ -464,22 +521,73 @@ var field_inventory: Dictionary = {}
 var selected_backpack_item_id := 0
 var runtime_settings: Dictionary = {
 	"fullscreen": false,
-	"difficulty_mode": "original",
+	"display_mode": "windowed",
+	"resolution_policy": "desktop",
+	"window_width": 1280,
+	"window_height": 720,
+	"vsync": true,
+	"max_fps": 60,
+	"ruleset_mode": "classic",
+	"difficulty_mode": "normal",
+	"control_scheme": "classic",
 	"mission_rule_mode": "stable_mod",
 	"subtitles": true,
+	"environment_captions": true,
 	"show_briefings": true,
 	"edge_scroll": true,
 	"reduce_camera_motion": false,
+	"reduce_flashes": false,
 	"large_cursor": false,
+	"high_contrast": false,
+	"colorblind_patterns": true,
+	"pause_on_focus_loss": true,
+	"educational_mode": true,
+	"reduced_violence": false,
+	"history_notes": true,
+	"locale": "system",
+	"ui_scale": 1.0,
+	"text_scale": 1.0,
+	"edge_scroll_speed": CAMERA_PAN_SPEED,
+	"edge_scroll_margin": EDGE_SCROLL_MARGIN,
+	"zoom_step": 0.25,
 	"master_volume": 0.8,
 	"music_volume": 0.8,
 	"sfx_volume": 0.9,
 	"voice_volume": 1.0,
 	"controls": GAME_INPUT_BINDINGS.default_bindings(),
 }
+var runtime_services: RefCounted = RUNTIME_SERVICE_HUB_SCRIPT.new()
+var localization_service: RefCounted = LOCALIZATION_SERVICE_SCRIPT.new()
+var history_archive: RefCounted = HISTORY_ARCHIVE_SCRIPT.new()
+var mission_statistics: RefCounted = MISSION_STATISTICS_SCRIPT.new()
+var developer_debug_overlay: CanvasLayer
+var developer_world_debug_overlay: Node2D
+var developer_debug_enemy: ENEMY_UNIT
+var world_spatial_index: RefCounted = runtime_services.spatial_index
+var perception_scheduler: RefCounted = runtime_services.perception_scheduler
+var performance_monitor: RefCounted = runtime_services.performance_monitor
+var checkpoint_manager: RefCounted = runtime_services.checkpoint_manager
+var runtime_diagnostics: RefCounted = runtime_services.diagnostics
+var command_bus: RefCounted = runtime_services.command_bus
+var navigation_requests: RefCounted = runtime_services.navigation_requests
+var runtime_settings_applier: RefCounted = runtime_services.settings_applier
+var application_focus_policy: RefCounted = runtime_services.focus_policy
+var active_modern_difficulty_profile: Dictionary = {}
+var spatial_sync_elapsed := 0.0
+var restoring_save := false
 
 
 func _ready() -> void:
+	runtime_diagnostics.build_id = str(
+		ProjectSettings.get_setting(
+			"application/config/version",
+			"development",
+		)
+	)
+	if not command_bus.command_issued.is_connected(_on_runtime_command_issued):
+		command_bus.command_issued.connect(_on_runtime_command_issued)
+	if not command_bus.event_emitted.is_connected(_on_runtime_event_emitted):
+		command_bus.event_emitted.connect(_on_runtime_event_emitted)
 	var command_line_arguments := (
 		OS.get_cmdline_args() + OS.get_cmdline_user_args()
 	)
@@ -492,6 +600,8 @@ func _ready() -> void:
 		or "--trace-legacy-rng-parity" in command_line_arguments
 	)
 	_initialize_persistence()
+	if not history_archive.load_catalog():
+		push_warning(history_archive.last_error)
 	_create_media_director()
 	var tree := get_tree()
 	if (
@@ -507,6 +617,7 @@ func _ready() -> void:
 	create_interface()
 	_connect_existing_original_button_audio(self)
 	create_level_camera()
+	_create_developer_debug_tools(command_line_arguments)
 	startup_level_selection_pending = _should_show_startup_level_selector()
 	switch_level(
 		requested_level_index(),
@@ -516,6 +627,45 @@ func _ready() -> void:
 	if startup_level_selection_pending:
 		call_deferred("_begin_original_startup_media_sequence")
 	queue_redraw()
+
+
+func _notification(what: int) -> void:
+	if what == MainLoop.NOTIFICATION_APPLICATION_FOCUS_OUT:
+		if get_tree() != null:
+			var transition: Dictionary = application_focus_policy.on_focus_lost(
+				bool(runtime_settings.get("pause_on_focus_loss", true)),
+				get_tree().paused,
+				not _is_runtime_probe(),
+			)
+			if bool(transition.get("apply", false)):
+				get_tree().paused = bool(transition.get("paused", true))
+			else:
+				return
+			if runtime_diagnostics != null:
+				runtime_diagnostics.record_command("focus_pause")
+	elif what == MainLoop.NOTIFICATION_APPLICATION_FOCUS_IN:
+		if get_tree() != null:
+			var transition: Dictionary = application_focus_policy.on_focus_gained(
+				get_tree().paused
+			)
+			if bool(transition.get("apply", false)):
+				get_tree().paused = bool(transition.get("paused", false))
+
+
+func _on_runtime_command_issued(command: Dictionary) -> void:
+	if mission_statistics != null:
+		mission_statistics.observe_command(command)
+	if runtime_diagnostics == null:
+		return
+	runtime_diagnostics.record_command(
+		str(command.get("name", "unknown")),
+		command.get("payload", {}) as Dictionary,
+	)
+
+
+func _on_runtime_event_emitted(event: Dictionary) -> void:
+	if mission_statistics != null:
+		mission_statistics.observe_event(event)
 
 
 func next_legacy_crt_random(
@@ -1169,6 +1319,10 @@ func _configure_legacy_ambient_particle_field(level_id: String) -> bool:
 	legacy_ambient_particle_layer.add_child(
 		legacy_ambient_particle_field
 	)
+	legacy_ambient_particle_field.call(
+		"set_reduce_flashes",
+		bool(runtime_settings.get("reduce_flashes", false)),
+	)
 	return bool(legacy_ambient_particle_field.call(
 		"configure",
 		self,
@@ -1623,6 +1777,8 @@ func switch_level(
 	victory_handled_level_id = ""
 	victory_presentation_completed = true
 	m010_split_ordered_names.clear()
+	control_groups.clear()
+	camera_bookmarks.clear()
 	if game_shell != null:
 		game_shell.close_for_state_change()
 		game_shell.update_original_hud([])
@@ -1635,6 +1791,22 @@ func switch_level(
 		game_shell.set_original_hud_action_state("observation", false)
 	current_level_index = posmod(level_index, FORMAL_LEVEL_IDS.size())
 	var level_id := FORMAL_LEVEL_IDS[current_level_index]
+	_present_loading_progress(level_id, tr("UI_LOADING_READ"), 0.05)
+	var load_pipeline: RefCounted = LEVEL_LOAD_PIPELINE_SCRIPT.new()
+	var level_resource_path: String = str(
+		IMPORTED_LEVEL_DATA.level_path(level_id)
+	)
+	var terrain_resource_path: String = str(
+		LEVEL_VIEW.imported_terrain_path(level_id)
+	)
+	load_pipeline.begin(
+		ProjectSettings.globalize_path(level_resource_path),
+		ProjectSettings.globalize_path(terrain_resource_path),
+	)
+	runtime_services.begin_level(level_id)
+	mission_statistics.begin_mission(level_id)
+	if game_shell != null:
+		game_shell.set_victory_debrief(level_id, "")
 	_clear_legacy_ambient_particle_field()
 	_reset_legacy_crt_random_for_level_load()
 	last_level_load_phase_usec["state_reset"] = (
@@ -1642,16 +1814,26 @@ func switch_level(
 	)
 	level_load_phase_started_usec = Time.get_ticks_usec()
 	_load_mission_graph(level_id)
+	_present_loading_progress(level_id, tr("UI_LOADING_WORLD"), 0.18)
 	last_level_load_phase_usec["mission_graph"] = (
 		Time.get_ticks_usec() - level_load_phase_started_usec
 	)
 	level_load_phase_started_usec = Time.get_ticks_usec()
-	load_imported_level(level_id)
+	var preloaded_level_bundle: Dictionary = load_pipeline.finish()
+	load_imported_level(level_id, preloaded_level_bundle)
+	_present_loading_progress(level_id, tr("UI_LOADING_ACTORS"), 0.62)
 	last_level_load_phase_usec["imported_level"] = (
 		Time.get_ticks_usec() - level_load_phase_started_usec
 	)
 	level_load_phase_started_usec = Time.get_ticks_usec()
 	spawn_squad()
+	_rebuild_world_spatial_index()
+	_configure_enemy_perception_schedule()
+	_prewarm_inventory_interface()
+	# Do not retain parsed JSON after cold reconstruction; later actions use the
+	# process-lifetime animation texture cache and can repopulate this tiny
+	# staging cache on demand.
+	IMPORTED_SPRITE_ANIMATION.clear_manifest_document_cache()
 	if _apply_original_crt_random_startup_checkpoint(level_id):
 		_replay_original_first_gameplay_random_update(level_id)
 	_configure_legacy_ambient_particle_field(level_id)
@@ -1660,6 +1842,7 @@ func switch_level(
 	)
 	level_load_phase_started_usec = Time.get_ticks_usec()
 	_prewarm_original_actor_voices()
+	_present_loading_progress(level_id, tr("UI_LOADING_PREWARM"), 0.82)
 	last_level_load_phase_usec["squad_audio"] = (
 		Time.get_ticks_usec() - level_load_phase_started_usec
 	)
@@ -1670,6 +1853,7 @@ func switch_level(
 	)
 	level_load_phase_started_usec = Time.get_ticks_usec()
 	_configure_mission_direction()
+	_present_loading_progress(level_id, tr("UI_LOADING_FINALIZE"), 0.96)
 	last_level_load_phase_usec["mission_direction"] = (
 		Time.get_ticks_usec() - level_load_phase_started_usec
 	)
@@ -1679,13 +1863,23 @@ func switch_level(
 	var presenting_briefing := show_briefing and _should_show_briefing()
 	if presenting_briefing:
 		pending_initial_briefing_level = level_id
+		var briefing_description := tr("UI_BRIEFING_MISSING")
+		if bool(runtime_settings.get("educational_mode", true)):
+			var archive_entry: Dictionary = history_archive.entry_for(level_id)
+			if not archive_entry.is_empty():
+				briefing_description = "%s\n\n%s" % [
+					str(archive_entry.get("historical_context", "")),
+					tr("UI_BRIEFING_CONTEXT") % str(
+						archive_entry.get("objective_context", "")
+					),
+				]
 		media_director.show_briefing(
 			level_id,
 			"第 %d 关：%s" % [
 				int(current_mission.get("number", 0)),
 				str(current_mission.get("title", "任务简报")),
 			],
-			"原版简报图尚未导入；右侧任务目标仍可正常进行。",
+			briefing_description,
 		)
 	elif start_direction:
 		_start_initial_direction_sequence()
@@ -1696,6 +1890,31 @@ func switch_level(
 	last_level_load_phase_usec["total"] = (
 		Time.get_ticks_usec() - level_load_started_usec
 	)
+	if performance_monitor != null:
+		performance_monitor.record_event(
+			"level_load",
+			int(last_level_load_phase_usec["total"]),
+			{
+				"level_id": level_id,
+				"phases": last_level_load_phase_usec.duplicate(true),
+			},
+		)
+	if game_shell != null and game_shell.has_method("hide_loading"):
+		game_shell.call("hide_loading")
+	if not restoring_save:
+		_save_checkpoint("level_start", true)
+
+
+func _present_loading_progress(
+	level_id: String,
+	stage: String,
+	progress: float,
+) -> void:
+	if game_shell == null or not game_shell.has_method("show_loading"):
+		return
+	game_shell.call("show_loading", level_id, stage, progress)
+	if DisplayServer.get_name() != "headless":
+		RenderingServer.force_draw(false, 0.0)
 
 
 func _prewarm_original_actor_voices() -> void:
@@ -1745,6 +1964,82 @@ func _prewarm_original_actor_voices() -> void:
 				continue
 			warmed_gfl_indices[gfl_index] = true
 			media_director.prewarm_audio_index(gfl_index)
+
+
+func _prewarm_inventory_interface() -> void:
+	if game_shell == null or not game_shell.has_method("prewarm_inventory"):
+		return
+	var started_usec := Time.get_ticks_usec()
+	game_shell.call("prewarm_inventory", _inventory_grid_model())
+	if performance_monitor != null:
+		performance_monitor.record_event(
+			"inventory_prewarm",
+			Time.get_ticks_usec() - started_usec,
+			{"level_id": FORMAL_LEVEL_IDS[current_level_index]},
+		)
+
+
+func _configure_enemy_perception_schedule() -> void:
+	var classic := str(runtime_settings.get("ruleset_mode", "classic")) == "classic"
+	for enemy: ENEMY_UNIT in enemies:
+		if not is_instance_valid(enemy):
+			continue
+		if enemy.has_method("configure_perception_schedule"):
+			enemy.call(
+				"configure_perception_schedule",
+				0.0 if classic else float(
+					perception_scheduler.initial_elapsed_for_scene(enemy.scene_index)
+				),
+				1 if classic else int(perception_scheduler.slot_count),
+			)
+
+
+func _rebuild_world_spatial_index() -> void:
+	if world_spatial_index == null:
+		return
+	world_spatial_index.clear()
+	automatic_door_broadphase_radius = 0.0
+	for unit: SQUAD_UNIT in units:
+		_register_spatial_node(unit, ["actor", "combatant", "player"])
+	for escort: ESCORT_UNIT in escorts:
+		_register_spatial_node(escort, ["actor", "combatant", "escort"])
+	for enemy: ENEMY_UNIT in enemies:
+		_register_spatial_node(enemy, ["actor", "combatant", "enemy"])
+	for ambient: AMBIENT_UNIT in ambient_units:
+		_register_spatial_node(ambient, ["actor", "combatant", "ambient"])
+	for prop: Node2D in explosive_props:
+		_register_spatial_node(prop, ["combatant", "explosive"])
+	for door: Node2D in legacy_doors:
+		_register_spatial_node(door, ["door", "interactable"])
+		if door.has_method("approach_radius_from_origin"):
+			automatic_door_broadphase_radius = maxf(
+				automatic_door_broadphase_radius,
+				float(door.call("approach_radius_from_origin")),
+			)
+	for pickup: Node2D in field_pickups:
+		_register_spatial_node(pickup, ["pickup", "field_pickup", "interactable"])
+	for pickup: MISSION_PICKUP in mission_pickups:
+		_register_spatial_node(pickup, ["pickup", "mission_pickup", "interactable"])
+	for cache: Node2D in legacy_burial_caches:
+		_register_spatial_node(cache, ["pickup", "interactable", "burial_cache"])
+	for enemy: ENEMY_UNIT in enemies:
+		enemy.configure_world_spatial_index(world_spatial_index)
+
+
+func _register_spatial_node(node: Node2D, tags: Array = []) -> void:
+	if world_spatial_index == null or node == null or not is_instance_valid(node):
+		return
+	world_spatial_index.register_node(node, tags)
+
+
+func _synchronize_world_spatial_index(delta: float) -> void:
+	if world_spatial_index == null:
+		return
+	spatial_sync_elapsed += maxf(delta, 0.0)
+	if spatial_sync_elapsed < 0.10:
+		return
+	spatial_sync_elapsed = fmod(spatial_sync_elapsed, 0.10)
+	world_spatial_index.synchronize(_all_active_runtime_actors())
 
 
 func _should_show_startup_level_selector() -> bool:
@@ -1836,10 +2131,16 @@ func _load_mission_graph(level_id: String) -> void:
 		objective_label.text = "\n".join(current_mission_state.display_lines())
 
 
-func load_imported_level(level_id: String = LEVEL_VIEW.DEFAULT_LEVEL_ID) -> bool:
+func load_imported_level(
+	level_id: String = LEVEL_VIEW.DEFAULT_LEVEL_ID,
+	preloaded_bundle: Dictionary = {},
+) -> bool:
+	if world_spatial_index != null:
+		world_spatial_index.clear()
 	_cancel_burial_command()
 	_remove_sight_beacon()
 	_clear_sight_observation_target()
+	_clear_tactical_visible_enemies()
 	sight_observation_mode = false
 	sight_target_pending = false
 	burial_mode = false
@@ -1885,8 +2186,18 @@ func load_imported_level(level_id: String = LEVEL_VIEW.DEFAULT_LEVEL_ID) -> bool
 	playable_entities.clear()
 	enemy_entities.clear()
 	ambient_entities.clear()
+	current_level_animation_cache_keys.clear()
 	imported_texture_cache.clear()
-	imported_animation_cache.clear()
+	# Parsed sprite manifests are needed only while assembling action groups.
+	# Their textures remain in imported_animation_cache across level switches.
+	IMPORTED_SPRITE_ANIMATION.clear_manifest_document_cache()
+	# Animation atlases are shared by the same 43 runtime actor sprite types
+	# throughout the campaign.  Keep this cache for the lifetime of the session:
+	# clearing it here forced PNG/JSON decoding back onto every level switch and
+	# made the first m006/m007 reconstruction exceed ten seconds on the reference
+	# machine.  Static scenery still lives in imported_texture_cache and is freed
+	# above, so retaining actor action groups does not pin every map decoration.
+	# A process restart or content-package reload naturally creates a fresh cache.
 	world_entities_by_scene.clear()
 	activated_mission_scenes.clear()
 	next_mission_pickup_serial = 1
@@ -1903,12 +2214,43 @@ func load_imported_level(level_id: String = LEVEL_VIEW.DEFAULT_LEVEL_ID) -> bool
 	converted_root = (
 		ProjectSettings.globalize_path("res://../LocalAssets/converted").simplify_path()
 	)
+	if content_package_validation.is_empty():
+		content_package_validation = CONTENT_PACKAGE_VALIDATOR.validate(
+			converted_root.get_base_dir().path_join("content-manifest.json"),
+			converted_root,
+			"repository-mod-12-level-20260729",
+			OS.has_feature("editor"),
+		)
+		if not bool(content_package_validation.get("ok", false)):
+			terrain_loaded = false
+			world_size = DEFAULT_WORLD_SIZE
+			movement_bounds = DEFAULT_MOVEMENT_BOUNDS
+			configure_level_camera(true)
+			var failures := (
+				content_package_validation.get("failures", []) as Array
+			)
+			update_status(tr("STATUS_CONTENT_PACKAGE_INVALID") % "; ".join(failures))
+			push_error("Content package validation failed: %s" % failures)
+			return false
 	if game_shell != null:
 		game_shell.configure_original_hud_assets(converted_root)
 	if legacy_cursor_presenter != null:
 		legacy_cursor_presenter.load_from_converted_root(converted_root)
-	imported_level = IMPORTED_LEVEL_DATA.load_level(level_id)
-	var imported: Dictionary = LEVEL_VIEW.load_imported_terrain(level_id)
+	var level_source_value: Variant = preloaded_bundle.get("level_source", {})
+	imported_level = (
+		IMPORTED_LEVEL_DATA.parse_dictionary(level_source_value as Dictionary)
+		if level_source_value is Dictionary and not (level_source_value as Dictionary).is_empty()
+		else IMPORTED_LEVEL_DATA.load_level(level_id)
+	)
+	var terrain_image_value: Variant = preloaded_bundle.get("terrain_image")
+	var imported: Dictionary = (
+		LEVEL_VIEW.terrain_from_image(
+			terrain_image_value as Image,
+			ProjectSettings.globalize_path(LEVEL_VIEW.imported_terrain_path(level_id)),
+		)
+		if terrain_image_value is Image
+		else LEVEL_VIEW.load_imported_terrain(level_id)
+	)
 	if imported.is_empty():
 		terrain_loaded = false
 		world_size = DEFAULT_WORLD_SIZE
@@ -1980,6 +2322,9 @@ func _load_navigation_grid() -> NavigationGridData:
 		var entity := entity_value as Dictionary
 		ignored_scene_indices.append(int(entity["scene_index"]))
 	loaded.prepare_astar(ignored_scene_indices)
+	loaded.native_runtime_paths_enabled = (
+		str(runtime_settings.get("ruleset_mode", "classic")) == "modern"
+	)
 	return loaded
 
 
@@ -2453,6 +2798,7 @@ func load_entity_action_groups(entity: Dictionary, action_key: String) -> Array[
 		return []
 	var cache_key := "%s|%s|sparse" % [preview_path, action_key]
 	if imported_animation_cache.has(cache_key):
+		current_level_animation_cache_keys[cache_key] = true
 		return imported_animation_cache[cache_key] as Array[Dictionary]
 	var groups: Array[Dictionary] = IMPORTED_SPRITE_ANIMATION.load_action_groups(
 		preview_path,
@@ -2460,6 +2806,7 @@ func load_entity_action_groups(entity: Dictionary, action_key: String) -> Array[
 		true,
 	)
 	imported_animation_cache[cache_key] = groups
+	current_level_animation_cache_keys[cache_key] = true
 	return groups
 
 
@@ -2514,6 +2861,7 @@ func _load_gfl_action_groups(
 		return []
 	var cache_key := "%s|%s|strict" % [preview_path, action_key]
 	if imported_animation_cache.has(cache_key):
+		current_level_animation_cache_keys[cache_key] = true
 		return imported_animation_cache[cache_key] as Array[Dictionary]
 	var groups: Array[Dictionary] = (
 		IMPORTED_SPRITE_ANIMATION.load_action_groups(
@@ -2522,6 +2870,7 @@ func _load_gfl_action_groups(
 		)
 	)
 	imported_animation_cache[cache_key] = groups
+	current_level_animation_cache_keys[cache_key] = true
 	return groups
 
 
@@ -2620,6 +2969,7 @@ func spawn_squad() -> void:
 		_load_legacy_projectile_visual_catalog(),
 		Callable(self, "_commit_original_dynamic_actor_factory"),
 		Callable(self, "_commit_original_dynamic_actor_destructor"),
+		world_spatial_index,
 	)
 	projectile_world.projectile_damage_applied.connect(_on_projectile_damage_applied)
 	projectile_world.projectile_impact_created.connect(_on_projectile_impact_created)
@@ -2959,7 +3309,36 @@ func _stage_loaded_animation_footprint_profiles() -> int:
 	if dynamic_occupancy == null or navigation_grid == null:
 		return 0
 	var staged_count := 0
-	for cache_value: Variant in imported_animation_cache.values():
+	if str(runtime_settings.get("ruleset_mode", "classic")) == "modern":
+		# Modern human actors deliberately use a one-cell navigation footprint;
+		# their large per-frame pixel masks are presentation metadata and must not
+		# trigger whole-map clearance grids. Only carts, animals and vehicles retain
+		# authored multi-cell movement profiles. This keeps level reconstruction
+		# bounded without changing classic compatibility behavior.
+		for actor: Node2D in _all_active_runtime_actors():
+			if bool(actor.get("use_compact_navigation_footprint")):
+				continue
+			if not actor.has_method("patrol_movement_footprint_profiles"):
+				continue
+			var profiles: Variant = actor.call(
+				"patrol_movement_footprint_profiles"
+			)
+			if not profiles is Array:
+				continue
+			for profile_value: Variant in profiles as Array:
+				if not profile_value is Array:
+					continue
+				var movement_offsets: Array[Vector2i] = []
+				movement_offsets.assign(profile_value as Array)
+				if dynamic_occupancy.stage_footprint_clearance(movement_offsets):
+					staged_count += 1
+		return staged_count
+	var cache_keys: Array[String] = []
+	for cache_key_value: Variant in current_level_animation_cache_keys.keys():
+		cache_keys.append(str(cache_key_value))
+	cache_keys.sort()
+	for cache_key: String in cache_keys:
+		var cache_value: Variant = imported_animation_cache.get(cache_key)
 		if not cache_value is Array:
 			continue
 		for group_value: Variant in cache_value as Array:
@@ -3362,6 +3741,10 @@ func _spawn_enemies() -> void:
 			attack_groups,
 			death_groups,
 		)
+		enemy.configure_tactical_accessibility(
+			bool(runtime_settings.get("colorblind_patterns", true)),
+			bool(runtime_settings.get("high_contrast", false)),
+		)
 		enemy.configure_modern_navigation_footprint(
 			SQUAD_UNIT.runtime_actor_uses_compact_biped_navigation(
 				enemy.runtime_actor_type
@@ -3436,6 +3819,23 @@ func _spawn_ambient_units() -> void:
 
 
 func _process(delta: float) -> void:
+	if performance_monitor != null:
+		performance_monitor.begin_frame()
+	_synchronize_world_spatial_index(delta)
+	if navigation_requests != null:
+		var processed_navigation_requests := int(
+			navigation_requests.process_budget(
+				dynamic_occupancy,
+				navigation_grid,
+				2000,
+				3,
+			)
+		)
+		if processed_navigation_requests > 0 and performance_monitor != null:
+			performance_monitor.increment(
+				"deferred_navigation_requests",
+				processed_navigation_requests,
+			)
 	_update_tactical_sight_visibility()
 	_advance_original_disguise_state(delta)
 	if mission_direction_runtime != null:
@@ -3458,6 +3858,7 @@ func _process(delta: float) -> void:
 		or force_up_held
 	)
 	_update_context_cursor(delta)
+	_update_combat_preview(delta)
 	if (
 		game_shell != null
 		and game_shell.is_tactical_map_visible()
@@ -3470,6 +3871,8 @@ func _process(delta: float) -> void:
 			_camera_world_rect(),
 		)
 	if level_camera == null:
+		if performance_monitor != null:
+			performance_monitor.end_frame()
 		return
 	_sync_level_camera_safe_area()
 	var keyboard_direction := Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
@@ -3484,7 +3887,7 @@ func _process(delta: float) -> void:
 		requested_direction = requested_direction.normalized()
 	var target_velocity := (
 		requested_direction
-		* CAMERA_PAN_SPEED
+		* float(runtime_settings.get("edge_scroll_speed", CAMERA_PAN_SPEED))
 		/ maxf(level_camera.zoom.x, 0.001)
 	)
 	camera_pan_velocity = SMOOTH_CAMERA_PAN.advance_velocity(
@@ -3495,9 +3898,13 @@ func _process(delta: float) -> void:
 	)
 	level_camera.position += camera_pan_velocity * maxf(delta, 0.0)
 	clamp_level_camera()
+	if performance_monitor != null:
+		performance_monitor.end_frame()
 
 
 func _physics_process(_delta: float) -> void:
+	if performance_monitor != null:
+		performance_monitor.begin_physics()
 	_advance_automatic_door_interactions()
 	_advance_original_global_alarm()
 	_advance_original_escort_rescue_proximity()
@@ -3505,6 +3912,8 @@ func _physics_process(_delta: float) -> void:
 	_advance_original_pickup_order()
 	_advance_original_drop_order()
 	_advance_burial_command_world_tick()
+	if performance_monitor != null:
+		performance_monitor.end_physics()
 
 
 func _advance_original_global_alarm() -> bool:
@@ -3912,12 +4321,34 @@ func _update_context_cursor(delta: float = 0.0) -> void:
 	if legacy_cursor_presenter == null:
 		return
 	if game_shell != null and game_shell.is_overlay_open():
+		context_cursor_cached_serial = LEGACY_INPUT_RULES.CursorSerial.NORMAL
+		context_cursor_last_state = -1
 		legacy_cursor_presenter.apply(LEGACY_INPUT_RULES.CursorSerial.NORMAL, delta)
 		return
 	if _pointer_over_interactive_control():
+		context_cursor_cached_serial = LEGACY_INPUT_RULES.CursorSerial.NORMAL
+		context_cursor_last_state = -1
 		legacy_cursor_presenter.apply(LEGACY_INPUT_RULES.CursorSerial.NORMAL, delta)
 		return
 	var mouse_screen := get_viewport().get_mouse_position()
+	context_cursor_refresh_elapsed += maxf(delta, 0.0)
+	var cursor_state := (
+		(1 if burial_mode else 0)
+		| ((1 if sight_target_pending else 0) << 1)
+		| ((1 if not selected_units.is_empty() else 0) << 2)
+		| ((1 if original_force_target_held else 0) << 3)
+	)
+	var refresh_context := (
+		mouse_screen.distance_squared_to(context_cursor_last_screen_position) > 0.25
+		or cursor_state != context_cursor_last_state
+		or context_cursor_refresh_elapsed >= 0.05
+	)
+	if not refresh_context:
+		legacy_cursor_presenter.apply(context_cursor_cached_serial, delta)
+		return
+	context_cursor_last_screen_position = mouse_screen
+	context_cursor_last_state = cursor_state
+	context_cursor_refresh_elapsed = 0.0
 	var viewport_size := get_viewport_rect().size
 	var pointer_inside_world := (
 		mouse_screen.x >= 0.0
@@ -3928,7 +4359,7 @@ func _update_context_cursor(delta: float = 0.0) -> void:
 	var mouse_world := (
 		get_global_transform_with_canvas().affine_inverse() * mouse_screen
 	)
-	var serial_id: int = LEGACY_INPUT_RULES.context_cursor_serial(
+	context_cursor_cached_serial = LEGACY_INPUT_RULES.context_cursor_serial(
 		burial_mode,
 		sight_target_pending,
 		not selected_units.is_empty(),
@@ -3942,12 +4373,16 @@ func _update_context_cursor(delta: float = 0.0) -> void:
 		_cursor_ground_is_walkable(mouse_world),
 		pointer_inside_world,
 	)
-	legacy_cursor_presenter.apply(serial_id, delta)
+	legacy_cursor_presenter.apply(context_cursor_cached_serial, delta)
 
 
 func _reset_context_cursor() -> void:
 	if legacy_cursor_presenter != null:
 		legacy_cursor_presenter.reset()
+	context_cursor_cached_serial = LEGACY_INPUT_RULES.CursorSerial.NORMAL
+	context_cursor_last_screen_position = Vector2(INF, INF)
+	context_cursor_last_state = -1
+	context_cursor_refresh_elapsed = 0.0
 
 
 func _pointer_over_interactive_control() -> bool:
@@ -3997,6 +4432,12 @@ func _cursor_ground_is_walkable(world_position: Vector2) -> bool:
 
 func _update_tactical_sight_visibility() -> void:
 	if (
+		not sight_target_pending
+		and sight_observation_target == null
+		and tactical_visible_enemies.is_empty()
+	):
+		return
+	if (
 		sight_observation_target != null
 		and (
 			not is_instance_valid(sight_observation_target)
@@ -4010,10 +4451,74 @@ func _update_tactical_sight_visibility() -> void:
 		if sight_target_pending
 		else null
 	)
-	for enemy: ENEMY_UNIT in enemies:
-		enemy.set_tactical_ranges_visible(
-			enemy == hovered_enemy or enemy == sight_observation_target
-		)
+	var desired: Dictionary = {}
+	for enemy: ENEMY_UNIT in [hovered_enemy, sight_observation_target]:
+		if enemy != null and is_instance_valid(enemy):
+			desired[enemy.get_instance_id()] = enemy
+	for instance_id_value: Variant in tactical_visible_enemies.keys():
+		var instance_id := int(instance_id_value)
+		if desired.has(instance_id):
+			continue
+		var enemy := tactical_visible_enemies.get(instance_id) as ENEMY_UNIT
+		if enemy != null and is_instance_valid(enemy):
+			enemy.set_tactical_ranges_visible(false)
+		tactical_visible_enemies.erase(instance_id)
+	for instance_id_value: Variant in desired.keys():
+		var instance_id := int(instance_id_value)
+		if tactical_visible_enemies.has(instance_id):
+			continue
+		var enemy := desired[instance_id] as ENEMY_UNIT
+		enemy.set_tactical_ranges_visible(true)
+		tactical_visible_enemies[instance_id] = enemy
+
+
+func _clear_tactical_visible_enemies() -> void:
+	for enemy_value: Variant in tactical_visible_enemies.values():
+		var enemy := enemy_value as ENEMY_UNIT
+		if enemy != null and is_instance_valid(enemy):
+			enemy.set_tactical_ranges_visible(false)
+	tactical_visible_enemies.clear()
+
+
+func _update_combat_preview(delta: float) -> void:
+	if game_shell == null:
+		return
+	combat_preview_refresh_elapsed += maxf(delta, 0.0)
+	if combat_preview_refresh_elapsed < 0.08:
+		return
+	combat_preview_refresh_elapsed = fmod(combat_preview_refresh_elapsed, 0.08)
+	if selected_units.is_empty() or game_shell.is_overlay_open():
+		if combat_preview_visible:
+			game_shell.set_combat_preview("")
+			combat_preview_visible = false
+		return
+	var attacker := selected_units[0]
+	var mouse_world := _mouse_world_position()
+	var target: Node2D = enemy_at_world_point(mouse_world)
+	if target == null:
+		target = explosive_prop_at_world_point(mouse_world)
+	if target == null:
+		if combat_preview_visible:
+			game_shell.set_combat_preview("")
+			combat_preview_visible = false
+		return
+	var preview_data: Dictionary = COMBAT_FEEDBACK.preview(
+		attacker,
+		target,
+		dynamic_occupancy,
+	)
+	var attack_type := int(preview_data.get("attack_type", 0))
+	var preview_text: String = COMBAT_FEEDBACK.display_text(
+		preview_data,
+		str(WEAPON_NAMES.get(attack_type, tr("WEAPON_CURRENT"))),
+	)
+	var status := "ready" if bool(preview_data.get("ready", false)) else (
+		"warning"
+		if str(preview_data.get("reason", "")) == "out_of_range"
+		else "blocked"
+	)
+	game_shell.set_combat_preview(preview_text, status)
+	combat_preview_visible = not preview_text.is_empty()
 
 
 func _mouse_edge_scroll_direction() -> Vector2:
@@ -4038,7 +4543,7 @@ func _mouse_edge_scroll_direction() -> Vector2:
 	return SMOOTH_CAMERA_PAN.edge_intent(
 		mouse_position,
 		viewport_size,
-		EDGE_SCROLL_MARGIN,
+		float(runtime_settings.get("edge_scroll_margin", EDGE_SCROLL_MARGIN)),
 		EDGE_SCROLL_VERTICAL_MARGIN,
 	)
 
@@ -4158,6 +4663,11 @@ func _toggle_fullscreen_window_mode() -> void:
 		next_settings["display_mode"] = "windowed"
 		next_settings["fullscreen"] = false
 	_on_shell_settings_changed(next_settings)
+	command_bus.issue(
+		"toggle_fullscreen",
+		{"display_mode": str(next_settings.get("display_mode", "windowed"))},
+		"input",
+	)
 	if game_shell != null:
 		game_shell.set_settings(runtime_settings)
 	update_status(
@@ -4206,7 +4716,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		):
 			if level_camera != null:
 				var zoom_in := mouse_event.button_index == MOUSE_BUTTON_WHEEL_UP
-				var next_zoom: float = LEVEL_VIEW.stepped_zoom(level_camera.zoom.x, zoom_in)
+				var next_zoom: float = LEVEL_VIEW.zoom_with_step(
+					level_camera.zoom.x,
+					zoom_in,
+					float(runtime_settings.get("zoom_step", 0.25)),
+				)
 				level_camera.zoom = Vector2.ONE * next_zoom
 				clamp_level_camera()
 			get_viewport().set_input_as_handled()
@@ -4220,6 +4734,7 @@ func _unhandled_input(event: InputEvent) -> void:
 					local_position,
 					mouse_event.shift_pressed,
 					mouse_event.ctrl_pressed or original_force_target_held,
+					mouse_event.double_click,
 				)
 			get_viewport().set_input_as_handled()
 		elif mouse_event.button_index == MOUSE_BUTTON_RIGHT:
@@ -4237,12 +4752,20 @@ func _unhandled_input(event: InputEvent) -> void:
 						Rect2(right_drag_start_screen, mouse_event.position - right_drag_start_screen).abs(),
 						mouse_event.shift_pressed,
 					)
+				elif str(runtime_settings.get("control_scheme", "classic")) == "modern":
+					_handle_modern_context_command(
+						local_position,
+						mouse_event.ctrl_pressed or original_force_target_held,
+					)
 				# The original world view assigns the right button exclusively to
 				# drag-box selection. A short right click deliberately issues no order.
 				queue_redraw()
 			get_viewport().set_input_as_handled()
 	elif event is InputEventKey and not event.echo:
 		var key_event := event as InputEventKey
+		if _handle_modern_group_or_bookmark_key(key_event):
+			get_viewport().set_input_as_handled()
+			return
 		if key_event.pressed and _consume_original_cheat_key(key_event):
 			# The final letter of FLIPMISSION is N, which is also the modern
 			# noise-lure shortcut. Give the complete original sequence priority.
@@ -4298,6 +4821,7 @@ func _handle_original_left_click(
 	world_position: Vector2,
 	additive: bool,
 	force_target_modifier: bool = false,
+	double_click: bool = false,
 ) -> void:
 	if burial_mode:
 		_try_bury_at(world_position)
@@ -4308,6 +4832,17 @@ func _handle_original_left_click(
 		return
 	if selected_backpack_item_id > 0:
 		drop_selected_item_at(world_position)
+		return
+	if str(runtime_settings.get("control_scheme", "classic")) == "modern":
+		for unit: SQUAD_UNIT in _commandable_player_units():
+			if not unit.is_alive or not unit.contains_parent_point(world_position):
+				continue
+			handle_selection(world_position, additive)
+			if double_click:
+				_select_same_actor_type_in_view(unit, additive)
+			return
+		if not additive:
+			clear_selection()
 		return
 	if force_target_modifier:
 		var forced_target := force_target_at_world_point(world_position)
@@ -4346,6 +4881,168 @@ func _handle_original_left_click(
 		issue_formation_move(world_position)
 
 
+func _handle_modern_context_command(
+	world_position: Vector2,
+	force_target_modifier: bool = false,
+) -> void:
+	if selected_backpack_item_id > 0:
+		drop_selected_item_at(world_position)
+		return
+	if force_target_modifier:
+		var forced_target := force_target_at_world_point(world_position)
+		if forced_target != null:
+			issue_attack_order(forced_target, true)
+		return
+	var inventory_drop := mission_inventory_pickup_at_world_point(world_position)
+	if inventory_drop != null:
+		issue_original_pickup_order(inventory_drop)
+		return
+	if _try_interact_burial_cache_at(world_position):
+		return
+	if _try_open_legacy_door_at(world_position):
+		return
+	if _try_issue_legacy_world_object_deployment(world_position):
+		return
+	var field_pickup := field_pickup_at_world_point(world_position)
+	if field_pickup != null:
+		issue_original_pickup_order(field_pickup)
+		return
+	var combat_target: Node2D = enemy_at_world_point(world_position)
+	if combat_target == null:
+		combat_target = explosive_prop_at_world_point(world_position)
+	if combat_target != null:
+		issue_attack_order(combat_target)
+	else:
+		issue_formation_move(world_position)
+
+
+func _handle_modern_group_or_bookmark_key(event: InputEventKey) -> bool:
+	if (
+		str(runtime_settings.get("control_scheme", "classic")) != "modern"
+		or not event.pressed
+		or event.echo
+	):
+		return false
+	var group_number := _digit_key_number(event.keycode)
+	if group_number <= 0:
+		return false
+	if event.shift_pressed:
+		if event.ctrl_pressed:
+			_store_camera_bookmark(group_number)
+		else:
+			_recall_camera_bookmark(group_number)
+	else:
+		if event.ctrl_pressed:
+			_assign_control_group(group_number)
+		else:
+			_recall_control_group(group_number)
+	return true
+
+
+static func _digit_key_number(keycode: Key) -> int:
+	if keycode >= KEY_1 and keycode <= KEY_9:
+		return int(keycode - KEY_0)
+	return 0
+
+
+func _assign_control_group(group_number: int) -> void:
+	var scene_indices: Array[int] = []
+	for unit: SQUAD_UNIT in selected_units:
+		if unit != null and is_instance_valid(unit) and unit.is_alive:
+			scene_indices.append(unit.scene_index)
+	control_groups[group_number] = scene_indices
+	update_status(
+		tr("STATUS_CONTROL_GROUP_SAVED") % [group_number, scene_indices.size()]
+	)
+	command_bus.issue(
+		"assign_control_group",
+		{"group": group_number, "unit_count": scene_indices.size()},
+		"input",
+	)
+
+
+func _recall_control_group(group_number: int) -> void:
+	var scene_indices_value: Variant = control_groups.get(group_number)
+	if not scene_indices_value is Array:
+		update_status(tr("STATUS_CONTROL_GROUP_EMPTY") % group_number)
+		return
+	clear_selection()
+	var center := Vector2.ZERO
+	for scene_index_value: Variant in scene_indices_value as Array:
+		var actor := world_spatial_index.node_for_scene(int(scene_index_value)) as SQUAD_UNIT
+		if actor == null or not actor.is_alive:
+			continue
+		selected_units.append(actor)
+		actor.set_selected(true)
+		center += actor.position
+	if not selected_units.is_empty() and level_camera != null:
+		level_camera.position = center / float(selected_units.size())
+		clamp_level_camera()
+	_refresh_inventory_ui()
+	update_status(
+		tr("STATUS_CONTROL_GROUP_SELECTED") % [group_number, selected_units.size()]
+	)
+	command_bus.issue(
+		"recall_control_group",
+		{"group": group_number, "unit_count": selected_units.size()},
+		"input",
+	)
+
+
+func _store_camera_bookmark(bookmark_number: int) -> void:
+	if level_camera == null:
+		return
+	camera_bookmarks[bookmark_number] = level_camera.position
+	update_status(tr("STATUS_CAMERA_BOOKMARK_SAVED") % bookmark_number)
+	command_bus.issue(
+		"store_camera_bookmark",
+		{"bookmark": bookmark_number, "position": level_camera.position},
+		"input",
+	)
+
+
+func _recall_camera_bookmark(bookmark_number: int) -> void:
+	var position_value: Variant = camera_bookmarks.get(bookmark_number)
+	if not position_value is Vector2 or level_camera == null:
+		update_status(tr("STATUS_CAMERA_BOOKMARK_EMPTY") % bookmark_number)
+		return
+	level_camera.position = position_value as Vector2
+	clamp_level_camera()
+	command_bus.issue(
+		"recall_camera_bookmark",
+		{"bookmark": bookmark_number, "position": level_camera.position},
+		"input",
+	)
+
+
+func _select_same_actor_type_in_view(seed: SQUAD_UNIT, additive: bool) -> void:
+	if seed == null or not is_instance_valid(seed):
+		return
+	if not additive:
+		clear_selection()
+	var visible_world := _camera_world_rect().grow(32.0)
+	for candidate: SQUAD_UNIT in _commandable_player_units():
+		if (
+			not candidate.is_alive
+			or candidate.runtime_actor_type != seed.runtime_actor_type
+			or not visible_world.has_point(candidate.position)
+			or selected_units.has(candidate)
+		):
+			continue
+		selected_units.append(candidate)
+		candidate.set_selected(true)
+	_refresh_inventory_ui()
+	update_status(tr("STATUS_SAME_TYPE_SELECTED") % selected_units.size())
+	command_bus.issue(
+		"double_click_select_type",
+		{
+			"runtime_actor_type": seed.runtime_actor_type,
+			"unit_count": selected_units.size(),
+		},
+		"input",
+	)
+
+
 func _consume_original_cheat_key(event: InputEventKey) -> bool:
 	if event.ctrl_pressed or event.alt_pressed or event.meta_pressed or event.unicode <= 0:
 		return false
@@ -4381,6 +5078,11 @@ func _complete_current_mission_from_original_cheat() -> void:
 func _handle_original_key_action(action: String, key_event: InputEventKey) -> bool:
 	if action.is_empty():
 		return false
+	command_bus.issue(
+		"input_action",
+		{"action": action, "pressed": key_event.pressed},
+		"input",
+	)
 	if WEAPON_ACTION_ATTACK_TYPES.has(action):
 		_equip_selected_attack_type(int(WEAPON_ACTION_ATTACK_TYPES[action]))
 		return true
@@ -4829,7 +5531,15 @@ func _try_interact_burial_cache_at(world_position: Vector2) -> bool:
 
 
 func legacy_door_at_world_point(world_position: Vector2) -> Node2D:
-	for door: Node2D in legacy_doors:
+	var candidates: Array = []
+	if world_spatial_index != null:
+		candidates = world_spatial_index.query_radius(world_position, 96.0, ["door"])
+	if candidates.is_empty():
+		candidates = legacy_doors
+	for door_value: Variant in candidates:
+		if not door_value is Node2D:
+			continue
+		var door := door_value as Node2D
 		if (
 			is_instance_valid(door)
 			and not bool(door.get("is_open"))
@@ -4842,7 +5552,15 @@ func legacy_door_at_world_point(world_position: Vector2) -> Node2D:
 func mission_inventory_pickup_at_world_point(
 	world_position: Vector2,
 ) -> MISSION_PICKUP:
-	for pickup: MISSION_PICKUP in mission_pickups:
+	var candidates: Array = []
+	if world_spatial_index != null:
+		candidates = world_spatial_index.query_radius(world_position, 96.0, ["mission_pickup"])
+	if candidates.is_empty():
+		candidates = mission_pickups
+	for pickup_value: Variant in candidates:
+		if not pickup_value is MISSION_PICKUP:
+			continue
+		var pickup := pickup_value as MISSION_PICKUP
 		if (
 			pickup != null
 			and is_instance_valid(pickup)
@@ -4896,6 +5614,35 @@ func _advance_automatic_door_interactions() -> int:
 	if moving_actors.is_empty():
 		return 0
 	var opened_count := 0
+	# Doors are static world-index records, so query them around each live actor
+	# instead of evaluating the previous doors x actors Cartesian product every
+	# physics tick. The radius is derived from the largest authored door bounds;
+	# contains_approach_point remains the exact narrow-phase test.
+	if (
+		world_spatial_index != null
+		and automatic_door_broadphase_radius > 0.0
+	):
+		for actor: Node2D in moving_actors:
+			for door: Node2D in world_spatial_index.query_radius(
+				actor.global_position,
+				automatic_door_broadphase_radius,
+				["door"],
+			):
+				if (
+					door == null
+					or not is_instance_valid(door)
+					or bool(door.get("is_open"))
+					or not door.has_method("contains_approach_point")
+				):
+					continue
+				if (
+					bool(door.call("contains_approach_point", actor.position))
+					and bool(door.call("open"))
+				):
+					opened_count += 1
+		return opened_count
+	# Fixtures that deliberately bypass level/index construction retain the
+	# original exact fallback.
 	for door: Node2D in legacy_doors:
 		if (
 			door == null
@@ -5139,6 +5886,10 @@ func _equip_selected_attack_type(attack_type: int) -> void:
 	if attack_type == 10 and equipped > 0:
 		_report_direction_action("equip_explosives")
 	_refresh_inventory_ui()
+	command_bus.issue(
+		"equip_weapon",
+		{"attack_type": attack_type, "equipped_units": equipped},
+	)
 
 
 func _cycle_selected_weapons(direction: int) -> void:
@@ -5289,6 +6040,19 @@ func issue_formation_move(destination: Vector2) -> void:
 			unit.issue_move(unit_destination)
 			planned_count += 1
 			continue
+		if (
+			str(runtime_settings.get("ruleset_mode", "classic")) == "modern"
+			and navigation_requests != null
+		):
+			var request_serial := int(navigation_requests.enqueue(
+				unit.scene_index,
+				unit.position,
+				unit_destination,
+				Callable(self, "_complete_deferred_formation_path").bind(unit),
+			))
+			if request_serial > 0:
+				planned_count += 1
+				continue
 		var path := PackedVector2Array()
 		var path_started_usec := Time.get_ticks_usec()
 		if dynamic_occupancy != null and unit.scene_index >= 0:
@@ -5322,6 +6086,44 @@ func issue_formation_move(destination: Vector2) -> void:
 	last_formation_move_total_usec = (
 		Time.get_ticks_usec() - formation_started_usec
 	)
+	command_bus.issue(
+		"formation_move",
+		{
+			"destination": destination,
+			"planned_units": planned_count,
+			"selected_units": selected_units.size(),
+			"elapsed_usec": last_formation_move_total_usec,
+		},
+	)
+
+
+func _complete_deferred_formation_path(
+	path: PackedVector2Array,
+	request: Dictionary,
+	elapsed_usec: int,
+	unit: SQUAD_UNIT,
+) -> void:
+	last_formation_move_path_usec += maxi(elapsed_usec, 0)
+	if unit == null or not is_instance_valid(unit) or not unit.is_alive:
+		return
+	var destination := request.get("destination", unit.position) as Vector2
+	if path.is_empty() and not unit.position.is_equal_approx(destination):
+		unit.cancel_path()
+		update_status(tr("STATUS_NAVIGATION_UNREACHABLE"))
+		command_bus.emit_event(
+			"navigation_failed",
+			{"scene_index": unit.scene_index, "destination": destination},
+		)
+		return
+	unit.issue_path(path)
+	command_bus.emit_event(
+		"navigation_ready",
+		{
+			"scene_index": unit.scene_index,
+			"waypoints": path.size(),
+			"elapsed_usec": elapsed_usec,
+		},
+	)
 
 
 func _record_m010_split_order(unit: SQUAD_UNIT) -> void:
@@ -5341,7 +6143,15 @@ func _record_m010_split_order(unit: SQUAD_UNIT) -> void:
 func enemy_at_world_point(world_point: Vector2) -> ENEMY_UNIT:
 	var nearest: ENEMY_UNIT
 	var nearest_distance := 30.0 * 30.0
-	for enemy: ENEMY_UNIT in enemies:
+	var candidates: Array = []
+	if world_spatial_index != null:
+		candidates = world_spatial_index.query_radius(world_point, 30.0, ["enemy"])
+	if candidates.is_empty():
+		candidates = enemies
+	for enemy_value: Variant in candidates:
+		if not enemy_value is ENEMY_UNIT:
+			continue
+		var enemy := enemy_value as ENEMY_UNIT
 		if not enemy.is_alive:
 			continue
 		var distance := enemy.position.distance_squared_to(world_point)
@@ -5354,7 +6164,15 @@ func enemy_at_world_point(world_point: Vector2) -> ENEMY_UNIT:
 func explosive_prop_at_world_point(world_point: Vector2) -> Node2D:
 	var nearest: Node2D
 	var nearest_distance := 30.0 * 30.0
-	for prop: Node2D in explosive_props:
+	var candidates: Array = []
+	if world_spatial_index != null:
+		candidates = world_spatial_index.query_radius(world_point, 30.0, ["explosive"])
+	if candidates.is_empty():
+		candidates = explosive_props
+	for prop_value: Variant in candidates:
+		if not prop_value is Node2D:
+			continue
+		var prop := prop_value as Node2D
 		if (
 			not is_instance_valid(prop)
 			or not prop.has_method("is_combat_alive")
@@ -5371,7 +6189,15 @@ func explosive_prop_at_world_point(world_point: Vector2) -> Node2D:
 func field_pickup_at_world_point(world_point: Vector2) -> Node2D:
 	var nearest: Node2D
 	var nearest_distance := INF
-	for pickup: Node2D in field_pickups:
+	var candidates: Array = []
+	if world_spatial_index != null:
+		candidates = world_spatial_index.query_radius(world_point, 96.0, ["field_pickup"])
+	if candidates.is_empty():
+		candidates = field_pickups
+	for pickup_value: Variant in candidates:
+		if not pickup_value is Node2D or pickup_value is MISSION_PICKUP:
+			continue
+		var pickup := pickup_value as Node2D
 		if (
 			not is_instance_valid(pickup)
 			or bool(pickup.get("consumed"))
@@ -5390,18 +6216,23 @@ func force_target_at_world_point(world_point: Vector2) -> Node2D:
 	var nearest: Node2D
 	var nearest_distance := 30.0 * 30.0
 	var candidates: Array[Node2D] = []
-	for unit: SQUAD_UNIT in units:
-		if not selected_units.has(unit):
-			candidates.append(unit)
-	for escort: ESCORT_UNIT in escorts:
-		if not selected_units.has(escort):
-			candidates.append(escort)
-	for ambient: AMBIENT_UNIT in ambient_units:
-		candidates.append(ambient)
-	for enemy: ENEMY_UNIT in enemies:
-		candidates.append(enemy)
-	for prop: Node2D in explosive_props:
-		candidates.append(prop)
+	if world_spatial_index != null:
+		candidates.assign(
+			world_spatial_index.query_radius(world_point, 30.0, ["combatant"])
+		)
+	if candidates.is_empty():
+		for unit: SQUAD_UNIT in units:
+			if not selected_units.has(unit):
+				candidates.append(unit)
+		for escort: ESCORT_UNIT in escorts:
+			if not selected_units.has(escort):
+				candidates.append(escort)
+		for ambient: AMBIENT_UNIT in ambient_units:
+			candidates.append(ambient)
+		for enemy: ENEMY_UNIT in enemies:
+			candidates.append(enemy)
+		for prop: Node2D in explosive_props:
+			candidates.append(prop)
 	for candidate: Node2D in candidates:
 		if (
 			not is_instance_valid(candidate)
@@ -5449,11 +6280,35 @@ func issue_attack_order(target: Node2D, force_target: bool = false) -> void:
 	)
 	var command_name := "强制攻击" if force_target else "攻击"
 	update_status("%s命令：%d 名队员 → %s" % [command_name, issued, target_name])
+	command_bus.issue(
+		"attack_order",
+		{
+			"target_scene_index": int(target.get("scene_index")),
+			"force_target": force_target,
+			"issued_units": issued,
+		},
+	)
 
 
 func _connect_combatant(combatant: Node2D) -> void:
+	if combatant.has_method("set_reduced_violence"):
+		combatant.call(
+			"set_reduced_violence",
+			bool(runtime_settings.get("reduced_violence", false)),
+		)
+	var spatial_tags: Array[String] = ["actor", "combatant"]
+	if combatant is ENEMY_UNIT:
+		spatial_tags.append("enemy")
+	elif combatant is ESCORT_UNIT:
+		spatial_tags.append("escort")
+	elif combatant is AMBIENT_UNIT:
+		spatial_tags.append("ambient")
+	else:
+		spatial_tags.append("player")
+	_register_spatial_node(combatant, spatial_tags)
 	combatant.attack_started.connect(_on_attack_started)
 	combatant.attack_hit.connect(_on_attack_hit)
+	combatant.attack_missed.connect(_on_attack_missed)
 	combatant.damage_received.connect(_on_damage_received)
 	combatant.died.connect(_on_combatant_died)
 	combatant.ammo_changed.connect(_on_ammo_changed)
@@ -6021,6 +6876,7 @@ func _spawn_legacy_explosion_effect(
 	initial_random_state: int = 1,
 	update_global_random_state: bool = true,
 ) -> Node2D:
+	_show_world_sound_caption(tr("SOUND_EXPLOSION"), world_position, 1280.0)
 	var effect: Node2D = LEGACY_EXPLOSION_EFFECT_SCRIPT.new()
 	effect.name = "LegacyExplosionActor%d" % runtime_actor_type
 	add_child(effect)
@@ -6051,6 +6907,11 @@ func _spawn_legacy_explosion_effect(
 			return null
 	if effect.has_method("bind_original_crt_random_source"):
 		effect.call("bind_original_crt_random_source", self)
+	if effect.has_method("set_reduce_flashes"):
+		effect.call(
+			"set_reduce_flashes",
+			bool(runtime_settings.get("reduce_flashes", false)),
+		)
 	legacy_explosion_effects.append(effect)
 	effect.connect(
 		"original_animation_audio_requested",
@@ -6372,6 +7233,18 @@ func _on_attack_started(
 	attack_type: int,
 	alert_radius: float,
 ) -> void:
+	command_bus.emit_event(
+		"attack_started",
+		{
+			"player": attacker is SQUAD_UNIT,
+			"attacker_scene_index": int(attacker.get("scene_index")),
+			"target_scene_index": int(target.get("scene_index")) if target != null else -1,
+			"attack_type": attack_type,
+		},
+		"combat",
+	)
+	if alert_radius > 0.0:
+		_show_world_sound_caption(tr("SOUND_GUNSHOT"), attacker.position, alert_radius)
 	if (
 		mission_ai_coordinator != null
 		and attacker is SQUAD_UNIT
@@ -6410,6 +7283,36 @@ func _on_attack_started(
 	)
 	# sub_45DA20 is not a generic gunshot response. It is emitted only by the
 	# corpse-discovery state, whose exact path lives in EnemyUnit.
+
+
+func _show_world_sound_caption(
+	sound_label: String,
+	world_position: Vector2,
+	audible_radius: float,
+) -> void:
+	if game_shell == null or level_camera == null or audible_radius <= 0.0:
+		return
+	var offset := world_position - level_camera.position
+	var distance := offset.length()
+	if distance > audible_radius:
+		return
+	var direction := tr("SOUND_DIRECTION_NEAR")
+	if distance >= 64.0:
+		var directions: Array[String] = [
+			tr("SOUND_DIRECTION_EAST"),
+			tr("SOUND_DIRECTION_SOUTHEAST"),
+			tr("SOUND_DIRECTION_SOUTH"),
+			tr("SOUND_DIRECTION_SOUTHWEST"),
+			tr("SOUND_DIRECTION_WEST"),
+			tr("SOUND_DIRECTION_NORTHWEST"),
+			tr("SOUND_DIRECTION_NORTH"),
+			tr("SOUND_DIRECTION_NORTHEAST"),
+		]
+		var normalized_angle := fposmod(offset.angle() + TAU / 16.0, TAU)
+		direction = directions[int(floor(normalized_angle / (TAU / 8.0))) % 8]
+	game_shell.show_environment_caption(
+		tr("SOUND_CAPTION_FORMAT") % [sound_label, direction, distance / 16.0],
+	)
 
 
 func _queue_or_broadcast_alert(
@@ -6749,6 +7652,7 @@ func _register_mission_pickup(pickup: MISSION_PICKUP) -> void:
 	)
 	if not mission_pickups.has(pickup):
 		mission_pickups.append(pickup)
+	_register_spatial_node(pickup, ["pickup", "mission_pickup", "interactable"])
 	_refresh_enemy_world_items()
 
 
@@ -6766,6 +7670,8 @@ func _unregister_mission_pickup(pickup: MISSION_PICKUP) -> void:
 			pickup.original_destructor_random_consumed = true
 			pickup.item_payload["original_destructor_random_consumed"] = true
 	mission_pickups.erase(pickup)
+	if world_spatial_index != null and pickup != null:
+		world_spatial_index.unregister_node(pickup)
 	_refresh_enemy_world_items()
 
 
@@ -6845,6 +7751,15 @@ func _on_enemy_legacy_corpse_discovered(
 	):
 		return
 	legacy_global_alarm_active = true
+	_show_world_sound_caption(tr("SOUND_ALARM"), observer.position, 960.0)
+	command_bus.emit_event(
+		"alarm_raised",
+		{
+			"observer_scene_index": observer.scene_index,
+			"corpse_scene_index": corpse.scene_index,
+		},
+		"perception",
+	)
 	var marker: Dictionary = _nearest_legacy_reinforcement_marker(observer.position)
 	if marker.is_empty():
 		update_status("%s 发现尸体并拉响警报" % observer.display_name)
@@ -7047,6 +7962,11 @@ func _spawn_legacy_reinforcement(
 		attack_groups,
 		death_groups,
 	)
+	reinforcement.configure_tactical_accessibility(
+		bool(runtime_settings.get("colorblind_patterns", true)),
+		bool(runtime_settings.get("high_contrast", false)),
+	)
+	reinforcement.configure_world_spatial_index(world_spatial_index)
 	if not _bind_original_crt_random_actor(reinforcement, 1):
 		reinforcement.queue_free()
 		return null
@@ -7196,6 +8116,46 @@ func _on_attack_hit(
 			_combat_target_display_name(target),
 			damage,
 		])
+	command_bus.emit_event(
+		"attack_hit",
+		{
+			"player": attacker is SQUAD_UNIT,
+			"attacker_scene_index": int(attacker.get("scene_index")),
+			"target_scene_index": int(target.get("scene_index")) if target != null else -1,
+			"attack_type": attack_type,
+			"damage": damage,
+		},
+		"combat",
+	)
+
+
+func _on_attack_missed(
+	attacker: Node2D,
+	target: Node2D,
+	attack_type: int,
+	reason: String,
+) -> void:
+	if units.has(attacker):
+		update_status(
+			tr("STATUS_PLAYER_ATTACK_MISSED") % [
+				str(attacker.get("display_name")),
+				str(WEAPON_NAMES.get(attack_type, tr("WEAPON_GENERIC"))),
+				roundi(COMBAT_FEEDBACK.player_hit_chance(attack_type) * 100.0),
+			]
+		)
+	elif target != null and units.has(target) and game_shell != null:
+		game_shell.show_environment_caption(tr("STATUS_ENEMY_ATTACK_MISSED"), 1.4)
+	command_bus.emit_event(
+		"attack_missed",
+		{
+			"player": attacker is SQUAD_UNIT,
+			"attacker_scene_index": int(attacker.get("scene_index")),
+			"target_scene_index": int(target.get("scene_index")) if target != null else -1,
+			"attack_type": attack_type,
+			"reason": reason,
+		},
+		"combat",
+	)
 
 
 func _combat_target_display_name(target: Node2D) -> String:
@@ -7367,6 +8327,22 @@ func _refresh_original_hud() -> void:
 
 
 func _on_combatant_died(unit: Node2D, killer: Node2D) -> void:
+	command_bus.emit_event(
+		(
+			"enemy_eliminated"
+			if unit is ENEMY_UNIT
+			else "player_eliminated"
+			if unit is SQUAD_UNIT
+			else "combatant_eliminated"
+		),
+		{
+			"scene_index": int(unit.get("scene_index")),
+			"killer_scene_index": (
+				int(killer.get("scene_index")) if killer != null else -1
+			),
+		},
+		"combat",
+	)
 	_cancel_legacy_deployment_for_unit(unit)
 	if unit == original_drop_order_actor:
 		_clear_original_drop_order()
@@ -7768,16 +8744,13 @@ func _configure_mission_direction() -> void:
 	if mission_ai_coordinator != null:
 		mission_ai_coordinator.free()
 		mission_ai_coordinator = null
-	# The MOD/original path has the per-level briefing surface and the recovered
+	active_modern_difficulty_profile.clear()
+	# The classic ruleset has the per-level briefing surface and the recovered
 	# ending, but no source-backed evidence for the Remake-authored in-game
 	# dialogue, camera, tutorial or cooperation beats. Keep that entire layer
-	# opt-in through easy/normal/hard instead of presenting editorial material
-	# while the player selected the auditable original profile.
-	var difficulty_mode := (
-		"original"
-		if _is_runtime_probe()
-		else str(runtime_settings.get("difficulty_mode", "original"))
-	)
+	# behind the explicit modern ruleset; difficulty then tunes the modern layer
+	# independently instead of silently changing simulation rules.
+	var difficulty_mode := _effective_difficulty_mode()
 	if difficulty_mode not in ["original", "easy", "normal", "hard"]:
 		difficulty_mode = "original"
 	# Several missions have recovered stable-MOD control-flow profiles whose actual
@@ -7821,12 +8794,52 @@ func _configure_mission_direction() -> void:
 	var enemy_nodes: Array[Node2D] = []
 	for enemy: ENEMY_UNIT in enemies:
 		enemy_nodes.append(enemy)
-	if not mission_ai_coordinator.configure(
+	active_modern_difficulty_profile = MODERN_DIFFICULTY_POLICY.compose(
 		mission_direction_runtime.difficulty_profile(),
+		str(runtime_settings.get("difficulty_mode", "normal")),
+		runtime_settings.get("custom_difficulty", {}) as Dictionary,
+	)
+	if not mission_ai_coordinator.configure(
+		active_modern_difficulty_profile,
 		mission_direction_runtime.ai_cooperation_profile(),
 		enemy_nodes,
 	):
 		push_warning("关卡 AI 调校未启用：%s" % mission_ai_coordinator.last_error)
+
+
+	if not mission_ai_coordinator.last_error.is_empty():
+		active_modern_difficulty_profile.clear()
+		return
+	if not restoring_save:
+		_apply_modern_player_resource_policy(
+			float(active_modern_difficulty_profile.get(
+				"player_resource_multiplier",
+				1.0,
+			))
+		)
+
+
+func _apply_modern_player_resource_policy(multiplier: float) -> void:
+	if is_equal_approx(multiplier, 1.0):
+		return
+	for unit: SQUAD_UNIT in units:
+		if unit.combat_inventory == null:
+			continue
+		var adjusted_item_ids: Dictionary = {}
+		for action_key: String in unit.combat_inventory.registered_weapon_keys():
+			var state: Dictionary = unit.combat_inventory.weapon_state(action_key)
+			if int(state.get("ammo_per_attack", 0)) <= 0:
+				continue
+			var item_id := int(state.get("ammo_item_id", 0))
+			if item_id <= 0 or adjusted_item_ids.has(item_id):
+				continue
+			adjusted_item_ids[item_id] = true
+			var current := unit.ammo_item_count(item_id)
+			var desired := maxi(1, roundi(float(current) * multiplier))
+			if desired > current:
+				unit.add_ammo_item(item_id, desired - current)
+			elif desired < current:
+				unit.remove_ammo_item(item_id, current - desired)
 
 
 func _start_mission_direction() -> void:
@@ -8021,6 +9034,87 @@ func _create_media_director() -> void:
 	media_director.ending_closed.connect(_on_media_ending_closed)
 
 
+func _create_developer_debug_tools(arguments: PackedStringArray) -> void:
+	developer_world_debug_overlay = DEVELOPER_WORLD_DEBUG_OVERLAY_SCRIPT.new()
+	developer_world_debug_overlay.name = "DeveloperWorldDebugOverlay"
+	developer_world_debug_overlay.z_index = 900
+	add_child(developer_world_debug_overlay)
+	developer_world_debug_overlay.configure(self)
+	developer_debug_overlay = DEVELOPER_DEBUG_OVERLAY_SCRIPT.new()
+	developer_debug_overlay.name = "DeveloperDebugOverlay"
+	add_child(developer_debug_overlay)
+	developer_debug_overlay.configure(self, "--debug-overlay" in arguments)
+
+
+func set_developer_debug_enabled(value: bool) -> void:
+	if (
+		developer_debug_enemy != null
+		and is_instance_valid(developer_debug_enemy)
+		and developer_debug_enemy != sight_observation_target
+	):
+		developer_debug_enemy.set_tactical_ranges_visible(false)
+	developer_debug_enemy = _debug_enemy_subject() if value else null
+	if developer_debug_enemy != null and is_instance_valid(developer_debug_enemy):
+		developer_debug_enemy.set_tactical_ranges_visible(true)
+	if developer_world_debug_overlay != null:
+		developer_world_debug_overlay.set_debug_enabled(value)
+
+
+func modern_debug_snapshot() -> Dictionary:
+	var enemy := _debug_enemy_subject()
+	var ai: Dictionary = {}
+	if enemy != null and enemy.has_method("modern_ai_debug_snapshot"):
+		ai = enemy.modern_ai_debug_snapshot()
+	var selected_path_points := 0
+	for unit: SQUAD_UNIT in selected_units:
+		if unit != null and is_instance_valid(unit):
+			selected_path_points += maxi(
+				unit.movement_path.size() - unit.movement_path_index,
+				0,
+			)
+	return {
+		"level_id": str(current_mission.get("id", "")),
+		"ruleset": str(runtime_settings.get("ruleset_mode", "classic")),
+		"difficulty": str(runtime_settings.get("difficulty_mode", "normal")),
+		"performance": performance_monitor.snapshot(),
+		"services": runtime_services.stats(),
+		"selected_units": selected_units.size(),
+		"selected_path_points": selected_path_points,
+		"ai": ai,
+	}
+
+
+func debug_world_subjects() -> Dictionary:
+	var live_selected: Array[Node2D] = []
+	for unit: SQUAD_UNIT in selected_units:
+		if unit != null and is_instance_valid(unit) and unit.is_alive:
+			live_selected.append(unit)
+	return {
+		"selected_units": live_selected,
+		"enemy": _debug_enemy_subject(),
+	}
+
+
+func _debug_enemy_subject() -> ENEMY_UNIT:
+	if (
+		sight_observation_target != null
+		and is_instance_valid(sight_observation_target)
+		and sight_observation_target.is_alive
+	):
+		return sight_observation_target
+	var camera_position := level_camera.position if level_camera != null else Vector2.ZERO
+	var nearest: ENEMY_UNIT
+	var nearest_distance := INF
+	for enemy: ENEMY_UNIT in enemies:
+		if enemy == null or not is_instance_valid(enemy) or not enemy.is_alive:
+			continue
+		var distance := enemy.position.distance_squared_to(camera_position)
+		if distance < nearest_distance:
+			nearest_distance = distance
+			nearest = enemy
+	return nearest
+
+
 func _create_game_shell() -> void:
 	game_shell = GAME_SHELL_SCRIPT.new()
 	game_shell.name = "GameShell"
@@ -8046,14 +9140,17 @@ func _create_game_shell() -> void:
 	game_shell.original_hud_actor_requested.connect(
 		_on_original_hud_actor_requested
 	)
+	game_shell.diagnostics_requested.connect(_export_runtime_diagnostics)
 	game_shell.set_settings(runtime_settings)
 	_apply_runtime_settings(runtime_settings)
 	_sync_level_selection()
+	_sync_history_archive()
 
 
 func _initialize_persistence() -> void:
 	game_settings = GAME_SETTINGS_SCRIPT.new()
 	game_settings.load_from_disk()
+	localization_service.install(game_settings.locale())
 	game_settings.apply_audio_to_runtime()
 	command_line_controls_display = _command_line_has_display_override()
 	if not command_line_controls_display:
@@ -8066,15 +9163,50 @@ func _initialize_persistence() -> void:
 		"window_width": int(display.get("window_width", 1280)),
 		"window_height": int(display.get("window_height", 720)),
 		"vsync": bool(display.get("vsync", true)),
+		"max_fps": int(display.get("max_fps", 60)),
+		"monitor_index": int(display.get("monitor_index", -1)),
 		"muted": bool(game_settings.is_muted()),
 		"subtitles": bool(game_settings.interface_enabled("subtitles")),
+		"environment_captions": bool(
+			game_settings.interface_enabled("environment_captions")
+		),
 		"show_briefings": bool(game_settings.interface_enabled("show_briefings")),
 		"edge_scroll": bool(game_settings.interface_enabled("edge_scroll")),
 		"reduce_camera_motion": bool(
 			game_settings.interface_enabled("reduce_camera_motion")
 		),
+		"reduce_flashes": bool(game_settings.interface_enabled("reduce_flashes")),
 		"large_cursor": bool(game_settings.interface_enabled("large_cursor")),
+		"high_contrast": bool(game_settings.interface_enabled("high_contrast")),
+		"colorblind_patterns": bool(
+			game_settings.interface_enabled("colorblind_patterns")
+		),
+		"pause_on_focus_loss": bool(
+			game_settings.interface_enabled("pause_on_focus_loss")
+		),
+		"educational_mode": bool(
+			game_settings.interface_enabled("educational_mode")
+		),
+		"reduced_violence": bool(
+			game_settings.interface_enabled("reduced_violence")
+		),
+		"history_notes": bool(
+			game_settings.interface_enabled("history_notes")
+		),
+		"locale": str(game_settings.locale()),
+		"ui_scale": float(game_settings.interface_scale("ui_scale")),
+		"text_scale": float(game_settings.interface_scale("text_scale")),
+		"edge_scroll_speed": float(
+			game_settings.camera_setting("edge_scroll_speed", CAMERA_PAN_SPEED)
+		),
+		"edge_scroll_margin": float(
+			game_settings.camera_setting("edge_scroll_margin", EDGE_SCROLL_MARGIN)
+		),
+		"zoom_step": float(game_settings.camera_setting("zoom_step", 0.25)),
+		"ruleset_mode": str(game_settings.ruleset_mode()),
 		"difficulty_mode": str(game_settings.difficulty_mode()),
+		"control_scheme": str(game_settings.control_scheme()),
+		"custom_difficulty": game_settings.custom_difficulty(),
 		"mission_rule_mode": str(game_settings.mission_rule_mode()),
 		"master_volume": float(game_settings.audio_volume("master")),
 		"music_volume": float(game_settings.audio_volume("music")),
@@ -8083,8 +9215,10 @@ func _initialize_persistence() -> void:
 		"controls": game_settings.controls_snapshot(),
 	}
 	save_store = GAME_SAVE_STORE_SCRIPT.new()
+	var initial_slot_summaries: Array[Dictionary] = save_store.list_slots()
+	checkpoint_manager.restore_from_summaries(initial_slot_summaries)
 	campaign_progress = GAME_SAVE_STORE_SCRIPT.default_campaign()
-	var latest_slot := _latest_save_slot()
+	var latest_slot := _latest_slot_from_summaries(initial_slot_summaries)
 	if not latest_slot.is_empty():
 		var latest_result: Dictionary = save_store.load_slot(latest_slot)
 		if bool(latest_result.get("ok", false)):
@@ -8193,12 +9327,47 @@ func _sync_level_selection() -> void:
 	)
 
 
+func _sync_history_archive() -> void:
+	if game_shell == null or history_archive == null:
+		return
+	var entries: Array[Dictionary] = history_archive.ordered_entries(
+		FORMAL_LEVEL_IDS
+	)
+	var formatted: Dictionary = {}
+	for level_id: String in FORMAL_LEVEL_IDS:
+		formatted[level_id] = history_archive.formatted_entry(level_id)
+	game_shell.set_history_archive(entries, formatted)
+
+
+func _export_runtime_diagnostics() -> void:
+	if runtime_services == null or runtime_diagnostics == null:
+		update_status(tr("STATUS_DIAGNOSTICS_UNAVAILABLE"))
+		return
+	var document: Dictionary = runtime_services.build_diagnostics(runtime_settings)
+	document["reproducible_seed"] = legacy_crt_random_state
+	document["mission_statistics"] = mission_statistics.snapshot()
+	var result: Dictionary = runtime_diagnostics.export_bundle(document)
+	var message := (
+		tr("STATUS_DIAGNOSTICS_EXPORTED") % ProjectSettings.globalize_path(
+			str(result.get("path", ""))
+		)
+		if bool(result.get("ok", false))
+		else tr("STATUS_DIAGNOSTICS_FAILED") % str(
+			result.get("message", tr("ERROR_UNKNOWN"))
+		)
+	)
+	update_status(message)
+	if game_shell != null:
+		game_shell.set_menu_message(message)
+
+
 func _quit_game() -> void:
 	get_tree().quit()
 
 
 func _on_shell_settings_changed(new_settings: Dictionary) -> void:
-	var previous_difficulty := str(runtime_settings.get("difficulty_mode", "original"))
+	var previous_ruleset := str(runtime_settings.get("ruleset_mode", "classic"))
+	var previous_difficulty := str(runtime_settings.get("difficulty_mode", "normal"))
 	var previous_mission_rule := str(
 		runtime_settings.get("mission_rule_mode", "stable_mod")
 	)
@@ -8234,8 +9403,14 @@ func _on_shell_settings_changed(new_settings: Dictionary) -> void:
 			int(runtime_settings.get("window_height", 720)),
 		))
 		game_settings.set_vsync(bool(runtime_settings.get("vsync", true)))
+		game_settings.set_max_fps(int(runtime_settings.get("max_fps", 60)))
+		game_settings.set_monitor_index(int(runtime_settings.get("monitor_index", -1)))
 		game_settings.set_interface_enabled(
 			"subtitles", bool(runtime_settings.get("subtitles", true))
+		)
+		game_settings.set_interface_enabled(
+			"environment_captions",
+			bool(runtime_settings.get("environment_captions", true)),
 		)
 		game_settings.set_interface_enabled(
 			"show_briefings", bool(runtime_settings.get("show_briefings", true))
@@ -8248,10 +9423,58 @@ func _on_shell_settings_changed(new_settings: Dictionary) -> void:
 			bool(runtime_settings.get("reduce_camera_motion", false)),
 		)
 		game_settings.set_interface_enabled(
+			"reduce_flashes", bool(runtime_settings.get("reduce_flashes", false))
+		)
+		game_settings.set_interface_enabled(
 			"large_cursor", bool(runtime_settings.get("large_cursor", false))
 		)
+		game_settings.set_interface_enabled(
+			"high_contrast", bool(runtime_settings.get("high_contrast", false))
+		)
+		game_settings.set_interface_enabled(
+			"colorblind_patterns",
+			bool(runtime_settings.get("colorblind_patterns", true)),
+		)
+		game_settings.set_interface_enabled(
+			"pause_on_focus_loss",
+			bool(runtime_settings.get("pause_on_focus_loss", true)),
+		)
+		game_settings.set_interface_enabled(
+			"educational_mode",
+			bool(runtime_settings.get("educational_mode", true)),
+		)
+		game_settings.set_interface_enabled(
+			"reduced_violence",
+			bool(runtime_settings.get("reduced_violence", false)),
+		)
+		game_settings.set_interface_enabled(
+			"history_notes",
+			bool(runtime_settings.get("history_notes", true)),
+		)
+		game_settings.set_locale(str(runtime_settings.get("locale", "system")))
+		game_settings.set_interface_scale(
+			"ui_scale", float(runtime_settings.get("ui_scale", 1.0))
+		)
+		game_settings.set_interface_scale(
+			"text_scale", float(runtime_settings.get("text_scale", 1.0))
+		)
+		for camera_key: String in [
+			"edge_scroll_speed", "edge_scroll_margin", "zoom_step",
+		]:
+			game_settings.set_camera_setting(
+				camera_key, float(runtime_settings.get(camera_key, 0.0))
+			)
+		game_settings.set_ruleset_mode(
+			str(runtime_settings.get("ruleset_mode", "classic"))
+		)
 		game_settings.set_difficulty_mode(
-			str(runtime_settings.get("difficulty_mode", "original"))
+			str(runtime_settings.get("difficulty_mode", "normal"))
+		)
+		game_settings.set_control_scheme(
+			str(runtime_settings.get("control_scheme", "classic"))
+		)
+		game_settings.set_custom_difficulty(
+			runtime_settings.get("custom_difficulty", {}) as Dictionary
 		)
 		game_settings.set_mission_rule_mode(
 			str(runtime_settings.get("mission_rule_mode", "stable_mod"))
@@ -8260,7 +9483,8 @@ func _on_shell_settings_changed(new_settings: Dictionary) -> void:
 	_apply_runtime_settings(runtime_settings)
 	if bool(settings_save_result.get("ok", false)):
 		if (
-			str(runtime_settings.get("difficulty_mode", "original")) != previous_difficulty
+			str(runtime_settings.get("ruleset_mode", "classic")) != previous_ruleset
+			or str(runtime_settings.get("difficulty_mode", "normal")) != previous_difficulty
 			or str(runtime_settings.get("mission_rule_mode", "stable_mod"))
 				!= previous_mission_rule
 		):
@@ -8277,19 +9501,11 @@ func _on_shell_settings_changed(new_settings: Dictionary) -> void:
 
 
 func _apply_runtime_settings(new_settings: Dictionary) -> void:
-	GAME_SETTINGS_SCRIPT._ensure_audio_buses()
-	var muted := bool(new_settings.get("muted", false))
-	for channel: String in ["master", "music", "sfx", "voice"]:
-		var bus_name := channel.capitalize()
-		var bus_index := AudioServer.get_bus_index(bus_name)
-		if bus_index < 0:
-			continue
-		var volume := clampf(float(new_settings.get("%s_volume" % channel, 1.0)), 0.0, 1.0)
-		AudioServer.set_bus_mute(
-			bus_index,
-			volume <= 0.0001 or (channel == "master" and muted),
-		)
-		AudioServer.set_bus_volume_db(bus_index, linear_to_db(maxf(volume, 0.0001)))
+	runtime_settings_applier.apply_global(
+		new_settings,
+		DisplayServer.get_name() == "headless" or command_line_controls_display,
+	)
+	localization_service.install(str(new_settings.get("locale", "system")))
 	if media_director != null and media_director.has_method("set_subtitles_enabled"):
 		media_director.set_subtitles_enabled(bool(new_settings.get("subtitles", true)))
 	if media_director != null and media_director.has_method("set_input_bindings"):
@@ -8300,37 +9516,52 @@ func _apply_runtime_settings(new_settings: Dictionary) -> void:
 		legacy_cursor_presenter.set_large_cursor(
 			bool(new_settings.get("large_cursor", false))
 		)
-	if DisplayServer.get_name() == "headless" or command_line_controls_display:
-		return
-	var display_mode := str(new_settings.get(
-		"display_mode", "fullscreen" if bool(new_settings.get("fullscreen", false)) else "windowed"
-	))
-	DisplayServer.window_set_flag(
-		DisplayServer.WINDOW_FLAG_BORDERLESS, display_mode == "borderless"
-	)
-	if display_mode == "fullscreen":
-		if DisplayServer.window_get_mode() != DisplayServer.WINDOW_MODE_FULLSCREEN:
-			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
-	elif display_mode == "borderless":
-		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MAXIMIZED)
-	else:
-		var was_windowed := DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_WINDOWED
-		if not was_windowed:
-			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
-		var window_size := Vector2i(
-			clampi(int(new_settings.get("window_width", 1280)), 800, 7680),
-			clampi(int(new_settings.get("window_height", 720)), 600, 4320),
+	if game_shell != null and game_shell.has_method("apply_visual_preferences"):
+		game_shell.call("apply_visual_preferences", new_settings)
+	if game_shell != null and game_shell.has_method("apply_localization"):
+		game_shell.call("apply_localization")
+	for combatant: Node2D in _all_active_runtime_actors():
+		if combatant.has_method("set_reduced_violence"):
+			combatant.call(
+				"set_reduced_violence",
+				bool(new_settings.get("reduced_violence", false)),
+			)
+	if (
+		legacy_ambient_particle_field != null
+		and is_instance_valid(legacy_ambient_particle_field)
+		and legacy_ambient_particle_field.has_method("set_reduce_flashes")
+	):
+		legacy_ambient_particle_field.call(
+			"set_reduce_flashes",
+			bool(new_settings.get("reduce_flashes", false)),
 		)
-		DisplayServer.window_set_size(window_size)
-		var screen := DisplayServer.window_get_current_screen()
-		var screen_position := DisplayServer.screen_get_position(screen)
-		var screen_size := DisplayServer.screen_get_size(screen)
-		DisplayServer.window_set_position(screen_position + (screen_size - window_size) / 2)
-	DisplayServer.window_set_vsync_mode(
-		DisplayServer.VSYNC_ENABLED
-		if bool(new_settings.get("vsync", true))
-		else DisplayServer.VSYNC_DISABLED
-	)
+	for enemy: ENEMY_UNIT in enemies:
+		if enemy != null and is_instance_valid(enemy):
+			enemy.configure_tactical_accessibility(
+				bool(new_settings.get("colorblind_patterns", true)),
+				bool(new_settings.get("high_contrast", false)),
+			)
+	for explosion_effect: Node2D in legacy_explosion_effects:
+		if (
+			explosion_effect != null
+			and is_instance_valid(explosion_effect)
+			and explosion_effect.has_method("set_reduce_flashes")
+		):
+			explosion_effect.call(
+				"set_reduce_flashes",
+				bool(new_settings.get("reduce_flashes", false)),
+			)
+
+
+func _effective_difficulty_mode() -> String:
+	if _is_runtime_probe() or str(runtime_settings.get("ruleset_mode", "classic")) == "classic":
+		return "original"
+	var mode := str(runtime_settings.get("difficulty_mode", "normal"))
+	if mode == "story":
+		return "easy"
+	if mode == "custom":
+		return "normal"
+	return mode if mode in ["normal", "hard"] else "normal"
 
 
 func _open_pause_menu() -> void:
@@ -8340,14 +9571,16 @@ func _open_pause_menu() -> void:
 		if bool(media_director.is_modal_active()):
 			return
 	_reset_context_cursor()
-	game_shell.set_save_slots(_save_slot_summaries())
+	var slot_summaries := _save_slot_summaries()
+	var can_load := not slot_summaries.is_empty()
+	game_shell.set_save_slots(slot_summaries)
 	if current_mission_state != null and current_mission_state.is_victory():
 		game_shell.show_victory(
-			_has_save_slot(),
+			can_load,
 			current_level_index < FORMAL_LEVEL_IDS.size() - 1,
 		)
 	else:
-		game_shell.show_pause_menu(_has_save_slot())
+		game_shell.show_pause_menu(can_load)
 
 
 func _on_original_hud_action_requested(action: String) -> void:
@@ -8665,6 +9898,7 @@ func _tactical_actor_markers() -> Array[Dictionary]:
 	for unit: SQUAD_UNIT in units:
 		if unit.is_alive:
 			markers.append({
+				"id": "player:%d" % unit.scene_index,
 				"position": unit.position,
 				"color": Color(0.28, 0.72, 1.0),
 				"radius": 5.0,
@@ -8674,6 +9908,7 @@ func _tactical_actor_markers() -> Array[Dictionary]:
 		if escort.is_alive:
 			var commandable := escort.is_player_commandable()
 			markers.append({
+				"id": "escort:%d" % escort.scene_index,
 				"position": escort.position,
 				"color": (
 					Color(0.28, 0.72, 1.0)
@@ -8688,6 +9923,7 @@ func _tactical_actor_markers() -> Array[Dictionary]:
 	for ambient: AMBIENT_UNIT in ambient_units:
 		if ambient.is_alive:
 			markers.append({
+				"id": "ambient:%d" % ambient.scene_index,
 				"position": ambient.position,
 				"color": Color(0.72, 0.70, 0.56),
 				"radius": 2.5,
@@ -8695,6 +9931,7 @@ func _tactical_actor_markers() -> Array[Dictionary]:
 	for enemy: ENEMY_UNIT in enemies:
 		if enemy.is_alive:
 			markers.append({
+				"id": "enemy:%d" % enemy.scene_index,
 				"position": enemy.position,
 				"color": Color(0.92, 0.28, 0.22),
 				"radius": 3.5,
@@ -8723,6 +9960,7 @@ func _tactical_mission_markers() -> Array[Dictionary]:
 			if activated_mission_scenes.has(scene_index):
 				color = Color(0.48, 0.52, 0.48)
 			markers.append({
+				"id": "mission:%s:%d" % [binding_kind, scene_index],
 				"position": Vector2(float(entity["x"]), float(entity["y"])),
 				"color": color,
 				"radius": 6.0,
@@ -8969,10 +10207,6 @@ func _inventory_bbcode() -> String:
 	return "\n".join(lines)
 
 
-func _has_save_slot() -> bool:
-	return not _latest_save_slot().is_empty()
-
-
 func _save_slot_summaries() -> Array[Dictionary]:
 	if save_store == null:
 		return []
@@ -8983,6 +10217,10 @@ func _latest_save_slot() -> String:
 	if save_store == null:
 		return ""
 	var slots: Array[Dictionary] = save_store.list_slots()
+	return _latest_slot_from_summaries(slots)
+
+
+func _latest_slot_from_summaries(slots: Array[Dictionary]) -> String:
 	if slots.is_empty():
 		return ""
 	slots.sort_custom(
@@ -9014,6 +10252,21 @@ func _save_game(slot_id: String = QUICK_SAVE_SLOT, announce: bool = true) -> boo
 	return true
 
 
+func _save_checkpoint(reason: String, force: bool = false) -> bool:
+	if checkpoint_manager == null or restoring_save:
+		return false
+	var slot_id := str(checkpoint_manager.reserve_slot(reason, force))
+	if slot_id.is_empty():
+		return false
+	var saved := _save_game(slot_id, false)
+	if runtime_diagnostics != null:
+		runtime_diagnostics.record_command(
+			"checkpoint_saved" if saved else "checkpoint_failed",
+			{"slot_id": slot_id, "reason": reason},
+		)
+	return saved
+
+
 func _load_game(slot_id: String = "") -> bool:
 	if save_store == null:
 		_show_load_feedback("存档系统尚未初始化")
@@ -9029,6 +10282,9 @@ func _load_game(slot_id: String = "") -> bool:
 		return false
 	var document := result.get("data", {}) as Dictionary
 	var session := document.get("session", {}) as Dictionary
+	var source_save_schema := int(
+		result.get("source_schema_version", document.get("schema_version", 0))
+	)
 	var level_id := str(session.get("level_id", ""))
 	var level_index := FORMAL_LEVEL_IDS.find(level_id)
 	if level_index < 0:
@@ -9036,6 +10292,33 @@ func _load_game(slot_id: String = "") -> bool:
 		return false
 	if game_shell != null:
 		game_shell.close_for_state_change()
+	var saved_runtime_profile_value: Variant = session.get(
+		"runtime_profile",
+		{},
+	)
+	if source_save_schema >= 2 and saved_runtime_profile_value is Dictionary:
+		var saved_runtime_profile := saved_runtime_profile_value as Dictionary
+		for profile_key: String in [
+			"ruleset_mode",
+			"difficulty_mode",
+			"control_scheme",
+			"mission_rule_mode",
+		]:
+			runtime_settings[profile_key] = str(
+				saved_runtime_profile.get(profile_key, runtime_settings.get(profile_key, ""))
+			)
+		if saved_runtime_profile.get("custom_difficulty", {}) is Dictionary:
+			runtime_settings["custom_difficulty"] = (
+				(saved_runtime_profile["custom_difficulty"] as Dictionary)
+				.duplicate(true)
+			)
+		if game_settings != null:
+			game_settings.set_ruleset_mode(str(runtime_settings["ruleset_mode"]))
+			game_settings.set_difficulty_mode(str(runtime_settings["difficulty_mode"]))
+			game_settings.set_control_scheme(str(runtime_settings["control_scheme"]))
+			game_settings.set_custom_difficulty(
+				runtime_settings["custom_difficulty"] as Dictionary
+			)
 	# A save owns the mission graph under which objective progress was
 	# recorded. Resolve it before switch_level() creates MissionState, or an
 	# a forked mission checkpoint could be restored against the other rule profile.
@@ -9055,7 +10338,7 @@ func _load_game(slot_id: String = "") -> bool:
 	# A save owns the difficulty under which its actors and director state were
 	# created.  Adopt it before rebuilding the level so restore_state never
 	# silently rejects a valid save or changes combat balance mid-session.
-	if saved_direction_state is Dictionary:
+	if source_save_schema < 2 and saved_direction_state is Dictionary:
 		var saved_mode := str(
 			(saved_direction_state as Dictionary).get(
 				"difficulty_mode",
@@ -9063,16 +10346,28 @@ func _load_game(slot_id: String = "") -> bool:
 			)
 		)
 		if saved_mode in ["original", "easy", "normal", "hard"]:
-			runtime_settings["difficulty_mode"] = saved_mode
+			runtime_settings["ruleset_mode"] = (
+				"classic" if saved_mode == "original" else "modern"
+			)
+			runtime_settings["difficulty_mode"] = (
+				"story" if saved_mode == "easy" else "normal" if saved_mode == "original" else saved_mode
+			)
 			if game_settings != null:
-				game_settings.set_difficulty_mode(saved_mode)
+				game_settings.set_ruleset_mode(
+					str(runtime_settings["ruleset_mode"])
+				)
+				game_settings.set_difficulty_mode(
+					str(runtime_settings["difficulty_mode"])
+				)
 			if game_shell != null:
 				game_shell.set_settings(runtime_settings)
 	if game_settings != null:
 		game_settings.save_to_disk()
 	if game_shell != null:
 		game_shell.set_settings(runtime_settings)
+	restoring_save = true
 	switch_level(level_index, false, false)
+	restoring_save = false
 	var applied: Dictionary = GAME_SESSION_STATE_SCRIPT.apply_after_level_loaded(self, session)
 	if not bool(applied.get("ok", false)):
 		_show_load_feedback("读取失败：无法恢复关卡状态")
@@ -9088,6 +10383,23 @@ func _load_game(slot_id: String = "") -> bool:
 		.duplicate(true)
 	)
 	var warnings := applied.get("warnings", []) as Array
+	if saved_runtime_profile_value is Dictionary:
+		var saved_content_identity := str(
+			(saved_runtime_profile_value as Dictionary).get(
+				"content_identity",
+				"",
+			)
+		)
+		var current_content_identity := _current_content_identity()
+		if (
+			not saved_content_identity.is_empty()
+			and not current_content_identity.is_empty()
+			and saved_content_identity != current_content_identity
+			and not saved_content_identity.begins_with("legacy_schema_")
+		):
+			warnings.append(
+				"save content identity differs from the active package"
+			)
 	if current_mission_state.is_failed():
 		_on_mission_failed(str(current_mission_state.failure_id))
 	elif current_mission_state.is_victory():
@@ -9099,6 +10411,17 @@ func _load_game(slot_id: String = "") -> bool:
 			"存档已恢复%s" % ("" if warnings.is_empty() else "（%d 项内容降级）" % warnings.size())
 		)
 	return true
+
+
+func _current_content_identity() -> String:
+	var identity := str(
+		content_package_validation.get("content_identity_sha256", "")
+	)
+	if not identity.is_empty():
+		return identity
+	return str(
+		content_package_validation.get("status", "development_unmanifested")
+	)
 
 
 func _show_save_feedback(message: String) -> void:
@@ -9163,6 +10486,7 @@ func _on_objective_completed(objective_id: String) -> void:
 		_report_direction_action("place_all_charges")
 	update_status("任务目标完成：%s" % objective_id)
 	_play_mission_media_cue("on_objective", objective_id)
+	_save_checkpoint("objective:%s" % objective_id)
 
 
 func _on_mission_victory() -> void:
@@ -9256,7 +10580,30 @@ func _try_complete_victory_presentation() -> void:
 	):
 		return
 	victory_presentation_completed = true
+	if game_shell != null and mission_statistics != null and history_archive != null:
+		var level_id := str(current_mission.get("id", ""))
+		var debrief: String = history_archive.build_debrief(
+			level_id,
+			mission_statistics.snapshot(),
+		)
+		if not bool(runtime_settings.get("history_notes", true)):
+			debrief = "[b]%s[/b]\n%s" % [tr("UI_MISSION_DEBRIEF"), _mission_statistics_summary(
+				mission_statistics.snapshot()
+			)]
+		game_shell.set_victory_debrief(level_id, debrief)
 	_save_game(AUTO_SAVE_SLOT, false)
+
+
+func _mission_statistics_summary(statistics: Dictionary) -> String:
+	var elapsed_seconds := maxi(int(statistics.get("elapsed_msec", 0)) / 1000, 0)
+	return tr("STATS_SUMMARY_FORMAT") % [
+		elapsed_seconds / 60,
+		elapsed_seconds % 60,
+		int(statistics.get("commands", 0)),
+		int(statistics.get("attacks", 0)),
+		int(statistics.get("hits", 0)),
+		int(statistics.get("enemies_eliminated", 0)),
+	]
 
 
 func _play_mission_media_cue(section: String, key: String = "") -> bool:
@@ -9316,7 +10663,7 @@ func _play_mission_media_cue(section: String, key: String = "") -> bool:
 func _mission_media_cue_enabled(cue: Dictionary) -> bool:
 	if str(cue.get("source_status", "")) != "remake_editorial":
 		return true
-	return str(runtime_settings.get("difficulty_mode", "original")) != "original"
+	return _effective_difficulty_mode() != "original"
 
 
 func _mission_media_cue(section: String, key: String = "") -> Dictionary:
@@ -9333,12 +10680,16 @@ func _mission_media_cue(section: String, key: String = "") -> Dictionary:
 
 
 func _on_mission_failed(failure_id: String) -> void:
-	update_status("任务失败：%s。请在失败菜单选择重新开始或读取存档。" % failure_id)
+	update_status(tr("STATUS_MISSION_FAILURE_FORMAT") % failure_id)
 	_refresh_mission_ui()
 	if game_shell != null:
 		_reset_context_cursor()
-		game_shell.set_save_slots(_save_slot_summaries())
-		game_shell.show_failure("任务失败：%s\n可重新开始本关，或从多槽存档选择器读取进度。" % failure_id, _has_save_slot())
+		var slot_summaries := _save_slot_summaries()
+		game_shell.set_save_slots(slot_summaries)
+		game_shell.show_failure(
+			tr("UI_MISSION_FAILURE_DETAILS_FORMAT") % failure_id,
+			not slot_summaries.is_empty(),
+		)
 
 
 func _refresh_mission_ui() -> void:
@@ -9581,6 +10932,11 @@ func _collect_original_inventory_pickup(
 		committed_world_position,
 	)
 	update_status("%s 拾取 %s" % [collector.display_name, item_name])
+	command_bus.emit_event(
+		"pickup_collected",
+		{"item_id": item_id, "quantity": quantity},
+		"inventory",
+	)
 	_refresh_inventory_ui()
 	return true
 

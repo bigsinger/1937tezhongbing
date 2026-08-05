@@ -2,8 +2,12 @@
 param(
     [string]$GodotExecutable = '',
     [ValidateSet('Junction', 'Copy')]
-    [string]$AssetMode = 'Junction',
-    [string]$OutputDirectory = ''
+    [string]$AssetMode = 'Copy',
+    [string]$OutputDirectory = '',
+    [bool]$CreateArchive = $true,
+    [string]$CertificatePath = '',
+    [string]$CertificatePassword = '',
+    [switch]$AllowEditorRunnerFallback
 )
 
 $ErrorActionPreference = 'Stop'
@@ -17,6 +21,12 @@ $convertedAssets = Join-Path $sourceAssets 'converted'
 $requiredLevel = Join-Path $convertedAssets 'levels\m000\level.json'
 $presetName = 'Windows Desktop'
 $expectedGodotVersion = '4.7.1'
+$projectText = Get-Content -LiteralPath (Join-Path $gameRoot 'project.godot') `
+    -Raw -Encoding UTF8
+$applicationVersion = 'development'
+if ($projectText -match '(?m)^config/version="([^"]+)"\s*$') {
+    $applicationVersion = $Matches[1]
+}
 
 function Resolve-GodotExecutable {
     param([string]$RequestedPath)
@@ -85,6 +95,27 @@ function Assert-SafeOutputDirectory {
         throw 'OutputDirectory must not be the LocalBuild root itself.'
     }
     return $full
+}
+
+function Get-ContainedRelativePath {
+    param(
+        [string]$Root,
+        [string]$Target
+    )
+
+    # Path.GetRelativePath is unavailable in Windows PowerShell 5.1's .NET
+    # Framework runtime. Every checksum target is required to live under the
+    # build root anyway, so a validated prefix removal is both compatible and
+    # stricter than accepting a relative path containing '..'.
+    $fullRoot = [IO.Path]::GetFullPath($Root).TrimEnd('\', '/') +
+        [IO.Path]::DirectorySeparatorChar
+    $fullTarget = [IO.Path]::GetFullPath($Target)
+    if (-not $fullTarget.StartsWith(
+            $fullRoot,
+            [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Checksum target escaped the build root: $fullTarget"
+    }
+    return $fullTarget.Substring($fullRoot.Length).Replace('\', '/')
 }
 
 function Remove-SafeOutputDirectory {
@@ -206,6 +237,7 @@ $outputExecutable = Join-Path $outputGame '1937Remake.exe'
 $outputPack = Join-Path $outputGame '1937Remake.pck'
 $smokeLog = Join-Path $outputRoot 'smoke-test.log'
 $executableSmokeLog = Join-Path $outputRoot 'executable-smoke-test.log'
+$contentManifestPath = Join-Path $outputAssets 'content-manifest.json'
 
 Write-Host "Godot: $godot ($version)"
 Write-Host "Output: $outputRoot"
@@ -229,6 +261,13 @@ if (Test-Path -LiteralPath $releaseTemplate -PathType Leaf) {
     ) -Description 'Exporting the Windows release executable...'
     $buildKind = 'official-release-template'
 } else {
+    if (-not $AllowEditorRunnerFallback) {
+        throw (
+            "The official Godot $expectedGodotVersion Windows export template " +
+            "is required at $releaseTemplate. Install it or pass " +
+            "-AllowEditorRunnerFallback for a developer-only build."
+        )
+    }
     Invoke-Godot -Executable $godot -Arguments @(
         '--headless', '--path', $gameRoot, '--export-pack', $presetName, $outputPack
     ) -Description 'Export templates are absent; exporting a PCK for the matching local Godot runner...'
@@ -263,6 +302,28 @@ if ($AssetMode -eq 'Junction') {
     }
 }
 
+& (Join-Path $PSScriptRoot 'New-ContentManifest.ps1') `
+    -ContentRoot (Join-Path $outputAssets 'converted') `
+    -OutputPath $contentManifestPath `
+    -ProfileId $assetProfile | Format-List
+if ($LASTEXITCODE -ne 0) {
+    throw 'Content manifest generation failed.'
+}
+$contentValidationArguments = @{
+    ContentRoot = Join-Path $outputAssets 'converted'
+    ManifestPath = $contentManifestPath
+}
+if ($AssetMode -eq 'Copy') {
+    # A distributable copy cannot rely on the source directory after it has
+    # left the development machine. Re-read every copied payload against the
+    # freshly generated manifest so same-length copy corruption is caught too.
+    $contentValidationArguments['VerifyAllHashes'] = $true
+}
+& (Join-Path $PSScriptRoot 'Test-ContentPackage.ps1') @contentValidationArguments
+if ($LASTEXITCODE -ne 0) {
+    throw 'Content package validation failed.'
+}
+
 $launcher = @'
 @echo off
 setlocal
@@ -277,9 +338,10 @@ popd
 )
 
 $buildInfo = [ordered]@{
-    schema_version = 1
+    schema_version = 2
     built_at_utc = [DateTime]::UtcNow.ToString('o')
     git_commit = (& git -C (Split-Path $remakeRoot -Parent) rev-parse HEAD).Trim()
+    application_version = $applicationVersion
     godot_version = $version
     build_kind = $buildKind
     asset_mode = $AssetMode
@@ -292,6 +354,12 @@ $buildInfo = [ordered]@{
         Get-FileHash -LiteralPath (
             Join-Path $gameRoot 'data\mod_parity_contract.json') `
             -Algorithm SHA256).Hash
+    content_manifest_sha256 = (
+        Get-FileHash -LiteralPath $contentManifestPath -Algorithm SHA256).Hash
+    content_identity_sha256 = (
+        Get-Content -LiteralPath $contentManifestPath -Raw -Encoding utf8 |
+            ConvertFrom-Json
+    ).content_identity_sha256
 }
 $buildInfo | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $outputRoot 'build-info.json') -Encoding utf8
 
@@ -308,6 +376,7 @@ Keep game and LocalAssets in their current relative locations. The launcher fixe
 directory so the exported program can find the locally converted assets.
 Asset mode: $AssetMode
 Build kind: $buildKind
+Application version: $applicationVersion
 Content profile: $assetProfile
 
 Junction mode is local-only. LocalAssets points to Remake\LocalAssets. Before moving this
@@ -353,6 +422,67 @@ if ($executableSmokeText -match '(?m)^(SCRIPT ERROR|ERROR:)') {
     throw "Playable executable smoke test logged an engine or script error. See $executableSmokeLog."
 }
 
+if (-not [string]::IsNullOrWhiteSpace($CertificatePath)) {
+    $certificate = [IO.Path]::GetFullPath($CertificatePath)
+    if (-not (Test-Path -LiteralPath $certificate -PathType Leaf)) {
+        throw "Code-signing certificate was not found: $certificate"
+    }
+    $signTool = Get-Command signtool.exe -ErrorAction SilentlyContinue
+    if ($null -eq $signTool) {
+        throw 'signtool.exe was not found; install the Windows SDK before signing.'
+    }
+    $signArguments = @(
+        'sign', '/fd', 'SHA256', '/td', 'SHA256',
+        '/tr', 'http://timestamp.digicert.com', '/f', $certificate
+    )
+    if (-not [string]::IsNullOrWhiteSpace($CertificatePassword)) {
+        $signArguments += @('/p', $CertificatePassword)
+    }
+    $signArguments += $outputExecutable
+    & $signTool.Source @signArguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "Authenticode signing failed with exit code $LASTEXITCODE."
+    }
+}
+
+$checksumTargets = @(
+    $outputExecutable,
+    $outputPack,
+    (Join-Path $outputRoot 'build-info.json'),
+    $contentManifestPath
+)
+$checksumLines = foreach ($target in $checksumTargets) {
+    if (Test-Path -LiteralPath $target -PathType Leaf) {
+        $relative = Get-ContainedRelativePath -Root $outputRoot -Target $target
+        $hash = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant()
+        "$hash  $relative"
+    }
+}
+$checksumPath = Join-Path $outputRoot 'SHA256SUMS.txt'
+[IO.File]::WriteAllLines(
+    $checksumPath,
+    [string[]]$checksumLines,
+    [Text.UTF8Encoding]::new($false)
+)
+
+$archivePath = Join-Path $localBuildRoot '1937Remake-portable.zip'
+if ($CreateArchive -and $AssetMode -eq 'Copy') {
+    $archiveFull = [IO.Path]::GetFullPath($archivePath)
+    $localPrefix = $localBuildRoot.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+    if (-not $archiveFull.StartsWith(
+            $localPrefix,
+            [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Unsafe archive path: $archiveFull"
+    }
+    if (Test-Path -LiteralPath $archiveFull -PathType Leaf) {
+        Remove-Item -LiteralPath $archiveFull -Force
+    }
+    Compress-Archive -LiteralPath $outputRoot -DestinationPath $archiveFull -CompressionLevel Optimal
+    $archiveHash = (Get-FileHash -LiteralPath $archiveFull -Algorithm SHA256).Hash.ToLowerInvariant()
+    "$archiveHash  $(Split-Path -Leaf $archiveFull)" |
+        Set-Content -LiteralPath "$archiveFull.sha256" -Encoding ascii
+}
+
 $packHash = (Get-FileHash -LiteralPath $outputPack -Algorithm SHA256).Hash
 Write-Host ''
 Write-Host 'Playable build completed.'
@@ -360,3 +490,7 @@ Write-Host "Launch: $(Join-Path $outputRoot 'Play-1937-Remake.cmd')"
 Write-Host "PCK SHA-256: $packHash"
 Write-Host "PCK smoke test: passed ($smokeLog)"
 Write-Host "Executable smoke test: passed ($executableSmokeLog)"
+Write-Host "Checksums: $checksumPath"
+if ($CreateArchive -and $AssetMode -eq 'Copy') {
+    Write-Host "Portable archive: $archivePath"
+}

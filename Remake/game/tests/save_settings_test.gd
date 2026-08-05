@@ -109,6 +109,18 @@ class MockGame:
 	var legacy_global_alarm_active := false
 	var legacy_global_alarm_counter := 0
 	var legacy_ambient_particle_state: Dictionary = {}
+	var runtime_settings: Dictionary = {
+		"ruleset_mode": "modern",
+		"difficulty_mode": "hard",
+		"control_scheme": "modern",
+		"custom_difficulty": {"enemy_accuracy": 0.82},
+	}
+	var content_package_validation: Dictionary = {
+		"status": "passed",
+		"content_identity_sha256": "test-content-identity",
+	}
+	var control_groups: Dictionary = {1: [100]}
+	var camera_bookmarks: Dictionary = {2: Vector2(320.0, 240.0)}
 
 	func legacy_ambient_particle_snapshot() -> Dictionary:
 		return legacy_ambient_particle_state.duplicate(true)
@@ -137,6 +149,7 @@ func _run_tests() -> void:
 	_test_original_controls_and_remapping(failures)
 	_test_audio_bus_configuration(failures)
 	_test_save_round_trip_and_recovery(failures)
+	_test_save_summary_index(failures)
 	_test_save_migration_and_slot_safety(failures)
 	_test_campaign_progression_and_disk_resume(failures)
 	_test_legacy_world_snapshot_presence(failures)
@@ -212,10 +225,24 @@ func _test_settings_defaults_and_round_trip(failures: Array[String]) -> void:
 		"camera-motion reduction and large cursor default off",
 		failures,
 	)
-	_expect(settings.difficulty_mode() == "original", "MOD parity is the default difficulty", failures)
+	_expect(
+		settings.ruleset_mode() == "classic"
+		and settings.difficulty_mode() == "normal"
+		and settings.effective_legacy_difficulty_mode() == "original",
+		"classic rules and normal presentation difficulty are independent defaults",
+		failures,
+	)
 	_expect(
 		settings.mission_rule_mode() == "stable_mod",
 		"stable MOD mission control flow is the default",
+		failures,
+	)
+	_expect(
+		settings.locale() == "system"
+		and settings.interface_enabled("educational_mode")
+		and settings.interface_enabled("history_notes")
+		and not settings.interface_enabled("reduced_violence"),
+		"localization and age-appropriate education defaults are explicit",
 		failures,
 	)
 
@@ -229,8 +256,16 @@ func _test_settings_defaults_and_round_trip(failures: Array[String]) -> void:
 	settings.set_interface_enabled("edge_scroll", false)
 	settings.set_interface_enabled("reduce_camera_motion", true)
 	settings.set_interface_enabled("large_cursor", true)
+	settings.set_interface_enabled("pause_on_focus_loss", false)
+	settings.set_interface_scale("ui_scale", 1.25)
+	settings.set_max_fps(120)
+	settings.set_ruleset_mode("modern")
+	settings.set_control_scheme("modern")
 	settings.set_difficulty_mode("hard")
 	settings.set_mission_rule_mode("repaired")
+	settings.set_locale("en")
+	settings.set_interface_enabled("educational_mode", false)
+	settings.set_interface_enabled("reduced_violence", true)
 	_expect(bool(settings.save_to_disk(path)["ok"]), "first settings write succeeds", failures)
 	settings.set_audio_volume("master", 0.75)
 	settings.set_display_mode("borderless")
@@ -252,8 +287,28 @@ func _test_settings_defaults_and_round_trip(failures: Array[String]) -> void:
 	)
 	_expect(loaded.difficulty_mode() == "hard", "difficulty choice persists", failures)
 	_expect(
+		loaded.ruleset_mode() == "modern"
+		and loaded.control_scheme() == "modern",
+		"ruleset and mouse-control scheme persist independently",
+		failures,
+	)
+	_expect(
+		int(loaded.display_settings()["max_fps"]) == 120
+		and is_equal_approx(loaded.interface_scale("ui_scale"), 1.25)
+		and not loaded.interface_enabled("pause_on_focus_loss"),
+		"modern display and accessibility settings persist",
+		failures,
+	)
+	_expect(
 		loaded.mission_rule_mode() == "repaired",
 		"mission rule profile persists independently from difficulty",
+		failures,
+	)
+	_expect(
+		loaded.locale() == "en"
+		and not loaded.interface_enabled("educational_mode")
+		and loaded.interface_enabled("reduced_violence"),
+		"language and age-appropriate presentation choices persist",
 		failures,
 	)
 
@@ -272,11 +327,16 @@ func _test_settings_migration_and_validation(failures: Array[String]) -> void:
 	var migrated = GAME_SETTINGS.new()
 	var result: Dictionary = migrated.load_from_disk(legacy_path)
 	_expect(bool(result["ok"]), "legacy settings shape is loadable", failures)
-	_expect(int(migrated.values["schema_version"]) == 5, "legacy settings migrate to current schema", failures)
+	_expect(int(migrated.values["schema_version"]) == 7, "legacy settings migrate to current schema", failures)
 	_expect(is_equal_approx(migrated.audio_volume("master"), 0.42), "legacy volume migrates", failures)
 	_expect(migrated.display_settings()["mode"] == "windowed", "legacy fullscreen flag migrates", failures)
 	_expect(not migrated.hint_enabled("objectives"), "legacy hint flag migrates", failures)
-	_expect(migrated.difficulty_mode() == "original", "legacy settings migrate to original parity", failures)
+	_expect(
+		migrated.ruleset_mode() == "classic"
+		and migrated.effective_legacy_difficulty_mode() == "original",
+		"legacy settings migrate to the classic ruleset",
+		failures,
+	)
 	_expect(
 		migrated.mission_rule_mode() == "stable_mod",
 		"legacy settings migrate to stable MOD mission rules",
@@ -309,7 +369,12 @@ func _test_settings_migration_and_validation(failures: Array[String]) -> void:
 		"missing accessibility values use safe defaults",
 		failures,
 	)
-	_expect(normalized.difficulty_mode() == "original", "missing gameplay settings use original parity", failures)
+	_expect(
+		normalized.ruleset_mode() == "classic"
+		and normalized.difficulty_mode() == "normal",
+		"missing gameplay settings use classic rules and normal difficulty",
+		failures,
+	)
 	_expect(
 		normalized.mission_rule_mode() == "stable_mod",
 		"missing mission rule settings fail closed to stable MOD",
@@ -330,7 +395,12 @@ func _test_settings_migration_and_validation(failures: Array[String]) -> void:
 	)
 	var schema_two = GAME_SETTINGS.new()
 	_expect(bool(schema_two.load_from_disk(schema_two_path)["ok"]), "schema-2 settings remain loadable", failures)
-	_expect(schema_two.difficulty_mode() == "original", "schema-2 settings gain original difficulty", failures)
+	_expect(
+		schema_two.ruleset_mode() == "classic"
+		and schema_two.effective_legacy_difficulty_mode() == "original",
+		"schema-2 settings gain the classic ruleset",
+		failures,
+	)
 	_expect(
 		not schema_two.interface_enabled("reduce_camera_motion")
 		and not schema_two.interface_enabled("large_cursor"),
@@ -654,12 +724,64 @@ func _test_save_round_trip_and_recovery(failures: Array[String]) -> void:
 	)
 
 
+func _test_save_summary_index(failures: Array[String]) -> void:
+	var store = GAME_SAVE_STORE.new(test_root + "/indexed-saves")
+	var session := _sample_session()
+	session["elapsed_seconds"] = 73.25
+	_expect(bool(store.save_slot("indexed", session)["ok"]), "indexed save succeeds", failures)
+	_expect(
+		FileAccess.file_exists(store.slot_index_path()),
+		"saving creates a lightweight slot-summary index",
+		failures,
+	)
+
+	var reopened = GAME_SAVE_STORE.new(test_root + "/indexed-saves")
+	var indexed_listing: Array[Dictionary] = reopened.list_slots()
+	var indexed_stats: Dictionary = reopened.summary_cache_stats()
+	_expect(
+		indexed_listing.size() == 1
+		and str(indexed_listing[0].get("slot_id", "")) == "indexed"
+		and is_equal_approx(float(indexed_listing[0].get("elapsed_seconds", 0.0)), 73.25),
+		"slot list restores the complete public summary from its index",
+		failures,
+	)
+	_expect(
+		int(indexed_stats.get("fallback_document_loads", -1)) == 0,
+		"a valid summary index avoids parsing the complete save document",
+		failures,
+	)
+	_expect(
+		not indexed_listing[0].has("fingerprint")
+		and not indexed_listing[0].has("generations_supported"),
+		"internal index fingerprints do not leak into the menu model",
+		failures,
+	)
+
+	_write_text(reopened.slot_index_path(), "{broken index")
+	var rebuilding_store = GAME_SAVE_STORE.new(test_root + "/indexed-saves")
+	var rebuilt_listing: Array[Dictionary] = rebuilding_store.list_slots()
+	var rebuilt_stats: Dictionary = rebuilding_store.summary_cache_stats()
+	var rebuilt_index_value: Variant = JSON.parse_string(_read_text(rebuilding_store.slot_index_path()))
+	_expect(
+		rebuilt_listing.size() == 1
+		and int(rebuilt_stats.get("fallback_document_loads", 0)) == 1,
+		"a corrupt summary index falls back to one authoritative document load",
+		failures,
+	)
+	_expect(
+		rebuilt_index_value is Dictionary
+		and int((rebuilt_index_value as Dictionary).get("schema_version", -1)) == 1,
+		"the advisory summary index repairs itself after fallback",
+		failures,
+	)
+
+
 func _test_save_migration_and_slot_safety(failures: Array[String]) -> void:
 	var store = GAME_SAVE_STORE.new(test_root + "/migration-saves")
 	var policy: Dictionary = GAME_SAVE_STORE.migration_policy()
 	_expect(
 		int(policy["minimum_supported_schema_version"]) == 0
-		and int(policy["current_schema_version"]) == 1
+		and int(policy["current_schema_version"]) == 2
 		and str(policy["future_version_policy"])
 		== "reject_and_preserve_all_generations",
 		"save migration policy exposes its supported window and fail-closed future policy",
@@ -715,7 +837,7 @@ func _test_save_migration_and_slot_safety(failures: Array[String]) -> void:
 	var legacy: Dictionary = store.load_slot("legacy")
 	_expect(bool(legacy["ok"]), "v0 level save migrates", failures)
 	_expect(bool(legacy["migrated"]), "v0 load is explicitly reported as migrated", failures)
-	_expect(int((legacy["data"] as Dictionary)["schema_version"]) == 1, "v0 save receives current schema", failures)
+	_expect(int((legacy["data"] as Dictionary)["schema_version"]) == 2, "v0 save receives current schema", failures)
 	_expect(
 		str(((legacy["data"] as Dictionary)["session"] as Dictionary)["level_id"]) == "m002",
 		"v0 level ID survives migration",
@@ -735,6 +857,8 @@ func _test_save_migration_and_slot_safety(failures: Array[String]) -> void:
 	)
 
 	var old_current_session := _sample_session()
+	old_current_session.erase("runtime_profile")
+	old_current_session.erase("player_workspace")
 	var old_current_world := old_current_session["world"] as Dictionary
 	old_current_world.erase("snapshot_presence")
 	old_current_world.erase("remaining_field_pickup_scene_indices")
@@ -771,6 +895,17 @@ func _test_save_migration_and_slot_safety(failures: Array[String]) -> void:
 		not bool(old_current_presence["field_pickups"])
 		and not bool(old_current_presence["explosive_props"]),
 		"schema-1 saves distinguish missing world collections from explicit empty arrays",
+		failures,
+	)
+	var migrated_profile := (
+		((old_current["data"] as Dictionary)["session"] as Dictionary)[
+			"runtime_profile"
+		] as Dictionary
+	)
+	_expect(
+		str(migrated_profile["content_identity"]) == "legacy_schema_1"
+		and str(migrated_profile["ruleset_mode"]) == "classic",
+		"schema-1 saves gain an explicit conservative runtime profile",
 		failures,
 	)
 	var future_path: String = str(store.slot_path("future"))
@@ -987,6 +1122,8 @@ func _test_legacy_world_snapshot_presence(failures: Array[String]) -> void:
 func _test_mid_mission_capture_and_apply(failures: Array[String]) -> void:
 	var source_game := _make_mock_game(true)
 	root.add_child(source_game)
+	source_game.control_groups = {3: [100]}
+	source_game.camera_bookmarks = {4: Vector2(444.0, 555.0)}
 	source_game.m010_split_ordered_names = {"老赵": true, "强子": true}
 	source_game.victory_presentation_completed = false
 	source_game.legacy_global_alarm_active = true
@@ -994,6 +1131,25 @@ func _test_mid_mission_capture_and_apply(failures: Array[String]) -> void:
 	var session: Dictionary = GAME_SESSION_STATE.capture(source_game)
 	_expect(str(session["level_id"]) == "m003", "capture records current formal level", failures)
 	_expect(is_equal_approx(float(session["elapsed_seconds"]), 17.25), "capture records mission clock", failures)
+	var runtime_profile := session["runtime_profile"] as Dictionary
+	var player_workspace := session["player_workspace"] as Dictionary
+	_expect(
+		str(runtime_profile["ruleset_mode"]) == "modern"
+		and str(runtime_profile["difficulty_mode"]) == "hard"
+		and str(runtime_profile["control_scheme"]) == "modern"
+		and str(runtime_profile["content_identity"]) == "test-content-identity",
+		"capture owns ruleset, difficulty, controls, and content identity",
+		failures,
+	)
+	_expect(
+		(player_workspace["control_groups"] as Dictionary)["3"] == [100]
+		and is_equal_approx(
+			float(((player_workspace["camera_bookmarks"] as Dictionary)["4"] as Dictionary)["x"]),
+			444.0,
+		),
+		"capture preserves control groups and camera bookmarks as JSON-safe values",
+		failures,
+	)
 	var captured_seen := ((session["mission"] as Dictionary)["seen_values"] as Dictionary)["secure"] as Array
 	_expect(captured_seen == [2637], "numeric seen values are encoded as an array", failures)
 	var inventory := ((session["squad"] as Array)[0]["inventory"] as Dictionary)["items"] as Dictionary
@@ -1129,6 +1285,8 @@ func _test_mid_mission_capture_and_apply(failures: Array[String]) -> void:
 
 	var target_game := _make_mock_game(false)
 	root.add_child(target_game)
+	target_game.control_groups.clear()
+	target_game.camera_bookmarks.clear()
 	# A fresh level may author a pursuit link that no longer exists in the save.
 	# Restoring the explicit -1 identity must clear that stale startup relation.
 	var stale_pursuit_enemy = target_game.enemies[0]
@@ -1152,6 +1310,14 @@ func _test_mid_mission_capture_and_apply(failures: Array[String]) -> void:
 	_expect(
 		target_unit.selected and target_game.selected_units == [target_unit],
 		"selected squad membership restores without stale spawn selection",
+		failures,
+	)
+	_expect(
+		target_game.control_groups.get(3, []) == [100]
+		and (target_game.camera_bookmarks.get(4, Vector2.ZERO) as Vector2).is_equal_approx(
+			Vector2(444.0, 555.0)
+		),
+		"tactical control groups and camera bookmarks restore with the mission",
 		failures,
 	)
 	_expect(

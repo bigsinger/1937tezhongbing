@@ -42,6 +42,7 @@ var projectile_profile: Dictionary = {}
 var damage_candidates: Array[Node2D] = []
 var navigation_grid: Variant
 var dynamic_occupancy: Variant
+var spatial_index: Variant
 var projectile_visual: Dictionary = {}
 var start_world_position := Vector2.ZERO
 var destination := Vector2.ZERO
@@ -86,6 +87,7 @@ func configure(
 	new_dynamic_actor_factory_commit: Callable = Callable(),
 	new_dynamic_actor_destructor_commit: Callable = Callable(),
 	consume_factory_random: bool = true,
+	new_spatial_index: Variant = null,
 ) -> bool:
 	if (
 		new_source == null
@@ -100,6 +102,7 @@ func configure(
 	damage_candidates = new_damage_candidates.duplicate()
 	navigation_grid = new_navigation_grid
 	dynamic_occupancy = new_dynamic_occupancy
+	spatial_index = new_spatial_index
 	projectile_visual = new_projectile_visual.duplicate()
 	dynamic_actor_factory_commit = new_dynamic_actor_factory_commit
 	dynamic_actor_destructor_commit = new_dynamic_actor_destructor_commit
@@ -392,7 +395,16 @@ func _runtime_actor_in_current_cell() -> Node2D:
 			if _is_original_direct_hit_candidate(occupied_candidate)
 			else null
 		)
-	var ordered_candidates := damage_candidates.duplicate()
+	var ordered_candidates: Array[Node2D] = []
+	if spatial_index != null and spatial_index.has_method("query_rect"):
+		var cell_origin := _cell_to_world(current_cell) - Vector2(16.0, 8.0)
+		ordered_candidates = spatial_index.call(
+			"query_rect",
+			Rect2(cell_origin, Vector2(32.0, 16.0)),
+			["combatant"],
+		) as Array[Node2D]
+	else:
+		ordered_candidates = damage_candidates.duplicate()
 	ordered_candidates.sort_custom(
 		func(first: Node2D, second: Node2D) -> bool:
 			return _candidate_sort_key(first) < _candidate_sort_key(second)
@@ -450,7 +462,24 @@ func _detonate_actor_61() -> void:
 	)
 	var blast_damage := int(explosion_profile.get("blast_damage", 0))
 	var special_bursts: Array[Dictionary] = []
-	for candidate: Node2D in damage_candidates:
+	var blast_candidates: Array[Node2D] = []
+	if spatial_index != null and spatial_index.has_method("query_radius"):
+		blast_candidates = spatial_index.call(
+			"query_radius",
+			global_position,
+			maxf(
+				float(explosion_profile["blast_horizontal_radius"]),
+				float(explosion_profile["blast_vertical_radius"]),
+			),
+			["combatant"],
+		) as Array[Node2D]
+	else:
+		blast_candidates = damage_candidates
+	blast_candidates.sort_custom(
+		func(first: Node2D, second: Node2D) -> bool:
+			return _candidate_sort_key(first) < _candidate_sort_key(second)
+	)
+	for candidate: Node2D in blast_candidates:
 		if not _is_alive_damage_candidate(candidate):
 			continue
 		var offset := candidate.global_position - global_position
@@ -526,6 +555,12 @@ func _is_alive_damage_candidate(candidate: Node2D) -> bool:
 
 
 func _candidate_by_scene_index(scene_index: int) -> Node2D:
+	if spatial_index != null and spatial_index.has_method("node_for_scene"):
+		var indexed_candidate := spatial_index.call(
+			"node_for_scene", scene_index
+		) as Node2D
+		if indexed_candidate != null:
+			return indexed_candidate
 	for candidate: Node2D in damage_candidates:
 		if _node_scene_index(candidate) == scene_index:
 			return candidate

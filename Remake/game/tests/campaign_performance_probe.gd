@@ -5,6 +5,7 @@ const GAME_INPUT_BINDINGS: Script = preload(
 	"res://scripts/game_input_bindings.gd"
 )
 const GAME_SAVE_STORE: Script = preload("res://scripts/game_save_store.gd")
+const GAME_SESSION_STATE: Script = preload("res://scripts/game_session_state.gd")
 
 const LEVEL_IDS: Array[String] = [
 	"m000",
@@ -24,6 +25,9 @@ const DEFAULT_DURATION_SECONDS := 48.0
 const DEFAULT_PASSES := 1
 const DEFAULT_MAX_P95_MS := 20.0
 const DEFAULT_MAX_P99_MS := 25.0
+const DEFAULT_MAX_UI_ACTION_MS := 25.0
+const DEFAULT_MAX_COLD_LEVEL_LOAD_MS := 6000.0
+const DEFAULT_MAX_WARM_LEVEL_LOAD_MS := 3500.0
 ## Per-level P99 is a release-strength assertion only after enough rendered
 ## frames have been observed. A short 12-level smoke profile has roughly
 ## 180 samples per mission, where one intentional menu-opening frame can move
@@ -32,12 +36,16 @@ const DEFAULT_MAX_P99_MS := 25.0
 const DEFAULT_MINIMUM_PER_LEVEL_P99_SAMPLES := 600
 const DEFAULT_MAX_OVER_50_PER_LEVEL := 0
 const DEFAULT_MAX_SECOND_PASS_GROWTH_MIB := 128.0
+const MAX_STORED_SAMPLES_PER_LEVEL := 20_000
 const OUTPUT_PREFIX := "--output="
 
 var duration_seconds := DEFAULT_DURATION_SECONDS
 var pass_count := DEFAULT_PASSES
 var maximum_p95_ms := DEFAULT_MAX_P95_MS
 var maximum_p99_ms := DEFAULT_MAX_P99_MS
+var maximum_ui_action_ms := DEFAULT_MAX_UI_ACTION_MS
+var maximum_cold_level_load_ms := DEFAULT_MAX_COLD_LEVEL_LOAD_MS
+var maximum_warm_level_load_ms := DEFAULT_MAX_WARM_LEVEL_LOAD_MS
 var minimum_per_level_p99_samples := (
 	DEFAULT_MINIMUM_PER_LEVEL_P99_SAMPLES
 )
@@ -52,14 +60,29 @@ var check_count := 0
 var viewport_input_events := 0
 var modal_dismissals := 0
 var level_samples: Dictionary = {}
+var level_sample_totals: Dictionary = {}
 var level_visits: Array[Dictionary] = []
 var level_peak_draw_calls: Dictionary = {}
 var level_peak_objects_drawn: Dictionary = {}
+var level_peak_object_count: Dictionary = {}
+var level_peak_static_memory: Dictionary = {}
+var level_process_samples: Dictionary = {}
+var level_physics_samples: Dictionary = {}
+var level_process_sample_totals: Dictionary = {}
+var level_physics_sample_totals: Dictionary = {}
 var pass_memory_bytes: Array[int] = []
 var isolated_save_directory := ""
 var slow_frames: Array[Dictionary] = []
 var last_nearby_select_ms := 0.0
 var last_nearby_click_ms := 0.0
+var first_action_latencies_ms: Dictionary = {}
+var previous_max_fps := 0
+var previous_vsync_mode := DisplayServer.VSYNC_ENABLED
+var stability_mode := false
+var soak_save_count := 0
+var soak_load_count := 0
+var last_stability_progress_usec := 0
+var actor_physics_profile_enabled := false
 
 
 func _init() -> void:
@@ -69,26 +92,43 @@ func _init() -> void:
 
 func _run() -> void:
 	_expect(
-		DisplayServer.get_name() != "headless",
-		"campaign performance probe requires a real window/rendering backend",
+		DisplayServer.get_name() != "headless" or stability_mode,
+		"campaign performance probe requires a real window unless stability mode is active",
 	)
 	_expect(duration_seconds >= 24.0, "sample duration covers every formal mission")
 	_expect(pass_count >= 1, "performance pass count is positive")
 	for level_id: String in selected_level_ids:
 		level_samples[level_id] = []
+		level_sample_totals[level_id] = 0
+		level_process_samples[level_id] = []
+		level_physics_samples[level_id] = []
+		level_process_sample_totals[level_id] = 0
+		level_physics_sample_totals[level_id] = 0
 		level_peak_draw_calls[level_id] = 0.0
 		level_peak_objects_drawn[level_id] = 0.0
+		level_peak_object_count[level_id] = 0.0
+		level_peak_static_memory[level_id] = 0.0
+	previous_max_fps = Engine.max_fps
+	previous_vsync_mode = DisplayServer.window_get_vsync_mode()
+	Engine.max_fps = 60 if stability_mode else 0
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 
 	var main = MAIN_SCENE.instantiate()
 	root.add_child(main)
 	await process_frame
+	_write_stability_progress("main_ready", {})
 	_dismiss_all_media(main)
 	if main.game_shell != null:
 		main.game_shell.close_for_state_change()
 	paused = false
 	main.runtime_settings["controls"] = GAME_INPUT_BINDINGS.default_bindings()
 	main.runtime_settings["mission_rule_mode"] = "stable_mod"
-	main.runtime_settings["difficulty_mode"] = "original"
+	# The release performance budget targets the modern execution policy. The
+	# classic ruleset remains covered by deterministic parity tests, while its
+	# intentionally lockstep enemy sensing is not a representative modern frame
+	# scheduler workload.
+	main.runtime_settings["ruleset_mode"] = "modern"
+	main.runtime_settings["difficulty_mode"] = "normal"
 	main.runtime_settings["show_briefings"] = false
 	isolated_save_directory = (
 		"user://qa-campaign-performance/%d-%d"
@@ -104,12 +144,27 @@ func _run() -> void:
 	)
 	for pass_index: int in range(pass_count):
 		for level_id: String in selected_level_ids:
+			_write_stability_progress(
+				"visit_start",
+				{"pass_index": pass_index, "level_id": level_id},
+			)
 			await _sample_level_visit(
 				main,
 				LEVEL_IDS.find(level_id),
 				pass_index,
 				per_visit_seconds,
 			)
+			if stability_mode:
+				_write_stability_progress(
+					"save_roundtrip_start",
+					{"pass_index": pass_index, "level_id": level_id},
+				)
+				_exercise_stability_save_roundtrip(main, pass_index, level_id)
+				_write_stability_progress(
+					"save_roundtrip_complete",
+					{"pass_index": pass_index, "level_id": level_id},
+				)
+				await process_frame
 		pass_memory_bytes.append(OS.get_static_memory_usage())
 
 	var sampled_wall_seconds := (
@@ -138,9 +193,18 @@ func _run() -> void:
 					int(visit["pass_index"]) + 1,
 				],
 			)
+			var maximum_load_ms := (
+				maximum_cold_level_load_ms
+				if int(visit["pass_index"]) == 0
+				else maximum_warm_level_load_ms
+			)
 			_expect(
-				float(visit["load_ms"]) < 10_000.0,
-				"%s level reconstruction remains bounded" % level_id,
+				float(visit["load_ms"]) <= maximum_load_ms,
+				"%s pass %d level reconstruction exceeds %.1f ms" % [
+					level_id,
+					int(visit["pass_index"]) + 1,
+					maximum_load_ms,
+				],
 			)
 		var minimum_expected_samples := maxi(
 			30,
@@ -159,12 +223,12 @@ func _run() -> void:
 		)
 		_expect(
 			float(metrics["p95_ms"]) <= maximum_p95_ms,
-			"%s P95 is within %.3f ms" % [level_id, maximum_p95_ms],
+			"%s P95 exceeds %.3f ms" % [level_id, maximum_p95_ms],
 		)
 		if int(metrics["sample_count"]) >= minimum_per_level_p99_samples:
 			_expect(
 				float(metrics["p99_ms"]) <= maximum_p99_ms,
-				"%s P99 is within %.3f ms" % [level_id, maximum_p99_ms],
+				"%s P99 exceeds %.3f ms" % [level_id, maximum_p99_ms],
 			)
 		_expect(
 			int(metrics["frames_over_50_ms"]) <= maximum_over_50_per_level,
@@ -174,8 +238,13 @@ func _run() -> void:
 			{
 				"level_id": level_id,
 				"metrics": metrics,
+				"observed_frame_samples": int(level_sample_totals[level_id]),
 				"peak_draw_calls": float(level_peak_draw_calls[level_id]),
 				"peak_objects_drawn": float(level_peak_objects_drawn[level_id]),
+				"peak_object_count": float(level_peak_object_count[level_id]),
+				"peak_static_memory_bytes": float(level_peak_static_memory[level_id]),
+				"process_metrics": _frame_metrics(level_process_samples[level_id]),
+				"physics_metrics": _frame_metrics(level_physics_samples[level_id]),
 				"moved_enemy_max": moved_enemy_max,
 				"viewport_input_events": input_event_count,
 				"visits": visits,
@@ -199,11 +268,21 @@ func _run() -> void:
 	var aggregate_metrics := _frame_metrics(aggregate_samples)
 	_expect(
 		float(aggregate_metrics["p99_ms"]) <= maximum_p99_ms,
-		"aggregate P99 is within %.3f ms" % maximum_p99_ms,
+		"aggregate P99 exceeds %.3f ms" % maximum_p99_ms,
 	)
+	for action_name: String in [
+		"weapons_W", "items_A", "sight_S_enemy_click", "stance_C",
+	]:
+		_expect(
+			first_action_latencies_ms.has(action_name)
+				and float(first_action_latencies_ms[action_name]) <= maximum_ui_action_ms,
+			"%s first interaction exceeds %.3f ms" % [
+				action_name, maximum_ui_action_ms,
+			],
+		)
 
 	var report := {
-		"schema_version": 1,
+		"schema_version": 2,
 		"profile_id": profile_id,
 		"content_profile": "repository-mod-12-level-20260729",
 		"levels": levels,
@@ -213,9 +292,13 @@ func _run() -> void:
 		"sampled_wall_seconds": sampled_wall_seconds,
 		"per_visit_seconds": per_visit_seconds,
 		"aggregate_metrics": aggregate_metrics,
+		"first_action_latencies_ms": first_action_latencies_ms,
 		"thresholds": {
 			"maximum_p95_ms": maximum_p95_ms,
 			"maximum_p99_ms": maximum_p99_ms,
+			"maximum_ui_action_ms": maximum_ui_action_ms,
+			"maximum_cold_level_load_ms": maximum_cold_level_load_ms,
+			"maximum_warm_level_load_ms": maximum_warm_level_load_ms,
 			"minimum_per_level_p99_samples": (
 				minimum_per_level_p99_samples
 			),
@@ -224,6 +307,11 @@ func _run() -> void:
 		},
 		"viewport_input_events": viewport_input_events,
 		"global_pointer_control": false,
+		"stability_mode": stability_mode,
+		"stability_io": {
+			"save_count": soak_save_count,
+			"load_count": soak_load_count,
+		},
 		"modal_dismissals": modal_dismissals,
 		"memory": {
 			"pass_end_bytes": pass_memory_bytes,
@@ -231,6 +319,9 @@ func _run() -> void:
 			"static_peak_bytes": OS.get_static_memory_peak_usage(),
 		},
 		"runtime": {
+			"frame_cap_during_measurement": 60 if stability_mode else 0,
+			"vsync_during_measurement": "disabled",
+			"display_backend": DisplayServer.get_name(),
 			"godot_version": str(Engine.get_version_info().get("string", "")),
 			"os_name": OS.get_name(),
 			"os_version": OS.get_version(),
@@ -259,6 +350,8 @@ func _run() -> void:
 	root.remove_child(main)
 	main.free()
 	await process_frame
+	Engine.max_fps = previous_max_fps
+	DisplayServer.window_set_vsync_mode(previous_vsync_mode)
 	_cleanup_isolated_save_directory()
 
 	print("CAMPAIGN_PERFORMANCE_RESULT %s" % JSON.stringify(report))
@@ -302,14 +395,17 @@ func _sample_level_visit(
 		main.game_shell.close_for_state_change()
 	paused = false
 	_protect_story_actors(main)
+	_configure_actor_physics_profiling(main, actor_physics_profile_enabled)
 	var first_render_started_usec := Time.get_ticks_usec()
 	await process_frame
-	await RenderingServer.frame_post_draw
+	if not stability_mode:
+		await RenderingServer.frame_post_draw
 	var first_render_ms := (
 		float(Time.get_ticks_usec() - first_render_started_usec) / 1000.0
 	)
 	var render_sync_started_usec := Time.get_ticks_usec()
-	RenderingServer.force_sync()
+	if not stability_mode:
+		RenderingServer.force_sync()
 	var render_sync_ms := (
 		float(Time.get_ticks_usec() - render_sync_started_usec) / 1000.0
 	)
@@ -358,8 +454,11 @@ func _sample_level_visit(
 		var current_physics_frame := Engine.get_physics_frames()
 		var current_tactical_cache := _tactical_cache_totals(main)
 		if previous_elapsed_seconds >= warmup_seconds:
-			(level_samples[level_id] as Array).append(
-				frame_interval_ms
+			_record_bounded_sample(
+				level_samples,
+				level_sample_totals,
+				level_id,
+				frame_interval_ms,
 			)
 			level_peak_draw_calls[level_id] = maxf(
 				float(level_peak_draw_calls[level_id]),
@@ -372,6 +471,26 @@ func _sample_level_visit(
 				Performance.get_monitor(
 					Performance.RENDER_TOTAL_OBJECTS_IN_FRAME
 				),
+			)
+			level_peak_object_count[level_id] = maxf(
+				float(level_peak_object_count[level_id]),
+				Performance.get_monitor(Performance.OBJECT_COUNT),
+			)
+			level_peak_static_memory[level_id] = maxf(
+				float(level_peak_static_memory[level_id]),
+				Performance.get_monitor(Performance.MEMORY_STATIC),
+			)
+			_record_bounded_sample(
+				level_process_samples,
+				level_process_sample_totals,
+				level_id,
+				Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
+			)
+			_record_bounded_sample(
+				level_physics_samples,
+				level_physics_sample_totals,
+				level_id,
+				Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0,
 			)
 			if frame_interval_ms > 25.0 and slow_frames.size() < 256:
 				slow_frames.append(
@@ -490,10 +609,34 @@ func _sample_level_visit(
 			last_action_dispatch_ms = (
 				float(Time.get_ticks_usec() - action_started_usec) / 1000.0
 			)
+			if not first_action_latencies_ms.has(last_action_label):
+				first_action_latencies_ms[last_action_label] = last_action_dispatch_ms
 			last_action_elapsed_seconds = elapsed_seconds
 			input_serial += 1
 			next_input_seconds += 0.55
 		_dismiss_all_media(main)
+		if stability_mode and paused:
+			# Headless runs have no user-driven second click to unwind modal UI.
+			# Exercise the open path, then immediately restore the live simulation
+			# before awaiting the next frame so the soak cannot deadlock on pause.
+			if main.game_shell != null:
+				main.game_shell.close_for_state_change()
+			paused = false
+		if (
+			stability_mode
+			and Time.get_ticks_usec() - last_stability_progress_usec
+				>= 5_000_000
+		):
+			_write_stability_progress(
+				"visit_running",
+				{
+					"level_id": level_id,
+					"pass_index": pass_index,
+					"elapsed_seconds": elapsed_seconds,
+					"last_action": last_action_label,
+					"paused": paused,
+				},
+			)
 		if (
 			main.current_mission_state != null
 			and main.current_mission_state.is_failed()
@@ -577,6 +720,9 @@ func _sample_level_visit(
 				)
 				/ 1000.0
 			),
+			"footprint_clearance_metrics": (
+				main.dynamic_occupancy.footprint_clearance_metrics()
+			),
 			"static_component_redirect_count": int(
 				main.navigation_grid.static_component_redirect_count
 			),
@@ -602,6 +748,7 @@ func _sample_level_visit(
 			"tactical_range_cache_rebuild_ms": (
 				float(_tactical_cache_totals(main).y) / 1000.0
 			),
+			"actor_physics_profile": _actor_physics_profile(main),
 		}
 	)
 
@@ -749,6 +896,130 @@ func _protect_story_actors(main: Node) -> void:
 		actor.set("current_hit_points", 1_000_000)
 
 
+func _configure_actor_physics_profiling(main: Node, enabled: bool) -> void:
+	for actor_value: Variant in (
+		main.units + main.enemies + main.escorts + main.ambient_units
+	):
+		var actor := actor_value as Node
+		if actor != null and actor.has_method("set_debug_physics_profiling_enabled"):
+			actor.call("set_debug_physics_profiling_enabled", enabled)
+
+
+func _actor_physics_profile(main: Node) -> Dictionary:
+	if not actor_physics_profile_enabled:
+		return {}
+	var sections: Dictionary = {}
+	var actor_profiles: Array[Dictionary] = []
+	var actor_count := 0
+	for actor_value: Variant in (
+		main.units + main.enemies + main.escorts + main.ambient_units
+	):
+		var actor := actor_value as Node
+		if actor == null or not actor.has_method("debug_physics_profile_snapshot"):
+			continue
+		actor_count += 1
+		var profile := actor.call("debug_physics_profile_snapshot") as Dictionary
+		var actor_total_usec := 0
+		var actor_maximum_usec := 0
+		for raw_section: Variant in profile.keys():
+			var section := str(raw_section)
+			var actor_section := profile[raw_section] as Dictionary
+			var aggregate_value: Variant = sections.get(section, {})
+			var aggregate := (
+				aggregate_value as Dictionary
+				if aggregate_value is Dictionary
+				else {}
+			)
+			aggregate["count"] = int(aggregate.get("count", 0)) + int(
+				actor_section.get("count", 0)
+			)
+			aggregate["total_usec"] = int(aggregate.get("total_usec", 0)) + int(
+				actor_section.get("total_usec", 0)
+			)
+			aggregate["maximum_usec"] = maxi(
+				int(aggregate.get("maximum_usec", 0)),
+				int(actor_section.get("maximum_usec", 0)),
+			)
+			sections[section] = aggregate
+			if section in ["enemy_logic", "ambient_logic", "total"]:
+				actor_total_usec += int(actor_section.get("total_usec", 0))
+				actor_maximum_usec = maxi(
+					actor_maximum_usec,
+					int(actor_section.get("maximum_usec", 0)),
+				)
+		actor_profiles.append({
+			"scene_index": int(actor.get("scene_index")),
+			"class_name": actor.get_class(),
+			"runtime_actor_type": int(actor.get("runtime_actor_type")),
+			"compact_navigation": bool(actor.get("use_compact_navigation_footprint")),
+			"behavior_state": int(actor.get("behavior_state")) if profile.has("enemy_logic") else -1,
+			"combat_action": int(actor.get("combat_action")),
+			"target_scene_index": (
+				int((actor.get("current_target") as Node).get("scene_index"))
+				if profile.has("enemy_logic")
+				and actor.get("current_target") is Node
+				and is_instance_valid(actor.get("current_target"))
+				else -1
+			),
+			"position": [float((actor as Node2D).position.x), float((actor as Node2D).position.y)] if actor is Node2D else [],
+			"total_usec": actor_total_usec,
+			"maximum_usec": actor_maximum_usec,
+			"sections": profile,
+		})
+	for section_value: Variant in sections.values():
+		var section := section_value as Dictionary
+		section["average_usec"] = (
+			float(section.get("total_usec", 0))
+			/ maxf(float(section.get("count", 0)), 1.0)
+		)
+	actor_profiles.sort_custom(
+		func(left: Dictionary, right: Dictionary) -> bool:
+			if int(left["total_usec"]) != int(right["total_usec"]):
+				return int(left["total_usec"]) > int(right["total_usec"])
+			return int(left["scene_index"]) < int(right["scene_index"])
+	)
+	if actor_profiles.size() > 16:
+		actor_profiles.resize(16)
+	return {
+		"actor_count": actor_count,
+		"sections": sections,
+		"top_actors_by_total": actor_profiles,
+	}
+
+
+func _exercise_stability_save_roundtrip(
+	main: Node,
+	pass_index: int,
+	level_id: String,
+) -> void:
+	var slot_id := "qa_soak_%d_%s" % [pass_index % 2, level_id]
+	var session: Dictionary = GAME_SESSION_STATE.capture(main)
+	var saved: Dictionary = main.save_store.save_slot(
+		slot_id,
+		session,
+		main.campaign_progress,
+	)
+	_expect(bool(saved.get("ok", false)), "%s stability save succeeds" % level_id)
+	if not bool(saved.get("ok", false)):
+		return
+	soak_save_count += 1
+	var loaded: Dictionary = main.save_store.load_slot(slot_id)
+	_expect(bool(loaded.get("ok", false)), "%s stability load succeeds" % level_id)
+	if not bool(loaded.get("ok", false)):
+		return
+	soak_load_count += 1
+	var document := loaded.get("data", {}) as Dictionary
+	var restored: Dictionary = GAME_SESSION_STATE.apply_after_level_loaded(
+		main,
+		document.get("session", {}) as Dictionary,
+	)
+	_expect(
+		bool(restored.get("ok", false)),
+		"%s stability state restore succeeds" % level_id,
+	)
+	_protect_story_actors(main)
+
+
 func _tactical_cache_totals(main: Node) -> Vector2i:
 	var rebuild_count := 0
 	var rebuild_usec := 0
@@ -787,6 +1058,24 @@ func _usec_dictionary_to_ms(values: Dictionary) -> Dictionary:
 
 func _warmup_seconds(visit_seconds: float) -> float:
 	return minf(2.0, maxf(1.0, visit_seconds * 0.20))
+
+
+func _record_bounded_sample(
+	storage: Dictionary,
+	totals: Dictionary,
+	level_id: String,
+	value: float,
+) -> void:
+	var samples := storage[level_id] as Array
+	var observed := int(totals.get(level_id, 0))
+	if samples.size() < MAX_STORED_SAMPLES_PER_LEVEL:
+		samples.append(value)
+	else:
+		# A rolling reservoir keeps the most recent representative window. It
+		# prevents the QA harness itself from looking like a gameplay leak during
+		# 30–60 minute runs while retaining far more than the P99 sample gate.
+		samples[observed % MAX_STORED_SAMPLES_PER_LEVEL] = value
+	totals[level_id] = observed + 1
 
 
 func _frame_metrics(samples: Array) -> Dictionary:
@@ -866,6 +1155,21 @@ func _parse_arguments(arguments: PackedStringArray) -> void:
 				float(argument.trim_prefix("--max-p99-ms=")),
 				1.0,
 			)
+		elif argument.begins_with("--max-ui-action-ms="):
+			maximum_ui_action_ms = maxf(
+				float(argument.trim_prefix("--max-ui-action-ms=")),
+				1.0,
+			)
+		elif argument.begins_with("--max-cold-level-load-ms="):
+			maximum_cold_level_load_ms = maxf(
+				float(argument.trim_prefix("--max-cold-level-load-ms=")),
+				1.0,
+			)
+		elif argument.begins_with("--max-warm-level-load-ms="):
+			maximum_warm_level_load_ms = maxf(
+				float(argument.trim_prefix("--max-warm-level-load-ms=")),
+				1.0,
+			)
 		elif argument.begins_with("--min-per-level-p99-samples="):
 			minimum_per_level_p99_samples = maxi(
 				int(
@@ -897,6 +1201,10 @@ func _parse_arguments(arguments: PackedStringArray) -> void:
 					requested_levels.append(level_id)
 			if not requested_levels.is_empty():
 				selected_level_ids = requested_levels
+		elif argument == "--stability-mode":
+			stability_mode = true
+		elif argument == "--profile-actor-physics":
+			actor_physics_profile_enabled = true
 
 
 func _write_report(path: String, report: Dictionary) -> void:
@@ -912,6 +1220,25 @@ func _write_report(path: String, report: Dictionary) -> void:
 		return
 	output.store_string(JSON.stringify(report, "\t") + "\n")
 	output.close()
+
+
+func _write_stability_progress(stage: String, payload: Dictionary) -> void:
+	if not stability_mode or output_path.is_empty():
+		return
+	last_stability_progress_usec = Time.get_ticks_usec()
+	var progress_path := output_path.get_base_dir().path_join(
+		"stability-progress.json"
+	)
+	var progress := {
+		"schema_version": 1,
+		"stage": stage,
+		"ticks_usec": last_stability_progress_usec,
+		"payload": payload,
+	}
+	var file := FileAccess.open(progress_path, FileAccess.WRITE)
+	if file != null:
+		file.store_string(JSON.stringify(progress, "\t") + "\n")
+		file.close()
 
 
 func _cleanup_isolated_save_directory() -> void:

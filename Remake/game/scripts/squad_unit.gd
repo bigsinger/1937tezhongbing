@@ -103,6 +103,7 @@ signal attack_started(
 	alert_radius: float,
 )
 signal attack_hit(attacker: Node2D, target: Node2D, attack_type: int, damage: int)
+signal attack_missed(attacker: Node2D, target: Node2D, attack_type: int, reason: String)
 signal projectile_requested(attacker: Node2D, target: Node2D, weapon_profile: Dictionary)
 signal special_action_requested(attacker: Node2D, target: Node2D, weapon_profile: Dictionary)
 signal original_disguise_attack_committed(
@@ -258,6 +259,7 @@ var use_recorded_patrol_relocation := false
 var use_recorded_patrol_final_relocation := false
 var sprite_texture: Texture2D
 var sprite_anchor := Vector2.ZERO
+var active_visual_signature := ""
 var row_slice_renderer: Node2D
 var sprite_drawn_by_row_slices := false
 var uniform_row_depth_enabled := false
@@ -314,6 +316,7 @@ var modern_player_combat_rules_enabled := false
 var player_attack_attempt_serial := 0
 var hurt_remaining := 0.0
 var death_emitted := false
+var reduced_violence_mode := false
 var combat_inventory: RefCounted
 var backpack_inventory: RefCounted
 var attack_groups_by_action: Dictionary = {}
@@ -324,6 +327,22 @@ var disguise_transition_tick_counter := 0
 var disguise_transition_tick_elapsed := 0.0
 var disguise_recovery_tick_counter := 0
 var disguise_recovery_tick_elapsed := 0.0
+var debug_physics_profiling_enabled := false
+var debug_physics_profile: Dictionary = {}
+## Strict/classic rules retain the recovered 60 Hz CRT/random actor scheduler.
+## Modern autonomous enemies use explicit deterministic AI clocks instead and
+## disable this compatibility lane; player and classic actors keep it enabled.
+var legacy_actor_scheduler_enabled := true
+
+
+func set_reduced_violence(value: bool) -> void:
+	reduced_violence_mode = value
+	if not is_alive:
+		self_modulate = (
+			Color(0.58, 0.62, 0.58, 0.78)
+			if reduced_violence_mode
+			else Color.WHITE
+		)
 
 
 func configure(
@@ -340,6 +359,7 @@ func configure(
 	display_name = new_name
 	body_color = color
 	sprite_texture = texture
+	active_visual_signature = ""
 	sprite_drawn_by_row_slices = false
 	uniform_row_depth_enabled = false
 	uniform_row_depth_offset = 0.0
@@ -2685,23 +2705,37 @@ static func advance_component_capped(
 	available_seconds: float,
 	component_velocity: Vector2,
 ) -> Dictionary:
+	var packed := _advance_component_capped_packed(
+		start,
+		destination,
+		available_seconds,
+		component_velocity,
+	)
+	return {
+		"position": Vector2(packed.x, packed.y),
+		"seconds_used": packed.z,
+		"reached": packed.w > 0.5,
+	}
+
+
+## Allocation-free representation used by the 60 Hz actor movement loop.
+## x/y = resolved position, z = consumed seconds, w = reached flag.
+## The public Dictionary wrapper above remains stable for tools and tests.
+static func _advance_component_capped_packed(
+	start: Vector2,
+	destination: Vector2,
+	available_seconds: float,
+	component_velocity: Vector2,
+) -> Vector4:
 	var seconds := maxf(available_seconds, 0.0)
 	var velocity := Vector2(
 		maxf(component_velocity.x, 0.0),
 		maxf(component_velocity.y, 0.0),
 	)
 	if start.is_equal_approx(destination):
-		return {
-			"position": destination,
-			"seconds_used": 0.0,
-			"reached": true,
-		}
+		return Vector4(destination.x, destination.y, 0.0, 1.0)
 	if seconds <= 0.0 or velocity.x <= 0.0 or velocity.y <= 0.0:
-		return {
-			"position": start,
-			"seconds_used": 0.0,
-			"reached": false,
-		}
+		return Vector4(start.x, start.y, 0.0, 0.0)
 	var delta := destination - start
 	var component_cap := velocity * seconds
 	# M1937 compares integer X/Y step components with the remaining distance.
@@ -2712,22 +2746,21 @@ static func advance_component_capped(
 		absf(delta.x) <= component_cap.x + 0.0001
 		and absf(delta.y) <= component_cap.y + 0.0001
 	):
-		return {
-			"position": destination,
-			"seconds_used": maxf(
+		return Vector4(
+			destination.x,
+			destination.y,
+			maxf(
 				absf(delta.x) / velocity.x,
 				absf(delta.y) / velocity.y,
 			),
-			"reached": true,
-		}
-	return {
-		"position": Vector2(
-			move_toward(start.x, destination.x, velocity.x * seconds),
-			move_toward(start.y, destination.y, velocity.y * seconds),
-		),
-		"seconds_used": seconds,
-		"reached": false,
-	}
+			1.0,
+		)
+	return Vector4(
+		move_toward(start.x, destination.x, velocity.x * seconds),
+		move_toward(start.y, destination.y, velocity.y * seconds),
+		seconds,
+		0.0,
+	)
 
 
 func configure_combat(
@@ -3226,6 +3259,7 @@ func apply_original_actor_variant(
 	disguise_appearance_state = maxi(appearance_state, 0)
 	if texture != null:
 		sprite_texture = texture
+		active_visual_signature = ""
 	run_groups = new_run_groups
 	walk_groups = new_walk_groups
 	crawl_groups = new_crawl_groups
@@ -3627,27 +3661,90 @@ func contains_parent_point(parent_point: Vector2) -> bool:
 	return position.distance_squared_to(parent_point) <= 26.0 * 26.0
 
 
+func set_debug_physics_profiling_enabled(value: bool) -> void:
+	debug_physics_profiling_enabled = value
+	debug_physics_profile.clear()
+
+
+func debug_physics_profile_snapshot() -> Dictionary:
+	return debug_physics_profile.duplicate(true)
+
+
+func _record_debug_physics_section(section: String, started_usec: int) -> void:
+	if not debug_physics_profiling_enabled or started_usec <= 0:
+		return
+	var elapsed_usec := maxi(Time.get_ticks_usec() - started_usec, 0)
+	var current_value: Variant = debug_physics_profile.get(section, {})
+	var current := (
+		current_value as Dictionary
+		if current_value is Dictionary
+		else {}
+	)
+	current["count"] = int(current.get("count", 0)) + 1
+	current["total_usec"] = int(current.get("total_usec", 0)) + elapsed_usec
+	current["maximum_usec"] = maxi(
+		int(current.get("maximum_usec", 0)), elapsed_usec
+	)
+	debug_physics_profile[section] = current
+
+
 func _physics_process(delta: float) -> void:
+	var total_started_usec := (
+		Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
+	)
 	var safe_delta := maxf(delta, 0.0)
-	_advance_original_crt_actor_random_tick(safe_delta)
-	_advance_original_ai_shared_counter(safe_delta)
-	_advance_original_recurring_blocked_retry_events()
-	_consume_original_pending_acknowledgement()
+	var legacy_started_usec := (
+		Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
+	)
+	if legacy_actor_scheduler_enabled:
+		_advance_original_crt_actor_random_tick(safe_delta)
+		_advance_original_ai_shared_counter(safe_delta)
+		_advance_original_recurring_blocked_retry_events()
+		_consume_original_pending_acknowledgement()
+	_record_debug_physics_section("legacy_scheduler", legacy_started_usec)
 	attack_cooldown_remaining = maxf(attack_cooldown_remaining - safe_delta, 0.0)
 	if combat_action != CombatAction.NONE:
 		_suspend_original_ai_idle_action()
+		var combat_started_usec := (
+			Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
+		)
 		_advance_combat_action(safe_delta)
+		_record_debug_physics_section("combat", combat_started_usec)
+		_record_debug_physics_section("total", total_started_usec)
 		return
 	if not is_alive:
+		_record_debug_physics_section("total", total_started_usec)
 		return
+	var auto_combat_started_usec := (
+		Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
+	)
 	if auto_combat_enabled and _update_auto_combat(safe_delta):
+		_record_debug_physics_section("auto_combat", auto_combat_started_usec)
 		_advance_original_ai_idle_animation(safe_delta)
+		_record_debug_physics_section("total", total_started_usec)
 		return
+	_record_debug_physics_section("auto_combat", auto_combat_started_usec)
 	if is_special_controlled():
 		_face_special_control_source()
 		_advance_original_ai_idle_animation(safe_delta)
+		_record_debug_physics_section("total", total_started_usec)
 		return
 
+	var movement_started_usec := (
+		Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
+	)
+	# Most actors are stationary on any given tick. Avoid constructing the
+	# movement state machine, resolving component velocity, and comparing four
+	# temporary positions when there is no remaining waypoint. AI/idle animation
+	# still advances with exactly the same delta and blocked timers are reset as
+	# in the normal no-displacement tail below.
+	if movement_path_index >= movement_path.size():
+		blocked_elapsed = 0.0
+		_apply_idle_state()
+		_advance_original_ai_idle_animation(safe_delta)
+		_record_debug_physics_section("movement", movement_started_usec)
+		_record_debug_physics_section("total", total_started_usec)
+		return
 	var previous_position := position
 	var next_position := position
 	var next_path_index := movement_path_index
@@ -3667,14 +3764,14 @@ func _physics_process(delta: float) -> void:
 			)
 			var candidate_position := next_position
 			var candidate_path_index := next_path_index
-			var segment := advance_component_capped(
+			var segment := _advance_component_capped_packed(
 				candidate_position,
 				movement_path[candidate_path_index],
 				substep_seconds,
 				component_velocity,
 			)
-			candidate_position = segment["position"] as Vector2
-			if bool(segment["reached"]):
+			candidate_position = Vector2(segment.x, segment.y)
+			if segment.w > 0.5:
 				candidate_path_index += 1
 			# Enemy patrols preserve the unused fraction of a physics tick when a
 			# short segment reaches an A* waypoint. Player actors deliberately retain
@@ -3695,7 +3792,7 @@ func _physics_process(delta: float) -> void:
 			next_path_index = candidate_path_index
 			remaining_seconds = maxf(
 				remaining_seconds - (
-					float(segment["seconds_used"])
+					segment.z
 					if use_continuous_waypoint_motion
 					else substep_seconds
 				),
@@ -3767,11 +3864,14 @@ func _physics_process(delta: float) -> void:
 			_apply_idle_state()
 		else:
 			_suspend_original_ai_idle_action()
-			set_animation_group(direction_group_index(accepted_displacement))
+			var accepted_group := direction_group_index(accepted_displacement)
+			if accepted_group != animation_group_index:
+				set_animation_group(accepted_group)
 			advance_animation(safe_delta)
 			was_moving = true
 			_update_sprite_depth()
-			queue_redraw()
+		_record_debug_physics_section("movement", movement_started_usec)
+		_record_debug_physics_section("total", total_started_usec)
 		return
 	position = next_position
 	movement_path_index = next_path_index
@@ -3779,14 +3879,17 @@ func _physics_process(delta: float) -> void:
 	var displacement := position - previous_position
 	if not displacement.is_zero_approx():
 		_suspend_original_ai_idle_action()
-		set_animation_group(direction_group_index(displacement))
+		var displacement_group := direction_group_index(displacement)
+		if displacement_group != animation_group_index:
+			set_animation_group(displacement_group)
 		advance_animation(safe_delta)
 		was_moving = true
 		_update_sprite_depth()
-		queue_redraw()
 	else:
 		_apply_idle_state()
 		_advance_original_ai_idle_animation(safe_delta)
+	_record_debug_physics_section("movement", movement_started_usec)
+	_record_debug_physics_section("total", total_started_usec)
 
 
 func _try_relocate_runtime(
@@ -3979,11 +4082,11 @@ func _apply_action_frame(groups: Array[Dictionary]) -> void:
 	if frames.is_empty():
 		return
 	action_frame_index = clampi(action_frame_index, 0, frames.size() - 1)
-	sprite_texture = frames[action_frame_index]
-	sprite_anchor = group.get("anchor", Vector2.ZERO) as Vector2
-	_apply_dynamic_sprite_footprint(group)
-	_apply_row_slice_visual(group)
-	queue_redraw()
+	_apply_visual_frame(
+		frames[action_frame_index],
+		group.get("anchor", Vector2.ZERO) as Vector2,
+		group,
+	)
 
 
 func _action_frame_count(groups: Array[Dictionary]) -> int:
@@ -4093,6 +4196,12 @@ func _resolve_pending_hit() -> void:
 			player_attack_attempt_serial,
 		)
 	):
+		attack_missed.emit(
+			self,
+			pending_hit_target,
+			attack_type,
+			"accuracy",
+		)
 		return
 	if LEGACY_DISGUISE_RULES.attack_can_break_disguise(
 		runtime_actor_type,
@@ -4334,7 +4443,11 @@ func _die(killer: Node2D) -> void:
 	if dynamic_occupancy != null and dynamic_registered and scene_index >= 0:
 		dynamic_occupancy.unregister_scene(scene_index)
 		dynamic_registered = false
-	self_modulate = Color.WHITE
+	self_modulate = (
+		Color(0.58, 0.62, 0.58, 0.78)
+		if reduced_violence_mode
+		else Color.WHITE
+	)
 	pending_hit_target = null
 	_start_one_shot(CombatAction.DEATH, death_groups)
 	death_emitted = true
@@ -4355,7 +4468,6 @@ func _apply_idle_state() -> void:
 	animation_frame_index = 0
 	animation_elapsed = 0.0
 	apply_idle_frame()
-	queue_redraw()
 
 
 func _advance_original_ai_idle_animation(delta: float) -> void:
@@ -4379,7 +4491,6 @@ func _advance_original_ai_idle_animation(delta: float) -> void:
 		original_ai_idle_frame_elapsed = 0.0
 	if not _apply_current_idle_visual(maxf(delta, 0.0)):
 		return
-	queue_redraw()
 
 
 func set_original_route_update_active(value: bool) -> void:
@@ -4585,6 +4696,7 @@ func _apply_current_idle_visual(advance_delta: float) -> bool:
 	if frames.is_empty():
 		return false
 	_request_continuous_animation_audio(group)
+	var desired_texture: Texture2D
 	if original_ai_idle_action_active and not is_crawling:
 		original_ai_idle_frame_index = clampi(
 			original_ai_idle_frame_index,
@@ -4599,12 +4711,26 @@ func _apply_current_idle_visual(advance_delta: float) -> bool:
 				original_ai_idle_frame_index = (
 					original_ai_idle_frame_index + 1
 				) % frames.size()
-		sprite_texture = frames[original_ai_idle_frame_index]
+		desired_texture = frames[original_ai_idle_frame_index]
 	else:
-		sprite_texture = frames[0]
-	sprite_anchor = group.get("anchor", Vector2.ZERO) as Vector2
-	_apply_dynamic_sprite_footprint(group)
-	_apply_row_slice_visual(group)
+		desired_texture = frames[0]
+	var desired_anchor := group.get("anchor", Vector2.ZERO) as Vector2
+	if (
+		desired_texture != null
+		and sprite_texture == desired_texture
+		and sprite_anchor.is_equal_approx(desired_anchor)
+	):
+		# Ninety or more stationary actors can share a dense mission. Their
+		# counters and continuous audio still advance above, but an unchanged
+		# texture/anchor does not need signature hashing, footprint lookup or a
+		# CanvasItem redraw on every 60 Hz tick.
+		_update_sprite_depth()
+		return true
+	_apply_visual_frame(
+		desired_texture,
+		desired_anchor,
+		group,
+	)
 	return true
 
 
@@ -4628,11 +4754,12 @@ func set_animation_group(group_index: int) -> bool:
 		# IEngineSprite::SetCurrentSerial returns failure without changing the
 		# current serial when a sparse SPR has no requested direction.
 		return false
-	if animation_group_index != safe_index:
+	var changed := animation_group_index != safe_index
+	if changed:
 		animation_group_index = safe_index
 		animation_frame_index = 0
 		animation_elapsed = 0.0
-	update_animation_frame()
+		update_animation_frame()
 	return true
 
 
@@ -4648,10 +4775,13 @@ func advance_animation(delta: float) -> void:
 		return
 	var frame_seconds := movement_animation_frame_seconds(group)
 	animation_elapsed += maxf(delta, 0.0)
+	var frame_changed := false
 	while animation_elapsed >= frame_seconds:
 		animation_elapsed -= frame_seconds
 		animation_frame_index = (animation_frame_index + 1) % frames.size()
-	update_animation_frame()
+		frame_changed = true
+	if frame_changed:
+		update_animation_frame()
 
 
 static func animation_frame_seconds(group: Dictionary) -> float:
@@ -4697,10 +4827,11 @@ func update_animation_frame() -> void:
 	if frames.is_empty():
 		return
 	animation_frame_index = clampi(animation_frame_index, 0, frames.size() - 1)
-	sprite_texture = frames[animation_frame_index]
-	sprite_anchor = group["anchor"] as Vector2
-	_apply_dynamic_sprite_footprint(group)
-	_apply_row_slice_visual(group)
+	_apply_visual_frame(
+		frames[animation_frame_index],
+		group["anchor"] as Vector2,
+		group,
+	)
 
 
 func apply_idle_frame() -> bool:
@@ -4717,11 +4848,44 @@ func apply_idle_frame() -> bool:
 	if frames.is_empty():
 		return false
 	_request_continuous_animation_audio(group)
-	sprite_texture = frames[0]
-	sprite_anchor = group["anchor"] as Vector2
+	_apply_visual_frame(frames[0], group["anchor"] as Vector2, group)
+	return true
+
+
+func _apply_visual_frame(
+	texture: Texture2D,
+	anchor: Vector2,
+	group: Dictionary,
+) -> void:
+	if texture == null:
+		return
+	if (
+		active_visual_signature != ""
+		and sprite_texture == texture
+		and sprite_anchor.is_equal_approx(anchor)
+	):
+		# Movement commits update depth after changing position. Reapplying the
+		# same idle/combat frame may still follow a restored/teleported position;
+		# _update_sprite_depth itself avoids dirtying an unchanged CanvasItem.
+		_update_sprite_depth()
+		return
+	var signature := "%d|%s|%s|%d|%d|%d" % [
+		texture.get_instance_id(),
+		str(anchor),
+		str(group.get("lookup_profile_key", "")),
+		int(group.get("group_index", -1)),
+		hash(group.get("draw_order_row_lookup", [])),
+		hash(group.get("sight_lookup", [])),
+	]
+	if active_visual_signature == signature:
+		_update_sprite_depth()
+		return
+	sprite_texture = texture
+	sprite_anchor = anchor
+	active_visual_signature = signature
 	_apply_dynamic_sprite_footprint(group)
 	_apply_row_slice_visual(group)
-	return true
+	queue_redraw()
 
 
 func _apply_dynamic_sprite_footprint(group: Dictionary) -> bool:
@@ -4749,7 +4913,12 @@ func _apply_dynamic_sprite_footprint(group: Dictionary) -> bool:
 			),
 		]
 	if use_compact_navigation_footprint:
-		profile_key = "compact-biped|%s" % profile_key
+		# A modern biped occupies and occludes its current navigation cell. The
+		# legacy per-animation pixel masks are presentation data; rescanning them
+		# on every attack/idle transition caused 90-100 ms physics spikes on m004.
+		# A direction-independent key also makes every later visual frame an O(1)
+		# no-op for occupancy.
+		profile_key = "compact-biped"
 	if profile_key == active_sprite_footprint_key:
 		return true
 	var source_navigation: Variant = dynamic_occupancy.get("navigation")
@@ -4759,22 +4928,19 @@ func _apply_dynamic_sprite_footprint(group: Dictionary) -> bool:
 	if not cell_size_value is Vector2i:
 		return false
 	var cell_size := cell_size_value as Vector2i
-	var movement_offsets: Array[Vector2i] = (
-		SPR_ANIMATION_RULES.lookup_footprint_offsets(
+	var movement_offsets: Array[Vector2i] = [Vector2i.ZERO]
+	var sight_offsets: Array[Vector2i] = [Vector2i.ZERO]
+	if not use_compact_navigation_footprint:
+		movement_offsets = SPR_ANIMATION_RULES.lookup_footprint_offsets(
 			group,
 			"movement_lookup",
 			cell_size,
 		)
-	)
-	if use_compact_navigation_footprint:
-		movement_offsets = [Vector2i.ZERO]
-	var sight_offsets: Array[Vector2i] = (
-		SPR_ANIMATION_RULES.lookup_footprint_offsets(
+		sight_offsets = SPR_ANIMATION_RULES.lookup_footprint_offsets(
 			group,
 			"sight_lookup",
 			cell_size,
 		)
-	)
 	if not bool(
 		dynamic_occupancy.call(
 			"update_scene_footprint",
@@ -4791,6 +4957,16 @@ func _apply_dynamic_sprite_footprint(group: Dictionary) -> bool:
 func configure_modern_navigation_footprint(enabled: bool = true) -> bool:
 	use_compact_navigation_footprint = enabled
 	active_sprite_footprint_key = ""
+	if use_compact_navigation_footprint:
+		# Character sprites are depth-sorted by their foot/reference point. The
+		# original renderer's per-32-pixel column split is useful for wide scenery,
+		# but creates extra CanvasItems and frame-transition work for every biped.
+		sprite_drawn_by_row_slices = false
+		uniform_row_depth_enabled = false
+		uniform_row_depth_offset = 0.0
+		if row_slice_renderer != null and is_instance_valid(row_slice_renderer):
+			row_slice_renderer.call("clear_visual")
+		_update_sprite_depth()
 	if movement_groups.size() < 8:
 		return false
 	var group := movement_groups[clampi(animation_group_index, 0, 7)]
@@ -4801,9 +4977,16 @@ func configure_modern_navigation_footprint(enabled: bool = true) -> bool:
 
 static func runtime_actor_uses_compact_biped_navigation(actor_type: int) -> bool:
 	# Types 1..27 are human actors in the recovered runtime catalog except type
-	# 14 (motorcycle). Types 28+ are carts, animals and vehicles whose larger
-	# authored footprint remains meaningful.
-	return actor_type >= 1 and actor_type <= 27 and actor_type != 14
+	# 14 (motorcycle). Type 56 is the military dog: like a person, its modern
+	# collision body occupies one navigation anchor even when a wide running SPR
+	# frame spans two cells. Keeping the animation mask as a physical footprint
+	# made the two m010 dogs perform repeated whole-map clearance searches and
+	# blocked otherwise valid narrow passages. Carts and vehicles retain their
+	# authored multi-cell footprint.
+	return (
+		(actor_type >= 1 and actor_type <= 27 and actor_type != 14)
+		or actor_type == 56
+	)
 
 
 func patrol_movement_footprint_profiles() -> Array:
@@ -4847,6 +5030,14 @@ func patrol_movement_footprint_profiles() -> Array:
 
 
 func _apply_row_slice_visual(group: Dictionary) -> bool:
+	if use_compact_navigation_footprint:
+		sprite_drawn_by_row_slices = false
+		uniform_row_depth_enabled = false
+		uniform_row_depth_offset = 0.0
+		if row_slice_renderer != null and is_instance_valid(row_slice_renderer):
+			row_slice_renderer.call("clear_visual")
+		_update_sprite_depth()
+		return false
 	var row_lookup: Variant = group.get("draw_order_row_lookup", [])
 	if sprite_texture == null or not row_lookup is Array or (row_lookup as Array).is_empty():
 		sprite_drawn_by_row_slices = false
@@ -4894,7 +5085,7 @@ func _apply_row_slice_visual(group: Dictionary) -> bool:
 			position.y,
 			normalized_rows,
 			1,
-			true,
+			false,
 		)
 	)
 	return sprite_drawn_by_row_slices
@@ -4904,7 +5095,16 @@ func _update_sprite_depth() -> void:
 	var depth_reference_y := position.y
 	if uniform_row_depth_enabled:
 		depth_reference_y += uniform_row_depth_offset
-	z_index = WORLD_DEPTH.normal_z(depth_reference_y, 1)
+	var desired_z: int = int(WORLD_DEPTH.normal_z(depth_reference_y, 1))
+	if z_index != desired_z:
+		z_index = desired_z
+	if (
+		sprite_drawn_by_row_slices
+		and row_slice_renderer != null
+		and is_instance_valid(row_slice_renderer)
+		and row_slice_renderer.has_method("update_reference_y")
+	):
+		row_slice_renderer.call("update_reference_y", position.y)
 
 
 static func _normalized_draw_order_rows(value: Variant) -> Array[int]:

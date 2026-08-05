@@ -44,6 +44,10 @@ var dimensions := Vector2i.ZERO
 var cell_size := Vector2i.ZERO
 var layers: Dictionary = {}
 var astar: AStarGrid2D
+## Classic rules keep the recovered 2001 reverse-search ordering exactly.
+## Modern rules may opt into Godot's native AStarGrid2D search for ordinary
+## one-cell routes; packed multi-cell clearance still uses the exact pathfinder.
+var native_runtime_paths_enabled := false
 var ignored_scene_indices: Dictionary = {}
 var source_scene_cells_by_layer: Dictionary = {}
 var base_released_source_cells_by_layer: Dictionary = {}
@@ -460,19 +464,34 @@ func find_path(
 			destination_cell,
 		)
 	else:
-		path = _original_uniform_path(
-			start_cell,
-			destination_cell,
-			additional_solid_lookup,
+		path = (
+			_native_astar_path(start_cell, destination_cell)
+			if native_runtime_paths_enabled
+				and additional_solid_lookup.is_empty()
+			else _original_uniform_path(
+				start_cell,
+				destination_cell,
+				additional_solid_lookup,
+			)
 		)
 	# Temporary multi-cell footprint reservations are not part of the static
-	# component table. If they split a corridor, retain the remake's safe
-	# partial-route behavior so a large actor stops at the reachable edge.
-	# Reachable routes always use the exact legacy pathfinder above.
-	if path.is_empty() and additional_solid_lookup.is_empty():
-		path = _temporary_obstacle_partial_path(
-			start_cell,
-			destination_cell,
+	# component table. If they split a corridor, retain a safe partial route so
+	# a large actor stops at the reachable edge. Do not mutate tens of thousands
+	# of AStar cells: follow the native static route only until the packed mask
+	# first becomes invalid. Reachable routes still use the exact recovered
+	# pathfinder above.
+	if path.is_empty():
+		path = (
+			_packed_mask_partial_path(
+				start_cell,
+				destination_cell,
+				additional_solid_lookup,
+			)
+			if not additional_solid_lookup.is_empty()
+			else _temporary_obstacle_partial_path(
+				start_cell,
+				destination_cell,
+			)
 		)
 	if temporarily_opened_start:
 		astar.set_point_solid(start_cell, true)
@@ -500,6 +519,71 @@ func find_path(
 		if path.is_empty() or path[-1].distance_squared_to(world_destination) > 1.0:
 			path.append(world_destination)
 	return path
+
+
+func _native_astar_path(
+	start_cell: Vector2i,
+	destination_cell: Vector2i,
+) -> PackedVector2Array:
+	var result := PackedVector2Array()
+	if astar == null:
+		return result
+	for cell: Vector2i in astar.get_id_path(
+		start_cell,
+		destination_cell,
+		false,
+	):
+		result.append(cell_to_world(cell))
+	return result
+
+
+func _packed_mask_partial_path(
+	start_cell: Vector2i,
+	destination_cell: Vector2i,
+	additional_solid_lookup: PackedByteArray,
+) -> PackedVector2Array:
+	var result := PackedVector2Array()
+	if (
+		astar == null
+		or additional_solid_lookup.size() != dimensions.x * dimensions.y
+		or not is_valid_cell(start_cell)
+		or not is_valid_cell(destination_cell)
+	):
+		return result
+	var static_route: Array[Vector2i] = astar.get_id_path(
+		start_cell,
+		destination_cell,
+		true,
+	)
+	var previous := start_cell
+	for cell: Vector2i in static_route:
+		if cell == start_cell:
+			continue
+		if _path_cell_is_solid(
+			cell,
+			additional_solid_lookup,
+			start_cell,
+		):
+			break
+		var delta := cell - previous
+		if (
+			absi(delta.x) == 1
+			and absi(delta.y) == 1
+			and _path_cell_is_solid(
+				previous + Vector2i(delta.x, 0),
+				additional_solid_lookup,
+				start_cell,
+			)
+			and _path_cell_is_solid(
+				previous + Vector2i(0, delta.y),
+				additional_solid_lookup,
+				start_cell,
+			)
+		):
+			break
+		result.append(cell_to_world(cell))
+		previous = cell
+	return result
 
 
 ## Returns 1 when the exact packed graph reaches the other endpoint within

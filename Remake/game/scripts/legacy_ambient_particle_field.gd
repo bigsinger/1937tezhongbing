@@ -32,6 +32,7 @@ var stored_width := 0
 var stored_height := 0
 var flash_active := false
 var flash_frame := 0
+var reduce_flashes := false
 var update_serial := 0
 var random_failure := false
 var random_batch_active := false
@@ -92,6 +93,14 @@ func configure(source: Node, new_level_id: String) -> bool:
 	_update_particle_multimeshes()
 	queue_redraw()
 	return visible
+
+
+func set_reduce_flashes(value: bool) -> void:
+	reduce_flashes = value
+	if reduce_flashes:
+		flash_active = false
+		flash_frame = 0
+	queue_redraw()
 
 
 func runtime_snapshot() -> Dictionary:
@@ -291,7 +300,7 @@ func _advance_original_update_in_batch() -> bool:
 	var flash_gate := _next_random(0x0005FF45)
 	if flash_gate < 0:
 		return false
-	if flash_gate % 500 == 46:
+	if not reduce_flashes and flash_gate % 500 == 46:
 		flash_active = true
 		flash_frame = 0
 	if tick_counter >= 80:
@@ -344,7 +353,7 @@ func _advance_original_update_fast() -> bool:
 	state = int((state * 214013 + 2531011) & 0xFFFFFFFF)
 	draw_count += 1
 	var flash_gate := int((state >> 16) & 0x7FFF)
-	if flash_gate % 500 == 46:
+	if not reduce_flashes and flash_gate % 500 == 46:
 		flash_active = true
 		flash_frame = 0
 	if tick_counter >= 80:
@@ -836,6 +845,7 @@ func _update_particle_multimeshes() -> void:
 func _draw() -> void:
 	if (
 		not visible
+		or reduce_flashes
 		or not flash_active
 		or stored_width <= 0
 		or stored_height <= 0

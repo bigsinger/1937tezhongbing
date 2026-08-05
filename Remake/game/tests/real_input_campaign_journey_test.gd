@@ -59,7 +59,9 @@ func _run() -> void:
 	main.set_physics_process(false)
 	main.runtime_settings["controls"] = GAME_INPUT_BINDINGS.default_bindings()
 	main.runtime_settings["mission_rule_mode"] = "stable_mod"
-	main.runtime_settings["difficulty_mode"] = "original"
+	main.runtime_settings["ruleset_mode"] = "classic"
+	main.runtime_settings["difficulty_mode"] = "normal"
+	main.runtime_settings["control_scheme"] = "classic"
 
 	# Never touch a player's normal save slots or settings. This exact,
 	# process-unique user:// directory is deleted after the gate completes.

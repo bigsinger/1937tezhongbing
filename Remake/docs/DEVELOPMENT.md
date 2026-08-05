@@ -49,7 +49,19 @@ godot --path .\game -- --level=m011
 # 生成可双击启动的 Windows 本地试玩包
 .\tools\Build-Playable.cmd `
   -GodotExecutable C:\path\to\Godot_v4.7.1-stable_win64_console.exe
+
+# 发布前 30 分钟、三轮十二关稳定性与存读档测试
+.\tools\Run-StabilitySoak.ps1 `
+  -GodotExecutable C:\path\to\Godot_v4.7.1-stable_win64_console.exe `
+  -DurationSeconds 1800 -Passes 3
 ```
+
+长测完整报告和日志留在忽略的 `LocalAssets/qa/stability-soak/`；确认同一实现
+通过后，才把去除机器路径的摘要更新到
+`validation/baselines/remake/stability-soak-30-minute-v1.json`。普通
+`Verify.ps1` 会调用 `Test-StabilityBaseline.ps1`，拒绝少于 30 分钟、少于
+三轮、未覆盖十二关、存读档不足、内存增长超限或控制桌面鼠标的基线。性能和
+稳定性脚本每次启动都会先移除固定名称的旧输出，不能用残留报告伪造新结果。
 
 如果只做开源仓库验证而没有原版目录，直接运行 `Verify.cmd` 即可；所有自动测试都使用人工合成数据。
 
@@ -79,6 +91,11 @@ F2 镜头定位、地面移动、R/C、W/A、M、F1、Esc、S、普通攻击、B
 `user://qa-real-input-campaign/...` 存档目录，结束后清理；不会捕获、锁定、移动或
 裁剪桌面鼠标。
 
+`tests/main_input_harness.gd` 是供其他测试实例化的 Main 派生夹具，不是
+`SceneTree`/`MainLoop` 入口。禁止把它直接传给 `godot --script`；直接执行会由
+Godot 正确拒绝并显示 “doesn't inherit from SceneTree or MainLoop”。需要验证它时
+运行引用它的 `real_input_*`、`parity_runtime_probe.gd` 或完整 `Verify.ps1`。
+
 稳定 MOD 侧只在需要补充原生行为证据时运行进程私有的单动作探针：每次加载
 指定关卡、提交一个预先声明的 DirectInput 动作、保存遥测并立即退出。禁止把
 人工通关、长时间前台游玩或系统级键鼠控制当作开发门禁；任务可达性由寻路、
@@ -102,7 +119,8 @@ F2 镜头定位、地面移动、R/C、W/A、M、F1、Esc、S、普通攻击、B
 原始日志和本机绝对路径报告只留在被忽略的 `LocalAssets/qa/`。
 
 `save_settings_test.gd` 还必须用物理 `user://` 文件覆盖全部存档版本边界：
-schema 0 迁移、schema 1 规范化、损坏主文件回退 `.bak`、未来/过旧 schema
+schema 0/1 迁移、schema 2 规范化及运行时/内容/工作区身份、损坏主文件回退
+`.bak`、未来/过旧 schema
 主文件与备份逐字节不变，以及十二次产品胜利后的完成度/解锁前沿磁盘回读。
 新增 schema 时必须先更新 `GameSaveStore.migration_policy()` 和这些用例；
 不允许仅提高版本号后把旧文件交给通用“损坏文件隔离”路径。
@@ -186,8 +204,9 @@ Godot 端的责任分工为：
   MOD/命令行自由选关不写进度，只有产品胜利入口调用 `record_victory()`；
 - `campaign_level_selector.gd`：启动页和 `Esc` 菜单共用的 3×4 原生关卡
   选择器；全部正式路由可用，同时只读展示当前关、完成度与顺序前沿；
-- `game_save_store.gd`：schema 0→1 内存迁移、当前格式规范化、原子写入与
-  未来/过旧 schema 的拒绝且不改文件策略；
+- `game_save_store.gd`：schema 0/1→2 内存迁移、运行时/内容/工作区身份、
+  轻量槽索引、当前格式规范化、原子写入与未来/过旧 schema 的拒绝且不改
+  文件策略；
 - `legacy_projectile_rules.gd` / `legacy_combat_rules.gd` /
   `projectile_world.gd` / `combat_projectile.gd`：type 1/2/3/6/7/9 的
   原版整数 Bresenham 路径、逐 world-tick 步长、目标格门、机枪角度散布、
@@ -235,7 +254,7 @@ serial_id = action_index * 9 + direction_index
 
 共有 20 个动作槽和 9 个方向槽；方向 0 是“无”，1—8 才是可播放的八方向组。转换输出的每个 `sprite.json` 保存动作名、方向名、组参数、锚点、atlas 和逐帧路径。
 
-`load_action_groups(preview_path, action_key)` 是通用入口。正式关卡实体使用可保留空方向槽的 sparse 模式：204 套角色动作具有完整八方向，轿车/卡车另有 8 套原生四方向动作；请求不存在的 serial 时保留当前动作和朝向，与 `IEngineSprite::SetCurrentSerial` 的失败路径一致，不能擅自镜像或用“最近方向”补图。增加战斗动作时，应让角色状态机请求已有动作 key，并由明确的玩法事件切换动画；不要为每种武器重新写资源解析器。玩家与敌人的 `run`/`walk`、`stand`、对应武器攻击和 `death` 已接入。0.085 秒是基础 sprite tick，每组每帧实际保持 `0.085 × (parameters[2] + 1)` 秒；例如已导入强子的跑、走、匍匐分别保持 1、2、3 个 tick。真实资源门禁把 772 名运行时角色关联到 39 个原 SPR，并逐方向解码 212 套动作、1,664 组、9,896 帧，核对 serial、源组顺序、三组 triplet、绘制锚点、帧保持和帧数。
+`load_action_groups(preview_path, action_key)` 是通用入口。正式关卡实体使用可保留空方向槽的 sparse 模式：204 套角色动作具有完整八方向，轿车/卡车另有 8 套原生四方向动作；请求不存在的 serial 时保留当前动作和朝向，与 `IEngineSprite::SetCurrentSerial` 的失败路径一致，不能擅自镜像或用“最近方向”补图。增加战斗动作时，应让角色状态机请求已有动作 key，并由明确的玩法事件切换动画；不要为每种武器重新写资源解析器。玩家与敌人的 `run`/`walk`、`stand`、对应武器攻击和 `death` 已接入。加载器把同一路径的 `sprite.json` 作为不可变文档在一次关卡重建内只解析一次；`Main` 在重建开始和完成时清空文档缓存，动作纹理继续使用会话缓存。修改运行期生成的测试清单时必须先调用 `clear_manifest_document_cache()`，不得依赖陈旧文档。0.085 秒是基础 sprite tick，每组每帧实际保持 `0.085 × (parameters[2] + 1)` 秒；例如已导入强子的跑、走、匍匐分别保持 1、2、3 个 tick。真实资源门禁把 772 名运行时角色关联到 39 个原 SPR，并逐方向解码 212 套动作、1,664 组、9,896 帧，核对 serial、源组顺序、三组 triplet、绘制锚点、帧保持和帧数。
 
 SPR 清单必须使用 schema 4：文件 triplet 1/2/3 分别对应
 primary/tertiary/secondary，并把 `parameters[8]` 的一基 SLF 序号解析为
@@ -287,7 +306,15 @@ m004 的计划书来源已由物品 101/VWF 携带记录定案为 scene 2637；�
 
 `game_shell.gd` 管理 `Esc` 菜单、`F1` 指南、`A`/`W` 276×421 五列背包、十槽选择器、设置和任务失败灰化层；`Esc` 在松开时提交，菜单内右键也在松开时返回上一级。世界右键只负责拖框，不提交移动/攻击；世界左键提交选择、移动、攻击和使用，左 `Ctrl`/`↑` 按住时进入强制目标路径。这些模态层暂停 SceneTree，失败层不能“继续”或保存，只能重玩、读取或退出。`M` 地图改为独立右下角 HUD，显示时不暂停战斗；`tactical_map_view.gd` 只消费主场景提供的原版逐关静态图、敌我/任务标记和镜头矩形，不自行推断任务规则。动态红点、镜头框和点击卷屏是复刻增强。
 
-`game_settings.gd` 管理版本化 `user://settings.json`。当前菜单公开默认 1280×720 窗口、跟随当前桌面分辨率的桌面全屏、无边框最大化、总静音、主音量/音乐/音效/语音、字幕、任务简报、鼠标边缘卷屏、减少自动镜头运动、2 倍最近邻原版光标和按键重映射。按键冲突采用动作间交换，支持恢复默认值。显示与界面设置变更后立即应用并原子保存；任何显示模式都不得调用系统级光标移动、裁剪或捕获 API。跨多显示器和不同 DPI 缩放仍需真实硬件校准。
+`game_settings.gd` 管理版本化 `user://settings.json`。当前默认跟随桌面分辨率
+全屏，菜单同时提供 1280×720/自定义窗口、无边框最大化、VSync、帧率上限、
+窗口尺寸、UI/文字缩放、总静音、主音量/音乐/音效/语音、字幕、任务简报、鼠标
+边缘卷屏、减少自动镜头运动、2 倍最近邻原版光标和按键重映射。经典/现代规则、
+剧情/普通/困难/自定义难度和经典/现代 RTS 操作是三个独立维度。现代操作另含
+控制组、相机书签、双击同类选择和可配置镜头。按键冲突采用动作间交换，支持
+恢复默认值。显示与界面设置变更后立即应用并原子保存；任何显示模式都不得调用
+系统级光标移动、裁剪或捕获 API。物理多显示器和更多 GPU 的剩余真机边界记录在
+[现代化改造验收报告](现代化改造验收报告.md)，不得以离屏矩阵冒充真机性能。
 
 `game_save_store.gd` 管理 `user://saves/<slot>.json`，`game_session_state.gd` 负责主场景可变状态的捕获/恢复。菜单公开 `slot_1`—`slot_10` 十个手动槽并要求二次确认覆盖；菜单读取始终打开选择器，`Ctrl+F5` 写 `quick`，只有 `Ctrl+F9` 按保存时间读取最新有效槽，胜利写 `autosave`。任务失败时禁止覆盖有效存档。存档边界包括：
 
@@ -324,7 +351,12 @@ m004 的计划书来源已由物品 101/VWF 携带记录定案为 scene 2637；�
 
 ## Windows 本地试玩包
 
-导入本地资源后，运行 `tools/Build-Playable.cmd` 会在已忽略的 `LocalBuild/1937Remake/` 生成 `Play-1937-Remake.cmd`。默认使用目录联接复用 `LocalAssets`；需要复制到另一台已获授权的电脑时使用 `-AssetMode Copy`。构建会固定 Godot 4.7.1、生成 release 导出或 PCK 回退包，并分别执行 PCK 路径和最终 `1937Remake.exe` 的 headless 冒烟测试。详细目录结构、切关参数和导出模板行为见 [Windows 本地试玩包](PLAYABLE_BUILD.md)。
+导入本地资源后，运行 `tools/Build-Playable.cmd` 会在已忽略的
+`LocalBuild/1937Remake/` 生成 `Play-1937-Remake.cmd`。默认使用 `Copy`，并生成
+内容 manifest、文件校验表、便携 ZIP 和 ZIP 的 SHA-256；`Junction` 仅供显式
+选择的本机快速迭代。正式构建要求 Godot 4.7.1 官方 Windows release 模板，
+分别执行 PCK 路径和最终 `1937Remake.exe` 的 headless 冒烟测试。详细目录结构、
+切关参数和导出模板行为见 [Windows 本地试玩包](PLAYABLE_BUILD.md)。
 
 ## IDA 9.1 的 IDAPython 致命初始化错误
 

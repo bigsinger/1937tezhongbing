@@ -457,9 +457,15 @@ func _run_probe() -> void:
 	var main = MAIN_SCENE.instantiate()
 	root.add_child(main)
 	await process_frame
-	if int(main.get("current_level_index")) != level_index:
-		main.call("switch_level", level_index, false, false)
-		await process_frame
+	# Parity evidence must be independent from a developer's persisted product
+	# preferences. Explicitly select and reload the audited classic simulation
+	# even when the requested level already happened to be active at startup.
+	main.runtime_settings["show_briefings"] = false
+	main.runtime_settings["mission_rule_mode"] = "stable_mod"
+	main.runtime_settings["ruleset_mode"] = "classic"
+	main.runtime_settings["difficulty_mode"] = "normal"
+	main.call("switch_level", level_index, false, false)
+	await process_frame
 	var started := Time.get_ticks_usec()
 
 	var trace = TRACE_SCRIPT.new()
@@ -1945,11 +1951,14 @@ func _run_burial_command_probe(
 		if require_completion:
 			var applied := int(target.call("take_damage", 32, null))
 			target_killed = not bool(target.get("is_alive"))
-			target.position = Vector2(144.0, 64.0)
+			# The 128x72 headless viewport reserves its top strip for the real HUD.
+			# Keep the synthetic corpse close to the squad while placing its injected
+			# click below that no-click-through surface.
+			target.position = Vector2(144.0, 128.0)
 			_expect(
 				applied == 8
 					and target_killed
-					and target.position == Vector2(144.0, 64.0),
+					and target.position == Vector2(144.0, 128.0),
 				"the isolated original damage threshold prepares and relocates scene 1126",
 			)
 		else:
@@ -1975,12 +1984,30 @@ func _run_burial_command_probe(
 			"B release arms the original one-shot burial command",
 		)
 		trace.call("capture_main", "burial_mode_armed", main, _elapsed_ms(started))
+		var burial_click_screen: Vector2 = (
+			main.get_global_transform_with_canvas() * target.position
+		)
+		var burial_click_blocked := bool(
+			main.game_shell != null
+			and main.game_shell.call(
+				"is_screen_point_over_gameplay_ui", burial_click_screen
+			)
+		)
 		await _click_world(main, target.position)
 		_expect(
 			main.get("burial_worker") == worker
 				and main.get("burial_target") == target
 				and not bool(main.get("burial_mode")),
-			"dead faction-1 click assigns command kind 4 and consumes B once",
+			(
+				"dead faction-1 click assigns command kind 4 and consumes B once "
+				+ "(world=%s, screen=%s, ui_blocked=%s, camera=%s, mode=%s)"
+			) % [
+				target.position,
+				burial_click_screen,
+				burial_click_blocked,
+				main.level_camera.position if main.level_camera != null else Vector2.ZERO,
+				main.get("burial_mode"),
+			],
 		)
 		trace.call("capture_main", "burial_commanded", main, _elapsed_ms(started))
 		_expect(

@@ -25,6 +25,14 @@ func _run_tests() -> void:
 	var main = MAIN_SCENE.instantiate()
 	root.add_child(main)
 	await process_frame
+	# Initial-loadout parity is a classic-ruleset contract and must not inherit
+	# a player's persisted modern AI/difficulty preferences. Reload m000 after
+	# pinning the test profile so no autonomous modern tick can consume ammo.
+	main.runtime_settings["show_briefings"] = false
+	main.runtime_settings["mission_rule_mode"] = "stable_mod"
+	main.runtime_settings["ruleset_mode"] = "classic"
+	main.runtime_settings["difficulty_mode"] = "normal"
+	main.switch_level(0, false, false)
 	var player_count := 0
 	var entry_count := 0
 	var backpack_player_count := 0
@@ -37,7 +45,7 @@ func _run_tests() -> void:
 	for level_index: int in range(LEVEL_IDS.size()):
 		var level_id := str(LEVEL_IDS[level_index])
 		if level_index > 0:
-			main.switch_level(level_index)
+			main.switch_level(level_index, false, false)
 			await process_frame
 		_expect(
 			str(main.current_mission.get("id", "")) == level_id,

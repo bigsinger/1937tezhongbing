@@ -120,20 +120,37 @@ func request_attack_permission(enemy: Node2D, target: Node2D) -> bool:
 		or not bool(enemy.get("is_alive"))
 	):
 		return false
-	var tracking: Array[Node2D] = []
+	var attacker_limit := maxi(
+		1,
+		int(difficulty_profile.get("max_simultaneous_attackers", 1)),
+	)
+	var enemy_distance := enemy.position.distance_squared_to(target.position)
+	var enemy_scene_index := int(enemy.get("scene_index"))
+	var higher_ranked_count := 0
 	for candidate: Node2D in enemies:
 		if (
 			candidate == null
 			or not is_instance_valid(candidate)
 			or not bool(candidate.get("is_alive"))
-			or not _has_property(candidate, "current_target")
 			or candidate.get("current_target") != target
 		):
 			continue
-		tracking.append(candidate)
-	if not tracking.has(enemy):
-		tracking.append(enemy)
-	return select_attackers(target, tracking).has(enemy)
+		if candidate == enemy:
+			continue
+		var candidate_distance := candidate.position.distance_squared_to(
+			target.position
+		)
+		if (
+			candidate_distance < enemy_distance
+			or (
+				is_equal_approx(candidate_distance, enemy_distance)
+				and int(candidate.get("scene_index")) < enemy_scene_index
+			)
+		):
+			higher_ranked_count += 1
+			if higher_ranked_count >= attacker_limit:
+				return false
+	return true
 
 
 func queue_shared_alert(
@@ -192,7 +209,9 @@ func queue_shared_alert(
 		_pending_alerts.append(
 			{
 				"remaining_seconds": maxf(
-					0.0, float(cooperation_profile.get("alert_share_delay_seconds", 0.0))
+					0.0,
+					float(cooperation_profile.get("alert_share_delay_seconds", 0.0))
+					* float(difficulty_profile.get("alert_delay_multiplier", 1.0)),
 				),
 				"recipients": recipients,
 				"target": target,

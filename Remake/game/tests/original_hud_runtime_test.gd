@@ -580,14 +580,28 @@ func _check_overlay_layout(shell: GameShell, viewport_size: Vector2i) -> void:
 	await process_frame
 	await process_frame
 	layout = shell.original_overlay_layout_snapshot()
+	var selector_panel_rect := (
+		layout.get("level_selector_panel_rect", Rect2()) as Rect2
+	)
+	var expected_selector_rect := Rect2(
+		(Vector2(viewport_size) - Vector2(820.0, 600.0)) * 0.5,
+		Vector2(820.0, 600.0),
+	)
 	_expect(
-		(layout.get("level_selector_panel_rect", Rect2()) as Rect2)
-		== Rect2(
-			(Vector2(viewport_size) - Vector2(820.0, 600.0)) * 0.5,
-			Vector2(820.0, 600.0),
-		),
-		"free selector keeps its centered 820x600 product surface at %s"
-		% viewport_size,
+		selector_panel_rect == expected_selector_rect,
+		(
+			"free selector keeps its centered 820x600 product surface at %s "
+			+ "(expected %s, got %s; local_size=%s, min=%s, scale=%s, pos=%s, pivot=%s)"
+		) % [
+			viewport_size,
+			expected_selector_rect,
+			selector_panel_rect,
+			shell._level_selector_panel.size,
+			shell._level_selector_panel.get_combined_minimum_size(),
+			shell._level_selector_panel.scale,
+			shell._level_selector_panel.position,
+			shell._level_selector_panel.pivot_offset,
+		],
 	)
 	var selector_layout := layout.get("level_selector_layout", {}) as Dictionary
 	var selector_buttons := selector_layout.get("buttons", {}) as Dictionary
@@ -608,8 +622,16 @@ func _check_overlay_layout(shell: GameShell, viewport_size: Vector2i) -> void:
 			== Vector2(114.0, 33.0)
 			and button_rect.size.x >= 245.0
 			and button_rect.size.y >= 82.0,
-			"%s uses its original normal/bright mission label within a usable hit target"
-			% level_id,
+			(
+				"%s uses its original normal/bright mission label within a usable hit target "
+				+ "(enabled=%s, original=%s, icon=%s, rect=%s)"
+			) % [
+				level_id,
+				button_record.get("enabled", false),
+				button_record.get("uses_original_asset", false),
+				button_record.get("icon_size", Vector2.ZERO),
+				button_rect,
+			],
 		)
 	shell.close_for_state_change()
 

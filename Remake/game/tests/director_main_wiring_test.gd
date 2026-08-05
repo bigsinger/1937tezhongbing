@@ -83,7 +83,8 @@ func _run() -> void:
 		1428: {"x": 4304, "y": 1176},
 		2637: {"x": 10, "y": 20},
 	}
-	main.runtime_settings["difficulty_mode"] = "original"
+	main.runtime_settings["ruleset_mode"] = "classic"
+	main.runtime_settings["difficulty_mode"] = "normal"
 	main.call("_configure_mission_direction")
 	_expect(
 		main.mission_direction_runtime == null
@@ -91,12 +92,13 @@ func _run() -> void:
 		"original profile has no remake-editorial dialogue/camera/tutorial/AI layer",
 		failures,
 	)
+	main.runtime_settings["ruleset_mode"] = "modern"
 	main.runtime_settings["difficulty_mode"] = "normal"
 	main.call("_configure_mission_direction")
 	_expect(
 		main.mission_direction_runtime != null
 		and main.mission_ai_coordinator != null,
-		"enhanced difficulty explicitly enables the editorial director and AI coordinator",
+		"modern ruleset explicitly enables the editorial director and AI coordinator",
 		failures,
 	)
 	main.mission_direction_runtime.free()

@@ -27,6 +27,13 @@ const MIN_PRIORITY_PASS_SEPARATION := 4.0
 ## avoidance deliberately never use this process-global cache.
 const GLOBAL_STATIC_PREWARM_CACHE_VERSION := "legacy-reverse-v2"
 const MAX_GLOBAL_STATIC_PREWARM_PATHS := 16384
+## Clearance masks depend only on the immutable authored navigation state and
+## the normalized movement footprint. Keeping their packed-byte form across
+## level reconstruction turns a dense-map restart into a small copy instead of
+## repeating dozens of whole-grid GDScript dilations. Mutable door state is
+## applied to the per-level copy, so it can never corrupt the shared baseline.
+const GLOBAL_FOOTPRINT_CLEARANCE_CACHE_VERSION := "packed-clearance-v1"
+const MAX_GLOBAL_FOOTPRINT_CLEARANCE_BYTES := 16 * 1024 * 1024
 ## A small set of formal-map actors and vehicles has its connected L2/L3
 ## footprint one cell away from the serialized reference cell. Larger
 ## distances indicate a stale/reused scene reference and must not create an
@@ -35,6 +42,8 @@ const MAX_SOURCE_ANCHOR_DISTANCE := 1
 
 var navigation: RefCounted
 static var global_static_prewarmed_paths: Dictionary = {}
+static var global_footprint_clearance_lookups: Dictionary = {}
+static var global_footprint_clearance_bytes := 0
 var actors: Dictionary = {}
 var actor_origin_owners: Dictionary = {}
 var disabled_source_scenes: Dictionary = {}
@@ -54,6 +63,7 @@ var staged_footprint_offsets_by_key: Dictionary = {}
 var source_movement_blocked_bits := PackedByteArray()
 var footprint_clearance_precompute_usec := 0
 var footprint_clearance_incremental_usec := 0
+var footprint_clearance_cache_hit_count := 0
 var prewarmed_paths: Dictionary = {}
 ## The same actor can expose a different connected collision footprint in
 ## each directional animation. Retain every precomputed route variant instead
@@ -115,6 +125,7 @@ func configure(
 	source_movement_blocked_bits.clear()
 	footprint_clearance_precompute_usec = 0
 	footprint_clearance_incremental_usec = 0
+	footprint_clearance_cache_hit_count = 0
 	prewarmed_paths.clear()
 	prewarmed_paths_by_footprint.clear()
 	prewarmed_path_build_count = 0
@@ -260,7 +271,7 @@ func stage_footprint_clearance(movement_offsets: Array[Vector2i]) -> bool:
 	if footprint_blocked_origins.has(cache_key):
 		return false
 	if registration_finalized:
-		_blocked_origins_for_offsets(normalized)
+		_blocked_origins_for_offsets(normalized, false)
 		return true
 	if staged_footprint_offsets_by_key.has(cache_key):
 		return false
@@ -506,7 +517,10 @@ func find_path_for_scene(
 	var additional_solid_lookup := PackedByteArray()
 	if needs_actor_clearance:
 		var footprint_key := _movement_offsets_cache_key(movement_offsets)
-		_blocked_origins_for_offsets(movement_offsets)
+		_blocked_origins_for_offsets(
+			movement_offsets,
+			not use_packed_footprint_lookup,
+		)
 		if use_packed_footprint_lookup:
 			additional_solid_lookup = (
 				footprint_blocked_origin_lookups[footprint_key]
@@ -538,9 +552,6 @@ func find_path_for_scene(
 					_mark_temporary_solid(candidate, changed_solids)
 	elif not ignore_dynamic_actors:
 		dense_path_fallback_count += 1
-	var packed_unreachable_precheck_before := int(
-		navigation.packed_footprint_unreachable_precheck_count
-	)
 	var path: PackedVector2Array = navigation.find_path(
 		world_start,
 		world_destination,
@@ -553,27 +564,10 @@ func find_path_for_scene(
 	# query once so unreachable large actors keep the same safe edge route.
 	# Successful routes—the performance-sensitive common case—never pay this
 	# mutation cost.
-	var packed_start_is_isolated := (
-		int(navigation.packed_footprint_unreachable_precheck_count)
-			> packed_unreachable_precheck_before
-		and not bool(navigation.last_packed_reachability_start_has_exit)
-	)
-	if (
-		path.is_empty()
-		and not additional_solid_lookup.is_empty()
-		and not packed_start_is_isolated
-	):
-		for candidate: Vector2i in _blocked_origins_for_offsets(
-			movement_offsets
-		):
-			if candidate != start_cell:
-				_mark_temporary_solid(candidate, changed_solids)
-		path = navigation.find_path(
-			world_start,
-			world_destination,
-			true,
-			not changed_solids.is_empty(),
-		)
+	# NavigationGridData derives packed-mask partial paths without mutating the
+	# shared AStar grid. If the current large-actor footprint has no exit, an
+	# empty path is the only safe result and the actor's bounded retry lane will
+	# respond after a door or surrounding actor changes.
 	for cell: Vector2i in changed_solids:
 		navigation.astar.set_point_solid(cell, false)
 	# A temporary actor/goal reservation can split a narrow but statically
@@ -1442,6 +1436,30 @@ func try_relocate(
 	var old_world_position := actor["world_position"] as Vector2
 	var old_origin := actor["origin"] as Vector2i
 	var new_origin: Vector2i = navigation.world_to_cell(new_world_position)
+	# The inverse isometric cell is convex. A short substep whose two endpoints
+	# remain in the actor's current cell cannot enter a new static footprint or
+	# cross a diagonal reservation. Dense patrols spend most movement ticks in
+	# this case, so avoid resampling navigation and footprint dictionaries while
+	# retaining the exact dynamic-separation rule.
+	if new_origin == old_origin:
+		if (
+			(not ignore_dynamic_actors or minimum_actor_separation > 0.0)
+			and not _keeps_actor_separation(
+				scene_index,
+				old_world_position,
+				new_world_position,
+				(
+					minimum_actor_separation
+					if minimum_actor_separation > 0.0
+					else MIN_ACTOR_SEPARATION
+				),
+			)
+		):
+			relocation_rejection_count += 1
+			return false
+		actor["world_position"] = new_world_position
+		actors[scene_index] = actor
+		return true
 	if absi(new_origin.x - old_origin.x) > 1 or absi(new_origin.y - old_origin.y) > 1:
 		relocation_rejection_count += 1
 		return false
@@ -1698,27 +1716,131 @@ func _precompute_footprint_clearance() -> void:
 		var staged_value: Variant = staged_footprint_offsets_by_key.get(cache_key)
 		if staged_value is Array:
 			_blocked_origins_for_offsets(
-				staged_value as Array[Vector2i]
+				staged_value as Array[Vector2i],
+				false,
 			)
 	for actor_value: Variant in actors.values():
 		var actor := actor_value as Dictionary
 		var offsets := actor["movement_offsets"] as Array[Vector2i]
 		if offsets.size() <= 1:
 			continue
-		_blocked_origins_for_offsets(offsets)
+		_blocked_origins_for_offsets(offsets, false)
 	staged_footprint_offsets_by_key.clear()
 	footprint_clearance_precompute_usec = Time.get_ticks_usec() - started_usec
 
 
+func footprint_clearance_metrics() -> Dictionary:
+	var packed_bytes := 0
+	for lookup_value: Variant in footprint_blocked_origin_lookups.values():
+		if lookup_value is PackedByteArray:
+			packed_bytes += (lookup_value as PackedByteArray).size()
+	var blocked_origin_count := 0
+	for blocked_value: Variant in footprint_blocked_origins.values():
+		if blocked_value is Array:
+			blocked_origin_count += (blocked_value as Array).size()
+	return {
+		"profile_count": footprint_blocked_origin_lookups.size(),
+		"packed_bytes": packed_bytes,
+		"blocked_origin_count": blocked_origin_count,
+		"session_cache_hits": footprint_clearance_cache_hit_count,
+		"session_cache_bytes": global_footprint_clearance_bytes,
+	}
+
+
+func _global_footprint_clearance_namespace() -> String:
+	if (
+		static_prewarm_cache_namespace.is_empty()
+		or navigation == null
+		or source_movement_blocked_bits.is_empty()
+	):
+		return ""
+	return "%s|%s|%dx%d|%s" % [
+		GLOBAL_FOOTPRINT_CLEARANCE_CACHE_VERSION,
+		static_prewarm_cache_namespace,
+		navigation.dimensions.x,
+		navigation.dimensions.y,
+		str(hash(source_movement_blocked_bits)),
+	]
+
+
+func _restore_global_footprint_clearance(
+	cache_key: String,
+	offsets: Array[Vector2i],
+) -> bool:
+	var cache_namespace := _global_footprint_clearance_namespace()
+	if (
+		cache_namespace.is_empty()
+		or not global_footprint_clearance_lookups.has(cache_namespace)
+	):
+		return false
+	var namespace_cache := (
+		global_footprint_clearance_lookups[cache_namespace] as Dictionary
+	)
+	if not namespace_cache.has(cache_key):
+		return false
+	var cached_value: Variant = namespace_cache[cache_key]
+	if not cached_value is PackedByteArray:
+		return false
+	var cached_lookup := cached_value as PackedByteArray
+	if cached_lookup.size() != navigation.dimensions.x * navigation.dimensions.y:
+		return false
+	footprint_blocked_origin_lookups[cache_key] = cached_lookup.duplicate()
+	footprint_offsets_by_key[cache_key] = offsets.duplicate()
+	footprint_clearance_cache_hit_count += 1
+	return true
+
+
+func _store_global_footprint_clearance(
+	cache_key: String,
+	blocked_lookup: PackedByteArray,
+) -> void:
+	var cache_namespace := _global_footprint_clearance_namespace()
+	if cache_namespace.is_empty() or blocked_lookup.is_empty():
+		return
+	var namespace_cache: Dictionary = global_footprint_clearance_lookups.get(
+		cache_namespace,
+		{},
+	)
+	if namespace_cache.has(cache_key):
+		return
+	if (
+		global_footprint_clearance_bytes + blocked_lookup.size()
+		> MAX_GLOBAL_FOOTPRINT_CLEARANCE_BYTES
+	):
+		return
+	namespace_cache[cache_key] = blocked_lookup.duplicate()
+	global_footprint_clearance_lookups[cache_namespace] = namespace_cache
+	global_footprint_clearance_bytes += blocked_lookup.size()
+
+
 func _blocked_origins_for_offsets(
 	offsets: Array[Vector2i],
+	require_array: bool = true,
 ) -> Array[Vector2i]:
 	var cache_key := _movement_offsets_cache_key(offsets)
-	if footprint_blocked_origins.has(cache_key):
-		return (
-			footprint_blocked_origins[cache_key]
-			as Array[Vector2i]
+	if not footprint_blocked_origin_lookups.has(cache_key):
+		_restore_global_footprint_clearance(cache_key, offsets)
+	if footprint_blocked_origin_lookups.has(cache_key):
+		if footprint_blocked_origins.has(cache_key):
+			return (
+				footprint_blocked_origins[cache_key]
+				as Array[Vector2i]
+			)
+		if not require_array:
+			return []
+		var cached_lookup := (
+			footprint_blocked_origin_lookups[cache_key]
+			as PackedByteArray
 		)
+		var cached_blocked: Array[Vector2i] = []
+		var cached_width: int = navigation.dimensions.x
+		for cell_index: int in range(cached_lookup.size()):
+			if cached_lookup[cell_index] != 0:
+				cached_blocked.append(
+					Vector2i(cell_index % cached_width, cell_index / cached_width)
+				)
+		footprint_blocked_origins[cache_key] = cached_blocked
+		return cached_blocked
 	var blocked: Array[Vector2i] = []
 	var width: int = navigation.dimensions.x
 	var height: int = navigation.dimensions.y
@@ -1753,12 +1875,15 @@ func _blocked_origins_for_offsets(
 					else:
 						source_blocked = _source_movement_blocked(footprint_cell)
 				if source_blocked:
-					blocked.append(candidate)
+					if require_array:
+						blocked.append(candidate)
 					blocked_lookup[y * width + x] = 1
 					break
-	footprint_blocked_origins[cache_key] = blocked
+	if require_array:
+		footprint_blocked_origins[cache_key] = blocked
 	footprint_blocked_origin_lookups[cache_key] = blocked_lookup
 	footprint_offsets_by_key[cache_key] = offsets.duplicate()
+	_store_global_footprint_clearance(cache_key, blocked_lookup)
 	return blocked
 
 
@@ -1773,15 +1898,19 @@ func _refresh_footprint_clearance_for_cells(
 		var offsets := (
 			footprint_offsets_by_key[cache_key] as Array[Vector2i]
 		)
-		var blocked := (
-			footprint_blocked_origins[cache_key] as Array[Vector2i]
-		)
+		var blocked_materialized := footprint_blocked_origins.has(cache_key)
+		var blocked: Array[Vector2i] = []
+		if blocked_materialized:
+			blocked = (
+				footprint_blocked_origins[cache_key] as Array[Vector2i]
+			)
 		var blocked_lookup := (
 			footprint_blocked_origin_lookups[cache_key]
 			as PackedByteArray
 		)
 		var width: int = navigation.dimensions.x
 		var candidates: Dictionary = {}
+		var removed_any := false
 		for changed_cell: Vector2i in changed_cells:
 			for offset: Vector2i in offsets:
 				var candidate := changed_cell - offset
@@ -1797,11 +1926,24 @@ func _refresh_footprint_clearance_for_cells(
 					break
 			if now_blocked and blocked_lookup[candidate_index] == 0:
 				blocked_lookup[candidate_index] = 1
-				blocked.append(candidate)
+				if blocked_materialized:
+					blocked.append(candidate)
 			elif not now_blocked and blocked_lookup[candidate_index] != 0:
 				blocked_lookup[candidate_index] = 0
-				blocked.erase(candidate)
-		footprint_blocked_origins[cache_key] = blocked
+				removed_any = true
+		# Array.erase() scans the complete blocked-cell array. A door can release
+		# dozens of cells for several directional footprints, turning one click
+		# into hundreds of repeated full-grid scans. Compact once after applying
+		# every bit change; the packed lookup remains the authoritative state.
+		if removed_any and blocked_materialized:
+			var compacted: Array[Vector2i] = []
+			for blocked_cell: Vector2i in blocked:
+				var blocked_index := blocked_cell.y * width + blocked_cell.x
+				if blocked_lookup[blocked_index] != 0:
+					compacted.append(blocked_cell)
+			blocked = compacted
+		if blocked_materialized:
+			footprint_blocked_origins[cache_key] = blocked
 		footprint_blocked_origin_lookups[cache_key] = blocked_lookup
 	footprint_clearance_incremental_usec += (
 		Time.get_ticks_usec() - started_usec

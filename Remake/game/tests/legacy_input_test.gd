@@ -13,6 +13,7 @@ func _init() -> void:
 	_validate_mouse_transitions(failures)
 	_validate_edge_scroll(failures)
 	_validate_fullscreen_shortcut(failures)
+	_validate_device_reconnection_independence(failures)
 	_validate_cursor_modes(failures)
 	_validate_pointer_safety_source_guards(failures)
 	if failures.is_empty():
@@ -259,6 +260,36 @@ func _validate_fullscreen_shortcut(failures: Array[String]) -> void:
 	_expect(
 		not MAIN_SCRIPT.is_fullscreen_toggle_event(shortcut),
 		"plain Enter remains available to the game UI",
+		failures,
+	)
+
+
+func _validate_device_reconnection_independence(
+	failures: Array[String],
+) -> void:
+	var binding := {
+		"keycode": KEY_M,
+		"ctrl": false,
+		"alt": false,
+		"shift": false,
+		"meta": false,
+	}
+	var before_reconnect := InputEventKey.new()
+	before_reconnect.device = 1
+	before_reconnect.keycode = KEY_M
+	before_reconnect.pressed = true
+	var after_reconnect := before_reconnect.duplicate() as InputEventKey
+	after_reconnect.device = 23
+	_expect(
+		GAME_INPUT_BINDINGS.event_matches(before_reconnect, binding)
+			and GAME_INPUT_BINDINGS.event_matches(after_reconnect, binding),
+		"keyboard actions do not cache a transient device ID across reconnects",
+		failures,
+	)
+	_expect(
+		GAME_INPUT_BINDINGS.binding_from_event(before_reconnect)
+			== GAME_INPUT_BINDINGS.binding_from_event(after_reconnect),
+		"rebinding remains device-agnostic after input hot-plug",
 		failures,
 	)
 

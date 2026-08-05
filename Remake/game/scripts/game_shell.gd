@@ -18,6 +18,7 @@ signal inventory_reload_requested
 signal inventory_slot_requested(slot: Dictionary)
 signal original_hud_action_requested(action: String)
 signal original_hud_actor_requested(actor_name: String)
+signal diagnostics_requested
 
 const TACTICAL_MAP_VIEW_SCRIPT: Script = preload("res://scripts/tactical_map_view.gd")
 const SAVE_SLOT_SELECTOR_SCRIPT: Script = preload("res://scripts/save_slot_selector.gd")
@@ -113,7 +114,9 @@ const ORIGINAL_PAUSE_MENU_BUTTONS: Array[Dictionary] = [
 	{"id": "quit", "normal": 1105, "hover": 1106, "tooltip": "退出游戏"},
 ]
 const DISPLAY_MODES: Array[String] = ["windowed", "fullscreen", "borderless"]
-const DIFFICULTY_MODES: Array[String] = ["original", "easy", "normal", "hard"]
+const RULESET_MODES: Array[String] = ["classic", "modern"]
+const DIFFICULTY_MODES: Array[String] = ["story", "normal", "hard", "custom"]
+const CONTROL_SCHEMES: Array[String] = ["classic", "modern"]
 const MISSION_RULE_MODES: Array[String] = ["stable_mod", "repaired"]
 
 enum OverlayMode {
@@ -127,6 +130,7 @@ enum OverlayMode {
 	HELP,
 	LEVEL_SELECTOR,
 	MODERN_MENU,
+	HISTORY_ARCHIVE,
 	CREDITS,
 }
 
@@ -148,6 +152,13 @@ var _original_hud_weapon_panel: Panel
 var _original_hud_weapon_icon: TextureRect
 var _original_hud_weapon_name: Label
 var _original_hud_weapon_ammo: Label
+var _combat_preview_label: Label
+var _environment_caption_label: Label
+var _environment_caption_remaining := 0.0
+var _loading_root: Control
+var _loading_label: Label
+var _loading_progress: ProgressBar
+var _visual_preferences_settle_frames := 0
 var _original_hud_portrait_controls: Dictionary = {}
 var _original_hud_action_buttons: Dictionary = {}
 var _original_hud_texture_cache: Dictionary = {}
@@ -186,13 +197,46 @@ var _load_button: Button
 var _restart_button: Button
 var _level_select_button: Button
 var _display_mode_option: OptionButton
+var _monitor_option: OptionButton
+var _resolution_policy_option: OptionButton
+var _resolution_option: OptionButton
+var _vsync_toggle: CheckButton
+var _max_fps_option: OptionButton
+var _ruleset_option: OptionButton
 var _difficulty_option: OptionButton
+var _custom_difficulty_sliders: Dictionary = {}
+var _custom_difficulty_labels: Dictionary = {}
+var _custom_difficulty_name_labels: Dictionary = {}
+var _custom_difficulty_rows: Array[Control] = []
+var _control_scheme_option: OptionButton
 var _mission_rule_option: OptionButton
+var _language_option: OptionButton
 var _subtitles_toggle: CheckButton
+var _environment_captions_toggle: CheckButton
 var _briefings_toggle: CheckButton
 var _edge_scroll_toggle: CheckButton
 var _reduce_camera_motion_toggle: CheckButton
+var _reduce_flashes_toggle: CheckButton
 var _large_cursor_toggle: CheckButton
+var _high_contrast_toggle: CheckButton
+var _colorblind_patterns_toggle: CheckButton
+var _pause_on_focus_loss_toggle: CheckButton
+var _educational_mode_toggle: CheckButton
+var _reduced_violence_toggle: CheckButton
+var _history_notes_toggle: CheckButton
+var _age_guidance_label: Label
+var _history_menu_button: Button
+var _diagnostics_menu_button: Button
+var _history_title_label: Label
+var _history_return_button: Button
+var _monitor_label: Label
+var _ui_scale_slider: HSlider
+var _ui_scale_label: Label
+var _text_scale_slider: HSlider
+var _text_scale_label: Label
+var _edge_scroll_speed_slider: HSlider
+var _edge_scroll_speed_label: Label
+var _localized_labels: Dictionary = {}
 var _muted_toggle: CheckButton
 var _master_volume_slider: HSlider
 var _volume_value_label: Label
@@ -227,6 +271,13 @@ var _level_selector_return_mode := OverlayMode.PAUSE_MENU
 var _level_entries: Array[Dictionary] = []
 var _campaign_progress: Dictionary = {}
 var _current_level_id := "m000"
+var _history_panel: PanelContainer
+var _history_mission_option: OptionButton
+var _history_text: RichTextLabel
+var _history_entries: Array[Dictionary] = []
+var _history_formatted_entries: Dictionary = {}
+var _history_return_mode := OverlayMode.PAUSE_MENU
+var _victory_debrief := ""
 var _pause_owned := false
 var _pause_state_before_overlay := false
 var _updating_settings_controls := false
@@ -245,6 +296,27 @@ func _ready() -> void:
 	set_settings({})
 
 
+func _process(delta: float) -> void:
+	if _visual_preferences_settle_frames > 0:
+		_visual_preferences_settle_frames -= 1
+		if _visual_preferences_settle_frames == 0:
+			apply_visual_preferences(settings)
+	if _environment_caption_remaining <= 0.0:
+		return
+	_environment_caption_remaining = maxf(
+		_environment_caption_remaining - maxf(delta, 0.0),
+		0.0,
+	)
+	if _environment_caption_remaining <= 0.0 and _environment_caption_label != null:
+		_environment_caption_label.visible = false
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_SIZE_CHANGED and is_node_ready():
+		_visual_preferences_settle_frames = 3
+		call_deferred("apply_visual_preferences", settings)
+
+
 func set_settings(new_settings: Dictionary) -> void:
 	var display_mode := str(new_settings.get(
 		"display_mode",
@@ -255,9 +327,21 @@ func set_settings(new_settings: Dictionary) -> void:
 	var resolution_policy := str(new_settings.get("resolution_policy", "desktop"))
 	if resolution_policy not in ["desktop", "custom"]:
 		resolution_policy = "desktop"
-	var difficulty_mode := str(new_settings.get("difficulty_mode", "original"))
+	var ruleset_mode := str(new_settings.get("ruleset_mode", "classic"))
+	if ruleset_mode not in RULESET_MODES:
+		ruleset_mode = "classic"
+	var difficulty_mode := str(new_settings.get("difficulty_mode", "normal"))
+	if difficulty_mode == "original":
+		ruleset_mode = "classic"
+		difficulty_mode = "normal"
+	elif difficulty_mode == "easy":
+		ruleset_mode = "modern"
+		difficulty_mode = "story"
 	if difficulty_mode not in DIFFICULTY_MODES:
-		difficulty_mode = "original"
+		difficulty_mode = "normal"
+	var control_scheme := str(new_settings.get("control_scheme", "classic"))
+	if control_scheme not in CONTROL_SCHEMES:
+		control_scheme = "classic"
 	var mission_rule_mode := str(new_settings.get("mission_rule_mode", "stable_mod"))
 	if mission_rule_mode not in MISSION_RULE_MODES:
 		mission_rule_mode = "stable_mod"
@@ -269,12 +353,37 @@ func set_settings(new_settings: Dictionary) -> void:
 		"window_width": clampi(int(new_settings.get("window_width", 1280)), 800, 7680),
 		"window_height": clampi(int(new_settings.get("window_height", 720)), 600, 4320),
 		"vsync": bool(new_settings.get("vsync", true)),
+		"max_fps": clampi(int(new_settings.get("max_fps", 60)), 0, 360),
+		"monitor_index": clampi(int(new_settings.get("monitor_index", -1)), -1, 31),
 		"subtitles": bool(new_settings.get("subtitles", true)),
+		"environment_captions": bool(new_settings.get("environment_captions", true)),
 		"show_briefings": bool(new_settings.get("show_briefings", true)),
 		"edge_scroll": bool(new_settings.get("edge_scroll", true)),
 		"reduce_camera_motion": bool(new_settings.get("reduce_camera_motion", false)),
+		"reduce_flashes": bool(new_settings.get("reduce_flashes", false)),
 		"large_cursor": bool(new_settings.get("large_cursor", false)),
+		"high_contrast": bool(new_settings.get("high_contrast", false)),
+		"colorblind_patterns": bool(new_settings.get("colorblind_patterns", true)),
+		"pause_on_focus_loss": bool(new_settings.get("pause_on_focus_loss", true)),
+		"educational_mode": bool(new_settings.get("educational_mode", true)),
+		"reduced_violence": bool(new_settings.get("reduced_violence", false)),
+		"history_notes": bool(new_settings.get("history_notes", true)),
+		"locale": str(new_settings.get("locale", "system")),
+		"ui_scale": clampf(float(new_settings.get("ui_scale", 1.0)), 0.75, 2.0),
+		"text_scale": clampf(float(new_settings.get("text_scale", 1.0)), 0.75, 2.0),
+		"edge_scroll_speed": clampf(
+			float(new_settings.get("edge_scroll_speed", 720.0)), 240.0, 1800.0
+		),
+		"edge_scroll_margin": clampf(
+			float(new_settings.get("edge_scroll_margin", 32.0)), 8.0, 96.0
+		),
+		"zoom_step": clampf(float(new_settings.get("zoom_step", 0.25)), 0.05, 0.50),
+		"ruleset_mode": ruleset_mode,
 		"difficulty_mode": difficulty_mode,
+		"control_scheme": control_scheme,
+		"custom_difficulty": (
+			new_settings.get("custom_difficulty", {}) as Dictionary
+		).duplicate(true),
 		"mission_rule_mode": mission_rule_mode,
 		"master_volume": clampf(float(new_settings.get("master_volume", 0.8)), 0.0, 1.0),
 		"music_volume": clampf(float(new_settings.get("music_volume", 0.8)), 0.0, 1.0),
@@ -286,22 +395,63 @@ func set_settings(new_settings: Dictionary) -> void:
 		return
 	_updating_settings_controls = true
 	_select_display_mode(str(settings["display_mode"]))
+	_select_metadata_option(
+		_monitor_option, int(settings["monitor_index"]), -1
+	)
+	_select_metadata_option(
+		_resolution_policy_option, str(settings["resolution_policy"]), "desktop"
+	)
+	_select_resolution(Vector2i(
+		int(settings["window_width"]), int(settings["window_height"])
+	))
+	if _vsync_toggle != null:
+		_vsync_toggle.button_pressed = bool(settings["vsync"])
+	_select_metadata_option(_max_fps_option, int(settings["max_fps"]), 60)
 	_subtitles_toggle.button_pressed = bool(settings["subtitles"])
+	_environment_captions_toggle.button_pressed = bool(settings["environment_captions"])
 	_briefings_toggle.button_pressed = bool(settings["show_briefings"])
 	_edge_scroll_toggle.button_pressed = bool(settings["edge_scroll"])
 	_reduce_camera_motion_toggle.button_pressed = bool(
 		settings["reduce_camera_motion"]
 	)
+	_reduce_flashes_toggle.button_pressed = bool(settings["reduce_flashes"])
 	_large_cursor_toggle.button_pressed = bool(settings["large_cursor"])
+	_high_contrast_toggle.button_pressed = bool(settings["high_contrast"])
+	_colorblind_patterns_toggle.button_pressed = bool(settings["colorblind_patterns"])
+	_pause_on_focus_loss_toggle.button_pressed = bool(settings["pause_on_focus_loss"])
+	_educational_mode_toggle.button_pressed = bool(settings["educational_mode"])
+	_reduced_violence_toggle.button_pressed = bool(settings["reduced_violence"])
+	_history_notes_toggle.button_pressed = bool(settings["history_notes"])
+	_select_metadata_option(_language_option, str(settings["locale"]), "system")
+	_ui_scale_slider.value = float(settings["ui_scale"])
+	_text_scale_slider.value = float(settings["text_scale"])
+	_edge_scroll_speed_slider.value = float(settings["edge_scroll_speed"])
+	_select_metadata_option(_ruleset_option, str(settings["ruleset_mode"]), "classic")
 	_select_difficulty_mode(str(settings["difficulty_mode"]))
+	var custom_difficulty := settings.get("custom_difficulty", {}) as Dictionary
+	for custom_key: String in _custom_difficulty_sliders:
+		(_custom_difficulty_sliders[custom_key] as HSlider).value = float(
+			custom_difficulty.get(custom_key, 1.0)
+		)
+	_update_custom_difficulty_visibility()
+	_select_metadata_option(
+		_control_scheme_option, str(settings["control_scheme"]), "classic"
+	)
 	_select_mission_rule_mode(str(settings["mission_rule_mode"]))
 	_muted_toggle.button_pressed = bool(settings["muted"])
 	for channel: String in ["master", "music", "sfx", "voice"]:
 		if _audio_sliders.has(channel):
 			(_audio_sliders[channel] as HSlider).value = float(settings["%s_volume" % channel])
 	_update_volume_labels()
+	_update_accessibility_value_labels()
 	_update_control_buttons()
 	_updating_settings_controls = false
+	apply_visual_preferences(settings)
+	# Container sizes are not final during the first _ready()/Main wiring pass.
+	# Re-evaluate once deferred layout has settled so a transient oversized
+	# minimum size cannot leave panels permanently scaled down or off-screen.
+	_visual_preferences_settle_frames = 3
+	call_deferred("apply_visual_preferences", settings.duplicate(true))
 
 
 func configure_original_hud_assets(converted_root: String) -> bool:
@@ -885,12 +1035,18 @@ func original_overlay_layout_snapshot() -> Dictionary:
 		),
 		"desaturate_brightness": (
 			float(desaturate_material.get_shader_parameter("brightness"))
-			if desaturate_material != null
+			if (
+				desaturate_material != null
+				and desaturate_material.get_shader_parameter("brightness") != null
+			)
 			else 0.0
 		),
 		"desaturate_average_mix": (
 			float(desaturate_material.get_shader_parameter("average_mix"))
-			if desaturate_material != null
+			if (
+				desaturate_material != null
+				and desaturate_material.get_shader_parameter("average_mix") != null
+			)
 			else 0.0
 		),
 		"credits_rect": (
@@ -943,6 +1099,8 @@ func show_victory(can_load: bool, has_next_level: bool) -> void:
 		if has_next_level
 		else "十二关任务已经全部完成，可以读取存档或返回战场查看。"
 	)
+	if not _victory_debrief.is_empty():
+		_menu_message.text += "\n%s" % tr("UI_VICTORY_DEBRIEF_AVAILABLE")
 	_resume_button.visible = true
 	_next_level_button.visible = has_next_level
 	_save_button.visible = true
@@ -965,6 +1123,35 @@ func show_victory(can_load: bool, has_next_level: bool) -> void:
 		_resume_button.grab_focus()
 
 
+func set_history_archive(
+	entries: Array[Dictionary],
+	formatted_entries: Dictionary,
+) -> void:
+	_history_entries = entries.duplicate(true)
+	_history_formatted_entries = formatted_entries.duplicate(true)
+	_refresh_history_selector()
+
+
+func set_victory_debrief(mission_id: String, text: String) -> void:
+	_current_level_id = mission_id
+	_victory_debrief = text
+
+
+func show_history_archive(mission_id: String = "", debrief: String = "") -> void:
+	_history_return_mode = overlay_mode
+	if _history_return_mode not in [
+		OverlayMode.PAUSE_MENU,
+		OverlayMode.FAILURE,
+		OverlayMode.MODERN_MENU,
+	]:
+		_history_return_mode = OverlayMode.PAUSE_MENU
+	if not debrief.is_empty():
+		_victory_debrief = debrief
+	_enter_mode(OverlayMode.HISTORY_ARCHIVE)
+	_select_history_mission(mission_id if not mission_id.is_empty() else _current_level_id)
+	_update_history_text()
+
+
 func set_save_slots(summaries: Array[Dictionary]) -> void:
 	_save_slot_summaries = summaries.duplicate(true)
 
@@ -983,6 +1170,10 @@ func set_level_selection(
 			_campaign_progress,
 			_current_level_id,
 		)
+		# Rebuilding the grid changes its combined minimum size after the current
+		# container-sort pass. Refit on the next process frame so a scale/pivot
+		# captured from the empty selector cannot survive into the visible panel.
+		_visual_preferences_settle_frames = 1
 
 
 func show_level_selector(startup: bool = false) -> void:
@@ -1005,6 +1196,7 @@ func show_level_selector(startup: bool = false) -> void:
 		_campaign_progress,
 		_current_level_id,
 	)
+	_visual_preferences_settle_frames = 1
 	_level_selector.focus_current()
 
 
@@ -1099,6 +1291,16 @@ func show_inventory(inventory_data: Variant, requested_mode: String = "items") -
 	_inventory_view.configure(_normalized_inventory_model(inventory_data), _inventory_mode)
 
 
+func prewarm_inventory(inventory_data: Dictionary) -> void:
+	if _inventory_view == null:
+		return
+	_inventory_view.configure(inventory_data, "items")
+	# W is the first inventory action in the formal journey. Leave its pooled
+	# presentation active so the initial key press only reveals the panel;
+	# unchanged models are skipped by InventoryGridView.configure().
+	_inventory_view.configure(inventory_data, "weapons")
+
+
 func update_inventory(inventory_data: Variant, requested_mode: String = "") -> void:
 	if _inventory_view == null:
 		return
@@ -1180,6 +1382,8 @@ func _mode_uses_failure_background(mode: int) -> bool:
 				and _modern_menu_return_mode == OverlayMode.FAILURE
 			)
 		)
+	if mode == OverlayMode.HISTORY_ARCHIVE:
+		return _history_return_mode == OverlayMode.FAILURE
 	return false
 
 
@@ -1191,6 +1395,9 @@ func close_active_overlay() -> bool:
 		return true
 	if overlay_mode == OverlayMode.CREDITS:
 		_enter_mode(_credits_return_mode)
+		return true
+	if overlay_mode == OverlayMode.HISTORY_ARCHIVE:
+		_enter_mode(_history_return_mode)
 		return true
 	if overlay_mode == OverlayMode.SLOT_SELECTOR:
 		_return_from_slot_selector()
@@ -1289,6 +1496,7 @@ func _enter_mode(mode: int) -> void:
 	_acquire_pause()
 	overlay_mode = mode
 	_root.visible = true
+	_root.mouse_filter = Control.MOUSE_FILTER_STOP
 	var failure_background := _mode_uses_failure_background(mode)
 	var pause_background := mode == OverlayMode.PAUSE_MENU
 	var desaturate_background := pause_background or failure_background
@@ -1299,32 +1507,54 @@ func _enter_mode(mode: int) -> void:
 	_dim.color = (
 		ORIGINAL_HELP_BACKDROP_COLOR
 		if mode in [OverlayMode.HELP, OverlayMode.CREDITS]
-		else OVERLAY_DIM_COLOR
+		else Color(0.0, 0.0, 0.0, 0.90)
+			if bool(settings.get("high_contrast", false))
+			else OVERLAY_DIM_COLOR
 	)
 	var desaturate_material := _failure_desaturate.material as ShaderMaterial
 	if desaturate_material != null:
 		desaturate_material.set_shader_parameter("brightness", 1.0)
 		desaturate_material.set_shader_parameter("average_mix", 1.0)
-	_dim.visible = not desaturate_background and mode != OverlayMode.INVENTORY
+	_apply_overlay_surface_visibility(mode, desaturate_background)
+
+
+func _apply_overlay_surface_visibility(
+	mode: int,
+	desaturate_background: bool = false,
+) -> void:
+	_dim.visible = (
+		mode != OverlayMode.NONE
+		and not desaturate_background
+		and mode != OverlayMode.INVENTORY
+	)
 	_failure_desaturate.visible = desaturate_background
 	_classic_menu_panel.visible = mode == OverlayMode.PAUSE_MENU
 	_classic_failure_panel.visible = mode == OverlayMode.FAILURE
 	_menu_panel.visible = mode == OverlayMode.MODERN_MENU
-	_map_panel.visible = mode == OverlayMode.TACTICAL_MAP
+	_map_panel.visible = (
+		mode == OverlayMode.TACTICAL_MAP
+		or (mode == OverlayMode.NONE and _map_requested_visible)
+	)
 	_inventory_panel.visible = mode == OverlayMode.INVENTORY
 	_slot_selector_panel.visible = mode == OverlayMode.SLOT_SELECTOR
 	_settings_panel.visible = mode == OverlayMode.SETTINGS
 	_help_panel.visible = mode == OverlayMode.HELP
 	_level_selector_panel.visible = mode == OverlayMode.LEVEL_SELECTOR
+	_history_panel.visible = mode == OverlayMode.HISTORY_ARCHIVE
 	_credits_panel.visible = mode == OverlayMode.CREDITS
 
 
 func _close_overlay() -> void:
 	overlay_mode = OverlayMode.NONE
 	if _root != null:
-		_root.visible = false
-	if _map_panel != null:
-		_map_panel.visible = _map_requested_visible
+		# Keep the overlay tree resident after its loading-screen prewarm. Toggling
+		# a large hidden Control hierarchy back to visible can synchronously force
+		# theme/minimum-size propagation and was the source of the intermittent
+		# first-W 30+ ms spike. With every modal child hidden and the root set to
+		# IGNORE, gameplay receives exactly the same pointer events.
+		_root.visible = true
+		_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_apply_overlay_surface_visibility(OverlayMode.NONE)
 	_release_pause()
 
 
@@ -1427,8 +1657,16 @@ func _show_game_settings() -> void:
 	if _modern_menu_return_mode not in [OverlayMode.PAUSE_MENU, OverlayMode.FAILURE]:
 		_modern_menu_return_mode = OverlayMode.PAUSE_MENU
 	_enter_mode(OverlayMode.MODERN_MENU)
-	_menu_title.text = "游戏设置"
-	_menu_message.text = "现代显示、难度与辅助选项"
+	_menu_title.text = tr("UI_GAME_SETTINGS_TITLE")
+	_menu_message.text = tr("UI_GAME_SETTINGS_DESCRIPTION")
+
+
+func _show_history_archive_from_menu() -> void:
+	show_history_archive(_current_level_id, _victory_debrief)
+
+
+func _request_diagnostics_export() -> void:
+	diagnostics_requested.emit()
 
 
 func _show_credits() -> void:
@@ -1470,7 +1708,7 @@ func _show_settings() -> void:
 		_settings_return_mode = OverlayMode.PAUSE_MENU
 	_enter_mode(OverlayMode.SETTINGS)
 	if _settings_status != null:
-		_settings_status.text = "点击任一按键按钮进行重映射；Backspace 取消等待"
+		_settings_status.text = tr("UI_REMAP_PROMPT")
 
 
 func _return_from_settings() -> void:
@@ -1482,7 +1720,10 @@ func _on_rebind_pressed(action: String) -> void:
 	_capturing_action = action
 	_update_control_buttons()
 	if _settings_status != null:
-		_settings_status.text = "正在设置“%s”：请按新的组合键（Backspace 取消）" % GAME_INPUT_BINDINGS.label_for_action(action)
+		_settings_status.text = _localized_text(
+			"UI_REMAP_WAITING_FORMAT",
+			"正在设置“%s”：请按新的组合键（Backspace 取消）",
+		) % GAME_INPUT_BINDINGS.label_for_action(action)
 
 
 func _apply_captured_binding(event: InputEventKey) -> void:
@@ -1543,20 +1784,53 @@ func _on_setting_changed(_value: Variant = null) -> void:
 	if _updating_settings_controls:
 		return
 	var display_mode := _selected_display_mode()
+	var resolution := _selected_resolution()
 	settings = {
 		"fullscreen": display_mode != "windowed",
 		"display_mode": display_mode,
 		"muted": _muted_toggle.button_pressed,
-		"resolution_policy": str(settings.get("resolution_policy", "desktop")),
-		"window_width": int(settings.get("window_width", 1280)),
-		"window_height": int(settings.get("window_height", 720)),
-		"vsync": bool(settings.get("vsync", true)),
+		"resolution_policy": str(_selected_option_metadata(
+			_resolution_policy_option, settings.get("resolution_policy", "desktop")
+		)),
+		"window_width": resolution.x,
+		"window_height": resolution.y,
+		"vsync": _vsync_toggle.button_pressed,
+		"max_fps": int(_selected_option_metadata(
+			_max_fps_option, settings.get("max_fps", 60)
+		)),
+		"monitor_index": int(_selected_option_metadata(
+			_monitor_option, settings.get("monitor_index", -1)
+		)),
 		"subtitles": _subtitles_toggle.button_pressed,
+		"environment_captions": _environment_captions_toggle.button_pressed,
 		"show_briefings": _briefings_toggle.button_pressed,
 		"edge_scroll": _edge_scroll_toggle.button_pressed,
 		"reduce_camera_motion": _reduce_camera_motion_toggle.button_pressed,
+		"reduce_flashes": _reduce_flashes_toggle.button_pressed,
 		"large_cursor": _large_cursor_toggle.button_pressed,
+		"high_contrast": _high_contrast_toggle.button_pressed,
+		"colorblind_patterns": _colorblind_patterns_toggle.button_pressed,
+		"pause_on_focus_loss": _pause_on_focus_loss_toggle.button_pressed,
+		"educational_mode": _educational_mode_toggle.button_pressed,
+		"reduced_violence": _reduced_violence_toggle.button_pressed,
+		"history_notes": _history_notes_toggle.button_pressed,
+		"locale": str(_selected_option_metadata(
+			_language_option,
+			settings.get("locale", "system"),
+		)),
+		"ui_scale": float(_ui_scale_slider.value),
+		"text_scale": float(_text_scale_slider.value),
+		"edge_scroll_speed": float(_edge_scroll_speed_slider.value),
+		"edge_scroll_margin": float(settings.get("edge_scroll_margin", 32.0)),
+		"zoom_step": float(settings.get("zoom_step", 0.25)),
+		"ruleset_mode": str(_selected_option_metadata(
+			_ruleset_option, settings.get("ruleset_mode", "classic")
+		)),
 		"difficulty_mode": _selected_difficulty_mode(),
+		"control_scheme": str(_selected_option_metadata(
+			_control_scheme_option, settings.get("control_scheme", "classic")
+		)),
+		"custom_difficulty": _custom_difficulty_snapshot(),
 		"mission_rule_mode": _selected_mission_rule_mode(),
 		"master_volume": _audio_slider_value("master", 0.8),
 		"music_volume": _audio_slider_value("music", 0.8),
@@ -1565,7 +1839,158 @@ func _on_setting_changed(_value: Variant = null) -> void:
 		"controls": (settings.get("controls", {}) as Dictionary).duplicate(true),
 	}
 	_update_volume_labels()
+	_update_accessibility_value_labels()
+	_update_custom_difficulty_visibility()
+	apply_visual_preferences(settings)
 	settings_changed.emit(settings_snapshot())
+
+
+func apply_localization() -> void:
+	if _language_option == null:
+		return
+	var selected_locale := str(settings.get("locale", "system"))
+	var language_label := _language_option.get_parent().get_child(0) as Label
+	if language_label != null:
+		language_label.text = tr("UI_SETTINGS_LANGUAGE")
+	var keys: Array[String] = [
+		"UI_LANGUAGE_SYSTEM",
+		"UI_LANGUAGE_CHINESE",
+		"UI_LANGUAGE_ENGLISH",
+	]
+	for index: int in range(mini(keys.size(), _language_option.item_count)):
+		_language_option.set_item_text(index, tr(keys[index]))
+	_select_metadata_option(_language_option, selected_locale, "system")
+	_educational_mode_toggle.text = tr("UI_EDUCATIONAL_MODE")
+	_reduced_violence_toggle.text = tr("UI_REDUCED_VIOLENCE")
+	_history_notes_toggle.text = tr("UI_HISTORY_NOTES")
+	_vsync_toggle.text = tr("UI_VSYNC")
+	_subtitles_toggle.text = tr("UI_SUBTITLES")
+	_environment_captions_toggle.text = tr("UI_ENVIRONMENT_CAPTIONS")
+	_briefings_toggle.text = tr("UI_SHOW_BRIEFINGS")
+	_edge_scroll_toggle.text = tr("UI_EDGE_SCROLL_ENABLED")
+	_reduce_camera_motion_toggle.text = tr("UI_REDUCE_CAMERA_MOTION")
+	_reduce_flashes_toggle.text = tr("UI_REDUCE_FLASHES")
+	_large_cursor_toggle.text = tr("UI_LARGE_CURSOR")
+	_high_contrast_toggle.text = tr("UI_HIGH_CONTRAST")
+	_colorblind_patterns_toggle.text = tr("UI_COLORBLIND_PATTERNS")
+	_pause_on_focus_loss_toggle.text = tr("UI_PAUSE_ON_FOCUS_LOSS")
+	if _age_guidance_label != null:
+		_age_guidance_label.text = tr("UI_AGE_GUIDANCE")
+	if _history_menu_button != null:
+		_history_menu_button.text = tr("UI_HISTORY_ARCHIVE")
+	if _diagnostics_menu_button != null:
+		_diagnostics_menu_button.text = tr("UI_DIAGNOSTICS_EXPORT")
+	if _history_title_label != null:
+		_history_title_label.text = tr("UI_HISTORY_ARCHIVE_TITLE")
+	if _history_return_button != null:
+		_history_return_button.text = tr("UI_RETURN")
+	if _monitor_label != null:
+		_monitor_label.text = tr("UI_MONITOR")
+	if _monitor_option != null and _monitor_option.item_count > 0:
+		_monitor_option.set_item_text(0, tr("UI_MONITOR_CURRENT"))
+		for screen_index: int in range(1, _monitor_option.item_count):
+			var screen_size := DisplayServer.screen_get_size(screen_index - 1)
+			_monitor_option.set_item_text(
+				screen_index,
+				_localized_text(
+					"UI_MONITOR_FORMAT",
+					"显示器 %d（%d × %d）",
+				) % [screen_index, screen_size.x, screen_size.y],
+			)
+	var custom_keys := {
+		"enemy_accuracy": "UI_CUSTOM_ENEMY_ACCURACY",
+		"reaction_multiplier": "UI_CUSTOM_REACTION",
+		"perception_multiplier": "UI_CUSTOM_PERCEPTION",
+		"search_multiplier": "UI_CUSTOM_SEARCH",
+		"alert_multiplier": "UI_CUSTOM_ALERT",
+		"reinforcement_multiplier": "UI_CUSTOM_REINFORCEMENT",
+	}
+	if _menu_panel != null:
+		var custom_title := _menu_panel.find_child(
+			"CustomDifficultyTitle", true, false
+		) as Label
+		if custom_title != null:
+			custom_title.text = tr("UI_CUSTOM_DIFFICULTY")
+	for custom_key: String in _custom_difficulty_name_labels:
+		(_custom_difficulty_name_labels[custom_key] as Label).text = tr(
+			str(custom_keys.get(custom_key, custom_key))
+		)
+	for translation_key: String in _localized_labels:
+		var localized_label := _localized_labels[translation_key] as Label
+		if localized_label != null:
+			localized_label.text = tr(translation_key)
+	_set_option_translation_keys(
+		_ruleset_option,
+		{"classic": "UI_RULESET_CLASSIC", "modern": "UI_RULESET_MODERN"},
+	)
+	_set_option_translation_keys(
+		_difficulty_option,
+		{
+			"story": "UI_DIFFICULTY_STORY",
+			"normal": "UI_DIFFICULTY_NORMAL",
+			"hard": "UI_DIFFICULTY_HARD",
+			"custom": "UI_DIFFICULTY_CUSTOM",
+		},
+	)
+	_set_option_translation_keys(
+		_control_scheme_option,
+		{"classic": "UI_CONTROL_CLASSIC", "modern": "UI_CONTROL_MODERN"},
+	)
+	_set_option_translation_keys(
+		_mission_rule_option,
+		{
+			"stable_mod": "UI_MISSION_RULE_CLASSIC",
+			"repaired": "UI_MISSION_RULE_REPAIRED",
+		},
+	)
+	_set_option_translation_keys(
+		_display_mode_option,
+		{
+			"windowed": "UI_DISPLAY_WINDOWED",
+			"fullscreen": "UI_DISPLAY_FULLSCREEN",
+			"borderless": "UI_DISPLAY_BORDERLESS",
+		},
+	)
+	_set_option_translation_keys(
+		_resolution_policy_option,
+		{
+			"desktop": "UI_WINDOW_SIZE_DESKTOP",
+			"custom": "UI_WINDOW_SIZE_CUSTOM",
+		},
+	)
+	if _max_fps_option != null:
+		for index: int in range(_max_fps_option.item_count):
+			var max_fps := int(_max_fps_option.get_item_metadata(index))
+			_max_fps_option.set_item_text(
+				index,
+				tr("UI_UNLIMITED") if max_fps == 0 else "%d FPS" % max_fps,
+			)
+	if _history_panel != null:
+		_history_panel.tooltip_text = tr("UI_HISTORY_ARCHIVE_TITLE")
+	if _loading_label != null and not _loading_root.visible:
+		_loading_label.text = tr("UI_LOADING_PREPARE")
+	if _settings_status != null and _capturing_action.is_empty():
+		_settings_status.text = tr("UI_REMAP_PROMPT")
+	if overlay_mode == OverlayMode.MODERN_MENU:
+		_menu_title.text = tr("UI_GAME_SETTINGS_TITLE")
+		_menu_message.text = tr("UI_GAME_SETTINGS_DESCRIPTION")
+
+
+func _set_option_translation_keys(
+	option: OptionButton,
+	keys_by_metadata: Dictionary,
+) -> void:
+	if option == null:
+		return
+	for index: int in range(option.item_count):
+		var metadata := str(option.get_item_metadata(index))
+		if keys_by_metadata.has(metadata):
+			option.set_item_text(index, tr(str(keys_by_metadata[metadata])))
+
+
+func _localized_text(key: String, fallback: String) -> String:
+	var translated := tr(key)
+	return fallback if translated == key else translated
 
 
 func _selected_display_mode() -> String:
@@ -1588,6 +2013,44 @@ func _select_display_mode(mode: String) -> void:
 	_display_mode_option.select(0)
 
 
+func _selected_option_metadata(option: OptionButton, fallback: Variant) -> Variant:
+	if option == null or option.selected < 0:
+		return fallback
+	return option.get_item_metadata(option.selected)
+
+
+func _select_metadata_option(
+	option: OptionButton,
+	value: Variant,
+	fallback: Variant,
+) -> void:
+	if option == null:
+		return
+	for index: int in range(option.item_count):
+		if option.get_item_metadata(index) == value:
+			option.select(index)
+			return
+	for index: int in range(option.item_count):
+		if option.get_item_metadata(index) == fallback:
+			option.select(index)
+			return
+	if option.item_count > 0:
+		option.select(0)
+
+
+func _selected_resolution() -> Vector2i:
+	var fallback := Vector2i(
+		int(settings.get("window_width", 1280)),
+		int(settings.get("window_height", 720)),
+	)
+	var value: Variant = _selected_option_metadata(_resolution_option, fallback)
+	return value as Vector2i if value is Vector2i else fallback
+
+
+func _select_resolution(value: Vector2i) -> void:
+	_select_metadata_option(_resolution_option, value, Vector2i(1280, 720))
+
+
 func _audio_slider_value(channel: String, fallback: float) -> float:
 	if not _audio_sliders.has(channel):
 		return fallback
@@ -1596,16 +2059,16 @@ func _audio_slider_value(channel: String, fallback: float) -> float:
 
 func _selected_difficulty_mode() -> String:
 	if _difficulty_option == null or _difficulty_option.selected < 0:
-		return str(settings.get("difficulty_mode", "original"))
+		return str(settings.get("difficulty_mode", "normal"))
 	var metadata: Variant = _difficulty_option.get_item_metadata(_difficulty_option.selected)
 	var mode := str(metadata)
-	return mode if mode in DIFFICULTY_MODES else "original"
+	return mode if mode in DIFFICULTY_MODES else "normal"
 
 
 func _select_difficulty_mode(mode: String) -> void:
 	if _difficulty_option == null:
 		return
-	var normalized := mode if mode in DIFFICULTY_MODES else "original"
+	var normalized := mode if mode in DIFFICULTY_MODES else "normal"
 	for index: int in range(_difficulty_option.item_count):
 		if str(_difficulty_option.get_item_metadata(index)) == normalized:
 			_difficulty_option.select(index)
@@ -1642,6 +2105,86 @@ func _update_volume_labels() -> void:
 			)
 
 
+func _update_accessibility_value_labels() -> void:
+	if _ui_scale_label != null and _ui_scale_slider != null:
+		_ui_scale_label.text = "%d%%" % roundi(_ui_scale_slider.value * 100.0)
+	if _text_scale_label != null and _text_scale_slider != null:
+		_text_scale_label.text = "%d%%" % roundi(_text_scale_slider.value * 100.0)
+	if _edge_scroll_speed_label != null and _edge_scroll_speed_slider != null:
+		_edge_scroll_speed_label.text = "%d" % roundi(_edge_scroll_speed_slider.value)
+	for custom_key: String in _custom_difficulty_sliders:
+		var value := float((_custom_difficulty_sliders[custom_key] as HSlider).value)
+		var value_label := _custom_difficulty_labels[custom_key] as Label
+		value_label.text = (
+			"%d%%" % roundi(value * 100.0)
+			if custom_key == "enemy_accuracy"
+			else "%.2f×" % value
+		)
+
+
+func apply_visual_preferences(preferences: Dictionary) -> void:
+	if _root == null:
+		return
+	var text_scale := clampf(float(preferences.get("text_scale", 1.0)), 0.75, 2.0)
+	var ui_scale := clampf(float(preferences.get("ui_scale", 1.0)), 0.75, 2.0)
+	var interface_theme := Theme.new()
+	interface_theme.default_font_size = maxi(roundi(16.0 * text_scale), 11)
+	_root.theme = interface_theme
+	_hud_root.theme = interface_theme
+	var viewport_size := get_viewport().get_visible_rect().size
+	var safe_size := Vector2(
+		maxf(viewport_size.x - 32.0, 320.0),
+		maxf(viewport_size.y - 32.0, 240.0),
+	)
+	for panel: Control in [
+		_menu_panel,
+		_settings_panel,
+		_slot_selector_panel,
+		_level_selector_panel,
+		_history_panel,
+		_help_panel,
+		_credits_panel,
+	]:
+		if panel == null:
+			continue
+		panel.pivot_offset = panel.size * 0.5
+		var fit_scale := minf(
+			safe_size.x / maxf(panel.size.x, 1.0),
+			safe_size.y / maxf(panel.size.y, 1.0),
+		)
+		panel.scale = Vector2.ONE * minf(ui_scale, fit_scale)
+	var high_contrast := bool(preferences.get("high_contrast", false))
+	if _dim != null:
+		_dim.color = (
+			Color(0.0, 0.0, 0.0, 0.90)
+			if high_contrast
+			else OVERLAY_DIM_COLOR
+		)
+
+
+func visual_layout_snapshot() -> Dictionary:
+	var panels: Dictionary = {}
+	for panel: Control in [
+		_menu_panel,
+		_settings_panel,
+		_slot_selector_panel,
+		_level_selector_panel,
+		_history_panel,
+		_help_panel,
+		_credits_panel,
+	]:
+		if panel != null:
+			panels[panel.name] = {
+				"rect": panel.get_global_rect(),
+				"scale": panel.scale,
+			}
+	return {
+		"viewport_size": get_viewport().get_visible_rect().size,
+		"panels": panels,
+		"text_scale": float(settings.get("text_scale", 1.0)),
+	}
+
+
 func _on_map_position_requested(world_position: Vector2) -> void:
 	map_position_requested.emit(world_position)
 
@@ -1654,6 +2197,7 @@ func _build_interface() -> void:
 	add_child(_hud_root)
 	_build_original_top_hud()
 	_build_original_bottom_hud()
+	_build_live_feedback()
 
 	_root = Control.new()
 	_root.name = "GameShellRoot"
@@ -1680,10 +2224,131 @@ func _build_interface() -> void:
 	_build_inventory_panel()
 	_build_slot_selector_panel()
 	_build_level_selector_panel()
+	_build_history_panel()
 	_build_settings_panel()
 	_build_help_panel()
 	_build_credits_panel()
-	_root.visible = false
+	_build_loading_overlay()
+	_root.visible = true
+	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_apply_overlay_surface_visibility(OverlayMode.NONE)
+
+
+func _build_loading_overlay() -> void:
+	_loading_root = Control.new()
+	_loading_root.name = "LoadingOverlay"
+	_loading_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_loading_root.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(_loading_root)
+	var backdrop := ColorRect.new()
+	backdrop.color = Color(0.015, 0.020, 0.016, 0.94)
+	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
+	_loading_root.add_child(backdrop)
+	var panel := PanelContainer.new()
+	panel.set_anchors_preset(Control.PRESET_CENTER)
+	panel.position = Vector2(-260.0, -72.0)
+	panel.size = Vector2(520.0, 144.0)
+	panel.add_theme_stylebox_override(
+		"panel", _panel_style(Color(0.07, 0.09, 0.07, 0.99))
+	)
+	_loading_root.add_child(panel)
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 14)
+	panel.add_child(content)
+	_loading_label = Label.new()
+	_loading_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_loading_label.add_theme_font_size_override("font_size", 20)
+	_loading_label.text = tr("UI_LOADING_PREPARE")
+	content.add_child(_loading_label)
+	_loading_progress = ProgressBar.new()
+	_loading_progress.min_value = 0.0
+	_loading_progress.max_value = 100.0
+	_loading_progress.show_percentage = true
+	_loading_progress.custom_minimum_size = Vector2(460.0, 28.0)
+	content.add_child(_loading_progress)
+	_loading_root.visible = false
+
+
+func show_loading(level_id: String, stage: String, progress: float) -> void:
+	if _loading_root == null:
+		return
+	_loading_label.text = "%s · %s" % [level_id.to_upper(), stage]
+	_loading_progress.value = clampf(progress, 0.0, 1.0) * 100.0
+	_loading_root.visible = true
+
+
+func hide_loading() -> void:
+	if _loading_root != null:
+		_loading_root.visible = false
+
+
+func loading_snapshot() -> Dictionary:
+	return {
+		"visible": _loading_root != null and _loading_root.visible,
+		"progress": _loading_progress.value if _loading_progress != null else 0.0,
+		"text": _loading_label.text if _loading_label != null else "",
+	}
+
+
+func _build_live_feedback() -> void:
+	_combat_preview_label = Label.new()
+	_combat_preview_label.name = "CombatPreview"
+	_combat_preview_label.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	_combat_preview_label.offset_left = 280.0
+	_combat_preview_label.offset_top = -92.0
+	_combat_preview_label.offset_right = -180.0
+	_combat_preview_label.offset_bottom = -66.0
+	_combat_preview_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_combat_preview_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_combat_preview_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_combat_preview_label.add_theme_font_size_override("font_size", 14)
+	_combat_preview_label.add_theme_constant_override("outline_size", 4)
+	_combat_preview_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	_combat_preview_label.visible = false
+	_hud_root.add_child(_combat_preview_label)
+
+	_environment_caption_label = Label.new()
+	_environment_caption_label.name = "EnvironmentCaption"
+	_environment_caption_label.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_environment_caption_label.position = Vector2(-300.0, -132.0)
+	_environment_caption_label.size = Vector2(600.0, 34.0)
+	_environment_caption_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_environment_caption_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_environment_caption_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_environment_caption_label.add_theme_font_size_override("font_size", 17)
+	_environment_caption_label.add_theme_constant_override("outline_size", 5)
+	_environment_caption_label.add_theme_color_override("font_color", Color(0.98, 0.95, 0.76))
+	_environment_caption_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.92))
+	_environment_caption_label.visible = false
+	_hud_root.add_child(_environment_caption_label)
+
+
+func set_combat_preview(text: String, status: String = "ready") -> void:
+	if _combat_preview_label == null:
+		return
+	_combat_preview_label.text = text
+	_combat_preview_label.visible = not text.is_empty()
+	_combat_preview_label.add_theme_color_override(
+		"font_color",
+		Color(0.57, 0.94, 0.59)
+		if status == "ready"
+		else Color(1.0, 0.77, 0.34)
+			if status == "warning"
+			else Color(1.0, 0.42, 0.36),
+	)
+
+
+func show_environment_caption(text: String, duration_seconds: float = 2.4) -> void:
+	if (
+		_environment_caption_label == null
+		or not bool(settings.get("environment_captions", true))
+		or text.is_empty()
+	):
+		return
+	_environment_caption_label.text = "[%s]" % text
+	_environment_caption_label.visible = true
+	_environment_caption_remaining = maxf(duration_seconds, 0.25)
 
 
 func _build_original_top_hud() -> void:
@@ -2121,51 +2786,156 @@ func _build_menu_panel() -> void:
 	var separator := HSeparator.new()
 	content.add_child(separator)
 	var settings_title := Label.new()
-	settings_title.text = "显示与辅助设置"
+	settings_title.text = tr("UI_DISPLAY_ACCESSIBILITY_TITLE")
+	_localized_labels["UI_DISPLAY_ACCESSIBILITY_TITLE"] = settings_title
 	settings_title.add_theme_font_size_override("font_size", 18)
 	content.add_child(settings_title)
 
+	var language_row := HBoxContainer.new()
+	var language_label := Label.new()
+	language_label.name = "LanguageLabel"
+	language_label.text = tr("UI_SETTINGS_LANGUAGE")
+	language_label.custom_minimum_size.x = 115.0
+	language_row.add_child(language_label)
+	_language_option = OptionButton.new()
+	_language_option.name = "LanguageOption"
+	_language_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for descriptor: Dictionary in [
+		{"id": "system", "key": "UI_LANGUAGE_SYSTEM"},
+		{"id": "zh_CN", "key": "UI_LANGUAGE_CHINESE"},
+		{"id": "en", "key": "UI_LANGUAGE_ENGLISH"},
+	]:
+		_language_option.add_item(tr(str(descriptor["key"])))
+		_language_option.set_item_metadata(
+			_language_option.item_count - 1,
+			str(descriptor["id"]),
+		)
+	_language_option.item_selected.connect(_on_setting_changed)
+	language_row.add_child(_language_option)
+	content.add_child(language_row)
+
+	_educational_mode_toggle = CheckButton.new()
+	_educational_mode_toggle.name = "EducationalModeToggle"
+	_educational_mode_toggle.text = tr("UI_EDUCATIONAL_MODE")
+	_educational_mode_toggle.toggled.connect(_on_setting_changed)
+	content.add_child(_educational_mode_toggle)
+	_reduced_violence_toggle = CheckButton.new()
+	_reduced_violence_toggle.name = "ReducedViolenceToggle"
+	_reduced_violence_toggle.text = tr("UI_REDUCED_VIOLENCE")
+	_reduced_violence_toggle.toggled.connect(_on_setting_changed)
+	content.add_child(_reduced_violence_toggle)
+	_history_notes_toggle = CheckButton.new()
+	_history_notes_toggle.name = "HistoryNotesToggle"
+	_history_notes_toggle.text = tr("UI_HISTORY_NOTES")
+	_history_notes_toggle.toggled.connect(_on_setting_changed)
+	content.add_child(_history_notes_toggle)
+	_age_guidance_label = Label.new()
+	_age_guidance_label.text = tr("UI_AGE_GUIDANCE")
+	_age_guidance_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_age_guidance_label.add_theme_font_size_override("font_size", 13)
+	_age_guidance_label.add_theme_color_override(
+		"font_color", Color(0.76, 0.81, 0.70)
+	)
+	content.add_child(_age_guidance_label)
+
+	var ruleset_row := HBoxContainer.new()
+	var ruleset_label := Label.new()
+	ruleset_label.text = tr("UI_RULESET")
+	_localized_labels["UI_RULESET"] = ruleset_label
+	ruleset_label.custom_minimum_size.x = 115.0
+	ruleset_row.add_child(ruleset_label)
+	_ruleset_option = OptionButton.new()
+	_ruleset_option.name = "RulesetMode"
+	_ruleset_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for descriptor: Dictionary in [
+		{"id": "classic", "key": "UI_RULESET_CLASSIC"},
+		{"id": "modern", "key": "UI_RULESET_MODERN"},
+	]:
+		_ruleset_option.add_item(tr(str(descriptor["key"])))
+		_ruleset_option.set_item_metadata(
+			_ruleset_option.item_count - 1, str(descriptor["id"])
+		)
+	_ruleset_option.item_selected.connect(_on_setting_changed)
+	ruleset_row.add_child(_ruleset_option)
+	content.add_child(ruleset_row)
+
 	var difficulty_row := HBoxContainer.new()
 	var difficulty_label := Label.new()
-	difficulty_label.text = "游戏难度"
+	difficulty_label.text = tr("UI_DIFFICULTY")
+	_localized_labels["UI_DIFFICULTY"] = difficulty_label
 	difficulty_label.custom_minimum_size.x = 115.0
 	difficulty_row.add_child(difficulty_label)
 	_difficulty_option = OptionButton.new()
 	_difficulty_option.name = "DifficultyMode"
 	_difficulty_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var difficulty_labels := {
-		"original": "原版复刻（MOD 行为基准）",
-		"easy": "轻松（重制调校）",
-		"normal": "标准（重制调校）",
-		"hard": "困难（重制调校）",
+		"story": "UI_DIFFICULTY_STORY",
+		"normal": "UI_DIFFICULTY_NORMAL",
+		"hard": "UI_DIFFICULTY_HARD",
+		"custom": "UI_DIFFICULTY_CUSTOM",
 	}
 	for mode: String in DIFFICULTY_MODES:
-		_difficulty_option.add_item(str(difficulty_labels[mode]))
+		_difficulty_option.add_item(tr(str(difficulty_labels[mode])))
 		_difficulty_option.set_item_metadata(_difficulty_option.item_count - 1, mode)
 	_difficulty_option.item_selected.connect(_on_setting_changed)
 	difficulty_row.add_child(_difficulty_option)
 	content.add_child(difficulty_row)
 	var difficulty_hint := Label.new()
-	difficulty_hint.text = "难度仅调整敌军命中率；我方命中率固定。设置会保存，并在重新开始、下一关或读取存档时生效"
+	difficulty_hint.text = tr("UI_DIFFICULTY_HINT")
+	_localized_labels["UI_DIFFICULTY_HINT"] = difficulty_hint
 	difficulty_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	difficulty_hint.add_theme_font_size_override("font_size", 13)
 	difficulty_hint.add_theme_color_override("font_color", Color(0.75, 0.77, 0.66))
 	content.add_child(difficulty_hint)
+	var custom_title := Label.new()
+	custom_title.text = tr("UI_CUSTOM_DIFFICULTY")
+	custom_title.name = "CustomDifficultyTitle"
+	custom_title.add_theme_color_override("font_color", Color(0.91, 0.78, 0.44))
+	content.add_child(custom_title)
+	_custom_difficulty_rows.append(custom_title)
+	_add_custom_difficulty_slider(content, "enemy_accuracy", tr("UI_CUSTOM_ENEMY_ACCURACY"), 0.25, 1.0, 0.05)
+	_add_custom_difficulty_slider(content, "reaction_multiplier", tr("UI_CUSTOM_REACTION"), 0.25, 2.0, 0.05)
+	_add_custom_difficulty_slider(content, "perception_multiplier", tr("UI_CUSTOM_PERCEPTION"), 0.25, 2.0, 0.05)
+	_add_custom_difficulty_slider(content, "search_multiplier", tr("UI_CUSTOM_SEARCH"), 0.25, 2.0, 0.05)
+	_add_custom_difficulty_slider(content, "alert_multiplier", tr("UI_CUSTOM_ALERT"), 0.25, 2.0, 0.05)
+	_add_custom_difficulty_slider(content, "reinforcement_multiplier", tr("UI_CUSTOM_REINFORCEMENT"), 0.25, 2.0, 0.05)
+
+	var control_scheme_row := HBoxContainer.new()
+	var control_scheme_label := Label.new()
+	control_scheme_label.text = tr("UI_CONTROL_SCHEME")
+	_localized_labels["UI_CONTROL_SCHEME"] = control_scheme_label
+	control_scheme_label.custom_minimum_size.x = 115.0
+	control_scheme_row.add_child(control_scheme_label)
+	_control_scheme_option = OptionButton.new()
+	_control_scheme_option.name = "ControlScheme"
+	_control_scheme_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for descriptor: Dictionary in [
+		{"id": "classic", "key": "UI_CONTROL_CLASSIC"},
+		{"id": "modern", "key": "UI_CONTROL_MODERN"},
+	]:
+		_control_scheme_option.add_item(tr(str(descriptor["key"])))
+		_control_scheme_option.set_item_metadata(
+			_control_scheme_option.item_count - 1, str(descriptor["id"])
+		)
+	_control_scheme_option.item_selected.connect(_on_setting_changed)
+	control_scheme_row.add_child(_control_scheme_option)
+	content.add_child(control_scheme_row)
 
 	var mission_rule_row := HBoxContainer.new()
 	var mission_rule_label := Label.new()
-	mission_rule_label.text = "任务规则"
+	mission_rule_label.text = tr("UI_MISSION_RULE")
+	_localized_labels["UI_MISSION_RULE"] = mission_rule_label
 	mission_rule_label.custom_minimum_size.x = 115.0
 	mission_rule_row.add_child(mission_rule_label)
 	_mission_rule_option = OptionButton.new()
 	_mission_rule_option.name = "MissionRuleMode"
 	_mission_rule_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var mission_rule_labels := {
-		"stable_mod": "稳定 MOD（忠实保留实际判定）",
-		"repaired": "修复增强（按任务简报补全）",
+		"stable_mod": "UI_MISSION_RULE_CLASSIC",
+		"repaired": "UI_MISSION_RULE_REPAIRED",
 	}
 	for mode: String in MISSION_RULE_MODES:
-		_mission_rule_option.add_item(str(mission_rule_labels[mode]))
+		_mission_rule_option.add_item(tr(str(mission_rule_labels[mode])))
 		_mission_rule_option.set_item_metadata(
 			_mission_rule_option.item_count - 1,
 			mode,
@@ -2174,7 +2944,8 @@ func _build_menu_panel() -> void:
 	mission_rule_row.add_child(_mission_rule_option)
 	content.add_child(mission_rule_row)
 	var mission_rule_hint := Label.new()
-	mission_rule_hint.text = "影响第 10/12 关已确认的原版控制流缺陷；变更在重开、下一关或读档时生效"
+	mission_rule_hint.text = tr("UI_MISSION_RULE_HINT")
+	_localized_labels["UI_MISSION_RULE_HINT"] = mission_rule_hint
 	mission_rule_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	mission_rule_hint.add_theme_font_size_override("font_size", 13)
 	mission_rule_hint.add_theme_color_override("font_color", Color(0.75, 0.77, 0.66))
@@ -2182,19 +2953,20 @@ func _build_menu_panel() -> void:
 
 	var display_row := HBoxContainer.new()
 	var display_label := Label.new()
-	display_label.text = "显示模式"
+	display_label.text = tr("UI_DISPLAY_MODE")
+	_localized_labels["UI_DISPLAY_MODE"] = display_label
 	display_label.custom_minimum_size.x = 115.0
 	display_row.add_child(display_label)
 	_display_mode_option = OptionButton.new()
 	_display_mode_option.name = "DisplayMode"
 	_display_mode_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var display_labels := {
-		"windowed": "窗口（默认 1280×720）",
-		"fullscreen": "全屏（当前桌面分辨率）",
-		"borderless": "无边框最大化（推荐多任务）",
+		"windowed": "UI_DISPLAY_WINDOWED",
+		"fullscreen": "UI_DISPLAY_FULLSCREEN",
+		"borderless": "UI_DISPLAY_BORDERLESS",
 	}
 	for mode: String in DISPLAY_MODES:
-		_display_mode_option.add_item(str(display_labels[mode]))
+		_display_mode_option.add_item(tr(str(display_labels[mode])))
 		_display_mode_option.set_item_metadata(
 			_display_mode_option.item_count - 1,
 			mode,
@@ -2203,33 +2975,280 @@ func _build_menu_panel() -> void:
 	display_row.add_child(_display_mode_option)
 	content.add_child(display_row)
 
+	var monitor_row := HBoxContainer.new()
+	_monitor_label = Label.new()
+	_monitor_label.text = tr("UI_MONITOR")
+	_monitor_label.custom_minimum_size.x = 115.0
+	monitor_row.add_child(_monitor_label)
+	_monitor_option = OptionButton.new()
+	_monitor_option.name = "MonitorOption"
+	_monitor_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_monitor_option.add_item(tr("UI_MONITOR_CURRENT"))
+	_monitor_option.set_item_metadata(0, -1)
+	for screen_index: int in range(maxi(DisplayServer.get_screen_count(), 1)):
+		var screen_size := DisplayServer.screen_get_size(screen_index)
+		_monitor_option.add_item(
+			_localized_text(
+				"UI_MONITOR_FORMAT",
+				"显示器 %d（%d × %d）",
+			) % [
+				screen_index + 1, screen_size.x, screen_size.y,
+			]
+		)
+		_monitor_option.set_item_metadata(
+			_monitor_option.item_count - 1, screen_index
+		)
+	_monitor_option.item_selected.connect(_on_setting_changed)
+	monitor_row.add_child(_monitor_option)
+	content.add_child(monitor_row)
+
+	var resolution_policy_row := HBoxContainer.new()
+	var resolution_policy_label := Label.new()
+	resolution_policy_label.text = tr("UI_WINDOW_SIZE")
+	_localized_labels["UI_WINDOW_SIZE"] = resolution_policy_label
+	resolution_policy_label.custom_minimum_size.x = 115.0
+	resolution_policy_row.add_child(resolution_policy_label)
+	_resolution_policy_option = OptionButton.new()
+	_resolution_policy_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for descriptor: Dictionary in [
+		{"id": "desktop", "key": "UI_WINDOW_SIZE_DESKTOP"},
+		{"id": "custom", "key": "UI_WINDOW_SIZE_CUSTOM"},
+	]:
+		_resolution_policy_option.add_item(tr(str(descriptor["key"])))
+		_resolution_policy_option.set_item_metadata(
+			_resolution_policy_option.item_count - 1, str(descriptor["id"])
+		)
+	_resolution_policy_option.item_selected.connect(_on_setting_changed)
+	resolution_policy_row.add_child(_resolution_policy_option)
+	content.add_child(resolution_policy_row)
+
+	var resolution_row := HBoxContainer.new()
+	var resolution_label := Label.new()
+	resolution_label.text = tr("UI_CUSTOM_RESOLUTION")
+	_localized_labels["UI_CUSTOM_RESOLUTION"] = resolution_label
+	resolution_label.custom_minimum_size.x = 115.0
+	resolution_row.add_child(resolution_label)
+	_resolution_option = OptionButton.new()
+	_resolution_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for resolution: Vector2i in [
+		Vector2i(1024, 768),
+		Vector2i(1280, 720),
+		Vector2i(1600, 900),
+		Vector2i(1920, 1080),
+		Vector2i(2560, 1440),
+		Vector2i(3840, 2160),
+	]:
+		_resolution_option.add_item("%d × %d" % [resolution.x, resolution.y])
+		_resolution_option.set_item_metadata(
+			_resolution_option.item_count - 1, resolution
+		)
+	_resolution_option.item_selected.connect(_on_setting_changed)
+	resolution_row.add_child(_resolution_option)
+	content.add_child(resolution_row)
+
+	_vsync_toggle = CheckButton.new()
+	_vsync_toggle.text = tr("UI_VSYNC")
+	_vsync_toggle.toggled.connect(_on_setting_changed)
+	content.add_child(_vsync_toggle)
+
+	var max_fps_row := HBoxContainer.new()
+	var max_fps_label := Label.new()
+	max_fps_label.text = tr("UI_FRAME_LIMIT")
+	_localized_labels["UI_FRAME_LIMIT"] = max_fps_label
+	max_fps_label.custom_minimum_size.x = 115.0
+	max_fps_row.add_child(max_fps_label)
+	_max_fps_option = OptionButton.new()
+	_max_fps_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for max_fps: int in [30, 60, 90, 120, 144, 165, 240, 0]:
+		_max_fps_option.add_item(tr("UI_UNLIMITED") if max_fps == 0 else "%d FPS" % max_fps)
+		_max_fps_option.set_item_metadata(_max_fps_option.item_count - 1, max_fps)
+	_max_fps_option.item_selected.connect(_on_setting_changed)
+	max_fps_row.add_child(_max_fps_option)
+	content.add_child(max_fps_row)
+
 	_subtitles_toggle = CheckButton.new()
-	_subtitles_toggle.text = "显示语音字幕"
+	_subtitles_toggle.text = tr("UI_SUBTITLES")
 	_subtitles_toggle.toggled.connect(_on_setting_changed)
 	content.add_child(_subtitles_toggle)
 
+	_environment_captions_toggle = CheckButton.new()
+	_environment_captions_toggle.text = tr("UI_ENVIRONMENT_CAPTIONS")
+	_environment_captions_toggle.toggled.connect(_on_setting_changed)
+	content.add_child(_environment_captions_toggle)
+
 	_briefings_toggle = CheckButton.new()
-	_briefings_toggle.text = "切换关卡时显示任务简报"
+	_briefings_toggle.text = tr("UI_SHOW_BRIEFINGS")
 	_briefings_toggle.toggled.connect(_on_setting_changed)
 	content.add_child(_briefings_toggle)
 
 	_edge_scroll_toggle = CheckButton.new()
-	_edge_scroll_toggle.text = "鼠标移动到屏幕边缘时卷屏"
+	_edge_scroll_toggle.text = tr("UI_EDGE_SCROLL_ENABLED")
 	_edge_scroll_toggle.toggled.connect(_on_setting_changed)
 	content.add_child(_edge_scroll_toggle)
 
 	_reduce_camera_motion_toggle = CheckButton.new()
-	_reduce_camera_motion_toggle.text = "减少自动镜头运动（剧情聚焦改为立即定位）"
+	_reduce_camera_motion_toggle.text = tr("UI_REDUCE_CAMERA_MOTION")
 	_reduce_camera_motion_toggle.toggled.connect(_on_setting_changed)
 	content.add_child(_reduce_camera_motion_toggle)
 
+	_reduce_flashes_toggle = CheckButton.new()
+	_reduce_flashes_toggle.text = tr("UI_REDUCE_FLASHES")
+	_reduce_flashes_toggle.toggled.connect(_on_setting_changed)
+	content.add_child(_reduce_flashes_toggle)
+
 	_large_cursor_toggle = CheckButton.new()
-	_large_cursor_toggle.text = "大号原版光标（2 倍，像素锐化）"
+	_large_cursor_toggle.text = tr("UI_LARGE_CURSOR")
 	_large_cursor_toggle.toggled.connect(_on_setting_changed)
 	content.add_child(_large_cursor_toggle)
 
+	_high_contrast_toggle = CheckButton.new()
+	_high_contrast_toggle.text = tr("UI_HIGH_CONTRAST")
+	_high_contrast_toggle.toggled.connect(_on_setting_changed)
+	content.add_child(_high_contrast_toggle)
+
+	_colorblind_patterns_toggle = CheckButton.new()
+	_colorblind_patterns_toggle.text = tr("UI_COLORBLIND_PATTERNS")
+	_colorblind_patterns_toggle.toggled.connect(_on_setting_changed)
+	content.add_child(_colorblind_patterns_toggle)
+
+	_pause_on_focus_loss_toggle = CheckButton.new()
+	_pause_on_focus_loss_toggle.text = tr("UI_PAUSE_ON_FOCUS_LOSS")
+	_pause_on_focus_loss_toggle.toggled.connect(_on_setting_changed)
+	content.add_child(_pause_on_focus_loss_toggle)
+
+	var ui_scale_row := _build_value_slider_row(
+		tr("UI_SCALE"), 0.75, 2.0, 0.05, 1.0, _on_setting_changed
+	)
+	_localized_labels["UI_SCALE"] = ui_scale_row["label"] as Label
+	_ui_scale_slider = ui_scale_row["slider"] as HSlider
+	_ui_scale_label = ui_scale_row["value_label"] as Label
+	content.add_child(ui_scale_row["row"] as Control)
+
+	var text_scale_row := _build_value_slider_row(
+		tr("UI_TEXT_SCALE"), 0.75, 2.0, 0.05, 1.0, _on_setting_changed
+	)
+	_localized_labels["UI_TEXT_SCALE"] = text_scale_row["label"] as Label
+	_text_scale_slider = text_scale_row["slider"] as HSlider
+	_text_scale_label = text_scale_row["value_label"] as Label
+	content.add_child(text_scale_row["row"] as Control)
+
+	var edge_speed_row := _build_value_slider_row(
+		tr("UI_EDGE_SCROLL_SPEED"), 240.0, 1800.0, 60.0, 720.0, _on_setting_changed
+	)
+	_localized_labels["UI_EDGE_SCROLL_SPEED"] = edge_speed_row["label"] as Label
+	_edge_scroll_speed_slider = edge_speed_row["slider"] as HSlider
+	_edge_scroll_speed_label = edge_speed_row["value_label"] as Label
+	content.add_child(edge_speed_row["row"] as Control)
+
 	_add_button(content, "声音与按键设置", _show_settings)
+	_history_menu_button = _add_button(
+		content, tr("UI_HISTORY_ARCHIVE"), _show_history_archive_from_menu
+	)
+	_diagnostics_menu_button = _add_button(
+		content, tr("UI_DIAGNOSTICS_EXPORT"), _request_diagnostics_export
+	)
 	_add_button(content, "退出游戏", _on_quit_pressed)
+
+
+func _build_history_panel() -> void:
+	_history_panel = PanelContainer.new()
+	_history_panel.name = "HistoryArchivePanel"
+	_center_control(_history_panel, Vector2(960.0, 700.0))
+	_history_panel.add_theme_stylebox_override(
+		"panel", _panel_style(Color(0.055, 0.072, 0.056, 0.99))
+	)
+	_root.add_child(_history_panel)
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 10)
+	_history_panel.add_child(content)
+	_history_title_label = Label.new()
+	_history_title_label.text = tr("UI_HISTORY_ARCHIVE_TITLE")
+	_history_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_history_title_label.add_theme_font_size_override("font_size", 28)
+	_history_title_label.add_theme_color_override(
+		"font_color", Color(0.97, 0.88, 0.61)
+	)
+	content.add_child(_history_title_label)
+	_history_mission_option = OptionButton.new()
+	_history_mission_option.name = "HistoryMissionSelector"
+	_history_mission_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_history_mission_option.item_selected.connect(_on_history_mission_selected)
+	content.add_child(_history_mission_option)
+	_history_text = RichTextLabel.new()
+	_history_text.name = "HistoryArchiveText"
+	_history_text.bbcode_enabled = true
+	_history_text.fit_content = false
+	_history_text.scroll_active = true
+	_history_text.selection_enabled = true
+	_history_text.custom_minimum_size = Vector2(880.0, 540.0)
+	_history_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_history_text.add_theme_color_override(
+		"default_color", Color(0.92, 0.92, 0.84)
+	)
+	content.add_child(_history_text)
+	var footer := HBoxContainer.new()
+	footer.alignment = BoxContainer.ALIGNMENT_CENTER
+	footer.add_theme_constant_override("separation", 12)
+	content.add_child(footer)
+	_history_return_button = _add_button(
+		footer, tr("UI_RETURN"), _return_from_history_archive
+	)
+
+
+func _refresh_history_selector() -> void:
+	if _history_mission_option == null:
+		return
+	_history_mission_option.clear()
+	for entry: Dictionary in _history_entries:
+		var mission_id := str(entry.get("id", ""))
+		_history_mission_option.add_item(
+			str(entry.get("title", mission_id.to_upper()))
+		)
+		_history_mission_option.set_item_metadata(
+			_history_mission_option.item_count - 1,
+			mission_id,
+		)
+	_select_history_mission(_current_level_id)
+
+
+func _select_history_mission(mission_id: String) -> void:
+	if _history_mission_option == null:
+		return
+	for index: int in range(_history_mission_option.item_count):
+		if str(_history_mission_option.get_item_metadata(index)) == mission_id:
+			_history_mission_option.select(index)
+			return
+	if _history_mission_option.item_count > 0:
+		_history_mission_option.select(0)
+
+
+func _on_history_mission_selected(_index: int) -> void:
+	_update_history_text()
+
+
+func _selected_history_mission() -> String:
+	if _history_mission_option == null or _history_mission_option.selected < 0:
+		return ""
+	return str(
+		_history_mission_option.get_item_metadata(_history_mission_option.selected)
+	)
+
+
+func _update_history_text() -> void:
+	if _history_text == null:
+		return
+	var mission_id := _selected_history_mission()
+	var text := str(
+		_history_formatted_entries.get(mission_id, tr("UI_NO_HISTORY_ENTRY"))
+	)
+	if mission_id == _current_level_id and not _victory_debrief.is_empty():
+		text = "%s\n\n[hr]\n\n%s" % [text, _victory_debrief]
+	_history_text.text = text
+	_history_text.scroll_to_line(0)
+
+
+func _return_from_history_archive() -> void:
+	_enter_mode(_history_return_mode)
 
 
 func _build_classic_pause_menu() -> void:
@@ -2460,7 +3479,7 @@ func _build_settings_panel() -> void:
 		_control_buttons[action] = button
 		sections.add_child(row)
 	_settings_status = Label.new()
-	_settings_status.text = "点击任一按键按钮进行重映射；Backspace 取消等待"
+	_settings_status.text = tr("UI_REMAP_PROMPT")
 	_settings_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_settings_status.add_theme_color_override("font_color", Color(0.86, 0.82, 0.67))
 	content.add_child(_settings_status)
@@ -2496,6 +3515,77 @@ func _add_audio_channel_row(parent: Control, channel: String) -> void:
 		_master_volume_slider = slider
 		_volume_value_label = value_label
 	parent.add_child(row)
+
+
+func _build_value_slider_row(
+	label_text: String,
+	minimum: float,
+	maximum: float,
+	step: float,
+	initial: float,
+	callback: Callable,
+) -> Dictionary:
+	var row := HBoxContainer.new()
+	var label := Label.new()
+	label.text = label_text
+	label.custom_minimum_size.x = 115.0
+	row.add_child(label)
+	var slider := HSlider.new()
+	slider.min_value = minimum
+	slider.max_value = maximum
+	slider.step = step
+	slider.value = initial
+	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	slider.value_changed.connect(callback)
+	row.add_child(slider)
+	var value_label := Label.new()
+	value_label.custom_minimum_size.x = 64.0
+	value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	row.add_child(value_label)
+	return {
+		"row": row,
+		"label": label,
+		"slider": slider,
+		"value_label": value_label,
+	}
+
+
+func _add_custom_difficulty_slider(
+	parent: Control,
+	key: String,
+	label_text: String,
+	minimum: float,
+	maximum: float,
+	step: float,
+) -> void:
+	var result := _build_value_slider_row(
+		label_text, minimum, maximum, step, 1.0, _on_setting_changed
+	)
+	var row := result["row"] as Control
+	var name_label := row.get_child(0) as Label
+	_custom_difficulty_name_labels[key] = name_label
+	_custom_difficulty_sliders[key] = result["slider"] as HSlider
+	_custom_difficulty_labels[key] = result["value_label"] as Label
+	_custom_difficulty_rows.append(row)
+	parent.add_child(row)
+
+
+func _custom_difficulty_snapshot() -> Dictionary:
+	var fallback := (
+		settings.get("custom_difficulty", {}) as Dictionary
+	).duplicate(true)
+	for custom_key: String in _custom_difficulty_sliders:
+		fallback[custom_key] = float(
+			(_custom_difficulty_sliders[custom_key] as HSlider).value
+		)
+	return fallback
+
+
+func _update_custom_difficulty_visibility() -> void:
+	var custom_visible := _selected_difficulty_mode() == "custom"
+	for row: Control in _custom_difficulty_rows:
+		if row != null:
+			row.visible = custom_visible
 
 
 func _build_map_panel() -> void:

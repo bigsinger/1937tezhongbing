@@ -14,6 +14,8 @@ var terrain_texture: Texture2D
 var world_size := Vector2.ONE
 var actor_markers: Array[Dictionary] = []
 var mission_markers: Array[Dictionary] = []
+var actor_markers_by_id: Dictionary = {}
+var mission_markers_by_id: Dictionary = {}
 var camera_world_rect := Rect2()
 var map_dragging := false
 
@@ -27,8 +29,8 @@ func configure(
 ) -> void:
 	terrain_texture = new_terrain_texture
 	world_size = new_world_size.max(Vector2.ONE)
-	actor_markers = new_actor_markers.duplicate(true)
-	mission_markers = new_mission_markers.duplicate(true)
+	_replace_marker_set(new_actor_markers, true)
+	_replace_marker_set(new_mission_markers, false)
 	camera_world_rect = new_camera_world_rect
 	queue_redraw()
 
@@ -42,9 +44,62 @@ func update_markers(
 	new_actor_markers: Array[Dictionary],
 	new_mission_markers: Array[Dictionary],
 ) -> void:
-	actor_markers = new_actor_markers.duplicate(true)
-	mission_markers = new_mission_markers.duplicate(true)
-	queue_redraw()
+	var actors_changed := _merge_marker_set(new_actor_markers, true)
+	var missions_changed := _merge_marker_set(new_mission_markers, false)
+	if actors_changed or missions_changed:
+		queue_redraw()
+
+
+func _replace_marker_set(markers: Array[Dictionary], actors: bool) -> void:
+	var target := actor_markers_by_id if actors else mission_markers_by_id
+	target.clear()
+	for index: int in range(markers.size()):
+		var marker := markers[index].duplicate()
+		target[_marker_id(marker, index)] = marker
+	if actors:
+		actor_markers = _marker_values(target)
+	else:
+		mission_markers = _marker_values(target)
+
+
+func _merge_marker_set(markers: Array[Dictionary], actors: bool) -> bool:
+	var target := actor_markers_by_id if actors else mission_markers_by_id
+	var observed: Dictionary = {}
+	var changed := false
+	for index: int in range(markers.size()):
+		var marker := markers[index]
+		var marker_id := _marker_id(marker, index)
+		observed[marker_id] = true
+		var previous_value: Variant = target.get(marker_id)
+		if previous_value is Dictionary and previous_value == marker:
+			continue
+		target[marker_id] = marker.duplicate()
+		changed = true
+	for marker_id_value: Variant in target.keys():
+		if observed.has(marker_id_value):
+			continue
+		target.erase(marker_id_value)
+		changed = true
+	if changed:
+		if actors:
+			actor_markers = _marker_values(target)
+		else:
+			mission_markers = _marker_values(target)
+	return changed
+
+
+func _marker_values(source: Dictionary) -> Array[Dictionary]:
+	var keys := source.keys()
+	keys.sort()
+	var result: Array[Dictionary] = []
+	for key: Variant in keys:
+		result.append(source[key] as Dictionary)
+	return result
+
+
+func _marker_id(marker: Dictionary, fallback_index: int) -> String:
+	var explicit := str(marker.get("id", ""))
+	return explicit if not explicit.is_empty() else "legacy:%d" % fallback_index
 
 
 func _gui_input(event: InputEvent) -> void:

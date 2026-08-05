@@ -46,7 +46,8 @@ func _exercise_branch(branch: Dictionary) -> void:
 	main.set_physics_process(false)
 	main.runtime_settings["show_briefings"] = false
 	main.runtime_settings["mission_rule_mode"] = "stable_mod"
-	main.runtime_settings["difficulty_mode"] = "original"
+	main.runtime_settings["ruleset_mode"] = "classic"
+	main.runtime_settings["difficulty_mode"] = "normal"
 	main.legacy_crt_random_trace_enabled = true
 	var trace_started := bool(main.begin_legacy_crt_random_parity_trace())
 	main.switch_level(0, false, false)

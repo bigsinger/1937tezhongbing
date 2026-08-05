@@ -17,10 +17,16 @@
 |---|---|
 | [![MapEditor 可视化编辑器](Screenshots/MapEditor-module-overview.jpg)](Screenshots/MapEditor-module-overview.jpg) | [![Mod 现代启动中心](Screenshots/ModernLauncher-final.png)](Screenshots/ModernLauncher-final.png) |
 | **Patch：12 关现代启动中心** | **Remake：Godot 现代复刻工程** |
-| [![Patch 现代启动中心](Screenshots/Patch-modern-launcher.jpg)](Screenshots/Patch-modern-launcher.jpg) | [![Remake 运行时研究原型](Screenshots/Remake-runtime-prototype.jpg)](Screenshots/Remake-runtime-prototype.jpg) |
+| [![Patch 现代启动中心](Screenshots/Patch-modern-launcher.jpg)](Screenshots/Patch-modern-launcher.jpg) | [![Remake 现代游戏界面](Screenshots/Remake-gameplay-hud.jpg)](Screenshots/Remake-gameplay-hud.jpg) |
 
 以上均为本机实际程序窗口截图；图片已在本地完成 OCR 检查和 JPEG 压缩，
 没有提交完整桌面或未压缩原图。
+
+| Remake：现代设置与辅助功能 | Remake：十二关历史档案 |
+|---|---|
+| [![现代设置与辅助功能](Screenshots/Remake-modern-settings.jpg)](Screenshots/Remake-modern-settings.jpg) | [![十二关历史档案](Screenshots/Remake-history-archive.jpg)](Screenshots/Remake-history-archive.jpg) |
+| **Remake：运行时诊断视图** | **Remake：真实关卡与原版 HUD** |
+| [![运行时诊断视图](Screenshots/Remake-developer-diagnostics.jpg)](Screenshots/Remake-developer-diagnostics.jpg) | [![真实关卡与原版 HUD](Screenshots/Remake-gameplay-hud.jpg)](Screenshots/Remake-gameplay-hud.jpg) |
 
 ## 直接玩增强版
 
@@ -89,6 +95,11 @@ cd .\Remake
 Remake\LocalBuild\1937Remake\Play-1937-Remake.cmd
 ```
 
+当前默认构建是自包含 `Copy` 便携版，并同时生成 ZIP、SHA-256、内容 manifest
+和构建元数据；不会依赖开发机目录联接。Remake 的现代化性能、显示、架构、
+操作、存档、辅助功能、AI/教育内容和最终验收见
+[`Remake/docs/现代化改造验收报告.md`](Remake/docs/现代化改造验收报告.md)。
+
 完全复刻不是“关卡能显示”就算完成。功能差距、证据规则、逐关通关矩阵和
 发布硬门禁见
 [`Remake/docs/MOD完全复刻开发实施方案.md`](Remake/docs/MOD完全复刻开发实施方案.md)；
@@ -101,10 +112,15 @@ Remake\LocalBuild\1937Remake\Play-1937-Remake.cmd
 `FLIPMISSION` 的进程内按键到胜利状态转换另有 720 项零差异对照。后者
 只证明胜利转换链，不作为非作弊完整通关证据；这一边界仍由机器可读 parity
 contract 强制保留。
-Remake 还已通过十二关双轮 600 秒真实窗口性能门禁：33,125 帧整体
-P95 18.389 ms、P99 20.714 ms、零个 >50 ms 帧，且不会控制系统鼠标。
+Remake 还已通过十二关双轮 600 秒真实窗口性能门禁：33,105 帧整体
+P95 17.604 ms、P99 19.363 ms、零个 >50 ms 帧，且不会控制系统鼠标。
 参考硬件与逐关数据见
 [`Remake/validation/baselines/remake/campaign-performance-1920x1080-v1.json`](Remake/validation/baselines/remake/campaign-performance-1920x1080-v1.json)。
+同一版本还通过了 31.81 分钟无交互稳定性验收：十二关循环 3 轮、
+103,576 帧，P95 19.296 ms、P99 24.874 ms，最大冷/热加载分别为
+3798/2943.9 ms，36 次存档和 36 次读档全部成功，第二轮内存净增长
+3.911 MiB；基线见
+[`Remake/validation/baselines/remake/stability-soak-30-minute-v1.json`](Remake/validation/baselines/remake/stability-soak-30-minute-v1.json)。
 十二关后续运行态取证、共用路线/静止计数器、追击关系、80° 环境粒子场和
 对应性能优化见
 [`Remake/docs/CRT_RUNTIME_STATE_BASELINE.md`](Remake/docs/CRT_RUNTIME_STATE_BASELINE.md)。

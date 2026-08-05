@@ -539,9 +539,10 @@ func _test_compact_biped_navigation_footprints() -> void:
 	_expect(
 		SQUAD_UNIT.runtime_actor_uses_compact_biped_navigation(1)
 			and SQUAD_UNIT.runtime_actor_uses_compact_biped_navigation(27)
+			and SQUAD_UNIT.runtime_actor_uses_compact_biped_navigation(56)
 			and not SQUAD_UNIT.runtime_actor_uses_compact_biped_navigation(14)
 			and not SQUAD_UNIT.runtime_actor_uses_compact_biped_navigation(28),
-		"human actors use a stable compact navigation footprint while motorcycles and large props retain authored masks",
+		"human and military-dog actors use a stable compact navigation footprint while motorcycles and large props retain authored masks",
 	)
 
 
