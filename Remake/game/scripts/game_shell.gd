@@ -2146,7 +2146,7 @@ func _build_menu_panel() -> void:
 	difficulty_row.add_child(_difficulty_option)
 	content.add_child(difficulty_row)
 	var difficulty_hint := Label.new()
-	difficulty_hint.text = "难度变更会保存，并在重新开始、下一关或读取对应存档时生效"
+	difficulty_hint.text = "难度仅调整敌军命中率；我方命中率固定。设置会保存，并在重新开始、下一关或读取存档时生效"
 	difficulty_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	difficulty_hint.add_theme_font_size_override("font_size", 13)
 	difficulty_hint.add_theme_color_override("font_color", Color(0.75, 0.77, 0.66))

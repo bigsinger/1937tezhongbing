@@ -7,6 +7,9 @@ const SMOOTH_CAMERA_PAN: Script = preload(
 	"res://scripts/smooth_camera_pan.gd"
 )
 const MISSION_PICKUP: Script = preload("res://scripts/mission_pickup.gd")
+const LEGACY_BURIAL_CACHE: Script = preload(
+	"res://scripts/legacy_burial_cache.gd"
+)
 const MAIN_SCRIPT: Script = preload("res://scripts/main.gd")
 const NAVIGATION_GRID_DATA: Script = preload(
 	"res://scripts/navigation_grid_data.gd"
@@ -21,17 +24,34 @@ var failures: Array[String] = []
 var checks := 0
 
 
+class AlwaysVisibleNavigation extends RefCounted:
+	func has_line_of_sight(
+		_unused_origin: Vector2,
+		_unused_target: Vector2,
+		_unused_ignored: Array = [],
+	) -> bool:
+		return true
+
+
 func _init() -> void:
+	call_deferred("_run")
+
+
+func _run() -> void:
 	_test_world_audio_attenuation()
 	_test_smooth_viewport_local_camera_pan()
 	_test_physics_render_interpolation()
 	_test_row_sliced_actor_has_no_fallback_artifact()
 	_test_inventory_drop_interaction()
 	_test_inventory_drops_reset_with_level()
+	_test_burial_cache_does_not_mask_loose_drops()
+	_test_modern_player_accuracy_and_lethal_melee()
 	_test_patrol_formation_separation()
 	_test_modern_patrol_leadership()
 	_test_patrol_speed_round_trip()
 	_test_readable_movement_animation_cadence()
+	_test_component_movement_carries_waypoint_time()
+	_test_single_pass_vision_clipping()
 	_test_compact_biped_navigation_footprints()
 	if failures.is_empty():
 		print("World engine improvement tests passed (%d checks)." % checks)
@@ -153,6 +173,13 @@ func _test_physics_render_interpolation() -> void:
 		)),
 		"physics-driven actors are interpolated between fixed 60 Hz simulation ticks",
 	)
+	_expect(
+		not bool(ProjectSettings.get_setting(
+			"application/boot_splash/show_image",
+			true,
+		)),
+		"the executable starts without an engine or legacy logo splash",
+	)
 
 
 func _test_row_sliced_actor_has_no_fallback_artifact() -> void:
@@ -216,6 +243,100 @@ func _test_inventory_drops_reset_with_level() -> void:
 		"restarting a level destroys every uncollected runtime drop",
 	)
 	main.free()
+
+
+func _test_burial_cache_does_not_mask_loose_drops() -> void:
+	var main = MAIN_SCRIPT.new()
+	var world_position := Vector2(96.0, 48.0)
+	var cache = LEGACY_BURIAL_CACHE.new()
+	cache.configure(world_position, 77, {}, {})
+	main.add_child(cache)
+	main.legacy_burial_caches.append(cache)
+	var pickup = MISSION_PICKUP.new()
+	pickup.configure(
+		{
+			"original_inventory_kind": "weapon",
+			"item_id": 37,
+			"quantity": 5,
+		},
+		world_position,
+	)
+	main.add_child(pickup)
+	main.mission_pickups.append(pickup)
+	_expect(
+		main.mission_inventory_pickup_at_world_point(world_position) == pickup
+			and not bool(main.call(
+				"_try_interact_burial_cache_at",
+				world_position,
+			)),
+		"an empty burial cache cannot intercept loose inventory dropped at the corpse position",
+	)
+	main.free()
+
+
+func _test_modern_player_accuracy_and_lethal_melee() -> void:
+	_expect(
+		is_equal_approx(SQUAD_UNIT.player_hit_chance_for_attack_type(1), 0.80)
+			and is_equal_approx(
+				SQUAD_UNIT.player_hit_chance_for_attack_type(2),
+				0.90,
+			)
+			and is_equal_approx(
+				SQUAD_UNIT.player_hit_chance_for_attack_type(4),
+				1.0,
+			),
+		"player pistol, rifle and melee accuracy is fixed at 80%, 90% and 100%",
+	)
+	var attacker = SQUAD_UNIT.new()
+	var target = SQUAD_UNIT.new()
+	root.add_child(attacker)
+	root.add_child(target)
+	attacker.scene_index = 11
+	attacker.faction_id = 3
+	attacker.runtime_actor_type = 4
+	attacker.position = Vector2.ZERO
+	attacker.dynamic_occupancy = AlwaysVisibleNavigation.new()
+	attacker.weapon_profile = {
+		"attack_type": 4,
+		"horizontal_range": 32.0,
+		"vertical_range": 16.0,
+		"requires_line_of_sight": true,
+		"damage": 1,
+		"direct_actor_hit_count": 1,
+		"ammo_per_attack": 1,
+		"alert_radius": 0.0,
+	}
+	attacker.infinite_ammo = true
+	attacker.modern_player_combat_rules_enabled = true
+	target.scene_index = 12
+	target.faction_id = 1
+	target.runtime_actor_type = 4
+	target.maximum_hit_points = 12
+	target.current_hit_points = 12
+	target.position = Vector2(24.0, 8.0)
+	_expect(
+		target.is_inside_tree() and target.is_combat_alive(),
+		"the melee fixture target is live in the test scene tree",
+	)
+	_expect(
+		SQUAD_UNIT.factions_are_hostile(attacker.faction_id, target.faction_id),
+		"the melee fixture uses hostile player/enemy factions",
+	)
+	_expect(
+		attacker.can_attack_target(target),
+		"the melee fixture is visible and inside its authored range",
+	)
+	var attack_started: bool = attacker.try_start_attack(target)
+	_expect(
+		attack_started and attacker.player_attack_attempt_serial == 1,
+		"a player melee attack starts inside the authored range and records one accuracy attempt",
+	)
+	_expect(
+		not target.is_alive and target.current_hit_points == 0,
+		"a player melee attack committed inside the authored range always kills at its hit frame",
+	)
+	attacker.free()
+	target.free()
 
 
 func _test_patrol_formation_separation() -> void:
@@ -357,6 +478,63 @@ func _test_readable_movement_animation_cadence() -> void:
 	)
 
 
+func _test_component_movement_carries_waypoint_time() -> void:
+	var unit = SQUAD_UNIT.new()
+	unit.position = Vector2.ZERO
+	unit.target_position = Vector2.ZERO
+	unit.uses_original_component_movement = true
+	unit.walk_step_components = Vector2(2.0, 1.0)
+	unit.is_running = false
+	unit.is_crawling = false
+	unit.move_speed = SQUAD_UNIT.WALK_SPEED
+	unit.use_continuous_waypoint_motion = true
+	unit.issue_path(PackedVector2Array([
+		Vector2(1.0, 0.5),
+		Vector2(2.0, 1.0),
+	]))
+	unit._physics_process(1.0 / 60.0)
+	_expect(
+		unit.position.is_equal_approx(Vector2(2.0, 1.0))
+			and unit.movement_path_index == 2,
+		"enemy-style component movement carries residual physics time across short A* waypoints",
+	)
+	unit.free()
+
+
+func _test_single_pass_vision_clipping() -> void:
+	var movement := PackedInt64Array()
+	var sight := PackedInt64Array()
+	movement.resize(15)
+	sight.resize(15)
+	sight[7] = 1
+	var navigation = NAVIGATION_GRID_DATA.create_for_tests(
+		5,
+		3,
+		Vector2i(32, 16),
+		movement,
+		sight,
+	)
+	var occupancy = DYNAMIC_OCCUPANCY_GRID.new()
+	occupancy.configure(navigation)
+	var origin := Vector2(16.0, 24.0)
+	var blocked_target := Vector2(144.0, 24.0)
+	var clipped: Vector2 = occupancy.clip_line_of_sight_ray(
+		origin,
+		blocked_target,
+	)
+	_expect(
+		clipped.x > origin.x
+			and clipped.x < 64.0
+			and is_equal_approx(clipped.y, origin.y)
+			and not occupancy.has_line_of_sight(origin, blocked_target),
+		"one-pass tactical vision clipping stops immediately before the first L2 wall cell",
+	)
+	var clear_target := Vector2(144.0, 8.0)
+	_expect(
+		occupancy.clip_line_of_sight_ray(origin - Vector2(0.0, 16.0), clear_target)
+			.is_equal_approx(clear_target),
+		"one-pass tactical vision clipping preserves an unobstructed fan ray",
+	)
 func _test_compact_biped_navigation_footprints() -> void:
 	_expect(
 		SQUAD_UNIT.runtime_actor_uses_compact_biped_navigation(1)

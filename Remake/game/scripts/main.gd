@@ -2784,6 +2784,9 @@ func spawn_squad() -> void:
 			false,
 			original_loadout.is_empty(),
 		)
+		# Only actors constructed in the player's command roster use the modern
+		# fixed accuracy model. Enemy/ambient subclasses keep their own rules.
+		unit.modern_player_combat_rules_enabled = true
 		if not original_loadout.is_empty():
 			for item_value: Variant in original_loadout.get("items", []):
 				if not item_value is Dictionary:
@@ -3932,6 +3935,7 @@ func _update_context_cursor(delta: float = 0.0) -> void:
 		original_force_target_held,
 		(
 			legacy_door_at_world_point(mouse_world) != null
+			or mission_inventory_pickup_at_world_point(mouse_world) != null
 			or field_pickup_at_world_point(mouse_world) != null
 		),
 		enemy_at_world_point(mouse_world) != null,
@@ -4316,15 +4320,18 @@ func _handle_original_left_click(
 		if unit.is_alive and unit.contains_parent_point(world_position):
 			handle_selection(world_position, additive)
 			return
+	# A dead actor drops its loose inventory before the corpse can be buried.
+	# Both objects intentionally share the same world coordinate, so resolve the
+	# recoverable loose item first; an empty actor-78 cache must never mask it.
+	var inventory_drop := mission_inventory_pickup_at_world_point(world_position)
+	if inventory_drop != null:
+		issue_original_pickup_order(inventory_drop)
+		return
 	if _try_interact_burial_cache_at(world_position):
 		return
 	if _try_open_legacy_door_at(world_position):
 		return
 	if _try_issue_legacy_world_object_deployment(world_position):
-		return
-	var inventory_drop := mission_inventory_pickup_at_world_point(world_position)
-	if inventory_drop != null:
-		issue_original_pickup_order(inventory_drop)
 		return
 	var field_pickup := field_pickup_at_world_point(world_position)
 	if field_pickup != null:
@@ -4778,6 +4785,7 @@ func _try_interact_burial_cache_at(world_position: Vector2) -> bool:
 	for candidate: Node2D in legacy_burial_caches:
 		if (
 			is_instance_valid(candidate)
+			and bool(candidate.call("has_loot"))
 			and bool(candidate.call("contains_parent_point", world_position))
 		):
 			cache = candidate

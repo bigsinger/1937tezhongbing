@@ -1176,10 +1176,10 @@ func _init() -> void:
 	expect(
 		(
 			enemy_fixture.tactical_range_cache_rebuild_count == 1
-			and first_tactical_outline.size() == 12
-			and enemy_fixture.tactical_inner_outline.size() == 12
+			and first_tactical_outline.size() == 13
+			and enemy_fixture.tactical_inner_outline.size() == 13
 		),
-		"opening tactical sight precomputes only the two original visibility outlines once",
+		"opening tactical sight precomputes two closed visibility outlines once",
 		failures,
 	)
 	enemy_fixture._advance_tactical_range_cache(0.1)

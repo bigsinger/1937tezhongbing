@@ -124,6 +124,7 @@ func rescue(rescuer: Node2D) -> bool:
 	else:
 		follow_target = null
 	follow_repath_elapsed = FOLLOW_REPATH_SECONDS
+	modern_player_combat_rules_enabled = is_player_commandable()
 	rescued.emit(self, rescuer)
 	queue_redraw()
 	return true

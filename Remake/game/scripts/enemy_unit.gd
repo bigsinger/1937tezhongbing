@@ -67,10 +67,6 @@ const TACTICAL_RANGE_CELL_SIZE := Vector2(32.0, 16.0)
 ## lands within roughly one original isometric cell of it. A partial A* route
 ## stopped by a wall then falls through to the next compact candidate.
 const EDITORIAL_SEARCH_ENDPOINT_TOLERANCE := 48.0
-## Editorial accuracy model. The original executable's exact miss formula has
-## not been recovered; this bounded base chance makes the authored per-level
-## aim-error curve affect real hit resolution without pretending otherwise.
-const EDITORIAL_BASE_AIM_MISS_CHANCE := 0.10
 
 enum BehaviorState {
 	PATROL,
@@ -195,6 +191,7 @@ var mission_ai_coordinator: Node
 ## profile configures it.  Original-parity mode therefore uses the recovered
 ## hit/damage path without a remake-only random miss layer.
 var editorial_aim_error_multiplier := 0.0
+var editorial_hit_chance := 1.0
 var editorial_reaction_multiplier := 1.0
 var editorial_regroup_seconds := 0.0
 var editorial_regroup_multiplier := 1.0
@@ -278,6 +275,9 @@ func configure_enemy(
 		authored_start_position,
 	)
 	configure_runtime_actor_type(entity)
+	# Patrol actors traverse short A* cell segments continuously so their
+	# physical motion no longer pauses for a frame at every waypoint.
+	use_continuous_waypoint_motion = true
 	move_speed = STABLE_MOD_BASE_PATROL_SPEED
 	blocked_replan_seconds = 0.65 + float(posmod(scene_index * 11, 8)) * 0.05
 	patrol_path_retry_seconds = (
@@ -288,10 +288,9 @@ func configure_enemy(
 	# maps can contain about one hundred active actors, and issuing every A* query
 	# in the same frame creates an avoidable startup spike.
 	path_request_delay_remaining = float(posmod(scene_index * 37, 24)) / 60.0
-	# Detection starts on the recovered common 0.20-second boundary. Offsetting
-	# individual guards made an extra m000 observer engage before the stable MOD
-	# contact checkpoint, so sensing cadence is gameplay state, not a rendering
-	# optimization point.
+	# Detection cadence is gameplay state: guards retain the recovered common
+	# 0.20-second boundary. Presentation-only LOS clipping is optimized below
+	# without changing when an enemy is allowed to observe a player.
 	sense_elapsed = 0.0
 	original_direction_index = original_native_initial_facing_direction(
 		int(entity.get("direction_index", 1))
@@ -532,6 +531,19 @@ func configure_editorial_ai(
 	editorial_aim_error_multiplier = maxf(
 		0.0, float(applied_values.get("aim_error_multiplier", 1.0))
 	)
+	var legacy_fallback_hit_chance := 1.0 - clampf(
+		0.10 * editorial_aim_error_multiplier,
+		0.0,
+		0.45,
+	)
+	editorial_hit_chance = clampf(
+		float(applied_values.get(
+			"enemy_hit_chance",
+			legacy_fallback_hit_chance,
+		)),
+		0.0,
+		1.0,
+	)
 	editorial_reaction_multiplier = maxf(
 		0.01, float(applied_values.get("reaction_time_multiplier", 1.0))
 	)
@@ -570,36 +582,12 @@ func apply_editorial_ai_posture(posture: String, tags: Array[String] = []) -> vo
 	path_request_delay_remaining = 0.0
 
 
-func editorial_aim_miss_chance(target: Node2D) -> float:
-	# Aim dispersion is a ranged-fire concept; recovered melee/special contact
-	# actions keep their existing deterministic hit rules.
-	if int(weapon_profile.get("attack_type", 0)) in [4, 5, 8, 10, 11]:
+func editorial_aim_miss_chance(_target: Node2D) -> float:
+	# Deployable/special actions are not accuracy rolls. Ordinary enemy melee
+	# and ranged attacks all use the same selected difficulty probability.
+	if int(weapon_profile.get("attack_type", 0)) in [8, 10, 11]:
 		return 0.0
-	var range_factor := 1.0
-	if target != null and is_instance_valid(target):
-		var horizontal_range := maxf(
-			float(weapon_profile.get("horizontal_range", 1.0)), 1.0
-		)
-		var vertical_range := maxf(
-			float(weapon_profile.get("vertical_range", 1.0)), 1.0
-		)
-		var offset := target.position - position
-		var normalized_range := clampf(
-			sqrt(
-				offset.x * offset.x / (horizontal_range * horizontal_range)
-				+ offset.y * offset.y / (vertical_range * vertical_range)
-			),
-			0.0,
-			1.0,
-		)
-		range_factor = lerpf(0.60, 1.35, normalized_range)
-	return clampf(
-		EDITORIAL_BASE_AIM_MISS_CHANCE
-		* editorial_aim_error_multiplier
-		* range_factor,
-		0.0,
-		0.45,
-	)
+	return 1.0 - clampf(editorial_hit_chance, 0.0, 1.0)
 
 
 func will_editorial_attack_miss(target: Node2D, attack_serial: int = -1) -> bool:
@@ -2340,6 +2328,7 @@ func editorial_ai_state_snapshot() -> Dictionary:
 	return {
 		"search_role": editorial_search_role,
 		"search_command_serial": editorial_search_command_serial,
+		"hit_chance": editorial_hit_chance,
 	}
 
 
@@ -2351,6 +2340,12 @@ func restore_editorial_ai_state(state: Dictionary) -> bool:
 		int(state.get("search_command_serial", 0)),
 		0,
 	)
+	if state.has("hit_chance"):
+		editorial_hit_chance = clampf(
+			float(state.get("hit_chance", editorial_hit_chance)),
+			0.0,
+			1.0,
+		)
 	return true
 
 
@@ -3122,19 +3117,19 @@ func _draw() -> void:
 
 
 func _draw_tactical_ranges() -> void:
-	# The red and green fans deliberately draw only outlines.  Their expensive
+	# The green far band and red near band deliberately draw only outlines. Their
 	# L2 clipping was already cached outside the CanvasItem draw callback.
 	if tactical_outer_outline.size() >= 3:
 		draw_polyline(
 			tactical_outer_outline,
-			Color(0.92, 0.22, 0.16, 0.74),
+			Color(0.20, 0.96, 0.42, 0.82),
 			1.5,
 			true,
 		)
 	if tactical_inner_outline.size() >= 3:
 		draw_polyline(
 			tactical_inner_outline,
-			Color(0.20, 0.96, 0.42, 0.88),
+			Color(0.92, 0.22, 0.16, 0.90),
 			1.5,
 			true,
 		)
@@ -3175,9 +3170,9 @@ func _refresh_tactical_range_cache(force: bool) -> bool:
 			0.1,
 			1.0,
 		)
-		# Commandos-style directional perception: green is detectable while the
-		# target stands, red is the outer band that needs a prone target. Every
-		# ray stops at the first L2 sight obstruction, so walls cut the fan.
+		# Commandos-style directional perception: the far band is green (a prone
+		# target is concealed) and the near band is red (prone or standing is
+		# detected). Every ray stops at the first L2 obstruction, so walls cut it.
 		tactical_outer_outline = _visibility_fan_points(vision_radii, 1.0)
 		tactical_inner_outline = _visibility_fan_points(
 			vision_radii,
@@ -3211,16 +3206,26 @@ func _visibility_fan_points(
 		var candidate := Vector2(cos(deg_to_rad(degrees)) * radii.x * ratio, sin(deg_to_rad(degrees)) * radii.y * ratio)
 		var endpoint := _clip_vision_ray(candidate)
 		points.append(endpoint)
+	points.append(Vector2.ZERO)
 	return points
 
 func _clip_vision_ray(candidate: Vector2) -> Vector2:
 	if dynamic_occupancy == null:
 		return candidate
-	var accepted := Vector2.ZERO
-	const STEPS := 8
-	for step: int in range(1, STEPS + 1):
-		var probe := candidate * (float(step) / float(STEPS))
-		if not dynamic_occupancy.has_line_of_sight(position, position + probe, [scene_index]):
-			break
-		accepted = probe
-	return accepted
+	if dynamic_occupancy.has_method("clip_line_of_sight_ray"):
+		var clipped: Vector2 = dynamic_occupancy.call(
+			"clip_line_of_sight_ray",
+			position,
+			position + candidate,
+			[scene_index],
+		)
+		return clipped - position
+	return (
+		candidate
+		if dynamic_occupancy.has_line_of_sight(
+			position,
+			position + candidate,
+			[scene_index],
+		)
+		else Vector2.ZERO
+	)

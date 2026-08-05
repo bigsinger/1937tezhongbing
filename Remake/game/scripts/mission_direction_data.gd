@@ -406,31 +406,26 @@ static func difficulty_for_mode(profile: Dictionary, mode: String) -> Dictionary
 		result["sense_radius_multiplier"] = 1.0
 		result["shared_alert_radius_multiplier"] = 1.0
 		result["reinforcement_budget"] = 0
+		result["enemy_hit_chance"] = 1.0
 		result["difficulty_mode"] = mode
 		result["original_parity"] = true
 		return result
-	var factor := 1.0
+	var enemy_hit_chance := 0.0
 	match mode:
 		"easy":
-			factor = 0.85
+			enemy_hit_chance = 0.55
 		"hard":
-			factor = 1.15
+			enemy_hit_chance = 0.85
 		"normal":
-			factor = 1.0
+			enemy_hit_chance = 0.70
 		_:
 			return {}
+	# Global difficulty changes only hostile accuracy. Character health, damage,
+	# patrol speed, perception, reaction timing and reinforcement budgets remain
+	# the level-authored values in every modern mode, so choosing a difficulty
+	# never changes the player's own combat rules or silently rewrites the map.
 	result["original_parity"] = false
-	result["enemy_health_multiplier"] = float(profile.get("enemy_health_multiplier", 1.0)) * factor
-	result["enemy_damage_multiplier"] = float(profile.get("enemy_damage_multiplier", 1.0)) * factor
-	result["patrol_speed_multiplier"] = float(profile.get("patrol_speed_multiplier", 1.0)) * lerpf(1.0, factor, 0.45)
-	result["sense_radius_multiplier"] = float(profile.get("sense_radius_multiplier", 1.0)) * lerpf(1.0, factor, 0.40)
-	result["shared_alert_radius_multiplier"] = float(profile.get("shared_alert_radius_multiplier", 1.0)) * lerpf(1.0, factor, 0.60)
-	# Higher reaction-time and aim-error multipliers make enemies less lethal, so
-	# their global difficulty scaling is deliberately inverted.
-	result["reaction_time_multiplier"] = float(profile.get("reaction_time_multiplier", 1.0)) / factor
-	result["aim_error_multiplier"] = float(profile.get("aim_error_multiplier", 1.0)) / factor
-	var budget := int(profile.get("reinforcement_budget", 0))
-	result["reinforcement_budget"] = maxi(0, roundi(float(budget) * factor))
+	result["enemy_hit_chance"] = enemy_hit_chance
 	result["difficulty_mode"] = mode
 	return result
 
@@ -446,6 +441,7 @@ static func apply_enemy_scalars(
 		"damage": maxf(0.0, base_damage * float(profile.get("enemy_damage_multiplier", 1.0))),
 		"reaction_seconds": maxf(0.01, base_reaction_seconds * float(profile.get("reaction_time_multiplier", 1.0))),
 		"aim_error_multiplier": maxf(0.0, float(profile.get("aim_error_multiplier", 1.0))),
+		"enemy_hit_chance": clampf(float(profile.get("enemy_hit_chance", 1.0)), 0.0, 1.0),
 		"patrol_speed_multiplier": maxf(0.0, float(profile.get("patrol_speed_multiplier", 1.0))),
 		"sense_radius_multiplier": maxf(0.0, float(profile.get("sense_radius_multiplier", 1.0))),
 		"shared_alert_radius_multiplier": maxf(0.0, float(profile.get("shared_alert_radius_multiplier", 1.0))),

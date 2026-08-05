@@ -1934,6 +1934,127 @@ func _can_traverse(
 	return true
 
 
+func clip_line_of_sight_ray(
+	world_origin: Vector2,
+	world_target: Vector2,
+	scene_indices_to_ignore: Array = [],
+) -> Vector2:
+	# Traverse the sight grid once and return the last visible point immediately
+	# before the first blocking cell. The former tactical-fan renderer ran a full
+	# LOS query eight times per ray; this single supercover pass is both more
+	# accurate at wall edges and substantially cheaper for many visible guards.
+	if navigation == null:
+		return world_origin
+	var ignored: Dictionary = {}
+	for scene_index_value: Variant in scene_indices_to_ignore:
+		ignored[int(scene_index_value)] = true
+	var start: Vector2i = navigation.world_to_cell(world_origin)
+	var finish: Vector2i = navigation.world_to_cell(world_target)
+	if not navigation.is_valid_cell(start):
+		return world_origin
+	var x: int = start.x
+	var y: int = start.y
+	var delta_x := absi(finish.x - start.x)
+	var delta_y := absi(finish.y - start.y)
+	var step_x := 1 if x < finish.x else -1
+	var step_y := 1 if y < finish.y else -1
+	var error := delta_x - delta_y
+	while true:
+		var cell := Vector2i(x, y)
+		if _sight_blocked(cell, ignored):
+			return _clip_world_ray_before_cell(
+				world_origin,
+				world_target,
+				cell,
+			)
+		if x == finish.x and y == finish.y:
+			return world_target
+		var doubled_error := error * 2
+		var moves_horizontally := doubled_error > -delta_y
+		var moves_vertically := doubled_error < delta_x
+		if moves_horizontally and moves_vertically:
+			var horizontal_cell := Vector2i(x + step_x, y)
+			var vertical_cell := Vector2i(x, y + step_y)
+			var horizontal_blocked := _sight_blocked(
+				horizontal_cell,
+				ignored,
+			)
+			var vertical_blocked := _sight_blocked(vertical_cell, ignored)
+			if horizontal_blocked or vertical_blocked:
+				var blocking_cell := (
+					horizontal_cell
+					if horizontal_blocked
+					else vertical_cell
+				)
+				if horizontal_blocked and vertical_blocked:
+					var horizontal_clip := _clip_world_ray_before_cell(
+						world_origin,
+						world_target,
+						horizontal_cell,
+					)
+					var vertical_clip := _clip_world_ray_before_cell(
+						world_origin,
+						world_target,
+						vertical_cell,
+					)
+					blocking_cell = (
+						horizontal_cell
+						if world_origin.distance_squared_to(horizontal_clip)
+						<= world_origin.distance_squared_to(vertical_clip)
+						else vertical_cell
+					)
+				return _clip_world_ray_before_cell(
+					world_origin,
+					world_target,
+					blocking_cell,
+				)
+		if moves_horizontally:
+			error -= delta_y
+			x += step_x
+		if moves_vertically:
+			error += delta_x
+			y += step_y
+	return world_target
+
+
+func _clip_world_ray_before_cell(
+	world_origin: Vector2,
+	world_target: Vector2,
+	cell: Vector2i,
+) -> Vector2:
+	var grid_size := Vector2(navigation.cell_size)
+	var minimum := Vector2(
+		float(cell.x) * grid_size.x,
+		float(cell.y) * grid_size.y,
+	)
+	var maximum := minimum + grid_size
+	var ray := world_target - world_origin
+	var entry := 0.0
+	if absf(ray.x) > 0.000001:
+		entry = maxf(
+			entry,
+			minf(
+				(minimum.x - world_origin.x) / ray.x,
+				(maximum.x - world_origin.x) / ray.x,
+			),
+		)
+	elif world_origin.x < minimum.x or world_origin.x > maximum.x:
+		return world_origin
+	if absf(ray.y) > 0.000001:
+		entry = maxf(
+			entry,
+			minf(
+				(minimum.y - world_origin.y) / ray.y,
+				(maximum.y - world_origin.y) / ray.y,
+			),
+		)
+	elif world_origin.y < minimum.y or world_origin.y > maximum.y:
+		return world_origin
+	var longest_component := maxf(absf(ray.x), absf(ray.y))
+	var padding := 0.0 if longest_component <= 0.0 else 0.75 / longest_component
+	return world_origin + ray * clampf(entry - padding, 0.0, 1.0)
+
+
 func _diagonal_transition_is_clear(
 	scene_index: int,
 	from_origin: Vector2i,

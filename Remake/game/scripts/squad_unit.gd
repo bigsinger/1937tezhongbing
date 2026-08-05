@@ -9,6 +9,9 @@ const BASE_SPRITE_TICK_SECONDS := 0.085
 ## therefore about 0.56 seconds instead of the former 0.08..0.12 seconds.
 const MODERN_MOVEMENT_MIN_FRAME_SECONDS := 1.0 / 18.0
 const MODERN_MOVEMENT_MAX_FRAME_SECONDS := 0.14
+const PLAYER_PISTOL_HIT_CHANCE := 0.80
+const PLAYER_RIFLE_HIT_CHANCE := 0.90
+const PLAYER_MELEE_HIT_CHANCE := 1.0
 ## A timestamped process-local trace of 710 consecutive m000 update rounds
 ## measured a 16.686 ms steady interval (59.930 Hz). Observation-marker and
 ## primary candidate-scan rand() calls therefore follow the 60 Hz actor
@@ -132,6 +135,10 @@ var target_position: Vector2
 var movement_path := PackedVector2Array()
 var movement_path_index := 0
 var was_moving := false
+## Enemy patrols opt into consuming the unused fraction of a physics tick
+## across short A* waypoints. Player actors keep the recovered command-motion
+## cadence so the modern smoothing cannot alter click-to-route semantics.
+var use_continuous_waypoint_motion := false
 var blocked_elapsed := 0.0
 var blocked_replan_seconds := DEFAULT_REPLAN_BLOCKED_SECONDS
 var is_crawling := false
@@ -300,6 +307,11 @@ var reload_remaining := 0.0
 var pending_hit_target: Node2D
 var pending_hit_forced := false
 var pending_hit_resolved := false
+## Enabled only for actors placed in the player's command roster. Keeping the
+## switch explicit prevents the clean modern accuracy model from leaking into
+## imported enemy/ambient parity actors that share this base class.
+var modern_player_combat_rules_enabled := false
+var player_attack_attempt_serial := 0
 var hurt_remaining := 0.0
 var death_emitted := false
 var combat_inventory: RefCounted
@@ -444,6 +456,7 @@ func configure(
 	movement_path.clear()
 	movement_path_index = 0
 	was_moving = false
+	use_continuous_waypoint_motion = false
 	blocked_elapsed = 0.0
 	dynamic_registered = false
 	active_sprite_footprint_key = ""
@@ -2766,6 +2779,7 @@ func configure_combat(
 	pending_hit_target = null
 	pending_hit_forced = false
 	pending_hit_resolved = false
+	player_attack_attempt_serial = 0
 	hurt_remaining = 0.0
 	death_emitted = false
 	queue_redraw()
@@ -3534,6 +3548,8 @@ func try_start_attack(target: Node2D, force_target: bool = false) -> bool:
 	pending_hit_target = target
 	pending_hit_forced = forced
 	pending_hit_resolved = false
+	if modern_player_combat_rules_enabled:
+		player_attack_attempt_serial += 1
 	# Native sub_457B40 has no independent recovery counter. The authored SPR
 	# sequence itself owns the attack cadence and returns idle on final-frame
 	# entry; keep this compatibility field normalized to zero.
@@ -3660,9 +3676,9 @@ func _physics_process(delta: float) -> void:
 			candidate_position = segment["position"] as Vector2
 			if bool(segment["reached"]):
 				candidate_path_index += 1
-			# RuntimeActor chooses its next grid cell only on the following
-			# 60 Hz update. Any unused part of this tick is intentionally not
-			# carried into the next waypoint.
+			# Enemy patrols preserve the unused fraction of a physics tick when a
+			# short segment reaches an A* waypoint. Player actors deliberately retain
+			# the recovered one-cell-per-update command cadence.
 			if (
 				candidate_position != next_position
 				and dynamic_occupancy != null
@@ -3678,7 +3694,11 @@ func _physics_process(delta: float) -> void:
 			next_position = candidate_position
 			next_path_index = candidate_path_index
 			remaining_seconds = maxf(
-				remaining_seconds - substep_seconds,
+				remaining_seconds - (
+					float(segment["seconds_used"])
+					if use_continuous_waypoint_motion
+					else substep_seconds
+				),
 				0.0,
 			)
 	else:
@@ -4063,9 +4083,17 @@ func _resolve_pending_hit() -> void:
 	if pending_hit_resolved:
 		return
 	pending_hit_resolved = true
-	if not can_attack_target(pending_hit_target, pending_hit_forced):
-		return
 	var attack_type := int(weapon_profile.get("attack_type", 0))
+	if not _can_resolve_pending_hit(attack_type):
+		return
+	if (
+		modern_player_combat_rules_enabled
+		and not modern_player_attack_will_hit(
+			attack_type,
+			player_attack_attempt_serial,
+		)
+	):
+		return
 	if LEGACY_DISGUISE_RULES.attack_can_break_disguise(
 		runtime_actor_type,
 		attack_type,
@@ -4120,6 +4148,19 @@ func _resolve_pending_hit() -> void:
 		runtime_actor_type,
 		int(weapon_profile.get("damage", 1)),
 	)
+	if (
+		modern_player_combat_rules_enabled
+		and attack_type in [4, 5]
+		and not _is_destructible_world_target(pending_hit_target)
+	):
+		# A knife/broadsword swing can begin only after the ordinary range and
+		# LOS gate succeeds. Once committed, it is a guaranteed lethal takedown
+		# even if the moving victim leaves the tiny 32x16 ellipse before the
+		# authored animation reaches its hit frame.
+		damage = maxi(
+			damage,
+			int(pending_hit_target.get("current_hit_points")),
+		)
 	var direct_hit_count: int = LEGACY_COMBAT_RULES.direct_actor_hit_count(attack_type)
 	for unused_shot in range(direct_hit_count):
 		if not _target_is_alive(pending_hit_target):
@@ -4127,6 +4168,73 @@ func _resolve_pending_hit() -> void:
 		var applied := int(pending_hit_target.call("take_damage", damage, self))
 		if applied > 0:
 			attack_hit.emit(self, pending_hit_target, attack_type, applied)
+
+
+func _can_resolve_pending_hit(attack_type: int) -> bool:
+	if (
+		not modern_player_combat_rules_enabled
+		or attack_type not in [4, 5]
+	):
+		return can_attack_target(pending_hit_target, pending_hit_forced)
+	# Melee was fully validated at attack start. Retain the living/hostility
+	# checks, but do not let normal target movement turn a committed 100% strike
+	# into a miss at the delayed sprite hit frame.
+	return (
+		is_alive
+		and _target_is_alive(pending_hit_target)
+		and (
+			pending_hit_forced
+			or factions_are_hostile(
+				faction_id,
+				int(pending_hit_target.get("faction_id")),
+			)
+			or _is_destructible_world_target(pending_hit_target)
+		)
+	)
+
+
+static func player_hit_chance_for_attack_type(attack_type: int) -> float:
+	match attack_type:
+		1:
+			return PLAYER_PISTOL_HIT_CHANCE
+		2:
+			return PLAYER_RIFLE_HIT_CHANCE
+		4, 5:
+			return PLAYER_MELEE_HIT_CHANCE
+		_:
+			# No speculative miss model is added to the other recovered tools and
+			# special actions until their intended modern behavior is designed.
+			return 1.0
+
+
+func modern_player_attack_will_hit(
+	attack_type: int,
+	attack_serial: int = -1,
+) -> bool:
+	var serial := (
+		player_attack_attempt_serial
+		if attack_serial < 0
+		else attack_serial
+	)
+	return deterministic_player_accuracy_sample(
+		scene_index,
+		serial,
+		attack_type,
+	) < player_hit_chance_for_attack_type(attack_type)
+
+
+static func deterministic_player_accuracy_sample(
+	actor_scene_index: int,
+	attack_serial: int,
+	attack_type: int,
+) -> float:
+	var sample: int = posmod(
+		actor_scene_index * 1103515245
+		+ attack_serial * 12345
+		+ attack_type * 265443576,
+		10000,
+	)
+	return float(sample) / 10000.0
 
 
 func _start_reload() -> bool:

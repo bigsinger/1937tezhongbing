@@ -406,25 +406,38 @@ func _run() -> void:
 		and float(original_profile["patrol_speed_multiplier"]) == 1.0
 		and float(original_profile["sense_radius_multiplier"]) == 1.0
 		and float(original_profile["aim_error_multiplier"]) == 0.0
+		and float(original_profile["enemy_hit_chance"]) == 1.0
 		and int(original_profile["reinforcement_budget"]) == 0
 		and bool(original_profile["original_parity"]),
 		"original mode is a neutral, non-editorial MOD parity profile",
 		failures,
 	)
 	expect(
-		float(easy_profile["enemy_damage_multiplier"])
-		< float(normal_profile["enemy_damage_multiplier"])
-		and float(hard_profile["enemy_damage_multiplier"])
-		> float(normal_profile["enemy_damage_multiplier"]),
-		"global modes scale level-authored damage around normal",
+		is_equal_approx(
+			float(easy_profile["enemy_damage_multiplier"]),
+			float(normal_profile["enemy_damage_multiplier"]),
+		)
+		and is_equal_approx(
+			float(hard_profile["enemy_damage_multiplier"]),
+			float(normal_profile["enemy_damage_multiplier"]),
+		)
+		and is_equal_approx(
+			float(easy_profile["reaction_time_multiplier"]),
+			float(normal_profile["reaction_time_multiplier"]),
+		)
+		and is_equal_approx(
+			float(hard_profile["reaction_time_multiplier"]),
+			float(normal_profile["reaction_time_multiplier"]),
+		),
+		"global difficulty leaves level-authored damage and reaction timing unchanged",
 		failures,
 	)
 	expect(
-		float(easy_profile["reaction_time_multiplier"])
-		> float(normal_profile["reaction_time_multiplier"])
-		and float(hard_profile["reaction_time_multiplier"])
-		< float(normal_profile["reaction_time_multiplier"]),
-		"reaction-time scaling correctly inverts the lethal multiplier",
+		float(easy_profile["enemy_hit_chance"])
+		< float(normal_profile["enemy_hit_chance"])
+		and float(hard_profile["enemy_hit_chance"])
+		> float(normal_profile["enemy_hit_chance"]),
+		"easy, normal and hard differ through enemy hit chance only",
 		failures,
 	)
 	var normal_scaled: Dictionary = DIRECTION_DATA_SCRIPT.apply_enemy_scalars(
@@ -432,10 +445,15 @@ func _run() -> void:
 	)
 	var scaled: Dictionary = DIRECTION_DATA_SCRIPT.apply_enemy_scalars(8, 10.0, 0.5, hard_profile)
 	expect(
-		int(scaled["health"]) >= int(normal_scaled["health"])
-		and float(scaled["damage"]) > float(normal_scaled["damage"])
-		and float(scaled["reaction_seconds"]) < float(normal_scaled["reaction_seconds"]),
-		"enemy scalar helper produces directly consumable runtime values",
+		int(scaled["health"]) == int(normal_scaled["health"])
+		and is_equal_approx(float(scaled["damage"]), float(normal_scaled["damage"]))
+		and is_equal_approx(
+			float(scaled["reaction_seconds"]),
+			float(normal_scaled["reaction_seconds"]),
+		)
+		and float(scaled["enemy_hit_chance"])
+		> float(normal_scaled["enemy_hit_chance"]),
+		"enemy scalar helper isolates global difficulty to hostile accuracy",
 		failures,
 	)
 
@@ -516,6 +534,7 @@ func _run() -> void:
 	expect(
 		first_enemy.configured_coordinator == coordinator
 		and is_equal_approx(float(first_enemy.configured_values["aim_error_multiplier"]), 0.89)
+		and is_equal_approx(float(first_enemy.configured_values["enemy_hit_chance"]), 0.70)
 		and is_equal_approx(float(first_enemy.configured_values["reaction_time_multiplier"]), 0.86)
 		and is_equal_approx(float(first_enemy.configured_cooperation["regroup_seconds"]), 2.3),
 		"aim error, durable reaction scaling and regroup timing reach each enemy consumer",
@@ -668,11 +687,15 @@ func _run() -> void:
 	}
 	editorial_enemy.configure_editorial_ai(
 		coordinator,
-		{"aim_error_multiplier": 1.25, "reaction_time_multiplier": 1.0},
+		{
+			"aim_error_multiplier": 1.25,
+			"enemy_hit_chance": 0.55,
+			"reaction_time_multiplier": 1.0,
+		},
 		{"regroup_seconds": 2.0, "tags": ["protect_test"]},
 	)
 	var early_miss_chance := float(editorial_enemy.editorial_aim_miss_chance(fake_target))
-	editorial_enemy.editorial_aim_error_multiplier = 0.89
+	editorial_enemy.editorial_hit_chance = 0.85
 	var late_miss_chance := float(editorial_enemy.editorial_aim_miss_chance(fake_target))
 	expect(
 		early_miss_chance > late_miss_chance
@@ -680,7 +703,7 @@ func _run() -> void:
 			ENEMY_UNIT_SCRIPT.deterministic_aim_sample(77, 4),
 			ENEMY_UNIT_SCRIPT.deterministic_aim_sample(77, 4)
 		),
-		"authored aim error changes a deterministic per-shot miss probability",
+		"selected enemy hit chance controls a deterministic per-shot miss probability",
 		failures,
 	)
 	editorial_enemy.pending_hit_resolved = false

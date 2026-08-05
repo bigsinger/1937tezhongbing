@@ -176,6 +176,11 @@ static func _capture_actor(actor: Node2D, group_name: String) -> Dictionary:
 		"is_running": bool(actor.get("is_running")),
 		"animation_group_index": int(actor.get("animation_group_index")),
 		"move_speed": maxf(float(actor.get("move_speed")), 0.0),
+		"player_attack_attempt_serial": (
+			maxi(int(actor.get("player_attack_attempt_serial")), 0)
+			if _has_property(actor, "player_attack_attempt_serial")
+			else 0
+		),
 		"selected": (
 			bool(actor.get("selected"))
 			if group_name in ["units", "enemies"]
@@ -742,6 +747,11 @@ static func _restore_actor(game: Node, actor: Node2D, record: Dictionary, group_
 		"move_speed",
 		maxf(float(record.get("move_speed", actor.get("move_speed"))), 0.0),
 	)
+	if _has_property(actor, "player_attack_attempt_serial"):
+		actor.set(
+			"player_attack_attempt_serial",
+			maxi(int(record.get("player_attack_attempt_serial", 0)), 0),
+		)
 	actor.set(
 		"selected",
 		bool(record.get("selected", false))
