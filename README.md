@@ -96,7 +96,9 @@ Remake\LocalBuild\1937Remake\Play-1937-Remake.cmd
 ```
 
 当前默认构建是自包含 `Copy` 便携版，并同时生成 ZIP、SHA-256、内容 manifest
-和构建元数据；不会依赖开发机目录联接。Remake 的现代化性能、显示、架构、
+和构建元数据；不会依赖开发机目录联接。发布副本采用逐像素验证的无损地图
+WebP 和图集去重，实测 ZIP 已从 295.39 MiB 降至 159.64 MiB，详见
+[`Remake/docs/便携包体积优化.md`](Remake/docs/便携包体积优化.md)。Remake 的现代化性能、显示、架构、
 操作、存档、辅助功能、AI/教育内容和最终验收见
 [`Remake/docs/现代化改造验收报告.md`](Remake/docs/现代化改造验收报告.md)。
 

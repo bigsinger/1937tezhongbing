@@ -2779,10 +2779,11 @@ func load_entity_texture(entity: Dictionary) -> Texture2D:
 	if imported_texture_cache.has(preview_path):
 		return imported_texture_cache[preview_path] as Texture2D
 
-	var image := Image.new()
-	if image.load(preview_path) != OK or image.is_empty():
+	var texture: Texture2D = IMPORTED_SPRITE_ANIMATION.load_preview_texture(
+		preview_path
+	)
+	if texture == null:
 		return null
-	var texture := ImageTexture.create_from_image(image)
 	imported_texture_cache[preview_path] = texture
 	return texture
 
@@ -2795,7 +2796,7 @@ func entity_preview_path(entity: Dictionary) -> String:
 	if preview_path.is_empty():
 		push_warning("忽略越出本地转换目录的实体预览：%s" % relative_preview)
 		return ""
-	if not FileAccess.file_exists(preview_path):
+	if not IMPORTED_SPRITE_ANIMATION.preview_payload_available(preview_path):
 		return ""
 	return preview_path
 
@@ -2853,7 +2854,10 @@ func _gfl_preview_path(gfl_index: int) -> String:
 		return ""
 	var relative_path := "sprites/%04d.png" % gfl_index
 	var preview_path := _contained_converted_path(converted_root, relative_path)
-	if preview_path.is_empty() or not FileAccess.file_exists(preview_path):
+	if (
+		preview_path.is_empty()
+		or not IMPORTED_SPRITE_ANIMATION.preview_payload_available(preview_path)
+	):
 		return ""
 	return preview_path
 
@@ -2864,10 +2868,11 @@ func _load_gfl_texture(gfl_index: int) -> Texture2D:
 		return null
 	if imported_texture_cache.has(preview_path):
 		return imported_texture_cache[preview_path] as Texture2D
-	var image := Image.new()
-	if image.load(preview_path) != OK or image.is_empty():
+	var texture: Texture2D = IMPORTED_SPRITE_ANIMATION.load_preview_texture(
+		preview_path
+	)
+	if texture == null:
 		return null
-	var texture := ImageTexture.create_from_image(image)
 	imported_texture_cache[preview_path] = texture
 	return texture
 
@@ -9890,10 +9895,20 @@ func _current_minimap_texture() -> Texture2D:
 
 
 func _load_external_texture(path: String) -> Texture2D:
-	if path.is_empty() or not FileAccess.file_exists(path):
+	if path.is_empty():
 		return null
 	if imported_texture_cache.has(path):
 		return imported_texture_cache[path] as Texture2D
+	var normalized_parent := path.get_base_dir().replace("\\", "/").get_file()
+	if normalized_parent.to_lower() == "sprites":
+		var sprite_texture: Texture2D = (
+			IMPORTED_SPRITE_ANIMATION.load_preview_texture(path)
+		)
+		if sprite_texture != null:
+			imported_texture_cache[path] = sprite_texture
+			return sprite_texture
+	if not FileAccess.file_exists(path):
+		return null
 	var image := Image.new()
 	if image.load(path) != OK or image.is_empty():
 		return null
@@ -9911,14 +9926,7 @@ func _load_converted_texture(relative_path: String) -> Texture2D:
 	)
 	if absolute_path.is_empty():
 		return null
-	if imported_texture_cache.has(absolute_path):
-		return imported_texture_cache[absolute_path] as Texture2D
-	var image := Image.new()
-	if image.load(absolute_path) != OK or image.is_empty():
-		return null
-	var texture := ImageTexture.create_from_image(image)
-	imported_texture_cache[absolute_path] = texture
-	return texture
+	return _load_external_texture(absolute_path)
 
 
 func _on_map_position_requested(world_position: Vector2) -> void:

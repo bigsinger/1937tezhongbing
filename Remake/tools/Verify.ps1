@@ -160,6 +160,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "Godot modernization system tests failed with exit code $LASTEXITCODE."
 }
 
+& $GodotExecutable --headless --path $game --script 'res://tests/portable_content_optimizer_test.gd'
+if ($LASTEXITCODE -ne 0) {
+    throw "Godot portable content optimization tests failed with exit code $LASTEXITCODE."
+}
+
 & $GodotExecutable --headless --path $game --script 'res://tests/original_hud_runtime_test.gd'
 if ($LASTEXITCODE -ne 0) {
     throw "Godot original HUD runtime tests failed with exit code $LASTEXITCODE."

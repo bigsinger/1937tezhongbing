@@ -69,6 +69,56 @@ static func sprite_manifest_path(preview_path: String) -> String:
 	)
 
 
+static func preview_payload_available(preview_path: String) -> bool:
+	if preview_path.is_empty():
+		return false
+	if FileAccess.file_exists(preview_path):
+		return true
+	var manifest_path := sprite_manifest_path(preview_path)
+	return not manifest_path.is_empty() and FileAccess.file_exists(manifest_path)
+
+
+static func load_preview_texture(preview_path: String) -> Texture2D:
+	if preview_path.is_empty():
+		return null
+	# Development imports retain the standalone preview for inspection and
+	# converter regression tests. Portable builds may omit that byte-identical
+	# copy and reconstruct group 0 / frame 0 directly from the runtime atlas.
+	if FileAccess.file_exists(preview_path):
+		var preview_image := Image.new()
+		if preview_image.load(preview_path) == OK and not preview_image.is_empty():
+			return ImageTexture.create_from_image(preview_image)
+	var manifest_path := sprite_manifest_path(preview_path)
+	var manifest := load_manifest_document(manifest_path)
+	if manifest.is_empty():
+		return null
+	var groups_value: Variant = manifest.get("groups", [])
+	if not groups_value is Array:
+		return null
+	var sprite_directory := manifest_path.get_base_dir().simplify_path()
+	for group_value: Variant in groups_value as Array:
+		if not group_value is Dictionary:
+			return null
+		var group := group_value as Dictionary
+		if int(group.get("group_index", -1)) != 0:
+			continue
+		var raw_frames: Variant = group.get("frames", [])
+		if (
+			not raw_frames is Array
+			or not group_frame_layout_is_valid(group, raw_frames as Array)
+		):
+			return null
+		var frames := load_group_atlas(
+			group,
+			raw_frames as Array,
+			sprite_directory,
+		)
+		if frames.is_empty():
+			frames = load_individual_frames(raw_frames as Array, sprite_directory)
+		return frames[0] if not frames.is_empty() else null
+	return null
+
+
 static func load_manifest_document(manifest_path: String) -> Dictionary:
 	if manifest_path.is_empty() or not FileAccess.file_exists(manifest_path):
 		return {}

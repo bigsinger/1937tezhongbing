@@ -219,6 +219,10 @@ if (-not (Test-Path -LiteralPath $requiredLevel -PathType Leaf) -or
     $assetProfile = 'repository-mod-12-level-20260729'
     $assetActorStateSchema = 2
 }
+$sourceConvertedBytes = [int64](
+    Get-ChildItem -LiteralPath $convertedAssets -Recurse -File |
+        Measure-Object -Property Length -Sum
+).Sum
 
 $godot = Resolve-GodotExecutable -RequestedPath $GodotExecutable
 $runner = Resolve-RunnerExecutable -EditorExecutable $godot
@@ -300,12 +304,32 @@ if ($AssetMode -eq 'Junction') {
             Remove-Item -LiteralPath $startupMovie -Force
         }
     }
+
+    # Compact only the isolated release copy. The optimizer proves that every
+    # standalone sprite preview equals atlas group 0/frame 0, verifies complete
+    # atlas coverage before removing individual-frame fallbacks, and performs a
+    # pixel-for-pixel round trip before replacing terrain PNGs with lossless
+    # WebP. Remake/LocalAssets remains the complete forensic/development import.
+    Invoke-Godot -Executable $godot -Arguments @(
+        '--headless', '--path', $gameRoot,
+        '--script', 'res://tools/portable_content_optimizer.gd', '--',
+        "--content-root=$copiedConvertedRoot",
+        '--expected-level-count=12'
+    ) -Description 'Optimizing the isolated portable content copy...'
 }
 
+$criticalContentPaths = @(
+    'levels/m000/level.json',
+    'levels/m011/level.json'
+)
+if ($AssetMode -eq 'Junction') {
+    $criticalContentPaths = @('asset-manifest.json') + $criticalContentPaths
+}
 & (Join-Path $PSScriptRoot 'New-ContentManifest.ps1') `
     -ContentRoot (Join-Path $outputAssets 'converted') `
     -OutputPath $contentManifestPath `
-    -ProfileId $assetProfile | Format-List
+    -ProfileId $assetProfile `
+    -CriticalPaths $criticalContentPaths | Format-List
 if ($LASTEXITCODE -ne 0) {
     throw 'Content manifest generation failed.'
 }
@@ -337,8 +361,10 @@ popd
     [System.Text.Encoding]::ASCII
 )
 
+$contentManifestDocument = Get-Content -LiteralPath $contentManifestPath `
+    -Raw -Encoding utf8 | ConvertFrom-Json
 $buildInfo = [ordered]@{
-    schema_version = 2
+    schema_version = 3
     built_at_utc = [DateTime]::UtcNow.ToString('o')
     git_commit = (& git -C (Split-Path $remakeRoot -Parent) rev-parse HEAD).Trim()
     application_version = $applicationVersion
@@ -347,6 +373,16 @@ $buildInfo = [ordered]@{
     asset_mode = $AssetMode
     startup_media_playback_disabled = $true
     startup_media_files_omitted = ($AssetMode -eq 'Copy')
+    portable_content_profile = if ($AssetMode -eq 'Copy') {
+        'lossless-portable-v1'
+    } else {
+        'complete-development-assets'
+    }
+    lossless_terrain_webp = ($AssetMode -eq 'Copy')
+    standalone_sprite_previews_omitted = ($AssetMode -eq 'Copy')
+    individual_sprite_frame_fallbacks_omitted = ($AssetMode -eq 'Copy')
+    source_converted_bytes = $sourceConvertedBytes
+    packaged_converted_bytes = [int64]$contentManifestDocument.total_bytes
     asset_content_profile = $assetProfile
     asset_manifest_sha256 = (
         Get-FileHash -LiteralPath $assetManifestPath -Algorithm SHA256).Hash
@@ -356,10 +392,7 @@ $buildInfo = [ordered]@{
             -Algorithm SHA256).Hash
     content_manifest_sha256 = (
         Get-FileHash -LiteralPath $contentManifestPath -Algorithm SHA256).Hash
-    content_identity_sha256 = (
-        Get-Content -LiteralPath $contentManifestPath -Raw -Encoding utf8 |
-            ConvertFrom-Json
-    ).content_identity_sha256
+    content_identity_sha256 = $contentManifestDocument.content_identity_sha256
 }
 $buildInfo | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $outputRoot 'build-info.json') -Encoding utf8
 
@@ -371,6 +404,11 @@ Level selection: use the native startup/menu selector, or launch directly with
 Play-1937-Remake.cmd -- --level=m007 (m000 through m011).
 The legacy startup CG is disabled. Press Alt+Enter at any time to switch between
 fullscreen and the saved window size.
+
+Copy-mode packages use pixel-identical lossless terrain WebP and read sprite
+previews/animations from the original atlases. Standalone preview duplicates and
+individual-frame fallback PNGs stay in LocalAssets for development, but are not
+shipped in the portable build.
 
 Keep game and LocalAssets in their current relative locations. The launcher fixes the working
 directory so the exported program can find the locally converted assets.
@@ -389,7 +427,8 @@ $playableReadme | Set-Content -LiteralPath (Join-Path $outputRoot 'README.txt') 
 
 Push-Location $outputGame
 try {
-    & $godot --headless --main-pack $outputPack --quit-after 8 --log-file $smokeLog
+    & $godot --headless --main-pack $outputPack --quit-after 12 `
+        --log-file $smokeLog -- --level=m000 --skip-briefing
     $smokeExitCode = $LASTEXITCODE
 } finally {
     Pop-Location
@@ -408,7 +447,8 @@ if ($smokeText -match '(?m)^(SCRIPT ERROR|ERROR:)') {
 $executableSmoke = Start-Process `
     -FilePath $outputExecutable `
     -ArgumentList @(
-        '--headless', '--quit-after', '8', '--log-file', $executableSmokeLog
+        '--headless', '--quit-after', '12', '--log-file', $executableSmokeLog,
+        '--', '--level=m000', '--skip-briefing'
     ) `
     -WorkingDirectory $outputGame `
     -WindowStyle Hidden `

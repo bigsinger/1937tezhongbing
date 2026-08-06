@@ -406,8 +406,11 @@ Godot 目标视口，不捕获、裁剪、锁定或移动系统鼠标。当前 W
 最终 `1937Remake.exe` 的 headless 冒烟测试。若本地资产缺失或不是稳定
 MOD profile，构建脚本会先自动执行 `Import-ModAssets.ps1`。默认生成不依赖
 目录联接的 Copy 便携目录、ZIP 和 SHA-256；只有本机快速迭代才应显式传入
-`-AssetMode Junction -CreateArchive $false`。完整说明见
-[Windows 本地试玩包](docs/PLAYABLE_BUILD.md)。
+`-AssetMode Junction -CreateArchive $false`。Copy 构建会对地图进行逐像素验证的
+无损 WebP 转换，并在验证图集完整性后省略重复预览和独立帧；实测 ZIP 由
+295.39 MiB 降至 159.64 MiB。完整说明见
+[Windows 本地试玩包](docs/PLAYABLE_BUILD.md)和
+[便携包体积优化](docs/便携包体积优化.md)。
 
 ## 文档
 
@@ -415,6 +418,7 @@ MOD profile，构建脚本会先自动执行 `Import-ModAssets.ps1`。默认生�
 - [现代化改造实施与验收计划](docs/现代化改造实施与验收计划.md)
 - [现代化改造验收报告](docs/现代化改造验收报告.md)
 - [现代化版本发布说明](docs/现代化版本发布说明.md)
+- [便携包体积优化](docs/便携包体积优化.md)
 - [现代化体验稳定化实施与验收](docs/现代化体验稳定化实施与验收.md)
 - [已确认的资源格式](docs/RESOURCE_FORMATS.md)
 - [原版操作、五列背包、地图与四队列取证](docs/ORIGINAL_BEHAVIOR_FORENSICS.md)

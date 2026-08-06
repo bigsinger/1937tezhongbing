@@ -11,7 +11,15 @@ const IMPORTED_LEVEL_DATA: Script = preload("res://scripts/imported_level_data.g
 static func imported_terrain_path(level_id: String = DEFAULT_LEVEL_ID) -> String:
 	if not IMPORTED_LEVEL_DATA.is_safe_level_id(level_id):
 		return ""
-	return "%s/%s/terrain.png" % [IMPORT_ROOT, level_id]
+	var level_root := "%s/%s" % [IMPORT_ROOT, level_id]
+	# Source conversions keep PNG for forensic reproducibility. Portable builds
+	# may carry a pixel-identical lossless WebP copy to avoid shipping the much
+	# larger PNG payload. Prefer it when present and preserve the original path
+	# contract for development checkouts without local assets.
+	var webp_path := "%s/terrain.webp" % level_root
+	if FileAccess.file_exists(ProjectSettings.globalize_path(webp_path)):
+		return webp_path
+	return "%s/terrain.png" % level_root
 
 
 static func load_imported_terrain(level_id: String = DEFAULT_LEVEL_ID) -> Dictionary:
