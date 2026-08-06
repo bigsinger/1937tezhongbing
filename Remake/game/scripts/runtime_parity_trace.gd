@@ -259,7 +259,7 @@ func _capture_actor(
 			),
 			"target_status": 0,
 			"selected_for_command": 1 if selected else 0,
-			"search_or_return_active": 1 if behavior_state == 3 else 0,
+			"search_or_return_active": 1 if behavior_state in [3, 7] else 0,
 			"contact_state": 1 if has_live_target and behavior_state in [1, 2] else 0,
 			"target_lost": 0 if has_live_target else 1,
 			"reaction_state": maxi(behavior_state, 0),

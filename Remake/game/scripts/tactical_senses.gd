@@ -97,10 +97,28 @@ static func is_within_original_directional_field(
 ) -> bool:
 	var center := original_direction_center_degrees(direction_index)
 	var half_angle := original_direction_half_angle_degrees(direction_index)
+	return is_within_original_heading_field(
+		observer_position,
+		target_position,
+		center,
+		half_angle,
+		horizontal_radius,
+		vertical_radius,
+	)
+
+
+static func is_within_original_heading_field(
+	observer_position: Vector2,
+	target_position: Vector2,
+	heading_degrees: float,
+	half_angle_degrees: float,
+	horizontal_radius: float = 1.0,
+	vertical_radius: float = 1.0,
+) -> bool:
 	var delta := target_position - observer_position
 	if (
-		center < 0.0
-		or half_angle < 0.0
+		heading_degrees < 0.0
+		or half_angle_degrees < 0.0
 		or horizontal_radius <= 0.0
 		or vertical_radius <= 0.0
 	):
@@ -119,14 +137,34 @@ static func is_within_original_directional_field(
 		rad_to_deg(atan2(logical_delta.y, logical_delta.x)),
 		360.0,
 	)
-	var difference := absf(fposmod(bearing - center + 180.0, 360.0) - 180.0)
-	return difference <= half_angle
+	var difference := absf(
+		fposmod(bearing - heading_degrees + 180.0, 360.0) - 180.0
+	)
+	return difference <= half_angle_degrees
 
 
 static func original_visibility_band(
 	observer_position: Vector2,
 	target_position: Vector2,
 	direction_index: int,
+	sense_profile: Dictionary,
+	target_is_crawling: bool = false,
+) -> int:
+	return original_visibility_band_heading(
+		observer_position,
+		target_position,
+		original_direction_center_degrees(direction_index),
+		original_direction_half_angle_degrees(direction_index),
+		sense_profile,
+		target_is_crawling,
+	)
+
+
+static func original_visibility_band_heading(
+	observer_position: Vector2,
+	target_position: Vector2,
+	heading_degrees: float,
+	half_angle_degrees: float,
 	sense_profile: Dictionary,
 	target_is_crawling: bool = false,
 ) -> int:
@@ -138,10 +176,11 @@ static func original_visibility_band(
 		return 0
 	if (
 		not bool(sense_profile.get("omnidirectional", false))
-		and not is_within_original_directional_field(
+		and not is_within_original_heading_field(
 			observer_position,
 			target_position,
-			direction_index,
+			heading_degrees,
+			half_angle_degrees,
 			horizontal_radius,
 			vertical_radius,
 		)
@@ -172,10 +211,33 @@ static func can_detect_original(
 	target_is_crawling: bool = false,
 	ignored_scene_indices: Array = [],
 ) -> bool:
-	if original_visibility_band(
+	return can_detect_original_heading(
+		navigation,
 		observer_position,
 		target_position,
-		direction_index,
+		original_direction_center_degrees(direction_index),
+		original_direction_half_angle_degrees(direction_index),
+		sense_profile,
+		target_is_crawling,
+		ignored_scene_indices,
+	)
+
+
+static func can_detect_original_heading(
+	navigation: Variant,
+	observer_position: Vector2,
+	target_position: Vector2,
+	heading_degrees: float,
+	half_angle_degrees: float,
+	sense_profile: Dictionary,
+	target_is_crawling: bool = false,
+	ignored_scene_indices: Array = [],
+) -> bool:
+	if original_visibility_band_heading(
+		observer_position,
+		target_position,
+		heading_degrees,
+		half_angle_degrees,
 		sense_profile,
 		target_is_crawling,
 	) == 0:

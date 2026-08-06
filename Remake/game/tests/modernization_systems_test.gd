@@ -415,6 +415,28 @@ func _test_navigation_request_budget() -> void:
 	)
 	queue.cancel_all()
 	_expect(queue.pending_count() == 0, "level changes cancel stale navigation requests")
+	var latest_destinations: Array[Vector2] = []
+	queue.enqueue(
+		17,
+		Vector2.ZERO,
+		Vector2(32.0, 16.0),
+		func(_path: PackedVector2Array, request: Dictionary, _elapsed: int) -> void:
+			latest_destinations.append(request["destination"] as Vector2),
+	)
+	queue.enqueue(
+		17,
+		Vector2.ZERO,
+		Vector2(96.0, 48.0),
+		func(_path: PackedVector2Array, request: Dictionary, _elapsed: int) -> void:
+			latest_destinations.append(request["destination"] as Vector2),
+	)
+	queue.process_budget(null, FakeNavigation.new(), 1_000_000, 2)
+	var queue_stats: Dictionary = queue.stats()
+	_expect(
+		latest_destinations == [Vector2(96.0, 48.0)]
+			and int(queue_stats.get("coalesced", 0)) == 1,
+		"rapid repeated commands coalesce superseded A* work per actor",
+	)
 
 
 func _test_modern_difficulty_policy() -> void:

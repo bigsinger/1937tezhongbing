@@ -10,6 +10,7 @@ var _generation := 1
 var processed_requests := 0
 var total_query_usec := 0
 var peak_pending := 0
+var coalesced_requests := 0
 
 
 func enqueue(
@@ -23,6 +24,18 @@ func enqueue(
 		return 0
 	var serial := _next_serial
 	_next_serial += 1
+	# A player can issue several move orders before the frame budget reaches this
+	# actor. Only the newest destination is meaningful; calculating superseded
+	# A* paths causes latency spikes and can briefly apply an old path first.
+	if scene_index >= 0:
+		for index: int in range(_pending.size() - 1, -1, -1):
+			var pending := _pending[index]
+			if (
+				int(pending.get("generation", -1)) == _generation
+				and int(pending.get("scene_index", -1)) == scene_index
+			):
+				_pending.remove_at(index)
+				coalesced_requests += 1
 	_pending.append({
 		"serial": serial,
 		"generation": _generation,
@@ -99,5 +112,6 @@ func stats() -> Dictionary:
 		"processed": processed_requests,
 		"total_query_usec": total_query_usec,
 		"peak_pending": peak_pending,
+		"coalesced": coalesced_requests,
 		"generation": _generation,
 	}

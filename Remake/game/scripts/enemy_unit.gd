@@ -17,11 +17,6 @@ const LEGACY_ACTOR_AUDIO_RULES: Script = preload(
 	"res://scripts/legacy_actor_audio_rules.gd"
 )
 const SENSE_INTERVAL_SECONDS := 0.20
-## Modern AI decisions do not need to run at the 60 Hz movement cadence.
-## Twenty deterministic, phase-staggered decisions per second preserve a
-## responsive 50 ms upper bound while keeping dense missions from entering a
-## physics catch-up spiral. Movement, animation and combat-frame resolution
-## remain at the project physics rate.
 ## High-level decisions do not need to run at the 60 Hz movement cadence.
 ## Ten deterministic updates per second keep reaction/memory timers exact while
 ## leaving enough headroom for dense 70+ guard missions at 1080p. Perception
@@ -74,6 +69,15 @@ const ORIGINAL_WORLD_ITEM_ABANDON_RANDOM_SPAN := 40
 ## moving third-party sight blockers, so drawing remains a cheap polyline.
 const TACTICAL_RANGE_CACHE_REFRESH_SECONDS := 0.50
 const TACTICAL_RANGE_CELL_SIZE := Vector2(32.0, 16.0)
+const TACTICAL_HEADING_QUANTUM_DEGREES := 3.0
+const PATROL_GAZE_SWEEP_AMPLITUDE_DEGREES := 18.0
+const PATROL_GAZE_SWEEP_PERIOD_SECONDS := 4.5
+const SEARCH_GAZE_SWEEP_AMPLITUDE_DEGREES := 34.0
+const SEARCH_GAZE_SWEEP_PERIOD_SECONDS := 3.2
+const CHASE_TARGET_REPLAN_DISTANCE := 28.0
+const RETURN_TO_DUTY_ENDPOINT_TOLERANCE := 24.0
+const RETURN_TO_DUTY_TIMEOUT_SECONDS := 8.0
+const VEHICLE_PURSUIT_SPEED_MULTIPLIER := 1.55
 ## A preferred editorial flank is only accepted when the navigation endpoint
 ## lands within roughly one original isometric cell of it. A partial A* route
 ## stopped by a wall then falls through to the next compact candidate.
@@ -87,6 +91,7 @@ enum BehaviorState {
 	REGROUP,
 	WORLD_ITEM,
 	CORPSE_DISCOVERY,
+	RETURN_TO_DUTY,
 }
 
 signal attack_committed(attacker: EnemyUnit, target: Node2D, attack_type: int)
@@ -160,6 +165,7 @@ var perception_schedule_slot_count := 1
 var perception_schedule_initial_elapsed := 0.0
 var modern_behavior_elapsed := 0.0
 var chase_replan_elapsed := 0.0
+var last_chase_path_goal := Vector2(INF, INF)
 var search_elapsed := 0.0
 var legacy_search_active := false
 var legacy_search_finishing := false
@@ -199,6 +205,7 @@ var tactical_outer_outline := PackedVector2Array()
 var tactical_inner_outline := PackedVector2Array()
 var tactical_cache_cell := Vector2i(-1, -1)
 var tactical_cache_direction := -1
+var tactical_cache_heading_bucket := -1
 var tactical_cache_refresh_remaining := 0.0
 var tactical_range_cache_rebuild_count := 0
 var tactical_range_cache_rebuild_usec := 0
@@ -225,6 +232,17 @@ var editorial_memory_seconds := 4.5
 var editorial_search_timeout_seconds := SEARCH_TIMEOUT_SECONDS
 var editorial_suspicion_target_scene_index := -1
 var regroup_remaining := 0.0
+var has_authored_run_animation := false
+var locomotion_can_move := true
+var gaze_heading_degrees := -1.0
+var gaze_heading_bucket := -1
+var gaze_sweep_elapsed := 0.0
+var duty_snapshot_active := false
+var duty_anchor_position := Vector2.ZERO
+var duty_patrol_index := 0
+var return_to_duty_destination := Vector2.ZERO
+var return_to_duty_patrol_index := -1
+var return_to_duty_elapsed := 0.0
 var last_editorial_aim_miss := false
 var _pending_editorial_aim_miss := false
 ## sub_45C710 returns immediately after its first-live-target branch.  This
@@ -266,6 +284,7 @@ func configure_enemy(
 	new_dynamic_occupancy: RefCounted,
 	new_attack_groups: Array[Dictionary] = [],
 	new_death_groups: Array[Dictionary] = [],
+	new_run_groups: Array[Dictionary] = [],
 ) -> void:
 	var authored_start_position := Vector2(
 		float(entity.get("reference_x", entity.get("x", 0))),
@@ -313,6 +332,17 @@ func configure_enemy(
 		authored_start_position,
 	)
 	configure_runtime_actor_type(entity)
+	has_authored_run_animation = not new_run_groups.is_empty()
+	locomotion_can_move = (
+		not new_movement_groups.is_empty()
+		or has_authored_run_animation
+	)
+	configure_movement_modes(
+		new_run_groups,
+		new_movement_groups,
+		[],
+	)
+	set_running(false)
 	# Patrol actors traverse short A* cell segments continuously so their
 	# physical motion no longer pauses for a frame at every waypoint.
 	use_continuous_waypoint_motion = true
@@ -359,6 +389,16 @@ func configure_enemy(
 		0,
 		maxi(0, patrol_waypoints.size() - 1),
 	)
+	duty_snapshot_active = false
+	duty_anchor_position = position
+	duty_patrol_index = patrol_index
+	return_to_duty_destination = position
+	return_to_duty_patrol_index = -1
+	return_to_duty_elapsed = 0.0
+	last_chase_path_goal = Vector2(INF, INF)
+	gaze_sweep_elapsed = float(posmod(scene_index * 29, 270)) / 60.0
+	gaze_heading_degrees = _authored_facing_heading_degrees()
+	gaze_heading_bucket = _quantized_heading_bucket(gaze_heading_degrees)
 	stable_mod_patrol_timeline = normalized_patrol_timeline
 	stable_mod_patrol_radius_guard_target_indices.clear()
 	var radius_guard_value: Variant = runtime_profile.get(
@@ -685,6 +725,7 @@ func _physics_process(delta: float) -> void:
 	)
 	var safe_delta := maxf(delta, 0.0)
 	legacy_contact_acquired_this_tick = false
+	_advance_gaze_heading(safe_delta)
 	var command_serial_at_update_start := original_actor_command_serial
 	var legacy_pre_started_usec := (
 		Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
@@ -930,11 +971,14 @@ func _update_detection() -> void:
 				var target_scene_index := int(target.get("scene_index"))
 				if target_scene_index >= 0:
 					ignored.append(target_scene_index)
-				visible = TACTICAL_SENSES.can_detect_original(
+				visible = TACTICAL_SENSES.can_detect_original_heading(
 					dynamic_occupancy,
 					position,
 					target.position,
-					original_direction_index,
+					perception_heading_degrees(),
+					TACTICAL_SENSES.original_direction_half_angle_degrees(
+						original_direction_index
+					),
 					sense_profile,
 					bool(target.get("is_crawling")),
 					ignored,
@@ -1091,6 +1135,7 @@ func _original_recurring_evidence_allows_new_live_contact() -> bool:
 func _acquire_visible_live_target(target: Node2D) -> bool:
 	if target == null or not is_instance_valid(target):
 		return false
+	_capture_duty_snapshot()
 	_clear_legacy_world_item_target()
 	_clear_legacy_corpse_attention()
 	_clear_editorial_search_order()
@@ -1111,6 +1156,7 @@ func _acquire_visible_live_target(target: Node2D) -> bool:
 	behavior_state = (
 		BehaviorState.ATTACK if _can_attack_current_target() else BehaviorState.CHASE
 	)
+	_set_enemy_pursuit_locomotion(behavior_state == BehaviorState.CHASE)
 	legacy_contact_acquired_this_tick = true
 	original_actor_audio_requested.emit(
 		self,
@@ -1119,27 +1165,195 @@ func _acquire_visible_live_target(target: Node2D) -> bool:
 	return true
 
 
+func _authored_facing_heading_degrees() -> float:
+	var heading: float = TACTICAL_SENSES.original_direction_center_degrees(
+		original_direction_index
+	)
+	return 0.0 if heading < 0.0 else heading
+
+
+static func _quantized_heading_bucket(heading_degrees: float) -> int:
+	var bucket_count := roundi(360.0 / TACTICAL_HEADING_QUANTUM_DEGREES)
+	return posmod(
+		roundi(fposmod(heading_degrees, 360.0) / TACTICAL_HEADING_QUANTUM_DEGREES),
+		bucket_count,
+	)
+
+
+func _logical_heading_to(world_position: Vector2) -> float:
+	var delta := world_position - position
+	if delta.is_zero_approx():
+		return _authored_facing_heading_degrees()
+	var horizontal_radius := maxf(
+		float(sense_profile.get("horizontal_radius", 1.0)), 1.0
+	)
+	var vertical_radius := maxf(
+		float(sense_profile.get("vertical_radius", 1.0)), 1.0
+	)
+	return fposmod(
+		rad_to_deg(atan2(delta.y / vertical_radius, delta.x / horizontal_radius)),
+		360.0,
+	)
+
+
+func _advance_gaze_heading(delta: float) -> void:
+	gaze_sweep_elapsed += maxf(delta, 0.0)
+	var heading := _authored_facing_heading_degrees()
+	# Strict-original mode keeps the recovered eight-direction perception exactly
+	# as authored.  Smooth tracking and patrol/search scanning are modern-rule
+	# features, so they are enabled only when the mission AI coordinator exists.
+	if mission_ai_coordinator != null:
+		if (
+			behavior_state in [BehaviorState.CHASE, BehaviorState.ATTACK]
+			and current_target != null
+			and is_instance_valid(current_target)
+			and _target_is_alive(current_target)
+		):
+			heading = _logical_heading_to(current_target.position)
+		else:
+			var amplitude := 0.0
+			var period := PATROL_GAZE_SWEEP_PERIOD_SECONDS
+			if behavior_state == BehaviorState.PATROL:
+				amplitude = PATROL_GAZE_SWEEP_AMPLITUDE_DEGREES
+			elif behavior_state == BehaviorState.SEARCH:
+				amplitude = SEARCH_GAZE_SWEEP_AMPLITUDE_DEGREES
+				period = SEARCH_GAZE_SWEEP_PERIOD_SECONDS
+			if amplitude > 0.0:
+				heading += amplitude * sin(TAU * gaze_sweep_elapsed / period)
+	var new_bucket := _quantized_heading_bucket(heading)
+	if new_bucket == gaze_heading_bucket:
+		return
+	gaze_heading_bucket = new_bucket
+	gaze_heading_degrees = fposmod(
+		float(new_bucket) * TACTICAL_HEADING_QUANTUM_DEGREES,
+		360.0,
+	)
+	# Only an observed guard needs an immediate visual refresh. Authoritative
+	# perception reads the same quantized heading on its normal 5 Hz schedule.
+	if tactical_ranges_visible:
+		tactical_cache_refresh_remaining = 0.0
+
+
+func perception_heading_degrees() -> float:
+	# Callers may change the recovered direction between fixed actor ticks (the
+	# original runtime does this for attack/disguise events). Strict-original
+	# perception must therefore read that direction directly instead of a cached
+	# modern gaze sample.
+	if mission_ai_coordinator == null:
+		return _authored_facing_heading_degrees()
+	return gaze_heading_degrees
+
+
+func _set_enemy_pursuit_locomotion(active: bool) -> void:
+	if not locomotion_can_move:
+		if is_running:
+			set_running(false)
+		return
+	if active and has_authored_run_animation:
+		if not is_running:
+			set_running(true)
+		return
+	if is_running:
+		set_running(false)
+	if active:
+		# Some props/vehicles have no dedicated run action. Accelerating their
+		# authored walk cycle modestly keeps motion and frames synchronized without
+		# pretending that a missing action is a three-times-faster run.
+		move_speed = STABLE_MOD_BASE_PATROL_SPEED * VEHICLE_PURSUIT_SPEED_MULTIPLIER
+	elif behavior_state != BehaviorState.PATROL:
+		move_speed = STABLE_MOD_BASE_PATROL_SPEED
+
+
+func _capture_duty_snapshot() -> void:
+	if mission_ai_coordinator == null or duty_snapshot_active:
+		return
+	duty_snapshot_active = true
+	duty_anchor_position = position
+	duty_patrol_index = patrol_index
+
+
+func _end_modern_alert_or_enter_patrol() -> void:
+	if mission_ai_coordinator != null and duty_snapshot_active:
+		_begin_return_to_duty()
+	else:
+		_enter_patrol()
+
+
+func _begin_return_to_duty() -> void:
+	current_target = null
+	_clear_editorial_search_order()
+	behavior_state = BehaviorState.RETURN_TO_DUTY
+	return_to_duty_elapsed = 0.0
+	return_to_duty_patrol_index = -1
+	return_to_duty_destination = duty_anchor_position
+	if not patrol_waypoints.is_empty():
+		return_to_duty_patrol_index = clampi(
+			duty_patrol_index,
+			0,
+			patrol_waypoints.size() - 1,
+		)
+		return_to_duty_destination = patrol_waypoints[
+			return_to_duty_patrol_index
+		]
+	_set_enemy_pursuit_locomotion(false)
+	cancel_path()
+	if (
+		not locomotion_can_move
+		or position.distance_to(return_to_duty_destination)
+			<= RETURN_TO_DUTY_ENDPOINT_TOLERANCE
+	):
+		_finish_return_to_duty()
+		return
+	_issue_path_to(return_to_duty_destination)
+
+
+func _update_return_to_duty(delta: float) -> void:
+	if movement_path_index < movement_path.size():
+		# This timer measures time without an actionable route, not total travel
+		# time; a long but progressing return across a large map must never expire.
+		return_to_duty_elapsed = 0.0
+		return
+	return_to_duty_elapsed += maxf(delta, 0.0)
+	if (
+		position.distance_to(return_to_duty_destination)
+			<= RETURN_TO_DUTY_ENDPOINT_TOLERANCE
+	):
+		_finish_return_to_duty()
+	elif path_request_delay_remaining <= 0.0:
+		if _issue_path_to(return_to_duty_destination):
+			return_to_duty_elapsed = 0.0
+	elif return_to_duty_elapsed >= RETURN_TO_DUTY_TIMEOUT_SECONDS:
+		_finish_return_to_duty()
+
+
+func _finish_return_to_duty() -> void:
+	if return_to_duty_patrol_index >= 0:
+		patrol_index = return_to_duty_patrol_index
+	duty_snapshot_active = false
+	return_to_duty_patrol_index = -1
+	return_to_duty_elapsed = 0.0
+	_enter_patrol()
+
+
 func _update_behavior(delta: float) -> void:
 	if behavior_state != BehaviorState.PATROL:
 		minimum_actor_separation = -1.0
-		if modern_patrol_group_role == "follower":
-			move_speed = STABLE_MOD_BASE_PATROL_SPEED
 	if (
 		behavior_state != BehaviorState.PATROL
 		and not stable_mod_patrol_timeline.is_empty()
 	):
 		# A time-calibrated patrol leg must not leak its scalar speed into
 		# pursuit, combat, investigation or regroup behavior.
-		move_speed = STABLE_MOD_BASE_PATROL_SPEED
 		use_soft_dynamic_occupancy = false
 		use_recorded_patrol_relocation = false
 		use_recorded_patrol_final_relocation = false
+	_set_enemy_pursuit_locomotion(behavior_state == BehaviorState.CHASE)
 	match behavior_state:
 		BehaviorState.PATROL:
 			_update_patrol(delta)
 		BehaviorState.CHASE:
 			if current_target == null or not is_instance_valid(current_target):
-				_enter_patrol()
+				_end_modern_alert_or_enter_patrol()
 				return
 			var chase_range_started_usec := (
 				Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
@@ -1150,6 +1364,7 @@ func _update_behavior(delta: float) -> void:
 			)
 			if chase_can_attack:
 				behavior_state = BehaviorState.ATTACK
+				_set_enemy_pursuit_locomotion(false)
 				cancel_path()
 				return
 			# sub_45C710 state 1 first samples the next 20..39 reaction
@@ -1170,12 +1385,20 @@ func _update_behavior(delta: float) -> void:
 			if chase_replan_elapsed >= CHASE_REPLAN_SECONDS:
 				chase_replan_elapsed = 0.0
 				last_known_target_position = current_target.position
-				_issue_path_to(last_known_target_position)
+				var path_active := movement_path_index < movement_path.size()
+				if MOVEMENT_RECOVERY_PLANNER.chase_replan_required(
+					last_chase_path_goal,
+					last_known_target_position,
+					path_active,
+					CHASE_TARGET_REPLAN_DISTANCE,
+				):
+					last_chase_path_goal = last_known_target_position
+					_issue_path_to(last_known_target_position)
 		BehaviorState.ATTACK:
 			if movement_path_index < movement_path.size():
 				cancel_path()
 			if current_target == null or not is_instance_valid(current_target):
-				_enter_patrol()
+				_end_modern_alert_or_enter_patrol()
 				return
 			var attack_range_started_usec := (
 				Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
@@ -1186,6 +1409,7 @@ func _update_behavior(delta: float) -> void:
 			)
 			if not attack_can_continue:
 				behavior_state = BehaviorState.CHASE
+				_set_enemy_pursuit_locomotion(true)
 				chase_replan_elapsed = CHASE_REPLAN_SECONDS
 				return
 			if attack_recheck_elapsed >= attack_recheck_seconds:
@@ -1245,19 +1469,22 @@ func _update_behavior(delta: float) -> void:
 			search_elapsed += delta
 			if search_elapsed >= editorial_search_timeout_seconds:
 				current_target = null
-				_enter_patrol()
+				_end_modern_alert_or_enter_patrol()
 		BehaviorState.REGROUP:
 			if current_target == null or not is_instance_valid(current_target):
-				_enter_patrol()
+				_end_modern_alert_or_enter_patrol()
 				return
 			regroup_remaining = maxf(regroup_remaining - delta, 0.0)
 			if regroup_remaining <= 0.0:
 				behavior_state = BehaviorState.CHASE
+				_set_enemy_pursuit_locomotion(true)
 				chase_replan_elapsed = CHASE_REPLAN_SECONDS
 		BehaviorState.WORLD_ITEM:
 			_update_legacy_world_item_investigation(delta)
 		BehaviorState.CORPSE_DISCOVERY:
 			_update_legacy_corpse_discovery(delta)
+		BehaviorState.RETURN_TO_DUTY:
+			_update_return_to_duty(delta)
 
 
 func _update_patrol(delta: float) -> void:
@@ -1761,9 +1988,11 @@ func _enter_patrol() -> void:
 	_clear_legacy_coordinate_search()
 	_clear_editorial_search_order()
 	behavior_state = BehaviorState.PATROL
+	_set_enemy_pursuit_locomotion(false)
 	search_elapsed = 0.0
 	regroup_remaining = 0.0
 	chase_replan_elapsed = CHASE_REPLAN_SECONDS
+	last_chase_path_goal = Vector2(INF, INF)
 	patrol_wait_remaining = 0.0
 	patrol_path_in_flight = false
 	stable_mod_patrol_target_index = stable_mod_patrol_index_after_elapsed(
@@ -1797,7 +2026,7 @@ func _enter_regroup() -> void:
 
 
 func _issue_path_to(destination: Vector2) -> bool:
-	if dynamic_occupancy == null or scene_index < 0:
+	if not locomotion_can_move or dynamic_occupancy == null or scene_index < 0:
 		return false
 	var path: PackedVector2Array = dynamic_occupancy.find_path_for_scene(
 		scene_index, position, destination
@@ -1832,6 +2061,7 @@ func _can_attack_current_target() -> bool:
 func receive_alert(target: Node2D, world_position: Vector2) -> bool:
 	if not is_alive or not _is_hostile_target(target):
 		return false
+	_capture_duty_snapshot()
 	_clear_legacy_world_item_target()
 	_clear_legacy_corpse_attention()
 	_clear_legacy_coordinate_search()
@@ -1850,6 +2080,7 @@ func receive_alert(target: Node2D, world_position: Vector2) -> bool:
 	if behavior_state == BehaviorState.REGROUP:
 		return true
 	behavior_state = BehaviorState.CHASE
+	_set_enemy_pursuit_locomotion(true)
 	return true
 
 
@@ -1915,6 +2146,7 @@ func receive_editorial_search_order(
 		break
 	if not found_reachable:
 		return false
+	_capture_duty_snapshot()
 	_clear_legacy_world_item_target()
 	_clear_legacy_corpse_attention()
 	_clear_legacy_coordinate_search()
@@ -2181,10 +2413,13 @@ func can_discover_legacy_corpse(corpse: Node2D) -> bool:
 		)
 	):
 		return false
-	if TACTICAL_SENSES.original_visibility_band(
+	if TACTICAL_SENSES.original_visibility_band_heading(
 		position,
 		corpse.position,
-		original_direction_index,
+		perception_heading_degrees(),
+		TACTICAL_SENSES.original_direction_half_angle_degrees(
+			original_direction_index
+		),
 		sense_profile,
 		false,
 	) != LEGACY_CORPSE_DISCOVERY_RULES.REQUIRED_VISIBILITY_BAND:
@@ -2365,10 +2600,13 @@ func can_consider_legacy_world_item(world_item: Node2D) -> bool:
 		faction_id,
 	):
 		return false
-	if TACTICAL_SENSES.original_visibility_band(
+	if TACTICAL_SENSES.original_visibility_band_heading(
 		position,
 		world_item.position,
-		original_direction_index,
+		perception_heading_degrees(),
+		TACTICAL_SENSES.original_direction_half_angle_degrees(
+			original_direction_index
+		),
 		sense_profile,
 		false,
 	) != 1:
@@ -2544,6 +2782,15 @@ func editorial_ai_state_snapshot() -> Dictionary:
 		"suspicion": editorial_suspicion,
 		"suspicion_target_scene_index": editorial_suspicion_target_scene_index,
 		"memory_remaining": editorial_memory_remaining,
+		"duty_snapshot_active": duty_snapshot_active,
+		"duty_anchor_x": duty_anchor_position.x,
+		"duty_anchor_y": duty_anchor_position.y,
+		"duty_patrol_index": duty_patrol_index,
+		"return_destination_x": return_to_duty_destination.x,
+		"return_destination_y": return_to_duty_destination.y,
+		"return_patrol_index": return_to_duty_patrol_index,
+		"return_elapsed": return_to_duty_elapsed,
+		"gaze_sweep_elapsed": gaze_sweep_elapsed,
 	}
 
 
@@ -2572,6 +2819,22 @@ func restore_editorial_ai_state(state: Dictionary) -> bool:
 		0.0,
 		editorial_memory_seconds,
 	)
+	duty_snapshot_active = bool(state.get("duty_snapshot_active", false))
+	duty_anchor_position = Vector2(
+		float(state.get("duty_anchor_x", position.x)),
+		float(state.get("duty_anchor_y", position.y)),
+	)
+	duty_patrol_index = maxi(int(state.get("duty_patrol_index", patrol_index)), 0)
+	return_to_duty_destination = Vector2(
+		float(state.get("return_destination_x", duty_anchor_position.x)),
+		float(state.get("return_destination_y", duty_anchor_position.y)),
+	)
+	return_to_duty_patrol_index = int(state.get("return_patrol_index", -1))
+	return_to_duty_elapsed = maxf(float(state.get("return_elapsed", 0.0)), 0.0)
+	gaze_sweep_elapsed = maxf(
+		float(state.get("gaze_sweep_elapsed", gaze_sweep_elapsed)),
+		0.0,
+	)
 	return true
 
 
@@ -2585,6 +2848,11 @@ func modern_ai_debug_snapshot() -> Dictionary:
 		"search_role": editorial_search_role,
 		"formation_role": modern_patrol_group_role,
 		"hit_chance": editorial_hit_chance,
+		"locomotion_mode": movement_mode_name(),
+		"has_authored_run": has_authored_run_animation,
+		"gaze_heading_degrees": gaze_heading_degrees,
+		"returning_to_duty": behavior_state == BehaviorState.RETURN_TO_DUTY,
+		"movement_health": movement_health_snapshot(),
 	}
 
 
@@ -2673,6 +2941,12 @@ func resume_restored_legacy_search() -> bool:
 
 
 func resume_restored_editorial_search() -> bool:
+	if is_alive and behavior_state == BehaviorState.RETURN_TO_DUTY:
+		_set_enemy_pursuit_locomotion(false)
+		if position.distance_to(return_to_duty_destination) <= RETURN_TO_DUTY_ENDPOINT_TOLERANCE:
+			_finish_return_to_duty()
+			return true
+		return _issue_path_to(return_to_duty_destination)
 	if (
 		not is_alive
 		or behavior_state != BehaviorState.SEARCH
@@ -3443,10 +3717,15 @@ func _refresh_tactical_range_cache(force: bool) -> bool:
 		floori(position.x / TACTICAL_RANGE_CELL_SIZE.x),
 		floori(position.y / TACTICAL_RANGE_CELL_SIZE.y),
 	)
+	var perception_heading := perception_heading_degrees()
+	var perception_heading_bucket := _quantized_heading_bucket(
+		perception_heading
+	)
 	if (
 		not force
 		and current_cell == tactical_cache_cell
 		and original_direction_index == tactical_cache_direction
+		and perception_heading_bucket == tactical_cache_heading_bucket
 		and tactical_cache_refresh_remaining > 0.0
 	):
 		return false
@@ -3473,6 +3752,7 @@ func _refresh_tactical_range_cache(force: bool) -> bool:
 		)
 	tactical_cache_cell = current_cell
 	tactical_cache_direction = original_direction_index
+	tactical_cache_heading_bucket = perception_heading_bucket
 	tactical_cache_refresh_remaining = TACTICAL_RANGE_CACHE_REFRESH_SECONDS
 	tactical_range_cache_rebuild_count += 1
 	tactical_range_cache_rebuild_usec += Time.get_ticks_usec() - started_usec
@@ -3486,9 +3766,7 @@ func _visibility_fan_points(
 ) -> PackedVector2Array:
 	# The fan is parameterized in the executable's logical isometric angle.
 	# Scaling x/y by the recovered ellipse radii projects it to screen pixels.
-	var center: float = TACTICAL_SENSES.original_direction_center_degrees(
-		original_direction_index
-	)
+	var center: float = perception_heading_degrees()
 	var half_angle: float = TACTICAL_SENSES.original_direction_half_angle_degrees(original_direction_index)
 	if center < 0.0 or half_angle <= 0.0:
 		return PackedVector2Array()

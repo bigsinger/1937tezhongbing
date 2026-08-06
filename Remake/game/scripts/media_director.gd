@@ -65,6 +65,7 @@ var dialogue_lines: Array = []
 var dialogue_line_index := -1
 var dialogue_minimum_seconds := 0.0
 var subtitles_enabled := true
+var gameplay_bottom_inset := 0.0
 var _modal_pause_owned := false
 var _pause_state_before_modal := false
 var _process_mode_before_modal := Node.PROCESS_MODE_INHERIT
@@ -92,6 +93,22 @@ func set_subtitles_enabled(enabled: bool) -> void:
 	if not subtitles_enabled and subtitle_panel != null:
 		subtitle_panel.visible = false
 		subtitle_seconds = 0.0
+
+
+func set_gameplay_safe_area(bottom_inset: float) -> void:
+	var normalized := maxf(bottom_inset, 0.0)
+	if is_equal_approx(gameplay_bottom_inset, normalized):
+		return
+	gameplay_bottom_inset = normalized
+	_apply_subtitle_safe_area()
+
+
+func _apply_subtitle_safe_area() -> void:
+	if subtitle_panel == null:
+		return
+	var bottom := -(gameplay_bottom_inset + 16.0)
+	subtitle_panel.offset_bottom = bottom
+	subtitle_panel.offset_top = bottom - 66.0
 
 
 func set_input_bindings(bindings: Dictionary) -> void:
@@ -838,8 +855,7 @@ func _ensure_nodes() -> void:
 	subtitle_panel.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 	subtitle_panel.offset_left = 160.0
 	subtitle_panel.offset_right = -160.0
-	subtitle_panel.offset_top = -104.0
-	subtitle_panel.offset_bottom = -38.0
+	_apply_subtitle_safe_area()
 	subtitle_panel.color = Color(0.0, 0.0, 0.0, 0.78)
 	subtitle_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	subtitle_panel.visible = false

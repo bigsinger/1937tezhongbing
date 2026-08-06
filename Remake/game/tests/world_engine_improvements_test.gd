@@ -19,6 +19,15 @@ const DYNAMIC_OCCUPANCY_GRID: Script = preload(
 )
 const ENEMY_UNIT: Script = preload("res://scripts/enemy_unit.gd")
 const SQUAD_UNIT: Script = preload("res://scripts/squad_unit.gd")
+const FIELD_PICKUP: Script = preload("res://scripts/field_pickup.gd")
+const WORLD_INTERACTION_RESOLVER: Script = preload(
+	"res://scripts/world_interaction_resolver.gd"
+)
+const MOVEMENT_RECOVERY_PLANNER: Script = preload(
+	"res://scripts/movement_recovery_planner.gd"
+)
+const TACTICAL_SENSES: Script = preload("res://scripts/tactical_senses.gd")
+const MEDIA_DIRECTOR: Script = preload("res://scripts/media_director.gd")
 
 var failures: Array[String] = []
 var checks := 0
@@ -43,15 +52,24 @@ func _run() -> void:
 	_test_physics_render_interpolation()
 	_test_row_sliced_actor_has_no_fallback_artifact()
 	_test_inventory_drop_interaction()
+	_test_pickup_priority_and_pointer_padding()
 	_test_inventory_drops_reset_with_level()
 	_test_burial_cache_does_not_mask_loose_drops()
 	_test_modern_player_accuracy_and_lethal_melee()
+	_test_coordinate_force_fire()
+	_test_enemy_chase_locomotion_and_replan_policy()
+	_test_enemy_gaze_and_visibility_bands()
+	_test_enemy_returns_to_duty()
+	_test_sight_observation_persists_after_selection()
 	_test_patrol_formation_separation()
 	_test_modern_patrol_leadership()
 	_test_patrol_speed_round_trip()
 	_test_readable_movement_animation_cadence()
 	_test_component_movement_carries_waypoint_time()
 	_test_single_pass_vision_clipping()
+	_test_bounded_movement_recovery_route()
+	_test_subtitle_safe_area()
+	_test_world_weapon_drop_art_catalog()
 	_test_compact_biped_navigation_footprints()
 	if failures.is_empty():
 		print("World engine improvement tests passed (%d checks)." % checks)
@@ -227,6 +245,49 @@ func _test_inventory_drop_interaction() -> void:
 	collector.free()
 
 
+func _test_pickup_priority_and_pointer_padding() -> void:
+	var main = MAIN_SCRIPT.new()
+	var click_point := Vector2(128.0, 64.0)
+	var loose = MISSION_PICKUP.new()
+	loose.configure(
+		{"original_inventory_kind": "weapon", "item_id": 37, "quantity": 5},
+		click_point + Vector2(20.0, 0.0),
+	)
+	main.add_child(loose)
+	main.mission_pickups.append(loose)
+	var field = FIELD_PICKUP.new()
+	field.configure(
+		{
+			"behavior": "field_pickup",
+			"database_entry_id": 1,
+			"interaction_radius": 48.0,
+			"grant": {"kind": "healing", "amount": 1},
+		},
+		{"x": click_point.x, "y": click_point.y, "scene_index": 91},
+	)
+	main.add_child(field)
+	main.field_pickups.append(field)
+	var resolved := main.call("_preferred_pickup_at_world_point", click_point) as Dictionary
+	_expect(
+		loose.contains_parent_point(click_point)
+			and str(resolved.get("kind", "")) == "loose_inventory"
+			and resolved.get("node") == loose,
+		"padded pointer targets keep small drops easy to click and loose inventory wins overlaps",
+	)
+	var nearer = MISSION_PICKUP.new()
+	nearer.configure(
+		{"original_inventory_kind": "backpack", "item_id": 83, "quantity": 1},
+		click_point + Vector2(4.0, 0.0),
+	)
+	main.add_child(nearer)
+	main.mission_pickups.append(nearer)
+	_expect(
+		main.mission_inventory_pickup_at_world_point(click_point) == nearer,
+		"overlapping loose drops resolve to the nearest pointer target deterministically",
+	)
+	main.free()
+
+
 func _test_inventory_drops_reset_with_level() -> void:
 	var main = MAIN_SCRIPT.new()
 	var pickup = MISSION_PICKUP.new()
@@ -337,6 +398,201 @@ func _test_modern_player_accuracy_and_lethal_melee() -> void:
 	)
 	attacker.free()
 	target.free()
+
+
+func _test_coordinate_force_fire() -> void:
+	var attacker = SQUAD_UNIT.new()
+	root.add_child(attacker)
+	attacker.scene_index = 21
+	attacker.faction_id = 3
+	attacker.is_alive = true
+	attacker.infinite_ammo = true
+	attacker.weapon_profile = {
+		"attack_type": 1,
+		"damage": 1,
+		"ammo_per_attack": 1,
+		"alert_radius": 640.0,
+	}
+	var starts: Array[Vector2] = []
+	var projectiles: Array[Vector2] = []
+	attacker.coordinate_attack_started.connect(
+		func(_actor: Node2D, point: Vector2, _type: int, _radius: float) -> void:
+			starts.append(point)
+	)
+	attacker.coordinate_projectile_requested.connect(
+		func(_actor: Node2D, point: Vector2, _profile: Dictionary) -> void:
+			projectiles.append(point)
+	)
+	var target_point := Vector2(320.0, 96.0)
+	_expect(
+		attacker.issue_force_attack_at(target_point)
+			and starts == [target_point]
+			and projectiles == [target_point],
+		"Ctrl force-fire commits a real coordinate projectile without requiring an actor target",
+	)
+	attacker.free()
+
+
+func _movement_groups(step: Vector2) -> Array[Dictionary]:
+	var groups: Array[Dictionary] = []
+	for unused_index: int in range(8):
+		var frames: Array[Texture2D] = []
+		groups.append({
+			"secondary_triplet": [int(step.x), 1, int(step.y)],
+			"frame_hold_ticks": 1,
+			"frames": frames,
+		})
+	return groups
+
+
+func _test_enemy_chase_locomotion_and_replan_policy() -> void:
+	var enemy = ENEMY_UNIT.new()
+	enemy.is_alive = true
+	enemy.has_authored_run_animation = true
+	enemy.locomotion_can_move = true
+	var empty_crawl_groups: Array[Dictionary] = []
+	enemy.configure_movement_modes(
+		_movement_groups(Vector2(2.0, 1.0)),
+		_movement_groups(Vector2(2.0, 1.0)),
+		empty_crawl_groups,
+	)
+	enemy.call("_set_enemy_pursuit_locomotion", true)
+	_expect(
+		enemy.is_running and enemy.move_speed > SQUAD_UNIT.WALK_SPEED * 2.5,
+		"a chasing enemy switches to its authored run cycle and matching run speed",
+	)
+	enemy.call("_set_enemy_pursuit_locomotion", false)
+	_expect(
+		not enemy.is_running and is_equal_approx(enemy.move_speed, SQUAD_UNIT.WALK_SPEED),
+		"attack/search/patrol transitions restore synchronized walking locomotion",
+	)
+	_expect(
+		not MOVEMENT_RECOVERY_PLANNER.chase_replan_required(
+			Vector2(100.0, 100.0),
+			Vector2(110.0, 100.0),
+			true,
+			28.0,
+		)
+			and MOVEMENT_RECOVERY_PLANNER.chase_replan_required(
+				Vector2(100.0, 100.0),
+				Vector2(140.0, 100.0),
+				true,
+				28.0,
+			),
+		"moving-target chase paths are coalesced until the target meaningfully changes cell",
+	)
+	enemy.free()
+
+
+func _test_enemy_gaze_and_visibility_bands() -> void:
+	var profile := {
+		"horizontal_radius": 100.0,
+		"vertical_radius": 50.0,
+		"near_band_ratio": 0.5,
+		"crawling_hidden_in_far_band": true,
+		"requires_line_of_sight": false,
+	}
+	_expect(
+		TACTICAL_SENSES.original_visibility_band_heading(
+			Vector2.ZERO, Vector2(80.0, 0.0), 0.0, 45.0, profile, false
+		) == 2
+			and TACTICAL_SENSES.original_visibility_band_heading(
+				Vector2.ZERO, Vector2(80.0, 0.0), 0.0, 45.0, profile, true
+			) == 0
+			and TACTICAL_SENSES.original_visibility_band_heading(
+				Vector2.ZERO, Vector2(30.0, 0.0), 0.0, 45.0, profile, true
+			) == 1,
+		"far green sight hides prone units while the near red band detects both postures",
+	)
+	var enemy = ENEMY_UNIT.new()
+	enemy.mission_ai_coordinator = Node.new()
+	enemy.original_direction_index = 3
+	enemy.sense_profile = profile
+	enemy.behavior_state = ENEMY_UNIT.BehaviorState.PATROL
+	enemy.gaze_heading_bucket = -1
+	enemy.gaze_sweep_elapsed = 0.0
+	enemy.call("_advance_gaze_heading", 1.125)
+	_expect(
+		enemy.gaze_heading_degrees >= 15.0 and enemy.gaze_heading_degrees <= 21.0,
+		"patrolling sight sweeps around the actor's current authored facing",
+	)
+	var target = SQUAD_UNIT.new()
+	root.add_child(target)
+	target.position = Vector2(0.0, 40.0)
+	target.is_alive = true
+	enemy.current_target = target
+	enemy.behavior_state = ENEMY_UNIT.BehaviorState.CHASE
+	enemy.call("_advance_gaze_heading", 0.1)
+	_expect(
+		absf(enemy.gaze_heading_degrees - 90.0) <= 3.0,
+		"chase sight tracks the live target heading instead of a stale direction index",
+	)
+	target.free()
+	enemy.mission_ai_coordinator.free()
+	enemy.free()
+
+
+func _test_enemy_returns_to_duty() -> void:
+	var movement := PackedInt64Array()
+	var sight := PackedInt64Array()
+	movement.resize(35)
+	sight.resize(35)
+	var navigation = NAVIGATION_GRID_DATA.create_for_tests(
+		7, 5, Vector2i(32, 16), movement, sight
+	)
+	navigation.prepare_astar()
+	var occupancy = DYNAMIC_OCCUPANCY_GRID.new()
+	occupancy.configure(navigation)
+	occupancy.register_scene(31, Vector2(16.0, 8.0))
+	occupancy.finalize_registration()
+	var enemy = ENEMY_UNIT.new()
+	enemy.scene_index = 31
+	enemy.position = Vector2(16.0, 8.0)
+	enemy.is_alive = true
+	enemy.locomotion_can_move = true
+	enemy.dynamic_occupancy = occupancy
+	enemy.mission_ai_coordinator = Node.new()
+	enemy.patrol_waypoints = PackedVector2Array([Vector2(176.0, 40.0)])
+	enemy.patrol_index = 0
+	enemy.call("_capture_duty_snapshot")
+	enemy.call("_begin_return_to_duty")
+	_expect(
+		enemy.behavior_state == ENEMY_UNIT.BehaviorState.RETURN_TO_DUTY
+			and enemy.movement_path_index < enemy.movement_path.size(),
+		"an expired modern search first routes the guard back to its recorded duty waypoint",
+	)
+	enemy.position = enemy.return_to_duty_destination
+	enemy.movement_path_index = enemy.movement_path.size()
+	enemy.call("_update_return_to_duty", 0.1)
+	_expect(
+		enemy.behavior_state == ENEMY_UNIT.BehaviorState.PATROL
+			and not enemy.duty_snapshot_active,
+		"a guard resumes its authored patrol only after completing return-to-duty",
+	)
+	enemy.mission_ai_coordinator.free()
+	enemy.free()
+
+
+func _test_sight_observation_persists_after_selection() -> void:
+	var main = MAIN_SCRIPT.new()
+	var enemy = ENEMY_UNIT.new()
+	enemy.is_alive = true
+	enemy.faction_id = 1
+	main.add_child(enemy)
+	main.call("_set_sight_observation_target", enemy)
+	main.clear_selection()
+	_expect(
+		main.sight_observation_target == enemy
+			and main.sight_observation_remaining > 0.0
+			and enemy.tactical_ranges_visible,
+		"selecting a squad member no longer instantly cancels an S-observed enemy",
+	)
+	main.call("_advance_sight_observation", 9.0)
+	_expect(
+		main.sight_observation_target == null and not enemy.tactical_ranges_visible,
+		"S observation expires automatically after a useful bounded interval",
+	)
+	main.free()
 
 
 func _test_patrol_formation_separation() -> void:
@@ -535,6 +791,83 @@ func _test_single_pass_vision_clipping() -> void:
 			.is_equal_approx(clear_target),
 		"one-pass tactical vision clipping preserves an unobstructed fan ray",
 	)
+
+
+func _test_bounded_movement_recovery_route() -> void:
+	var movement := PackedInt64Array()
+	var sight := PackedInt64Array()
+	movement.resize(35)
+	sight.resize(35)
+	var navigation = NAVIGATION_GRID_DATA.create_for_tests(
+		7, 5, Vector2i(32, 16), movement, sight
+	)
+	navigation.prepare_astar()
+	var occupancy = DYNAMIC_OCCUPANCY_GRID.new()
+	occupancy.configure(navigation)
+	var start := Vector2(48.0, 40.0)
+	var blocked := Vector2(80.0, 40.0)
+	var goal := Vector2(176.0, 40.0)
+	occupancy.register_scene(41, start)
+	occupancy.register_scene(42, blocked)
+	occupancy.finalize_registration()
+	var path_queries_before := int(occupancy.path_query_count)
+	var recovery: PackedVector2Array = MOVEMENT_RECOVERY_PLANNER.recovery_path(
+		occupancy,
+		41,
+		start,
+		goal,
+		blocked,
+	)
+	var crosses_blocked_cell := false
+	for point: Vector2 in recovery:
+		if navigation.world_to_cell(point) == navigation.world_to_cell(blocked):
+			crosses_blocked_cell = true
+			break
+	_expect(
+		not recovery.is_empty()
+			and recovery[-1].distance_to(goal) <= 20.0
+			and not crosses_blocked_cell,
+		"hard-stuck recovery chooses a bounded neighbouring detour without teleporting through the blocker",
+	)
+	_expect(
+		int(occupancy.path_query_count) - path_queries_before
+			<= MOVEMENT_RECOVERY_PLANNER.MAX_CANDIDATE_ROUTES * 2,
+		"hard-stuck recovery has a strict A* query budget instead of scanning every neighbouring route",
+	)
+	_expect(
+		not is_equal_approx(
+			SQUAD_UNIT.movement_watchdog_phase_for_scene(41),
+			SQUAD_UNIT.movement_watchdog_phase_for_scene(42),
+		),
+		"movement watchdog maintenance is deterministically dephased by actor identity",
+	)
+
+
+func _test_subtitle_safe_area() -> void:
+	var media = MEDIA_DIRECTOR.new()
+	root.add_child(media)
+	media.set_gameplay_safe_area(62.0)
+	_expect(
+		is_equal_approx(media.subtitle_panel.offset_bottom, -78.0)
+			and is_equal_approx(media.subtitle_panel.offset_top, -144.0),
+		"dialogue subtitles reserve the live 62-pixel bottom HUD instead of being covered by it",
+	)
+	media.free()
+
+
+func _test_world_weapon_drop_art_catalog() -> void:
+	var all_world_art := true
+	for item_id: int in range(36, 46):
+		all_world_art = (
+			all_world_art
+			and not str(MAIN_SCRIPT.world_weapon_sprite_stem(item_id)).is_empty()
+		)
+	_expect(
+		all_world_art,
+		"every original weapon drop resolves to transparent world art rather than a framed HUD PSD",
+	)
+
+
 func _test_compact_biped_navigation_footprints() -> void:
 	_expect(
 		SQUAD_UNIT.runtime_actor_uses_compact_biped_navigation(1)

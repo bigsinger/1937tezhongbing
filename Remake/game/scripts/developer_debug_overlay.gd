@@ -78,6 +78,7 @@ static func _format_snapshot(snapshot: Dictionary) -> String:
 	var services := snapshot.get("services", {}) as Dictionary
 	var spatial := services.get("spatial_index", {}) as Dictionary
 	var navigation := services.get("navigation_requests", {}) as Dictionary
+	var movement := snapshot.get("movement_health", {}) as Dictionary
 	var ai := snapshot.get("ai", {}) as Dictionary
 	var lines: Array[String] = [
 		"[color=#7ff0a8][b]%s[/b][/color]" % _text("DEBUG_TITLE"),
@@ -100,6 +101,12 @@ static func _format_snapshot(snapshot: Dictionary) -> String:
 			int(spatial.get("nodes", spatial.get("registered_nodes", 0))),
 			int(spatial.get("cells", spatial.get("bucket_count", 0))),
 			int(navigation.get("pending", navigation.get("pending_count", 0))),
+		],
+		"Movement active %d　stalled %d　recovered %d/%d" % [
+			int(movement.get("active_paths", 0)),
+			int(movement.get("stalled_actors", 0)),
+			int(movement.get("recovery_count", 0)),
+			int(movement.get("recovery_failures", 0)),
 		],
 		_text("DEBUG_SELECTION") % [
 			int(snapshot.get("selected_units", 0)),

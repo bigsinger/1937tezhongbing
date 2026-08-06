@@ -695,6 +695,14 @@ func gameplay_viewport_size(full_viewport_size: Vector2) -> Vector2:
 	return gameplay_screen_rect(full_viewport_size).size
 
 
+func gameplay_bottom_inset() -> float:
+	return (
+		ORIGINAL_BOTTOM_HUD_HEIGHT
+		if _original_bottom_hud != null and _original_bottom_hud.visible
+		else 0.0
+	)
+
+
 func gameplay_screen_rect(full_viewport_size: Vector2) -> Rect2:
 	var safe_size := full_viewport_size.max(Vector2.ONE)
 	if _original_bottom_hud != null and _original_bottom_hud.visible:

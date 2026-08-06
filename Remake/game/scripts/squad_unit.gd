@@ -59,6 +59,11 @@ const ORIGINAL_RUN_STEP_MULTIPLIER := 3.0
 const MAX_MOVEMENT_SUBSTEP_SECONDS := 1.0 / ORIGINAL_MOVEMENT_TICKS_PER_SECOND
 const DEFAULT_REPLAN_BLOCKED_SECONDS := 0.25
 const COMBAT_REPATH_SECONDS := 0.40
+const MOVEMENT_PROGRESS_SAMPLE_SECONDS := 0.35
+const MOVEMENT_PROGRESS_EPSILON := 2.0
+const MOVEMENT_HARD_STUCK_SECONDS := 1.20
+const MOVEMENT_RECOVERY_COOLDOWN_SECONDS := 0.75
+const MOVEMENT_WATCHDOG_PHASE_SLOTS := 23
 ## Representative vector magnitudes retained for settings, probes and
 ## externally-authored speed scaling.  Exact path advancement remains
 ## component-capped at 360/180, 120/60 and 120/60 pixels per second.
@@ -93,6 +98,9 @@ const ORIGINAL_CRT_RANDOM_RUNTIME_STATE: Script = preload(
 	"res://scripts/original_crt_random_runtime_state.gd"
 )
 const WORLD_DEPTH: Script = preload("res://scripts/world_depth.gd")
+const MOVEMENT_RECOVERY_PLANNER: Script = preload(
+	"res://scripts/movement_recovery_planner.gd"
+)
 
 enum CombatAction { NONE, ATTACK, RELOAD, DEATH }
 
@@ -105,6 +113,17 @@ signal attack_started(
 signal attack_hit(attacker: Node2D, target: Node2D, attack_type: int, damage: int)
 signal attack_missed(attacker: Node2D, target: Node2D, attack_type: int, reason: String)
 signal projectile_requested(attacker: Node2D, target: Node2D, weapon_profile: Dictionary)
+signal coordinate_attack_started(
+	attacker: Node2D,
+	world_position: Vector2,
+	attack_type: int,
+	alert_radius: float,
+)
+signal coordinate_projectile_requested(
+	attacker: Node2D,
+	world_position: Vector2,
+	weapon_profile: Dictionary,
+)
 signal special_action_requested(attacker: Node2D, target: Node2D, weapon_profile: Dictionary)
 signal original_disguise_attack_committed(
 	attacker: Node2D,
@@ -142,6 +161,14 @@ var was_moving := false
 var use_continuous_waypoint_motion := false
 var blocked_elapsed := 0.0
 var blocked_replan_seconds := DEFAULT_REPLAN_BLOCKED_SECONDS
+var movement_progress_elapsed := 0.0
+var movement_no_progress_seconds := 0.0
+var movement_progress_last_distance := INF
+var movement_progress_last_path_index := -1
+var movement_recovery_cooldown := 0.0
+var movement_recovery_count := 0
+var movement_recovery_failure_count := 0
+var movement_last_blocked_waypoint := Vector2(INF, INF)
 var is_crawling := false
 var is_running := true
 var is_alive := true
@@ -309,6 +336,8 @@ var reload_remaining := 0.0
 var pending_hit_target: Node2D
 var pending_hit_forced := false
 var pending_hit_resolved := false
+var pending_hit_has_world_position := false
+var pending_hit_world_position := Vector2.ZERO
 ## Enabled only for actors placed in the player's command roster. Keeping the
 ## switch explicit prevents the clean modern accuracy model from leaking into
 ## imported enemy/ambient parity actors that share this base class.
@@ -478,6 +507,14 @@ func configure(
 	was_moving = false
 	use_continuous_waypoint_motion = false
 	blocked_elapsed = 0.0
+	movement_progress_elapsed = 0.0
+	movement_no_progress_seconds = 0.0
+	movement_progress_last_distance = INF
+	movement_progress_last_path_index = -1
+	movement_recovery_cooldown = 0.0
+	movement_recovery_count = 0
+	movement_recovery_failure_count = 0
+	movement_last_blocked_waypoint = Vector2(INF, INF)
 	dynamic_registered = false
 	active_sprite_footprint_key = ""
 	use_compact_navigation_footprint = false
@@ -486,6 +523,11 @@ func configure(
 	auto_combat_enabled = false
 	combat_action = CombatAction.NONE
 	action_finished = false
+	pending_hit_target = null
+	pending_hit_forced = false
+	pending_hit_resolved = false
+	pending_hit_has_world_position = false
+	pending_hit_world_position = Vector2.ZERO
 	hurt_remaining = 0.0
 	death_emitted = false
 	combat_inventory = null
@@ -3363,6 +3405,11 @@ func issue_path(path: PackedVector2Array) -> void:
 	movement_path = path.duplicate()
 	movement_path_index = 0
 	blocked_elapsed = 0.0
+	movement_progress_elapsed = movement_watchdog_phase_for_scene(scene_index)
+	movement_no_progress_seconds = 0.0
+	movement_progress_last_path_index = 0
+	movement_recovery_cooldown = 0.0
+	movement_last_blocked_waypoint = Vector2(INF, INF)
 	while (
 		movement_path_index < movement_path.size()
 		and position.is_equal_approx(movement_path[movement_path_index])
@@ -3370,9 +3417,23 @@ func issue_path(path: PackedVector2Array) -> void:
 		movement_path_index += 1
 	if movement_path_index < movement_path.size():
 		target_position = movement_path[-1]
+		movement_progress_last_distance = position.distance_to(target_position)
+		movement_progress_last_path_index = movement_path_index
 	else:
 		target_position = position
+		movement_progress_last_distance = INF
+		movement_progress_last_path_index = -1
 	queue_redraw()
+
+
+static func movement_watchdog_phase_for_scene(actor_scene_index: int) -> float:
+	if actor_scene_index < 0:
+		return 0.0
+	return (
+		MOVEMENT_PROGRESS_SAMPLE_SECONDS
+		* float(posmod(actor_scene_index * 17, MOVEMENT_WATCHDOG_PHASE_SLOTS))
+		/ float(MOVEMENT_WATCHDOG_PHASE_SLOTS)
+	)
 
 
 func cancel_path() -> void:
@@ -3382,6 +3443,12 @@ func cancel_path() -> void:
 	movement_path_index = 0
 	target_position = position
 	blocked_elapsed = 0.0
+	movement_progress_elapsed = 0.0
+	movement_no_progress_seconds = 0.0
+	movement_progress_last_distance = INF
+	movement_progress_last_path_index = -1
+	movement_recovery_cooldown = 0.0
+	movement_last_blocked_waypoint = Vector2(INF, INF)
 	_apply_idle_state()
 	queue_redraw()
 
@@ -3477,6 +3544,16 @@ func issue_attack(target: Node2D, force_target: bool = false) -> bool:
 	return true
 
 
+func issue_force_attack_at(world_position: Vector2) -> bool:
+	if not is_alive or weapon_profile.is_empty():
+		return false
+	var attack_type := int(weapon_profile.get("attack_type", 0))
+	if not _supports_coordinate_attack(attack_type, world_position):
+		return false
+	clear_combat_target()
+	return try_start_force_attack_at(world_position)
+
+
 func clear_combat_target() -> void:
 	combat_target = null
 	combat_target_forced = false
@@ -3552,28 +3629,9 @@ func try_start_attack(target: Node2D, force_target: bool = false) -> bool:
 	):
 		return false
 	_release_special_control_for_combat()
-	var ammo_per_attack := maxi(int(weapon_profile.get("ammo_per_attack", 0)), 0)
 	var attack_type := int(weapon_profile.get("attack_type", 0))
-	var defer_item_cost_to_hit_frame := attack_type in [8, 10]
-	if not infinite_ammo and ammo_per_attack > 0:
-		if combat_inventory != null:
-			var inventory_ready: bool = (
-				combat_inventory.can_consume_active_attack()
-				if defer_item_cost_to_hit_frame
-				else combat_inventory.consume_active_attack()
-			)
-			if not inventory_ready:
-				_start_reload()
-				return false
-			if not defer_item_cost_to_hit_frame:
-				_sync_ammo_from_inventory(true)
-		else:
-			if magazine_ammo < ammo_per_attack:
-				_start_reload()
-				return false
-			if not defer_item_cost_to_hit_frame:
-				magazine_ammo -= ammo_per_attack
-				ammo_changed.emit(self, magazine_ammo, reserve_ammo)
+	if not _consume_attack_start_ammo(attack_type):
+		return false
 
 	var facing := target.position - position
 	if not facing.is_zero_approx():
@@ -3582,6 +3640,8 @@ func try_start_attack(target: Node2D, force_target: bool = false) -> bool:
 	pending_hit_target = target
 	pending_hit_forced = forced
 	pending_hit_resolved = false
+	pending_hit_has_world_position = false
+	pending_hit_world_position = Vector2.ZERO
 	if modern_player_combat_rules_enabled:
 		player_attack_attempt_serial += 1
 	# Native sub_457B40 has no independent recovery counter. The authored SPR
@@ -3598,9 +3658,90 @@ func try_start_attack(target: Node2D, force_target: bool = false) -> bool:
 	if action_finished:
 		_resolve_pending_hit()
 		combat_action = CombatAction.NONE
-		pending_hit_target = null
+		_clear_pending_attack_intent()
 		_sync_equipped_weapon_after_consumption()
 		apply_idle_frame()
+	return true
+
+
+func try_start_force_attack_at(world_position: Vector2) -> bool:
+	var attack_type := int(weapon_profile.get("attack_type", 0))
+	if (
+		not is_alive
+		or combat_action != CombatAction.NONE
+		or hurt_remaining > 0.0
+		or attack_cooldown_remaining > 0.0
+		or not _supports_coordinate_attack(attack_type, world_position)
+	):
+		return false
+	_release_special_control_for_combat()
+	if not _consume_attack_start_ammo(attack_type):
+		return false
+	var facing := world_position - position
+	if not facing.is_zero_approx():
+		set_animation_group(direction_group_index(facing))
+	cancel_path()
+	pending_hit_target = null
+	pending_hit_forced = true
+	pending_hit_resolved = false
+	pending_hit_has_world_position = true
+	pending_hit_world_position = world_position
+	if modern_player_combat_rules_enabled:
+		player_attack_attempt_serial += 1
+	attack_cooldown_remaining = 0.0
+	coordinate_attack_started.emit(
+		self,
+		world_position,
+		attack_type,
+		float(weapon_profile.get("alert_radius", 0.0)),
+	)
+	_start_one_shot(CombatAction.ATTACK, attack_groups)
+	if action_finished:
+		_resolve_pending_hit()
+		combat_action = CombatAction.NONE
+		_clear_pending_attack_intent()
+		_sync_equipped_weapon_after_consumption()
+		apply_idle_frame()
+	return true
+
+
+func _supports_coordinate_attack(attack_type: int, world_position: Vector2) -> bool:
+	if attack_type in [8, 10, 11] or world_position.x == INF or world_position.y == INF:
+		return false
+	if PROJECTILE_PROFILES.is_projectile_attack(attack_type):
+		return true
+	if attack_type not in [4, 5]:
+		return false
+	return TACTICAL_SENSES_SCRIPT.is_within_original_attack_range(
+		position,
+		world_position,
+		weapon_profile,
+	)
+
+
+func _consume_attack_start_ammo(attack_type: int) -> bool:
+	var ammo_per_attack := maxi(int(weapon_profile.get("ammo_per_attack", 0)), 0)
+	var defer_item_cost_to_hit_frame := attack_type in [8, 10]
+	if infinite_ammo or ammo_per_attack <= 0:
+		return true
+	if combat_inventory != null:
+		var inventory_ready: bool = (
+			combat_inventory.can_consume_active_attack()
+			if defer_item_cost_to_hit_frame
+			else combat_inventory.consume_active_attack()
+		)
+		if not inventory_ready:
+			_start_reload()
+			return false
+		if not defer_item_cost_to_hit_frame:
+			_sync_ammo_from_inventory(true)
+		return true
+	if magazine_ammo < ammo_per_attack:
+		_start_reload()
+		return false
+	if not defer_item_cost_to_hit_frame:
+		magazine_ammo -= ammo_per_attack
+		ammo_changed.emit(self, magazine_ammo, reserve_ammo)
 	return true
 
 
@@ -3693,6 +3834,10 @@ func _physics_process(delta: float) -> void:
 		Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
 	)
 	var safe_delta := maxf(delta, 0.0)
+	movement_recovery_cooldown = maxf(
+		movement_recovery_cooldown - safe_delta,
+		0.0,
+	)
 	var legacy_started_usec := (
 		Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
 	)
@@ -3740,6 +3885,7 @@ func _physics_process(delta: float) -> void:
 	# in the normal no-displacement tail below.
 	if movement_path_index >= movement_path.size():
 		blocked_elapsed = 0.0
+		_reset_movement_progress_watchdog()
 		_apply_idle_state()
 		_advance_original_ai_idle_animation(safe_delta)
 		_record_debug_physics_section("movement", movement_started_usec)
@@ -3858,7 +4004,7 @@ func _physics_process(delta: float) -> void:
 			if not original_pursuit_last_navigation_applied:
 				var replanned := _find_movement_path_runtime(target_position)
 				if not replanned.is_empty():
-					issue_path(replanned)
+					_replace_blocked_path_preserving_progress(replanned)
 		var accepted_displacement := position - previous_position
 		if accepted_displacement.is_zero_approx():
 			_apply_idle_state()
@@ -3870,6 +4016,7 @@ func _physics_process(delta: float) -> void:
 			advance_animation(safe_delta)
 			was_moving = true
 			_update_sprite_depth()
+		_advance_movement_progress_watchdog(safe_delta, previous_position, true)
 		_record_debug_physics_section("movement", movement_started_usec)
 		_record_debug_physics_section("total", total_started_usec)
 		return
@@ -3888,6 +4035,7 @@ func _physics_process(delta: float) -> void:
 	else:
 		_apply_idle_state()
 		_advance_original_ai_idle_animation(safe_delta)
+	_advance_movement_progress_watchdog(safe_delta, previous_position, false)
 	_record_debug_physics_section("movement", movement_started_usec)
 	_record_debug_physics_section("total", total_started_usec)
 
@@ -3964,6 +4112,106 @@ func _find_movement_path_runtime(
 	) as PackedVector2Array
 
 
+func _replace_blocked_path_preserving_progress(path: PackedVector2Array) -> void:
+	var no_progress := movement_no_progress_seconds
+	var sample_elapsed := movement_progress_elapsed
+	var recovery_cooldown := movement_recovery_cooldown
+	issue_path(path)
+	movement_no_progress_seconds = no_progress
+	movement_progress_elapsed = sample_elapsed
+	movement_recovery_cooldown = recovery_cooldown
+
+
+func _reset_movement_progress_watchdog() -> void:
+	movement_progress_elapsed = 0.0
+	movement_no_progress_seconds = 0.0
+	movement_progress_last_distance = INF
+	movement_progress_last_path_index = -1
+	movement_last_blocked_waypoint = Vector2(INF, INF)
+
+
+func _advance_movement_progress_watchdog(
+	delta: float,
+	previous_position: Vector2,
+	move_was_blocked: bool,
+) -> void:
+	if movement_path_index >= movement_path.size():
+		_reset_movement_progress_watchdog()
+		return
+	movement_progress_elapsed += maxf(delta, 0.0)
+	if movement_progress_elapsed < MOVEMENT_PROGRESS_SAMPLE_SECONDS:
+		return
+	var sample_seconds := movement_progress_elapsed
+	movement_progress_elapsed = 0.0
+	var distance := position.distance_to(target_position)
+	var path_advanced := movement_path_index > movement_progress_last_path_index
+	var distance_improved := (
+		movement_progress_last_distance == INF
+		or distance + MOVEMENT_PROGRESS_EPSILON < movement_progress_last_distance
+	)
+	var displaced := position.distance_to(previous_position) >= 0.5
+	if path_advanced or distance_improved:
+		movement_no_progress_seconds = 0.0
+	else:
+		movement_no_progress_seconds += sample_seconds
+	# Keep the arguments observable in diagnostics builds: a moving actor whose
+	# endpoint distance never improves is intentional watchdog input, not an
+	# unused-value accident.
+	if displaced and move_was_blocked:
+		movement_last_blocked_waypoint = movement_path[movement_path_index]
+	movement_progress_last_distance = distance
+	movement_progress_last_path_index = movement_path_index
+	if (
+		movement_no_progress_seconds >= MOVEMENT_HARD_STUCK_SECONDS
+		and movement_recovery_cooldown <= 0.0
+	):
+		_attempt_movement_recovery()
+
+
+func _attempt_movement_recovery() -> bool:
+	if (
+		dynamic_occupancy == null
+		or scene_index < 0
+		or movement_path_index >= movement_path.size()
+	):
+		return false
+	var goal := target_position
+	var blocked_waypoint := movement_path[movement_path_index]
+	dynamic_occupancy.release_goal(scene_index)
+	var recovery: PackedVector2Array = MOVEMENT_RECOVERY_PLANNER.recovery_path(
+		dynamic_occupancy,
+		scene_index,
+		position,
+		goal,
+		blocked_waypoint,
+	)
+	if recovery.is_empty():
+		recovery = _find_movement_path_runtime(goal)
+	elif dynamic_occupancy.has_method("reserve_path_goal_for_scene"):
+		dynamic_occupancy.reserve_path_goal_for_scene(scene_index, recovery)
+	if recovery.is_empty():
+		movement_recovery_failure_count += 1
+		movement_recovery_cooldown = MOVEMENT_RECOVERY_COOLDOWN_SECONDS
+		movement_no_progress_seconds = MOVEMENT_HARD_STUCK_SECONDS * 0.5
+		return false
+	issue_path(recovery)
+	movement_recovery_count += 1
+	movement_recovery_cooldown = MOVEMENT_RECOVERY_COOLDOWN_SECONDS
+	movement_last_blocked_waypoint = blocked_waypoint
+	return true
+
+
+func movement_health_snapshot() -> Dictionary:
+	return {
+		"scene_index": scene_index,
+		"path_active": movement_path_index < movement_path.size(),
+		"no_progress_seconds": movement_no_progress_seconds,
+		"recovery_count": movement_recovery_count,
+		"recovery_failure_count": movement_recovery_failure_count,
+		"blocked_waypoint": movement_last_blocked_waypoint,
+	}
+
+
 func _update_auto_combat(delta: float) -> bool:
 	if not _target_is_alive(combat_target):
 		clear_combat_target()
@@ -4032,6 +4280,7 @@ func _advance_combat_action(delta: float) -> void:
 		action_finished = true
 		if combat_action == CombatAction.ATTACK:
 			combat_action = CombatAction.NONE
+			_clear_pending_attack_intent()
 			_sync_equipped_weapon_after_consumption()
 		return
 	var group := groups[clampi(animation_group_index, 0, 7)]
@@ -4047,7 +4296,7 @@ func _advance_combat_action(delta: float) -> void:
 			action_finished = true
 			if combat_action == CombatAction.ATTACK:
 				combat_action = CombatAction.NONE
-				pending_hit_target = null
+				_clear_pending_attack_intent()
 				_sync_equipped_weapon_after_consumption()
 				apply_idle_frame()
 			return
@@ -4066,7 +4315,7 @@ func _advance_combat_action(delta: float) -> void:
 			# actor update. Do not hold the final frame or add a cooldown.
 			action_finished = true
 			combat_action = CombatAction.NONE
-			pending_hit_target = null
+			_clear_pending_attack_intent()
 			_sync_equipped_weapon_after_consumption()
 			apply_idle_frame()
 			return
@@ -4187,6 +4436,25 @@ func _resolve_pending_hit() -> void:
 		return
 	pending_hit_resolved = true
 	var attack_type := int(weapon_profile.get("attack_type", 0))
+	if pending_hit_has_world_position:
+		# Ground fire is an intentional shot, not an accuracy roll against an
+		# invisible actor.  The projectile still performs ordinary wall/actor
+		# collision, while melee simply completes its authored empty swing.
+		if PROJECTILE_PROFILES.is_projectile_attack(attack_type):
+			var projectile_weapon_profile := weapon_profile.duplicate(true)
+			projectile_weapon_profile["resolved_projectile_damage"] = (
+				LEGACY_COMBAT_RULES.direct_actor_damage(
+					attack_type,
+					runtime_actor_type,
+					int(weapon_profile.get("damage", 1)),
+				)
+			)
+			coordinate_projectile_requested.emit(
+				self,
+				pending_hit_world_position,
+				projectile_weapon_profile,
+			)
+		return
 	if not _can_resolve_pending_hit(attack_type):
 		return
 	if (
@@ -4422,10 +4690,16 @@ func _interrupt_combat_action() -> void:
 		return
 	combat_action = CombatAction.NONE
 	action_finished = true
+	_clear_pending_attack_intent(true)
+	reload_remaining = 0.0
+
+
+func _clear_pending_attack_intent(mark_resolved: bool = true) -> void:
 	pending_hit_target = null
 	pending_hit_forced = false
-	pending_hit_resolved = true
-	reload_remaining = 0.0
+	pending_hit_resolved = mark_resolved
+	pending_hit_has_world_position = false
+	pending_hit_world_position = Vector2.ZERO
 
 
 func _die(killer: Node2D) -> void:
@@ -4448,7 +4722,7 @@ func _die(killer: Node2D) -> void:
 		if reduced_violence_mode
 		else Color.WHITE
 	)
-	pending_hit_target = null
+	_clear_pending_attack_intent(true)
 	_start_one_shot(CombatAction.DEATH, death_groups)
 	death_emitted = true
 	died.emit(self, killer)

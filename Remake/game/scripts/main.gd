@@ -63,6 +63,9 @@ const WORLD_AUDIO_SPATIALIZER: Script = preload(
 const WORLD_SPATIAL_INDEX_SCRIPT: Script = preload(
 	"res://scripts/world_spatial_index.gd"
 )
+const WORLD_INTERACTION_RESOLVER: Script = preload(
+	"res://scripts/world_interaction_resolver.gd"
+)
 const PERCEPTION_SCHEDULER_SCRIPT: Script = preload(
 	"res://scripts/perception_scheduler.gd"
 )
@@ -199,6 +202,7 @@ const BACKGROUND_ENTITY_Z_INDEX := WORLD_DEPTH.BACKGROUND_Z
 const MISSION_INTERACTION_RADIUS := 128.0
 const MISSION_ZONE_CHECK_SECONDS := 0.20
 const MINIMAP_REFRESH_SECONDS := 0.10
+const SIGHT_OBSERVATION_DURATION_SECONDS := 8.0
 const RIGHT_DRAG_THRESHOLD := 8.0
 const QUICK_SAVE_SLOT := "quick"
 const AUTO_SAVE_SLOT := "autosave"
@@ -300,6 +304,21 @@ const INVENTORY_ICON_SPRITES_BY_ITEM_ID := {
 	83: "0248",
 	92: "0271",
 	101: "0246",
+}
+## World drops must use transparent in-world sprites, never the framed 50x50
+## toolbar PSD buttons. Several weapons do not have a one-to-one loose pickup,
+## so the closest original weapon/cache art is used deterministically.
+const WORLD_WEAPON_SPRITES_BY_ITEM_ID := {
+	36: "0377", # pistol
+	37: "0372", # rifle
+	38: "0375", # machine gun
+	39: "0244", # dagger / short blade
+	40: "0244", # broadsword
+	41: "0239", # throwing-knife box
+	42: "0239", # bow ammunition cache
+	43: "0374", # mine
+	44: "0376", # grenade / launcher ammunition
+	45: "0250", # explosives
 }
 const INVENTORY_ICON_SPRITES_BY_MISSION_ITEM := {
 	"uniform": "0243",
@@ -414,6 +433,7 @@ var sight_observation_mode := false
 var sight_target_pending := false
 var sight_beacon: Node2D
 var sight_observation_target: ENEMY_UNIT
+var sight_observation_remaining := 0.0
 var tactical_visible_enemies: Dictionary = {}
 var burial_mode := false
 var burial_target: ENEMY_UNIT
@@ -3645,9 +3665,9 @@ func _spawn_escorts() -> void:
 		var texture := load_entity_texture(entity)
 		if texture == null:
 			continue
-		var movement_groups := load_entity_action_groups(entity, "walk")
-		if movement_groups.is_empty():
-			movement_groups = load_entity_action_groups(entity, "run")
+		var walk_groups := load_entity_action_groups(entity, "walk")
+		var run_groups := load_entity_action_groups(entity, "run")
+		var movement_groups := walk_groups if not walk_groups.is_empty() else run_groups
 		var idle_groups := load_entity_action_groups(entity, "stand")
 		var stand_action_groups := load_entity_action_groups(
 			entity,
@@ -3713,9 +3733,9 @@ func _spawn_enemies() -> void:
 		var texture := load_entity_texture(entity)
 		if texture == null:
 			continue
-		var movement_groups := load_entity_action_groups(entity, "walk")
-		if movement_groups.is_empty():
-			movement_groups = load_entity_action_groups(entity, "run")
+		var walk_groups := load_entity_action_groups(entity, "walk")
+		var run_groups := load_entity_action_groups(entity, "run")
+		var movement_groups := walk_groups if not walk_groups.is_empty() else run_groups
 		var idle_groups := load_entity_action_groups(entity, "stand")
 		var stand_action_groups := load_entity_action_groups(
 			entity,
@@ -3740,6 +3760,7 @@ func _spawn_enemies() -> void:
 			dynamic_occupancy,
 			attack_groups,
 			death_groups,
+			run_groups,
 		)
 		enemy.configure_tactical_accessibility(
 			bool(runtime_settings.get("colorblind_patterns", true)),
@@ -3836,6 +3857,7 @@ func _process(delta: float) -> void:
 				"deferred_navigation_requests",
 				processed_navigation_requests,
 			)
+	_advance_sight_observation(delta)
 	_update_tactical_sight_visibility()
 	_advance_original_disguise_state(delta)
 	if mission_direction_runtime != null:
@@ -4093,11 +4115,14 @@ func _enemy_has_original_visibility(
 		ignored.append(enemy.scene_index)
 	if actor.scene_index >= 0:
 		ignored.append(actor.scene_index)
-	return TACTICAL_SENSES.can_detect_original(
+	return TACTICAL_SENSES.can_detect_original_heading(
 		dynamic_occupancy,
 		enemy.position,
 		actor.position,
-		enemy.original_direction_index,
+		enemy.perception_heading_degrees(),
+		TACTICAL_SENSES.original_direction_half_angle_degrees(
+			enemy.original_direction_index
+		),
 		enemy.sense_profile,
 		actor.is_crawling,
 		ignored,
@@ -4472,6 +4497,17 @@ func _update_tactical_sight_visibility() -> void:
 		tactical_visible_enemies[instance_id] = enemy
 
 
+func _advance_sight_observation(delta: float) -> void:
+	if sight_observation_target == null:
+		return
+	sight_observation_remaining = maxf(
+		sight_observation_remaining - maxf(delta, 0.0),
+		0.0,
+	)
+	if sight_observation_remaining <= 0.0:
+		_clear_sight_observation_target()
+
+
 func _clear_tactical_visible_enemies() -> void:
 	for enemy_value: Variant in tactical_visible_enemies.values():
 		var enemy := enemy_value as ENEMY_UNIT
@@ -4824,6 +4860,9 @@ func _handle_original_left_click(
 	double_click: bool = false,
 ) -> void:
 	if burial_mode:
+		# B is an explicit verb, so it must never be stolen by a coincident loot
+		# hitbox. Ordinary/context clicks still resolve loose drops before corpses;
+		# an intentional burial click always reaches the corpse command.
 		_try_bury_at(world_position)
 		burial_mode = false
 		return
@@ -4832,6 +4871,13 @@ func _handle_original_left_click(
 		return
 	if selected_backpack_item_id > 0:
 		drop_selected_item_at(world_position)
+		return
+	if force_target_modifier:
+		var forced_target := force_target_at_world_point(world_position)
+		if forced_target != null:
+			issue_attack_order(forced_target, true)
+		else:
+			issue_force_attack_order(world_position)
 		return
 	if str(runtime_settings.get("control_scheme", "classic")) == "modern":
 		for unit: SQUAD_UNIT in _commandable_player_units():
@@ -4844,13 +4890,6 @@ func _handle_original_left_click(
 		if not additive:
 			clear_selection()
 		return
-	if force_target_modifier:
-		var forced_target := force_target_at_world_point(world_position)
-		if forced_target != null:
-			issue_attack_order(forced_target, true)
-		else:
-			update_status("强制目标模式：点击存活角色或可破坏物体")
-		return
 	for unit: SQUAD_UNIT in _commandable_player_units():
 		if unit.is_alive and unit.contains_parent_point(world_position):
 			handle_selection(world_position, additive)
@@ -4858,19 +4897,13 @@ func _handle_original_left_click(
 	# A dead actor drops its loose inventory before the corpse can be buried.
 	# Both objects intentionally share the same world coordinate, so resolve the
 	# recoverable loose item first; an empty actor-78 cache must never mask it.
-	var inventory_drop := mission_inventory_pickup_at_world_point(world_position)
-	if inventory_drop != null:
-		issue_original_pickup_order(inventory_drop)
+	if _try_issue_preferred_pickup(world_position):
 		return
 	if _try_interact_burial_cache_at(world_position):
 		return
 	if _try_open_legacy_door_at(world_position):
 		return
 	if _try_issue_legacy_world_object_deployment(world_position):
-		return
-	var field_pickup := field_pickup_at_world_point(world_position)
-	if field_pickup != null:
-		issue_original_pickup_order(field_pickup)
 		return
 	var combat_target: Node2D = enemy_at_world_point(world_position)
 	if combat_target == null:
@@ -4892,20 +4925,16 @@ func _handle_modern_context_command(
 		var forced_target := force_target_at_world_point(world_position)
 		if forced_target != null:
 			issue_attack_order(forced_target, true)
+		else:
+			issue_force_attack_order(world_position)
 		return
-	var inventory_drop := mission_inventory_pickup_at_world_point(world_position)
-	if inventory_drop != null:
-		issue_original_pickup_order(inventory_drop)
+	if _try_issue_preferred_pickup(world_position):
 		return
 	if _try_interact_burial_cache_at(world_position):
 		return
 	if _try_open_legacy_door_at(world_position):
 		return
 	if _try_issue_legacy_world_object_deployment(world_position):
-		return
-	var field_pickup := field_pickup_at_world_point(world_position)
-	if field_pickup != null:
-		issue_original_pickup_order(field_pickup)
 		return
 	var combat_target: Node2D = enemy_at_world_point(world_position)
 	if combat_target == null:
@@ -5186,6 +5215,8 @@ func _sync_level_camera_safe_area() -> void:
 	var safe_size := _gameplay_viewport_size()
 	var zoom := maxf(level_camera.zoom.x, 0.001)
 	var hidden_height := maxf(full_size.y - safe_size.y, 0.0)
+	if media_director != null and media_director.has_method("set_gameplay_safe_area"):
+		media_director.call("set_gameplay_safe_area", hidden_height)
 	level_camera.offset = (
 		game_shell.gameplay_camera_offset(full_size, zoom)
 		if game_shell != null and game_shell.has_method("gameplay_camera_offset")
@@ -5552,6 +5583,8 @@ func legacy_door_at_world_point(world_position: Vector2) -> Node2D:
 func mission_inventory_pickup_at_world_point(
 	world_position: Vector2,
 ) -> MISSION_PICKUP:
+	var nearest: MISSION_PICKUP
+	var nearest_distance := INF
 	var candidates: Array = []
 	if world_spatial_index != null:
 		candidates = world_spatial_index.query_radius(world_position, 96.0, ["mission_pickup"])
@@ -5569,8 +5602,43 @@ func mission_inventory_pickup_at_world_point(
 				in ["backpack", "weapon"]
 			and pickup.contains_parent_point(world_position)
 		):
-			return pickup
-	return null
+			var distance := pickup.pointer_distance_squared(world_position)
+			if distance < nearest_distance:
+				nearest_distance = distance
+				nearest = pickup
+	return nearest
+
+
+func _preferred_pickup_at_world_point(world_position: Vector2) -> Dictionary:
+	var candidates: Array[Dictionary] = []
+	var loose_inventory := mission_inventory_pickup_at_world_point(world_position)
+	if loose_inventory != null:
+		candidates.append(WORLD_INTERACTION_RESOLVER.candidate(
+			"loose_inventory",
+			loose_inventory,
+			WORLD_INTERACTION_RESOLVER.Priority.LOOSE_INVENTORY,
+			world_position,
+		))
+	var field_pickup := field_pickup_at_world_point(world_position)
+	if field_pickup != null:
+		candidates.append(WORLD_INTERACTION_RESOLVER.candidate(
+			"field_pickup",
+			field_pickup,
+			WORLD_INTERACTION_RESOLVER.Priority.FIELD_PICKUP,
+			world_position,
+		))
+	return WORLD_INTERACTION_RESOLVER.choose(candidates)
+
+
+func _try_issue_preferred_pickup(world_position: Vector2) -> bool:
+	var resolved := _preferred_pickup_at_world_point(world_position)
+	if resolved.is_empty():
+		return false
+	var pickup_value: Variant = resolved.get("node")
+	if not pickup_value is Node2D or not is_instance_valid(pickup_value):
+		return false
+	issue_original_pickup_order(pickup_value as Node2D)
+	return true
 
 
 func _try_open_legacy_door_at(world_position: Vector2) -> bool:
@@ -5803,9 +5871,9 @@ func _on_sight_beacon_exited(marker: Node2D) -> void:
 
 func _set_sight_observation_target(target: ENEMY_UNIT) -> void:
 	_clear_sight_observation_target()
-	clear_selection()
 	sight_observation_target = target
 	if target != null and is_instance_valid(target):
+		sight_observation_remaining = SIGHT_OBSERVATION_DURATION_SECONDS
 		target.set_selected(true)
 		target.set_tactical_ranges_visible(true)
 
@@ -5815,6 +5883,7 @@ func _clear_sight_observation_target() -> void:
 		sight_observation_target.set_selected(false)
 		sight_observation_target.set_tactical_ranges_visible(false)
 	sight_observation_target = null
+	sight_observation_remaining = 0.0
 
 
 func _remove_sight_beacon() -> void:
@@ -5857,7 +5926,6 @@ func _reload_selected_units() -> void:
 
 
 func clear_selection() -> void:
-	_clear_sight_observation_target()
 	for unit: SQUAD_UNIT in selected_units:
 		unit.set_selected(false)
 	selected_units.clear()
@@ -6290,6 +6358,32 @@ func issue_attack_order(target: Node2D, force_target: bool = false) -> void:
 	)
 
 
+func issue_force_attack_order(world_position: Vector2) -> void:
+	if selected_units.is_empty():
+		update_status("请先选择执行强制攻击的队员")
+		return
+	_clear_original_pickup_order()
+	_clear_original_drop_order()
+	var issued := 0
+	for unit: SQUAD_UNIT in selected_units:
+		_cancel_legacy_deployment_for_unit(unit)
+		if unit.issue_force_attack_at(world_position):
+			unit.queue_original_acknowledgement()
+			issued += 1
+	if issued <= 0:
+		update_status("当前武器无法向该位置强制攻击，或正在冷却/弹药不足")
+		return
+	update_status("强制攻击：%d 名队员向指定位置开火" % issued)
+	command_bus.issue(
+		"force_attack_coordinate",
+		{
+			"x": world_position.x,
+			"y": world_position.y,
+			"issued_units": issued,
+		},
+	)
+
+
 func _connect_combatant(combatant: Node2D) -> void:
 	if combatant.has_method("set_reduced_violence"):
 		combatant.call(
@@ -6313,6 +6407,10 @@ func _connect_combatant(combatant: Node2D) -> void:
 	combatant.died.connect(_on_combatant_died)
 	combatant.ammo_changed.connect(_on_ammo_changed)
 	combatant.projectile_requested.connect(_on_projectile_requested)
+	combatant.coordinate_attack_started.connect(_on_coordinate_attack_started)
+	combatant.coordinate_projectile_requested.connect(
+		_on_coordinate_projectile_requested
+	)
 	combatant.special_action_requested.connect(_on_legacy_special_action_requested)
 	combatant.original_disguise_attack_committed.connect(
 		_on_original_disguise_attack_committed
@@ -6411,6 +6509,53 @@ func _on_projectile_requested(
 	if projectile_world == null:
 		return
 	projectile_world.launch_all_for_weapon(attacker, target, profile)
+
+
+func _on_coordinate_projectile_requested(
+	attacker: Node2D,
+	world_position: Vector2,
+	profile: Dictionary,
+) -> void:
+	if projectile_world == null:
+		return
+	projectile_world.launch_all_for_weapon(
+		attacker,
+		null,
+		profile,
+		world_position,
+	)
+
+
+func _on_coordinate_attack_started(
+	attacker: Node2D,
+	world_position: Vector2,
+	attack_type: int,
+	alert_radius: float,
+) -> void:
+	command_bus.emit_event(
+		"attack_started",
+		{
+			"player": attacker is SQUAD_UNIT,
+			"attacker_scene_index": int(attacker.get("scene_index")),
+			"target_scene_index": -1,
+			"attack_type": attack_type,
+			"coordinate_x": world_position.x,
+			"coordinate_y": world_position.y,
+		},
+		"combat",
+	)
+	if alert_radius <= 0.0:
+		return
+	_show_world_sound_caption(tr("SOUND_GUNSHOT"), attacker.position, alert_radius)
+	# Empty-ground gunfire intentionally exposes the shooter. This is the modern
+	# force-fire/lure use case: hearing ignores walls, while later visual contact
+	# still uses the clipped sight fan.
+	_queue_or_broadcast_alert(
+		attacker,
+		attacker,
+		attacker.position,
+		alert_radius,
+	)
 
 
 func _on_legacy_special_action_requested(
@@ -7933,9 +8078,9 @@ func _spawn_legacy_reinforcement(
 	var texture := load_entity_texture(entity)
 	if texture == null:
 		return null
-	var movement_groups := load_entity_action_groups(entity, "walk")
-	if movement_groups.is_empty():
-		movement_groups = load_entity_action_groups(entity, "run")
+	var walk_groups := load_entity_action_groups(entity, "walk")
+	var run_groups := load_entity_action_groups(entity, "run")
+	var movement_groups := walk_groups if not walk_groups.is_empty() else run_groups
 	var idle_groups := load_entity_action_groups(entity, "stand")
 	var stand_action_groups := load_entity_action_groups(
 		entity,
@@ -7961,6 +8106,7 @@ func _spawn_legacy_reinforcement(
 		dynamic_occupancy,
 		attack_groups,
 		death_groups,
+		run_groups,
 	)
 	reinforcement.configure_tactical_accessibility(
 		bool(runtime_settings.get("colorblind_patterns", true)),
@@ -8491,9 +8637,36 @@ func _mission_pickup_texture_for_payload(payload: Dictionary) -> Texture2D:
 		var world_texture := _load_gfl_texture(world_gfl_index)
 		if world_texture != null:
 			return world_texture
+	if str(payload.get("original_inventory_kind", "")) == "weapon":
+		var weapon_texture := _world_weapon_pickup_texture(item_id)
+		if weapon_texture != null:
+			return weapon_texture
 	if not str(payload.get("original_inventory_kind", "")).is_empty():
 		return _inventory_icon_for("", item_id, "")
 	return null
+
+
+static func world_weapon_sprite_stem(item_id: int) -> String:
+	return str(WORLD_WEAPON_SPRITES_BY_ITEM_ID.get(item_id, ""))
+
+
+func _world_weapon_pickup_texture(item_id: int) -> Texture2D:
+	var sprite_stem := world_weapon_sprite_stem(item_id)
+	if sprite_stem.is_empty() or converted_root.is_empty():
+		return null
+	var cache_key := "%s|world-weapon:%d" % [converted_root, item_id]
+	if inventory_icon_cache.has(cache_key):
+		return inventory_icon_cache[cache_key] as Texture2D
+	var sprite_path := _contained_converted_path(
+		converted_root,
+		"sprites/%s.png" % sprite_stem,
+	)
+	if sprite_path.is_empty():
+		return null
+	var texture := _load_external_texture(sprite_path)
+	if texture != null:
+		inventory_icon_cache[cache_key] = texture
+	return texture
 
 
 func _advance_original_m006_document_exchange() -> bool:
@@ -9080,7 +9253,47 @@ func modern_debug_snapshot() -> Dictionary:
 		"services": runtime_services.stats(),
 		"selected_units": selected_units.size(),
 		"selected_path_points": selected_path_points,
+		"movement_health": _movement_health_summary(),
 		"ai": ai,
+	}
+
+
+func _movement_health_summary() -> Dictionary:
+	var actor_values: Array = []
+	actor_values.append_array(units)
+	actor_values.append_array(enemies)
+	actor_values.append_array(escorts)
+	actor_values.append_array(ambient_units)
+	var active_paths := 0
+	var stalled_actors := 0
+	var recovery_count := 0
+	var recovery_failures := 0
+	var worst_no_progress := 0.0
+	var worst_scene_index := -1
+	for actor_value: Variant in actor_values:
+		if not actor_value is Node or not is_instance_valid(actor_value):
+			continue
+		var actor := actor_value as Node
+		if not actor.has_method("movement_health_snapshot"):
+			continue
+		var health := actor.call("movement_health_snapshot") as Dictionary
+		if bool(health.get("path_active", false)):
+			active_paths += 1
+		var no_progress := float(health.get("no_progress_seconds", 0.0))
+		if no_progress >= 0.70:
+			stalled_actors += 1
+		if no_progress > worst_no_progress:
+			worst_no_progress = no_progress
+			worst_scene_index = int(health.get("scene_index", -1))
+		recovery_count += int(health.get("recovery_count", 0))
+		recovery_failures += int(health.get("recovery_failure_count", 0))
+	return {
+		"active_paths": active_paths,
+		"stalled_actors": stalled_actors,
+		"recovery_count": recovery_count,
+		"recovery_failures": recovery_failures,
+		"worst_no_progress_seconds": worst_no_progress,
+		"worst_scene_index": worst_scene_index,
 	}
 
 
@@ -9346,6 +9559,7 @@ func _export_runtime_diagnostics() -> void:
 	var document: Dictionary = runtime_services.build_diagnostics(runtime_settings)
 	document["reproducible_seed"] = legacy_crt_random_state
 	document["mission_statistics"] = mission_statistics.snapshot()
+	document["movement_health"] = _movement_health_summary()
 	var result: Dictionary = runtime_diagnostics.export_bundle(document)
 	var message := (
 		tr("STATUS_DIAGNOSTICS_EXPORTED") % ProjectSettings.globalize_path(

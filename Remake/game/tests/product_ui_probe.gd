@@ -23,6 +23,13 @@ func _run() -> void:
 	var main = MAIN_SCENE.instantiate()
 	root.add_child(main)
 	await process_frame
+	# Pixel-layout snapshots are a native 1.0-scale contract. Keep the product's
+	# persisted accessibility preferences intact, but do not let a developer's
+	# local UI/text scale make this deterministic visual probe report a layout
+	# regression. Accessibility scaling is exercised explicitly later below.
+	_normalize_probe_visual_preferences(main)
+	await process_frame
+	await process_frame
 	var modern_debug_hud := main.get_node_or_null("ModernDebugHud") as CanvasLayer
 	_expect(
 		modern_debug_hud != null and not modern_debug_hud.visible,
@@ -294,6 +301,20 @@ func _dismiss_startup_media(main: Node) -> void:
 		elif bool(director.get("active_ending")):
 			director.call("dismiss_ending")
 		await process_frame
+
+
+func _normalize_probe_visual_preferences(main: Node) -> void:
+	var preferences: Dictionary = main.runtime_settings.duplicate(true)
+	preferences["ui_scale"] = 1.0
+	preferences["text_scale"] = 1.0
+	preferences["high_contrast"] = false
+	for key: String in ["ui_scale", "text_scale", "high_contrast"]:
+		main.runtime_settings[key] = preferences[key]
+		main.game_shell.settings[key] = preferences[key]
+	main.game_shell._ui_scale_slider.set_value_no_signal(1.0)
+	main.game_shell._text_scale_slider.set_value_no_signal(1.0)
+	main.game_shell._high_contrast_toggle.set_pressed_no_signal(false)
+	main.game_shell.apply_visual_preferences(preferences)
 
 
 func _wait_for_render_frame(max_process_frames: int = 180) -> bool:

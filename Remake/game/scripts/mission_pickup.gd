@@ -3,6 +3,8 @@ extends Node2D
 
 const WORLD_DEPTH: Script = preload("res://scripts/world_depth.gd")
 const ORIGINAL_NAVIGATION_CELL_SIZE := Vector2(32.0, 16.0)
+const POINTER_HIT_PADDING := 14.0
+const MINIMUM_POINTER_RADIUS := 24.0
 
 var item_payload: Dictionary = {}
 var collected := false
@@ -31,13 +33,23 @@ func can_collect(collector: Node2D) -> bool:
 	return cell_delta.x <= 1 and cell_delta.y <= 1
 
 
-func contains_parent_point(parent_point: Vector2) -> bool:
+func contains_parent_point(
+	parent_point: Vector2,
+	padding: float = POINTER_HIT_PADDING,
+) -> bool:
 	if collected or not visible:
 		return false
 	var local_point := parent_point - position
 	if original_sprite != null and original_sprite.texture != null:
-		return original_sprite.get_rect().has_point(local_point)
-	return local_point.length_squared() <= 16.0 * 16.0
+		return original_sprite.get_rect().grow(maxf(padding, 0.0)).has_point(
+			local_point
+		)
+	var radius := maxf(MINIMUM_POINTER_RADIUS, 16.0 + maxf(padding, 0.0))
+	return local_point.length_squared() <= radius * radius
+
+
+func pointer_distance_squared(parent_point: Vector2) -> float:
+	return position.distance_squared_to(parent_point)
 
 
 func configure(
