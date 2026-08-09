@@ -3022,8 +3022,9 @@ func _init() -> void:
 	main.spawn_squad()
 	expect(main.units.size() == 5, "prototype creates five squad members", failures)
 	expect(
-		main.selected_units.is_empty(),
-		"original startup leaves the squad unselected until player input",
+		main.selected_units.size() == 1
+			and main.selected_units[0] == main.units[0],
+		"mission startup selects the first squad member for immediate input",
 		failures,
 	)
 	main.clear_selection()
@@ -3043,8 +3044,9 @@ func _init() -> void:
 	main.spawn_squad()
 	expect(main.units.size() == 5, "reset restores five squad members", failures)
 	expect(
-		main.selected_units.is_empty(),
-		"reset restores the original unselected startup state",
+		main.selected_units.size() == 1
+			and main.selected_units[0] == main.units[0],
+		"reset restores the immediately commandable first squad member",
 		failures,
 	)
 	main.free()

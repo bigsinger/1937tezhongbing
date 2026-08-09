@@ -3856,11 +3856,15 @@ func spawn_squad() -> void:
 		Time.get_ticks_usec() - spawn_phase_started_usec
 	)
 	spawn_phase_started_usec = Time.get_ticks_usec()
-	# The stable MOD exposes every available portrait in its idle (grayscale)
-	# state when a mission first opens.  A character becomes selected only after
-	# an original F2-F6 shortcut or a world/HUD click; initial_camera_focus()
-	# already places the camera over the first available squad member.
-	_refresh_inventory_ui()
+	# A playable mission must accept a ground order immediately.  Leaving the
+	# roster unselected made an ordinary first left click reach
+	# issue_formation_move(), only to be discarded by its empty-selection guard.
+	# Select the first commandable actor at the same focus point used by the
+	# opening camera; players can still change/extend the selection normally.
+	if not units.is_empty():
+		select_only(units[0])
+	else:
+		_refresh_inventory_ui()
 	last_squad_spawn_phase_usec["initial_selection"] = (
 		Time.get_ticks_usec() - spawn_phase_started_usec
 	)

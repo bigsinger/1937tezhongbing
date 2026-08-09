@@ -41,6 +41,12 @@ func _run() -> void:
 
 	var player: Node2D = main.units[0]
 	var player_spawn := player.position
+	_expect(
+		main.selected_units.size() == 1
+			and main.selected_units[0] == player
+			and bool(player.get("selected")),
+		"m000 starts with its first commandable actor selected for immediate mouse movement",
+	)
 	var player_occupancy := (
 		main.dynamic_occupancy.actors.get(
 			int(player.get("scene_index")),
@@ -127,6 +133,16 @@ func _run() -> void:
 				]
 			),
 		)
+		var modern_start := player.position
+		main.runtime_settings["ruleset_mode"] = "modern"
+		main._configure_actor_simulation_clock()
+		main.simulation_coordinator.advance_exact_ticks(12)
+		_expect(
+			player.position.distance_to(modern_start) > 0.5,
+			"the modern fixed-tick runtime turns the real mouse order into actor movement",
+		)
+		main.runtime_settings["ruleset_mode"] = "classic"
+		main._configure_actor_simulation_clock()
 		var click_release := InputEventMouseButton.new()
 		click_release.button_index = MOUSE_BUTTON_LEFT
 		click_release.button_mask = 0

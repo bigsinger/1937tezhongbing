@@ -70,8 +70,10 @@ func _run() -> void:
 	)
 	await _dismiss_startup_media(main)
 	_expect(
-		main.selected_units.is_empty(),
-		"mission startup preserves the original idle portraits until player selection",
+		main.selected_units.size() == 1
+			and main.selected_units[0] == main.units[0]
+			and bool(main.units[0].get("selected")),
+		"mission startup selects its first commandable actor for immediate ground orders",
 	)
 	_expect(await _wait_for_render_frame(), "initial product frame renders")
 	var hud_layout: Dictionary = main.game_shell.original_hud_layout_snapshot()
