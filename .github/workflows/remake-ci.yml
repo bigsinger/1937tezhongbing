@@ -11,6 +11,7 @@ permissions:
 env:
   GODOT_VERSION: "4.7.1"
   GODOT_ARCHIVE_SHA256: "C7A289051EAEFB460B0106B60E9CD5BEE0EF55FD102DCB2BED1EB356CF3D90A1"
+  NUGET_PACKAGES: ${{ github.workspace }}\.nuget\packages
 
 jobs:
   fast-gate:
@@ -21,6 +22,10 @@ jobs:
         uses: actions/checkout@v6
         with:
           lfs: false
+
+      - name: Prepare NuGet cache directory
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force -Path $env:NUGET_PACKAGES | Out-Null
 
       - name: Set up .NET 10
         uses: actions/setup-dotnet@v5
@@ -57,6 +62,10 @@ jobs:
         uses: actions/checkout@v6
         with:
           lfs: false
+
+      - name: Prepare NuGet cache directory
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force -Path $env:NUGET_PACKAGES | Out-Null
 
       - name: Set up .NET 10
         uses: actions/setup-dotnet@v5
