@@ -1,11 +1,18 @@
 class_name MissionState
 extends RefCounted
 
+const TICK_RATE := 60
+const LOCALIZATION_SERVICE_SCRIPT: Script = preload("res://scripts/localization_service.gd")
+
 var mission: Dictionary = {}
 var completed: Dictionary = {}
 var progress: Dictionary = {}
 var seen_values: Dictionary = {}
-var elapsed_seconds := 0.0
+var elapsed_ticks := 0
+var elapsed_seconds := 0.0:
+	set(value):
+		elapsed_seconds = maxf(value, 0.0)
+		elapsed_ticks = maxi(roundi(elapsed_seconds * float(TICK_RATE)), 0)
 var failure_id := ""
 
 
@@ -56,12 +63,27 @@ func record_event(event_name: String, payload: Dictionary = {}) -> Array[String]
 
 
 func advance_time(delta_seconds: float) -> void:
-	if delta_seconds <= 0.0 or mission.is_empty() or is_failed() or is_victory():
+	if delta_seconds <= 0.0:
 		return
-	elapsed_seconds += delta_seconds
-	var limit := float(mission.get("time_limit_seconds", 0))
-	if limit > 0.0 and elapsed_seconds >= limit:
+	advance_ticks(maxi(roundi(delta_seconds * float(TICK_RATE)), 1))
+
+
+func advance_ticks(tick_count: int = 1) -> void:
+	if tick_count <= 0 or mission.is_empty() or is_failed() or is_victory():
+		return
+	elapsed_ticks += tick_count
+	elapsed_seconds = float(elapsed_ticks) / float(TICK_RATE)
+	var limit_ticks := ceili(
+		maxf(float(mission.get("time_limit_seconds", 0.0)), 0.0)
+		* float(TICK_RATE)
+	)
+	if limit_ticks > 0 and elapsed_ticks >= limit_ticks:
 		record_event("time_expired")
+
+
+func restore_elapsed_ticks(tick_count: int) -> void:
+	elapsed_ticks = maxi(tick_count, 0)
+	elapsed_seconds = float(elapsed_ticks) / float(TICK_RATE)
 
 
 func is_objective_complete(objective_id: String) -> bool:
@@ -117,9 +139,20 @@ func display_lines() -> Array[String]:
 	var lines: Array[String] = []
 	if mission.is_empty():
 		return lines
-	lines.append("任务 %02d · %s" % [int(mission["number"]), str(mission["title"])])
+	lines.append(
+		LOCALIZATION_SERVICE_SCRIPT.translate_key("UI_MISSION_OBJECTIVES_HEADER_FORMAT")
+		% [int(mission["number"]), str(mission["title"])]
+	)
 	for raw_objective: Variant in mission.get("objectives", []) as Array:
 		var objective := raw_objective as Dictionary
 		var mark := "✓" if is_objective_complete(str(objective["id"])) else "□"
 		lines.append("%s %s" % [mark, str(objective["label"])])
 	return lines
+
+
+static func localized_failure_reason(reason_id: String) -> String:
+	var key := "FAILURE_REASON_%s" % reason_id.to_upper()
+	var translated: String = LOCALIZATION_SERVICE_SCRIPT.translate_key(key)
+	if translated != key:
+		return translated
+	return reason_id.replace("_", " ").capitalize()

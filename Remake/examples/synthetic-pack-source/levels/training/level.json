@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "world_size": {
+    "width": 640,
+    "height": 384
+  },
+  "tile_size": {
+    "width": 32,
+    "height": 16
+  },
+  "terrain_image": "generated",
+  "entities": [
+    {
+      "scene_index": 1,
+      "database_entry_id": 0,
+      "resource_name": "synthetic_player",
+      "display_name": "Scout",
+      "category_name": "角色",
+      "x": 80,
+      "y": 72,
+      "reference_x": 80,
+      "reference_y": 72,
+      "sprite_preview": "",
+      "sprite_anchor": {"x": 12, "y": 34},
+      "database_header_values": [0, 0, 1],
+      "patrol_waypoints": [],
+      "faction_id": 3,
+      "direction_index": 1,
+      "death_state": 0,
+      "crawl_state": 0,
+      "current_hit_points": 8,
+      "default_attack_type": 1,
+      "runtime_role": "player",
+      "runtime_actor_type": 1,
+      "source_object_id": "player-1"
+    },
+    {
+      "scene_index": 900000,
+      "database_entry_id": 1020,
+      "resource_name": "native_exit_detector",
+      "display_name": "检测出口精灵",
+      "category_name": "任务触发器",
+      "x": 560,
+      "y": 328,
+      "reference_x": 560,
+      "reference_y": 328,
+      "sprite_preview": "",
+      "sprite_anchor": {"x": 0, "y": 0},
+      "database_header_values": [0, 0, 0],
+      "patrol_waypoints": [],
+      "faction_id": 0,
+      "direction_index": 1,
+      "death_state": 0,
+      "crawl_state": 0,
+      "current_hit_points": 1,
+      "default_attack_type": 0,
+      "runtime_role": "scenery",
+      "runtime_actor_type": 0,
+      "source_object_id": "training_exit"
+    }
+  ],
+  "task_anchors": [
+    {
+      "scene_index": 900000,
+      "database_entry_id": 1020,
+      "kind": "exit_detector",
+      "x": 560,
+      "y": 328,
+      "reference_x": 560,
+      "reference_y": 328
+    }
+  ]
+}

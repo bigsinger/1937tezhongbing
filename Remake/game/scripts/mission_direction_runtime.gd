@@ -17,12 +17,17 @@ signal ai_directive_requested(beat_id: String, directive: Dictionary)
 
 const DATA_SCRIPT: Script = preload("res://scripts/mission_direction_data.gd")
 const CATALOG_PATH := "res://data/mission_direction.json"
+const TICK_RATE := 60
 
 var mission_id := ""
 var mission_plan: Dictionary = {}
 var difficulty_mode := "normal"
 var last_error := ""
-var elapsed_seconds := 0.0
+var elapsed_ticks := 0
+var elapsed_seconds := 0.0:
+	set(value):
+		elapsed_seconds = maxf(value, 0.0)
+		elapsed_ticks = maxi(roundi(elapsed_seconds * float(TICK_RATE)), 0)
 
 var _media_director: Node
 var _started := false
@@ -54,6 +59,35 @@ func configure_for_mission(
 	return true
 
 
+func configure_document(
+	new_mission_id: String,
+	document: Dictionary,
+	new_media_director: Node = null,
+	new_difficulty_mode: String = "normal",
+) -> bool:
+	_reset()
+	if new_difficulty_mode not in ["original", "easy", "normal", "hard"]:
+		return _reject("unknown difficulty mode: %s" % new_difficulty_mode)
+	if int(document.get("schema_version", 0)) != 1:
+		return _reject("native direction schema is unsupported")
+	var raw_beats: Variant = document.get("beats", document.get("sequences", []))
+	if not raw_beats is Array:
+		return _reject("native direction beats are invalid")
+	mission_plan = document.duplicate(true)
+	mission_plan["id"] = new_mission_id
+	mission_plan["beats"] = (raw_beats as Array).duplicate(true)
+	if not mission_plan.get("difficulty", {}) is Dictionary:
+		mission_plan["difficulty"] = {}
+	if not mission_plan.get("ai_cooperation", {}) is Dictionary:
+		mission_plan["ai_cooperation"] = {}
+	mission_id = new_mission_id
+	difficulty_mode = new_difficulty_mode
+	attach_media_director(new_media_director)
+	last_error = ""
+	configured.emit(mission_id)
+	return true
+
+
 func attach_media_director(new_media_director: Node) -> void:
 	var finished_callable := Callable(self, "_on_media_dialogue_finished")
 	if (
@@ -71,6 +105,25 @@ func attach_media_director(new_media_director: Node) -> void:
 		and not _media_director.is_connected("dialogue_finished", finished_callable)
 	):
 		_media_director.connect("dialogue_finished", finished_callable)
+
+
+func refresh_localization() -> void:
+	# Presentation text is not authoritative simulation state, so it can be
+	# rebuilt in place without resetting fired beats, tutorials or elapsed time.
+	# Settings are opened only while modal dialogue is inactive; consequently no
+	# already-visible line has to be interrupted or replayed here.
+	if mission_plan.is_empty():
+		return
+	mission_plan = DATA_SCRIPT.localize_plan(mission_plan)
+	var refreshed_tutorials: Dictionary = {}
+	var tutorials_by_id := _tutorial_by_id()
+	for tutorial_id_value: Variant in _active_tutorials.keys():
+		var tutorial_id := str(tutorial_id_value)
+		if tutorials_by_id.has(tutorial_id):
+			refreshed_tutorials[tutorial_id] = (
+				tutorials_by_id[tutorial_id] as Dictionary
+			).duplicate(true)
+	_active_tutorials = refreshed_tutorials
 
 
 func start() -> bool:
@@ -158,10 +211,17 @@ func publish_event(event_name: String, payload: Dictionary = {}) -> Array[String
 
 
 func advance_time(delta_seconds: float) -> Array[String]:
+	if delta_seconds <= 0.0:
+		return []
+	return advance_ticks(maxi(roundi(delta_seconds * float(TICK_RATE)), 1))
+
+
+func advance_ticks(tick_count: int = 1) -> Array[String]:
 	var dispatched: Array[String] = []
-	if mission_plan.is_empty() or delta_seconds <= 0.0:
+	if mission_plan.is_empty() or tick_count <= 0:
 		return dispatched
-	elapsed_seconds += delta_seconds
+	elapsed_ticks += tick_count
+	elapsed_seconds = float(elapsed_ticks) / float(TICK_RATE)
 	dispatched.append_array(_dispatch_elapsed_beats())
 	return dispatched
 
@@ -247,10 +307,11 @@ func capture_state() -> Dictionary:
 	var active: Array = _active_tutorials.keys()
 	active.sort()
 	return {
-		"schema_version": 1,
+		"schema_version": 2,
 		"mission_id": mission_id,
 		"difficulty_mode": difficulty_mode,
 		"started": _started,
+		"elapsed_ticks": elapsed_ticks,
 		"elapsed_seconds": elapsed_seconds,
 		"fired_beats": fired,
 		"completed_tutorials": completed,
@@ -263,11 +324,21 @@ func restore_state(state: Dictionary) -> bool:
 	if mission_plan.is_empty():
 		return _reject("mission direction runtime is not configured")
 	if (
-		int(state.get("schema_version", 0)) != 1
+		int(state.get("schema_version", 0)) not in [1, 2]
 		or str(state.get("mission_id", "")) != mission_id
 		or str(state.get("difficulty_mode", "")) != difficulty_mode
 		or not state.get("started") is bool
 		or not _is_nonnegative_number(state.get("elapsed_seconds"))
+		or (
+			int(state.get("schema_version", 0)) >= 2
+			and (
+				not _is_nonnegative_number(state.get("elapsed_ticks"))
+				or not is_equal_approx(
+					float(state.get("elapsed_ticks", 0.0)),
+					float(roundi(float(state.get("elapsed_ticks", 0.0)))),
+				)
+			)
+		)
 	):
 		return _reject("mission direction save header is invalid")
 	var beat_by_id := _beat_by_id()
@@ -310,7 +381,11 @@ func restore_state(state: Dictionary) -> bool:
 		events.append({"event": event_name, "payload": (payload as Dictionary).duplicate(true)})
 
 	_started = bool(state["started"])
-	elapsed_seconds = float(state["elapsed_seconds"])
+	if int(state.get("schema_version", 0)) >= 2:
+		elapsed_ticks = roundi(float(state["elapsed_ticks"]))
+		elapsed_seconds = float(elapsed_ticks) / float(TICK_RATE)
+	else:
+		elapsed_seconds = float(state["elapsed_seconds"])
 	_fired_beats = fired
 	_completed_tutorials = completed
 	_active_tutorials = active
@@ -341,9 +416,12 @@ func _dispatch_elapsed_beats() -> Array[String]:
 		if _fired_beats.has(beat_id) or not _beat_gate_is_open(beat):
 			continue
 		var trigger := beat.get("trigger", {}) as Dictionary
+		var at_seconds := maxf(float(trigger.get("at_seconds", 0.0)), 0.0)
+		var at_ticks := ceili(at_seconds * float(TICK_RATE))
 		if (
 			str(trigger.get("event", "")) == "elapsed_seconds"
-			and elapsed_seconds >= float(trigger.get("at_seconds", INF))
+			and trigger.has("at_seconds")
+			and elapsed_ticks >= at_ticks
 		):
 			_dispatch_beat(beat)
 			dispatched.append(beat_id)

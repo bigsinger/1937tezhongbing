@@ -29,6 +29,8 @@ Remake/game/assets/original/
 Remake/game/assets/imported/
 Remake/.local/
 local-assets.json
+Remake/**/*.m1937pack
+MapEditor/**/*.m1937pack
 
 # Unmodified local source copies stay outside version control. The curated,
 # runnable community distribution is intentionally scoped to Mod/ below.

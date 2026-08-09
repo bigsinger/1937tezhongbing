@@ -6,6 +6,7 @@ const IMPORT_ROOT := "res://../LocalAssets/converted/levels"
 const MIN_ZOOM := 0.5
 const MAX_ZOOM := 2.0
 const IMPORTED_LEVEL_DATA: Script = preload("res://scripts/imported_level_data.gd")
+const LOCALIZATION_SERVICE_SCRIPT: Script = preload("res://scripts/localization_service.gd")
 
 
 static func imported_terrain_path(level_id: String = DEFAULT_LEVEL_ID) -> String:
@@ -31,7 +32,10 @@ static func load_imported_terrain(level_id: String = DEFAULT_LEVEL_ID) -> Dictio
 	var image := Image.new()
 	var error := image.load(absolute_path)
 	if error != OK or image.is_empty():
-		push_warning("无法加载已转换地形：%s（错误 %d）" % [absolute_path, error])
+		push_warning(
+			LOCALIZATION_SERVICE_SCRIPT.translate_key("ERROR_TERRAIN_LOAD_FORMAT")
+			% [absolute_path, error]
+		)
 		return {}
 
 	return terrain_from_image(image, absolute_path)

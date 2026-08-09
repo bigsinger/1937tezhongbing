@@ -19,16 +19,41 @@ static func mix_for_source(
 	source_world_position: Vector2,
 	visible_world_rect: Rect2,
 ) -> Dictionary:
+	var sample := _attenuation_sample(source_world_position, visible_world_rect)
+	var audible := sample.x > 0.5
+	var ratio := sample.y
+	return {
+		"audible": audible,
+		"volume_db": (
+			lerpf(0.0, FAR_VOLUME_DB, ratio) if audible else SILENT_VOLUME_DB
+		),
+		"distance_ratio": ratio,
+	}
+
+
+static func volume_db_for_source(
+	source_world_position: Vector2,
+	visible_world_rect: Rect2,
+) -> float:
+	var sample := _attenuation_sample(source_world_position, visible_world_rect)
+	return (
+		lerpf(0.0, FAR_VOLUME_DB, sample.y)
+		if sample.x > 0.5
+		else SILENT_VOLUME_DB
+	)
+
+
+## x is an allocation-free audible flag and y is the smooth distance ratio.
+static func _attenuation_sample(
+	source_world_position: Vector2,
+	visible_world_rect: Rect2,
+) -> Vector2:
 	if visible_world_rect.size.x <= 0.0 or visible_world_rect.size.y <= 0.0:
-		return {"audible": true, "volume_db": 0.0, "distance_ratio": 0.0}
+		return Vector2(1.0, 0.0)
 	if not visible_world_rect.grow(OFFSCREEN_CULL_MARGIN).has_point(
 		source_world_position
 	):
-		return {
-			"audible": false,
-			"volume_db": SILENT_VOLUME_DB,
-			"distance_ratio": 1.0,
-		}
+		return Vector2(0.0, 1.0)
 	var center := visible_world_rect.get_center()
 	var distance := center.distance_to(source_world_position)
 	var near_radius := maxf(
@@ -48,8 +73,4 @@ static func mix_for_source(
 	# Smoothstep avoids a perceptible volume knee when a unit crosses the near
 	# field while still reaching a useful low level close to the cull boundary.
 	var smooth_ratio := ratio * ratio * (3.0 - 2.0 * ratio)
-	return {
-		"audible": true,
-		"volume_db": lerpf(0.0, FAR_VOLUME_DB, smooth_ratio),
-		"distance_ratio": smooth_ratio,
-	}
+	return Vector2(1.0, smooth_ratio)

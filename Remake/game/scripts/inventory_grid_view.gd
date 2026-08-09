@@ -1,6 +1,8 @@
 class_name InventoryGridView
 extends Control
 
+const LOCALIZATION_SERVICE_SCRIPT: Script = preload("res://scripts/localization_service.gd")
+
 signal slot_activated(slot: Dictionary)
 
 # Recovered from the original popup hit test used by sub_45ACE0 callers:
@@ -138,12 +140,16 @@ func _rebuild() -> void:
 	for slot: Dictionary in visible_slots:
 		_groups.add_child(_make_slot(slot))
 	_empty_label.visible = visible_slots.is_empty()
-	_empty_label.text = "（该栏目前为空）"
+	_empty_label.text = _text("UI_INVENTORY_EMPTY_SLOT")
 
 
 func _group_is_visible(group: Dictionary) -> bool:
 	var group_mode := str(group.get("mode", "items"))
 	return group_mode == mode or group_mode == "both"
+
+
+static func _text(key: String) -> String:
+	return LOCALIZATION_SERVICE_SCRIPT.translate_key(key)
 
 
 func _make_slot(slot: Dictionary) -> Button:
@@ -209,7 +215,7 @@ func _make_slot(slot: Dictionary) -> Button:
 	var quantity := int(slot.get("quantity", 0))
 	var is_weapon := str(slot.get("kind", "")) == "weapon"
 	quantity_label.text = (
-		"%d发" % quantity
+		_text("UI_AMMO_ROUNDS_FORMAT") % quantity
 		if is_weapon and quantity > 0
 		else ""
 		if is_weapon

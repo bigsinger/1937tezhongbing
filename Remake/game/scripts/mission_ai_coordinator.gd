@@ -13,6 +13,17 @@ signal reinforcement_threshold_reached(trigger_name: String, tags: Array[String]
 signal posture_changed(posture: String)
 
 const DATA_SCRIPT: Script = preload("res://scripts/mission_direction_data.gd")
+const EVIDENCE_BLACKBOARD_SCRIPT: Script = preload(
+	"res://scripts/ai_evidence_blackboard.gd"
+)
+const COMMUNICATION_SERVICE_SCRIPT: Script = preload(
+	"res://scripts/ai_communication_service.gd"
+)
+const QA_STATISTICS_SCRIPT: Script = preload("res://scripts/ai_qa_statistics.gd")
+const ENEMY_SEARCH_CONTROLLER_SCRIPT: Script = preload(
+	"res://scripts/enemy_search_controller.gd"
+)
+const TICK_RATE := 60
 
 var difficulty_profile: Dictionary = {}
 var cooperation_profile: Dictionary = {}
@@ -28,6 +39,11 @@ var last_error := ""
 var _pending_alerts: Array[Dictionary] = []
 var _command_serial := 0
 var _observed_event_counts: Dictionary = {}
+var evidence_blackboard: RefCounted = EVIDENCE_BLACKBOARD_SCRIPT.new()
+var communication_service: RefCounted = COMMUNICATION_SERVICE_SCRIPT.new()
+var qa_statistics: RefCounted = QA_STATISTICS_SCRIPT.new()
+var communication_transmission_check: Callable = Callable()
+var simulation_tick := 0
 
 
 func configure(
@@ -79,6 +95,10 @@ func register_enemy(enemy: Node2D) -> bool:
 			cooperation_tags.duplicate(),
 		)
 	return true
+
+
+func configure_communication_transmission_check(check: Callable) -> void:
+	communication_transmission_check = check
 
 
 func unregister_enemy(enemy: Node2D) -> bool:
@@ -206,15 +226,46 @@ func queue_shared_alert(
 		recipients.append(enemy)
 		selected_scene_indices.append(int(enemy.get("scene_index")))
 	if not recipients.is_empty():
-		_pending_alerts.append(
-			{
-				"remaining_seconds": maxf(
+		qa_statistics.record("alert", {"recipient_count": recipients.size()})
+		var source_actor_id := int(source.get("scene_index")) if source != null and is_instance_valid(source) else -1
+		var initial_recipients: Array[int] = []
+		if source_actor_id >= 0:
+			initial_recipients.append(source_actor_id)
+		var evidence: Dictionary = evidence_blackboard.publish(
+			"sighting",
+			target.position,
+			simulation_tick,
+			1.0,
+			1,
+			source_actor_id,
+			"shout",
+			initial_recipients,
+			maxi(roundi(float(difficulty_profile.get("search_duration_seconds", 12.0)) * 60.0), 60),
+		)
+		var delay_ticks := maxi(
+			ceili(
+				maxf(
 					0.0,
 					float(cooperation_profile.get("alert_share_delay_seconds", 0.0))
 					* float(difficulty_profile.get("alert_delay_multiplier", 1.0)),
-				),
-				"recipients": recipients,
-				"target": target,
+				)
+				* float(TICK_RATE)
+			),
+			0,
+		)
+		var target_scene_index := (
+			int(target.get("scene_index"))
+			if _has_property(target, "scene_index")
+			else -1
+		)
+		var evidence_id := int(evidence.get("evidence_id", -1))
+		var recipient_snapshot: Array[int] = selected_scene_indices.duplicate()
+		_pending_alerts.append(
+			{
+				"deliver_tick": simulation_tick + delay_ticks,
+				"recipient_scene_indices": recipient_snapshot,
+				"target_scene_index": target_scene_index,
+				"evidence_id": evidence_id,
 				# Freeze all search geometry when the alert is raised. Recipients
 				# may receive it a fraction of a second later, but they must not
 				# gain an omniscient reference to the target's newer position.
@@ -230,59 +281,143 @@ func queue_shared_alert(
 func advance_time(delta_seconds: float) -> int:
 	if delta_seconds <= 0.0:
 		return 0
+	return advance_ticks(maxi(roundi(delta_seconds * float(TICK_RATE)), 1))
+
+
+func advance_ticks(tick_count: int = 1) -> int:
+	if tick_count <= 0:
+		return 0
+	return advance_to_tick(simulation_tick + tick_count)
+
+
+func advance_to_tick(target_tick: int) -> int:
+	if target_tick <= simulation_tick:
+		return 0
+	simulation_tick = target_tick
+	evidence_blackboard.advance_to_tick(simulation_tick)
 	var delivered := 0
 	for index: int in range(_pending_alerts.size() - 1, -1, -1):
 		var pending := _pending_alerts[index]
-		pending["remaining_seconds"] = float(pending["remaining_seconds"]) - delta_seconds
-		if float(pending["remaining_seconds"]) > 0.0:
+		if int(pending.get("deliver_tick", simulation_tick)) > simulation_tick:
 			continue
-		var target: Node2D = pending["target"]
-		if target != null and is_instance_valid(target):
-			var recipients := pending["recipients"] as Array[Node2D]
-			for recipient_index: int in range(recipients.size()):
-				var enemy := recipients[recipient_index]
-				if enemy == null or not is_instance_valid(enemy) or not bool(enemy.get("is_alive")):
-					continue
-				var serial := int(pending.get("command_serial", 0))
-				var scene_index := int(enemy.get("scene_index"))
-				var search_order := build_editorial_search_order(
-					pending["last_known_position"] as Vector2,
-					pending["source_position"] as Vector2,
-					pending["target_velocity"] as Vector2,
-					recipient_index,
-					recipients.size(),
-					should_flank(scene_index, serial),
-				)
+		var recipient_ids := pending.get("recipient_scene_indices", []) as Array
+		for recipient_index: int in range(recipient_ids.size()):
+			var enemy := _enemy_for_scene_index(int(recipient_ids[recipient_index]))
+			if enemy == null:
+				continue
+			var serial := int(pending.get("command_serial", 0))
+			var scene_index := int(enemy.get("scene_index"))
+			var search_order := build_editorial_search_order(
+				pending["last_known_position"] as Vector2,
+				pending["source_position"] as Vector2,
+				pending["target_velocity"] as Vector2,
+				recipient_index,
+				recipient_ids.size(),
+				should_flank(scene_index, serial),
+			)
+			var evidence_id := int(pending.get("evidence_id", -1))
+			evidence_blackboard.grant(scene_index, evidence_id)
+			evidence_blackboard.assign_search_sector(
+				scene_index,
+				str(search_order.get("role", "lead")),
+				(search_order.get("candidates", [pending["last_known_position"]]) as Array)[0] as Vector2,
+				96.0,
+				evidence_id,
+			)
+			qa_statistics.record("search_assignment", {"role": search_order.get("role", "lead")})
+			if (
+				should_use_suppressive_fire(scene_index, serial)
+				and _has_property(enemy, "attack_recheck_elapsed")
+				and _has_property(enemy, "attack_recheck_seconds")
+			):
+				enemy.set("attack_recheck_elapsed", float(enemy.get("attack_recheck_seconds")))
+			var accepted := false
+			if enemy.has_method("receive_editorial_search_order"):
+				accepted = bool(enemy.call(
+					"receive_editorial_search_order",
+					null,
+					search_order.get("candidates", []),
+					str(search_order.get("role", "lead")),
+					serial,
+				))
+			if accepted:
 				if (
 					should_use_suppressive_fire(scene_index, serial)
-					and _has_property(enemy, "attack_recheck_elapsed")
-					and _has_property(enemy, "attack_recheck_seconds")
+					and enemy.has_method("issue_force_attack_at")
 				):
-					enemy.set("attack_recheck_elapsed", float(enemy.get("attack_recheck_seconds")))
-				var accepted := false
-				if enemy.has_method("receive_editorial_search_order"):
-					accepted = bool(
-						enemy.call(
-							"receive_editorial_search_order",
-							target,
-							search_order.get("candidates", []),
-							str(search_order.get("role", "lead")),
-							serial,
-						)
+					# This is a real coordinate attack: it consumes ammunition on the
+					# authored hit frame and emits the same sound event as other shots.
+					enemy.call(
+						"issue_force_attack_at",
+						pending["last_known_position"] as Vector2,
 					)
-				elif enemy.has_method("receive_alert"):
-					# Compatibility for non-EnemyUnit consumers. Real enemies use the
-					# coordinate-only order above and discard the live target pointer.
-					var fallback_position := pending["last_known_position"] as Vector2
-					var raw_candidates: Variant = search_order.get("candidates", [])
-					if raw_candidates is Array and not (raw_candidates as Array).is_empty():
-						fallback_position = (raw_candidates as Array)[0] as Vector2
-					accepted = bool(enemy.call("receive_alert", target, fallback_position))
-				if accepted:
-					delivered += 1
-					cooperation_alert_delivered.emit(enemy, target)
+					qa_statistics.record("weapon_fire", {"weapon": "suppressive"})
+				delivered += 1
+				cooperation_alert_delivered.emit(enemy, null)
 		_pending_alerts.remove_at(index)
 	return delivered
+
+
+func record_world_evidence(
+	type: String,
+	world_position: Vector2,
+	source_actor_id: int,
+	radius: float,
+	propagation: String = "sound",
+	confidence: float = 0.85,
+) -> Dictionary:
+	var checker := Callable()
+	if propagation == "shout" and communication_transmission_check.is_valid():
+		checker = communication_transmission_check
+	var recipients: Array[int] = communication_service.recipients_in_radius(
+		world_position,
+		radius,
+		enemies,
+		maxi(int(cooperation_profile.get("search_group_size", 4)) * 2, 1),
+		source_actor_id,
+		checker,
+	)
+	var result: Dictionary = evidence_blackboard.publish(
+		type,
+		world_position,
+		simulation_tick,
+		confidence,
+		1,
+		source_actor_id,
+		propagation,
+		recipients,
+	)
+	if bool(result.get("accepted", false)):
+		qa_statistics.record("evidence", {"type": type, "recipient_count": recipients.size()})
+	return result
+
+
+func evidence_snapshot_for_actor(actor_id: int) -> Dictionary:
+	return {
+		"latest": evidence_blackboard.latest_for_actor(actor_id),
+		"search_assignment": evidence_blackboard.search_assignment(actor_id),
+	}
+
+
+func qa_snapshot() -> Dictionary:
+	return qa_statistics.snapshot({
+		"simulation_tick": simulation_tick,
+		"blackboard": evidence_blackboard.statistics(),
+	})
+
+
+func export_local_qa(mission_id: String) -> Dictionary:
+	return qa_statistics.export_local(mission_id, {
+		"simulation_tick": simulation_tick,
+		"blackboard": evidence_blackboard.statistics(),
+	})
+
+
+func _enemy_for_scene_index(scene_index: int) -> Node2D:
+	for enemy: Node2D in enemies:
+		if is_instance_valid(enemy) and bool(enemy.get("is_alive")) and int(enemy.get("scene_index")) == scene_index:
+			return enemy
+	return null
 
 
 func apply_directive(directive: Dictionary) -> bool:
@@ -439,53 +574,19 @@ static func build_editorial_search_order(
 	recipient_count: int,
 	wide_flank: bool,
 ) -> Dictionary:
-	var forward := target_velocity.normalized()
-	if forward.is_zero_approx():
-		forward = (last_known_position - source_position).normalized()
-	if forward.is_zero_approx():
-		forward = Vector2.RIGHT
-	var side := forward.orthogonal()
-	var role := "lead"
-	var offset := forward * 48.0
-	var spacing := 80.0 if wide_flank else 40.0
-	match recipient_index:
-		0:
-			role = "lead"
-		1:
-			role = "left_flank"
-			offset = side * spacing - forward * 12.0
-		2:
-			role = "right_flank"
-			offset = -side * spacing - forward * 12.0
-		_:
-			role = "rear_block"
-			var side_sign := -1.0 if posmod(recipient_index, 2) == 0 else 1.0
-			offset = (
-				-forward * (48.0 + float(recipient_index - 3) * 24.0)
-				+ side * side_sign * spacing * 0.5
-			)
-	# A single-recipient tutorial alert should investigate the exact evidence
-	# coordinate instead of overshooting it as though a formation existed.
-	if maxi(recipient_count, 1) == 1:
-		role = "lead"
-		offset = Vector2.ZERO
-	var preferred := last_known_position + offset
-	var candidates: Array[Vector2] = [preferred]
-	var compact := last_known_position + offset * 0.5
-	if not compact.is_equal_approx(preferred):
-		candidates.append(compact)
-	if not last_known_position.is_equal_approx(candidates[-1]):
-		candidates.append(last_known_position)
-	return {
-		"role": role,
-		"candidates": candidates,
-		"last_known_position": last_known_position,
-	}
+	return ENEMY_SEARCH_CONTROLLER_SCRIPT.build_order(
+		last_known_position,
+		source_position,
+		target_velocity,
+		recipient_index,
+		recipient_count,
+		wide_flank,
+	)
 
 
 func capture_state() -> Dictionary:
 	return {
-		"schema_version": 1,
+		"schema_version": 3,
 		"reinforcement_budget_remaining": reinforcement_budget_remaining,
 		"active_posture": active_posture,
 		"reinforcement_disabled": reinforcement_disabled,
@@ -493,13 +594,16 @@ func capture_state() -> Dictionary:
 		"reinforcement_trigger_source": reinforcement_trigger_source,
 		"observed_event_counts": _observed_event_counts.duplicate(true),
 		"command_serial": _command_serial,
+		"simulation_tick": simulation_tick,
+		"evidence_blackboard": evidence_blackboard.capture_state(),
+		"pending_alerts": _serialize_pending_alerts(),
 	}
 
 
 func restore_state(state: Dictionary) -> bool:
 	if difficulty_profile.is_empty() or cooperation_profile.is_empty():
 		return _reject("AI coordinator is not configured")
-	if int(state.get("schema_version", 0)) != 1:
+	if int(state.get("schema_version", 0)) not in [1, 2, 3]:
 		return _reject("AI coordinator state schema is unsupported")
 	reinforcement_budget_remaining = clampi(
 		int(state.get("reinforcement_budget_remaining", reinforcement_budget_remaining)),
@@ -522,9 +626,16 @@ func restore_state(state: Dictionary) -> bool:
 		else {}
 	)
 	_command_serial = maxi(0, int(state.get("command_serial", 0)))
-	# A shot-to-alert delay is intentionally transient. Actor references are not
-	# serialized; loading resumes from the durable mission/posture state.
+	simulation_tick = maxi(int(state.get("simulation_tick", 0)), 0)
 	_pending_alerts.clear()
+	if int(state.get("schema_version", 0)) >= 2:
+		var blackboard_state: Variant = state.get("evidence_blackboard", {})
+		if blackboard_state is Dictionary and not evidence_blackboard.restore_state(blackboard_state as Dictionary):
+			return _reject("AI evidence blackboard could not be restored")
+		_restore_pending_alerts(
+			state.get("pending_alerts", []) as Array,
+			int(state.get("schema_version", 0)),
+		)
 	if not active_posture.is_empty():
 		_apply_posture_to_enemies()
 	last_error = ""
@@ -599,6 +710,65 @@ func _reset() -> void:
 	_pending_alerts = []
 	_command_serial = 0
 	_observed_event_counts = {}
+	simulation_tick = 0
+	evidence_blackboard.clear()
+	qa_statistics.clear()
+	communication_transmission_check = Callable()
+
+
+func _serialize_pending_alerts() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for pending: Dictionary in _pending_alerts:
+		var known := pending.get("last_known_position", Vector2.ZERO) as Vector2
+		var source := pending.get("source_position", Vector2.ZERO) as Vector2
+		var velocity := pending.get("target_velocity", Vector2.ZERO) as Vector2
+		result.append({
+			"deliver_tick": maxi(
+				int(pending.get("deliver_tick", simulation_tick)),
+				simulation_tick,
+			),
+			"remaining_seconds": (
+				float(maxi(int(pending.get("deliver_tick", simulation_tick)) - simulation_tick, 0))
+				/ float(TICK_RATE)
+			),
+			"recipient_scene_indices": (pending.get("recipient_scene_indices", []) as Array).duplicate(),
+			"target_scene_index": int(pending.get("target_scene_index", -1)),
+			"evidence_id": int(pending.get("evidence_id", -1)),
+			"last_known_x": known.x,
+			"last_known_y": known.y,
+			"source_x": source.x,
+			"source_y": source.y,
+			"velocity_x": velocity.x,
+			"velocity_y": velocity.y,
+			"command_serial": int(pending.get("command_serial", 0)),
+		})
+	return result
+
+
+func _restore_pending_alerts(records: Array, source_schema: int = 3) -> void:
+	for raw_record: Variant in records:
+		if not raw_record is Dictionary:
+			continue
+		var record := raw_record as Dictionary
+		var deliver_tick := simulation_tick + maxi(
+			ceili(maxf(float(record.get("remaining_seconds", 0.0)), 0.0) * float(TICK_RATE)),
+			0,
+		)
+		if (
+			source_schema >= 3
+			and (record.get("deliver_tick") is int or record.get("deliver_tick") is float)
+		):
+			deliver_tick = maxi(roundi(float(record["deliver_tick"])), simulation_tick)
+		_pending_alerts.append({
+			"deliver_tick": deliver_tick,
+			"recipient_scene_indices": (record.get("recipient_scene_indices", []) as Array).duplicate(),
+			"target_scene_index": int(record.get("target_scene_index", -1)),
+			"evidence_id": int(record.get("evidence_id", -1)),
+			"last_known_position": Vector2(float(record.get("last_known_x", 0.0)), float(record.get("last_known_y", 0.0))),
+			"source_position": Vector2(float(record.get("source_x", 0.0)), float(record.get("source_y", 0.0))),
+			"target_velocity": Vector2(float(record.get("velocity_x", 0.0)), float(record.get("velocity_y", 0.0))),
+			"command_serial": maxi(int(record.get("command_serial", 0)), 0),
+		})
 
 
 func _reject(message: String) -> bool:

@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
 $remakeRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $solution = Join-Path $remakeRoot '1937Remake.slnx'
 $tests = Join-Path $PSScriptRoot 'ResourceFormats.Tests\ResourceFormats.Tests.csproj'
@@ -775,12 +776,18 @@ if ((-not $SkipRealAssetChecks) -and
     else {
         $campaignPerformanceOutput = Join-Path $remakeRoot (
             'LocalAssets\qa\verify-campaign-performance')
-        & (Join-Path $PSScriptRoot 'Run-CampaignPerformance.ps1') `
-            -GodotExecutable $GodotExecutable `
-            -DurationSeconds 48 `
-            -Passes 1 `
-            -OutputDirectory $campaignPerformanceOutput `
-            -ProfileId 'verify-twelve-level-windowed-short-v1'
+		& (Join-Path $PSScriptRoot 'Run-CampaignPerformance.ps1') `
+			-GodotExecutable $GodotExecutable `
+			-DurationSeconds 600 `
+			-Passes 2 `
+			-MaximumP95Ms 18.5 `
+			-MaximumPerLevelP95Ms 19.5 `
+			-MaximumP99Ms 25 `
+			-MaximumProcessP95Ms 18 `
+			-MaximumPhysicsP95Ms 15 `
+			-MaximumSecondPassGrowthMiB 8 `
+			-OutputDirectory $campaignPerformanceOutput `
+			-ProfileId 'verify-twelve-level-windowed-10-minute-v2'
 
         $productUiProbeOutput = Join-Path $remakeRoot 'LocalAssets\qa\verify-product-ui'
         New-Item -ItemType Directory -Force -Path $productUiProbeOutput | Out-Null

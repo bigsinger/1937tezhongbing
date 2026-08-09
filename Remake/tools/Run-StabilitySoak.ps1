@@ -51,7 +51,10 @@ $probeArguments = @(
     "--duration-seconds=$DurationSeconds",
     "--passes=$Passes",
     '--max-p95-ms=100',
+    '--max-per-level-p95-ms=100',
     '--max-p99-ms=100',
+    '--max-process-p95-ms=100',
+    '--max-physics-p95-ms=100',
     '--max-ui-action-ms=100',
     '--max-cold-level-load-ms=6000',
     '--max-warm-level-load-ms=3500',
@@ -99,6 +102,10 @@ if ([bool]$report.global_pointer_control) {
 if (-not [bool]$report.stability_mode -or
     [string]$report.runtime.display_backend -ne 'headless') {
     $failures.Add('The stability run did not use the non-interactive headless policy.')
+}
+if (-not [bool]$report.runtime.simulation_only_world_visuals) {
+    $failures.Add(
+        'The stability run decoded static world visuals instead of using the simulation-only policy.')
 }
 if ([int]$report.stability_io.save_count -lt 1 -or
     [int]$report.stability_io.load_count -lt 1) {
@@ -163,6 +170,8 @@ $summary = [ordered]@{
     status = if ($failures.Count -eq 0) { 'passed' } else { 'failed' }
     verified_at_utc = [DateTime]::UtcNow.ToString('o')
     profile_id = [string]$report.profile_id
+    simulation_only_world_visuals = [bool](
+        $report.runtime.simulation_only_world_visuals)
     duration_seconds = [double]$report.sampled_wall_seconds
     passes = [int]$report.pass_count
     missions = @($report.level_ids).Count

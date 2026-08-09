@@ -13,6 +13,7 @@ var patrol_enabled := false
 var patrol_wait_remaining := 0.0
 var patrol_path_in_flight := false
 var path_request_delay_remaining := 0.0
+var modern_ambient_simulation_enabled := false
 
 
 func configure_ambient(
@@ -76,10 +77,15 @@ func configure_ambient(
 
 
 func _physics_process(delta: float) -> void:
+	simulate_tick(delta)
+	_notify_spatial_bucket_crossing()
+
+
+func simulate_tick(delta: float, delta_is_fixed: bool = false) -> void:
 	var ambient_logic_started_usec := (
 		Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
 	)
-	var safe_delta := maxf(delta, 0.0)
+	var safe_delta := delta if delta_is_fixed else resolved_simulation_delta(delta)
 	# SquadUnit owns the legacy actor scheduler. Calling the CRT dispatcher here
 	# as well made ambient actors traverse the same guarded event machinery twice
 	# per physics frame; the guards prevented duplicate outcomes but not the CPU
@@ -91,7 +97,18 @@ func _physics_process(delta: float) -> void:
 	if is_alive and combat_action == CombatAction.NONE and hurt_remaining <= 0.0:
 		_update_patrol(safe_delta)
 	_record_debug_physics_section("ambient_logic", ambient_logic_started_usec)
-	super._physics_process(safe_delta)
+	super.simulate_tick(safe_delta, true)
+
+
+func configure_modern_ambient_simulation(enabled: bool) -> void:
+	modern_ambient_simulation_enabled = enabled
+	# The recovered CRT actor scheduler reproduces the original executable's
+	# random wait stream. Modern rules use the explicit bounded waypoint hold
+	# below, so running both schedulers wastes an actor update every physics tick
+	# and can leave the route waiting for an unrelated random reset.
+	legacy_actor_scheduler_enabled = not enabled
+	if enabled:
+		set_original_route_update_active(false)
 
 
 func _update_patrol(delta: float) -> void:
@@ -105,10 +122,15 @@ func _update_patrol(delta: float) -> void:
 	if patrol_path_in_flight:
 		patrol_path_in_flight = false
 		patrol_wait_remaining = WAYPOINT_HOLD_SECONDS
-		set_original_route_update_active(true)
+		set_original_route_update_active(
+			not modern_ambient_simulation_enabled
+		)
 		apply_idle_frame()
 		return
-	if original_route_update_active:
+	if (
+		not modern_ambient_simulation_enabled
+		and original_route_update_active
+	):
 		return
 	if patrol_wait_remaining > 0.0:
 		patrol_wait_remaining = maxf(patrol_wait_remaining - delta, 0.0)

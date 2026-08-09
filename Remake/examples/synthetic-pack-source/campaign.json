@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "display_name": "Synthetic Training Ground",
+  "levels": [
+    {
+      "id": "training",
+      "number": 1,
+      "title": "Movement and Evacuation",
+      "level": "levels/training/level.json",
+      "mission": "levels/training/mission.json",
+      "direction": "levels/training/direction.json"
+    }
+  ]
+}

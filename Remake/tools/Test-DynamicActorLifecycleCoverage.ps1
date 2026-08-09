@@ -297,8 +297,15 @@ if ([string]$crtCoverage.dynamic_actor_lifecycle_catalog -ne
     throw 'CRT runtime coverage does not route to the lifecycle catalog.'
 }
 $staleTimingGap = @($crtCoverage.callers | Where-Object {
-    ([string]$_.timing_gap).Contains('mission actor-101') -or
-    ([string]$_.timing_gap).Contains('mission actor 101')
+    $timingGapProperty = $_.PSObject.Properties['timing_gap']
+    $timingGap = if ($null -eq $timingGapProperty) {
+        ''
+    }
+    else {
+        [string]$timingGapProperty.Value
+    }
+    $timingGap.Contains('mission actor-101') -or
+    $timingGap.Contains('mission actor 101')
 })
 if ($staleTimingGap.Count -ne 0) {
     throw 'CRT runtime coverage still claims actor 101 is unimplemented.'

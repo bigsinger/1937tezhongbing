@@ -10,7 +10,11 @@ var _thread: Thread
 var _running := false
 
 
-func begin(level_json_path: String, terrain_path: String) -> bool:
+func begin(
+	level_json_path: String,
+	terrain_path: String,
+	decode_terrain: bool = true,
+) -> bool:
 	if _running:
 		return false
 	_thread = Thread.new()
@@ -19,6 +23,7 @@ func begin(level_json_path: String, terrain_path: String) -> bool:
 		Callable(LevelLoadPipeline, "_read_bundle").bind(
 			level_json_path,
 			terrain_path,
+			decode_terrain,
 		)
 	)
 	if error != OK:
@@ -40,6 +45,7 @@ func finish() -> Dictionary:
 static func _read_bundle(
 	level_json_path: String,
 	terrain_path: String,
+	decode_terrain: bool = true,
 ) -> Dictionary:
 	var result := {
 		"level_source": {},
@@ -59,6 +65,12 @@ static func _read_bundle(
 			(result["errors"] as Array).append("level JSON cannot be opened")
 	else:
 		(result["errors"] as Array).append("level JSON is missing")
+	if not decode_terrain:
+		# Simulation-only QA still loads the authoritative level document,
+		# navigation and runtime actors. Static terrain pixels are covered by the
+		# separate rendered performance/product-UI lanes and need not be decoded
+		# repeatedly during a long headless soak.
+		return result
 	if FileAccess.file_exists(terrain_path):
 		var image := Image.new()
 		var image_error := image.load(terrain_path)

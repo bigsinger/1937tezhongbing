@@ -611,8 +611,10 @@ func _run() -> void:
 
 	var load_requests := [0]
 	var restart_requests := [0]
+	var checkpoint_requests := [0]
 	shell.load_slot_requested.connect(func(_slot_id: String) -> void: load_requests[0] += 1)
 	shell.restart_requested.connect(func() -> void: restart_requests[0] += 1)
+	shell.checkpoint_retry_requested.connect(func() -> void: checkpoint_requests[0] += 1)
 	var load_slot_summaries: Array[Dictionary] = [
 		{
 			"slot_id": "quick",
@@ -695,6 +697,41 @@ func _run() -> void:
 	expect(
 		restart_requests[0] == 1 and not shell.is_overlay_open() and not paused,
 		"restart releases failure pause before requesting a new level",
+		failures,
+	)
+
+	var modern_failure_settings: Dictionary = shell.settings_snapshot() as Dictionary
+	modern_failure_settings["ruleset_mode"] = "modern"
+	shell.set_settings(modern_failure_settings)
+	shell.show_failure("modern failure", true, false)
+	var recovery_buttons: Array[Button] = [
+		shell._checkpoint_retry_button,
+		shell._restart_button,
+		shell._load_button,
+		shell._level_select_button,
+	]
+	expect(
+		shell.overlay_mode == GAME_SHELL_SCRIPT.OverlayMode.MODERN_MENU
+			and shell.is_failure_open()
+			and recovery_buttons.all(func(button: Button) -> bool: return button.visible)
+			and shell._checkpoint_retry_button.disabled
+			and recovery_buttons[0].get_index() < recovery_buttons[1].get_index()
+			and recovery_buttons[1].get_index() < recovery_buttons[2].get_index()
+			and recovery_buttons[2].get_index() < recovery_buttons[3].get_index(),
+		"modern failure opens checkpoint/restart/load/level actions in recovery order and greys an unavailable checkpoint",
+		failures,
+	)
+	shell.close_for_state_change()
+	shell.show_failure("modern failure", true, true)
+	expect(
+		not shell._checkpoint_retry_button.disabled,
+		"a compatible rolling checkpoint enables one-click retry",
+		failures,
+	)
+	shell._checkpoint_retry_button.pressed.emit()
+	expect(
+		checkpoint_requests[0] == 1 and not shell.is_overlay_open() and not paused,
+		"checkpoint retry releases failure pause before restoring",
 		failures,
 	)
 

@@ -524,6 +524,20 @@ func _test_background_level_loading() -> void:
 		and (bundle["terrain_image"] as Image).get_size() == Vector2i(4, 3),
 		"background level pipeline decodes JSON and terrain before scene creation",
 	)
+	var simulation_pipeline = LEVEL_LOAD_PIPELINE.new()
+	_expect(
+		simulation_pipeline.begin(json_path, image_path, false),
+		"simulation-only level pipeline starts without static terrain decoding",
+	)
+	var simulation_bundle: Dictionary = simulation_pipeline.finish()
+	_expect(
+		int(
+			(simulation_bundle["level_source"] as Dictionary)["schema_version"]
+		) == 1
+		and simulation_bundle["terrain_image"] == null
+		and (simulation_bundle["errors"] as Array).is_empty(),
+		"simulation-only level pipeline preserves gameplay data without a visual error",
+	)
 	DirAccess.remove_absolute(json_path)
 	DirAccess.remove_absolute(image_path)
 	DirAccess.remove_absolute(fixture_root)

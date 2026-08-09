@@ -302,6 +302,15 @@ static func _parse_entity(source: Dictionary) -> Dictionary:
 	var native_actor_state := _parse_native_actor_state(
 		source.get("native_actor_state")
 	)
+	var raw_native_actor_state: Variant = source.get("native_actor_state")
+	var has_declared_native_actor_state := (
+		source.has("native_actor_state")
+		and raw_native_actor_state != null
+		and (
+			not raw_native_actor_state is Dictionary
+			or not (raw_native_actor_state as Dictionary).is_empty()
+		)
+	)
 	if (
 		faction_id == null
 		or int(faction_id) < 0
@@ -314,11 +323,7 @@ static func _parse_entity(source: Dictionary) -> Dictionary:
 		or default_attack_type == null
 		or int(default_attack_type) < 0
 		or int(default_attack_type) > 11
-		or (
-			source.has("native_actor_state")
-			and source.get("native_actor_state") != null
-			and native_actor_state.is_empty()
-		)
+		or (has_declared_native_actor_state and native_actor_state.is_empty())
 	):
 		return {}
 	var special_sensor_mode := false
@@ -333,6 +338,31 @@ static func _parse_entity(source: Dictionary) -> Dictionary:
 		else:
 			return {}
 		break
+	var runtime_role := str(source.get("runtime_role", ""))
+	if runtime_role not in [
+		"", "player", "enemy", "ambient", "escort", "scenery",
+		"pickup", "door", "trigger",
+	]:
+		return {}
+	var runtime_actor_type: Variant = _read_optional_integer_alias(
+		source, ["runtime_actor_type"], 0
+	)
+	if runtime_actor_type == null or int(runtime_actor_type) < 0:
+		return {}
+	var source_object_id := str(source.get("source_object_id", ""))
+	var native_interaction_value: Variant = source.get("native_interaction", {})
+	var native_interaction := _parse_native_interaction(native_interaction_value)
+	if source.has("native_interaction"):
+		if not native_interaction_value is Dictionary:
+			return {}
+		if (
+			not (native_interaction_value as Dictionary).is_empty()
+			and native_interaction.is_empty()
+		):
+			return {}
+	if runtime_role in ["pickup", "door", "trigger"]:
+		if str(native_interaction.get("kind", "")) != runtime_role:
+			return {}
 	var patrol_current_waypoint_index := 0
 	var patrol_enabled := not patrol_waypoints.is_empty()
 	var patrol_persistent_flag := 0
@@ -378,7 +408,78 @@ static func _parse_entity(source: Dictionary) -> Dictionary:
 		"default_attack_type": int(default_attack_type),
 		"native_actor_state": native_actor_state,
 		"special_sensor_mode": special_sensor_mode,
+		"runtime_role": runtime_role,
+		"runtime_actor_type": int(runtime_actor_type),
+		"source_object_id": source_object_id,
+		"native_interaction": native_interaction,
 	}
+
+
+static func _parse_native_interaction(value: Variant) -> Dictionary:
+	if value == null:
+		return {}
+	if not value is Dictionary:
+		return {}
+	var source := value as Dictionary
+	if source.is_empty():
+		return {}
+	var kind := str(source.get("kind", ""))
+	match kind:
+		"door":
+			var starts_open_value: Variant = source.get("starts_open", false)
+			var locked_open_value: Variant = source.get(
+				"locked_open",
+				starts_open_value,
+			)
+			if not starts_open_value is bool or not locked_open_value is bool:
+				return {}
+			var starts_open := bool(starts_open_value)
+			return {
+				"kind": kind,
+				"starts_open": starts_open,
+				"locked_open": bool(locked_open_value) if starts_open else false,
+			}
+		"pickup":
+			var inventory_kind := str(
+				source.get("original_inventory_kind", "backpack")
+			)
+			var item_id: Variant = _read_optional_integer_alias(
+				source,
+				["item_id", "original_actor_type"],
+				0,
+			)
+			var quantity: Variant = _read_optional_integer_alias(
+				source, ["quantity"], 1
+			)
+			var quantity_mode: Variant = _read_optional_integer_alias(
+				source, ["quantity_mode"], 0
+			)
+			var attack_type: Variant = _read_optional_integer_alias(
+				source, ["attack_type"], 0
+			)
+			if (
+				inventory_kind not in ["backpack", "weapon"]
+				or item_id == null or int(item_id) <= 0
+				or quantity == null or int(quantity) <= 0
+				or quantity_mode == null or int(quantity_mode) < 0
+				or attack_type == null
+				or int(attack_type) < 0 or int(attack_type) > 11
+			):
+				return {}
+			return {
+				"kind": kind,
+				"original_inventory_kind": inventory_kind,
+				"item_id": int(item_id),
+				"original_actor_type": int(item_id),
+				"quantity": int(quantity),
+				"quantity_mode": int(quantity_mode),
+				"attack_type": int(attack_type),
+				"item_name": str(source.get("item_name", "Item")),
+			}
+		"trigger":
+			return {"kind": kind}
+		_:
+			return {}
 
 
 static func _parse_native_actor_state(value: Variant) -> Dictionary:

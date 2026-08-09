@@ -1,49 +1,54 @@
 class_name GameInputBindings
 extends RefCounted
 
+const LOCALIZATION_SERVICE_SCRIPT: Script = preload(
+	"res://scripts/localization_service.gd"
+)
+
 const LEGACY_INPUT_RULES: Script = preload("res://scripts/legacy_input_rules.gd")
 
 ## Original-game compatible keyboard mapping.  The order is also used by the
 ## settings screen, so it deliberately follows the 2001 help-page grouping.
 const DEFINITIONS: Array[Dictionary] = [
-	{"action": "pause", "label": "系统菜单", "category": "界面", "keycode": KEY_ESCAPE},
-	{"action": "guide", "label": "操作指南", "category": "界面", "keycode": KEY_F1},
-	{"action": "select_1", "label": "选择第 1 名队员", "category": "队员", "keycode": KEY_F2},
-	{"action": "select_2", "label": "选择第 2 名队员", "category": "队员", "keycode": KEY_F3},
-	{"action": "select_3", "label": "选择第 3 名队员", "category": "队员", "keycode": KEY_F4},
-	{"action": "select_4", "label": "选择第 4 名队员", "category": "队员", "keycode": KEY_F5},
-	{"action": "select_5", "label": "选择第 5 名队员", "category": "队员", "keycode": KEY_F6},
-	{"action": "briefing", "label": "任务简报", "category": "界面", "keycode": KEY_F7},
-	{"action": "toggle_run", "label": "跑 / 走", "category": "行动", "keycode": KEY_R},
-	{"action": "toggle_crawl", "label": "匍匐 / 站立", "category": "行动", "keycode": KEY_C},
-	{"action": "weapon_inventory", "label": "武器栏", "category": "界面", "keycode": KEY_W},
-	{"action": "item_inventory", "label": "物品栏", "category": "界面", "keycode": KEY_A},
-	{"action": "sight_mode", "label": "视线观察模式", "category": "行动", "keycode": KEY_S},
-	{"action": "burial_mode", "label": "掩埋模式", "category": "行动", "keycode": KEY_B},
-	{"action": "minimap", "label": "小地图", "category": "界面", "keycode": KEY_M},
+	{"action": "pause", "label_key": "INPUT_PAUSE", "category_id": "interface", "category_key": "INPUT_CATEGORY_INTERFACE", "keycode": KEY_ESCAPE},
+	{"action": "guide", "label_key": "INPUT_GUIDE", "category_id": "interface", "category_key": "INPUT_CATEGORY_INTERFACE", "keycode": KEY_F1},
+	{"action": "select_1", "label_key": "INPUT_SELECT_1", "category_id": "squad", "category_key": "INPUT_CATEGORY_SQUAD", "keycode": KEY_F2},
+	{"action": "select_2", "label_key": "INPUT_SELECT_2", "category_id": "squad", "category_key": "INPUT_CATEGORY_SQUAD", "keycode": KEY_F3},
+	{"action": "select_3", "label_key": "INPUT_SELECT_3", "category_id": "squad", "category_key": "INPUT_CATEGORY_SQUAD", "keycode": KEY_F4},
+	{"action": "select_4", "label_key": "INPUT_SELECT_4", "category_id": "squad", "category_key": "INPUT_CATEGORY_SQUAD", "keycode": KEY_F5},
+	{"action": "select_5", "label_key": "INPUT_SELECT_5", "category_id": "squad", "category_key": "INPUT_CATEGORY_SQUAD", "keycode": KEY_F6},
+	{"action": "briefing", "label_key": "INPUT_BRIEFING", "category_id": "interface", "category_key": "INPUT_CATEGORY_INTERFACE", "keycode": KEY_F7},
+	{"action": "toggle_run", "label_key": "INPUT_TOGGLE_RUN", "category_id": "movement", "category_key": "INPUT_CATEGORY_MOVEMENT", "keycode": KEY_R},
+	{"action": "toggle_crawl", "label_key": "INPUT_TOGGLE_CRAWL", "category_id": "movement", "category_key": "INPUT_CATEGORY_MOVEMENT", "keycode": KEY_C},
+	{"action": "weapon_inventory", "label_key": "INPUT_WEAPON_INVENTORY", "category_id": "interface", "category_key": "INPUT_CATEGORY_INTERFACE", "keycode": KEY_W},
+	{"action": "item_inventory", "label_key": "INPUT_ITEM_INVENTORY", "category_id": "interface", "category_key": "INPUT_CATEGORY_INTERFACE", "keycode": KEY_A},
+	{"action": "sight_mode", "label_key": "INPUT_SIGHT_MODE", "category_id": "movement", "category_key": "INPUT_CATEGORY_MOVEMENT", "keycode": KEY_S},
+	{"action": "burial_mode", "label_key": "INPUT_BURIAL_MODE", "category_id": "movement", "category_key": "INPUT_CATEGORY_MOVEMENT", "keycode": KEY_B},
+	{"action": "minimap", "label_key": "INPUT_MINIMAP", "category_id": "interface", "category_key": "INPUT_CATEGORY_INTERFACE", "keycode": KEY_M},
+	{"action": "tactical_pause", "label_key": "INPUT_TACTICAL_PAUSE", "category_id": "tactics", "category_key": "INPUT_CATEGORY_TACTICS", "keycode": KEY_SPACE},
 	# The original executable treats either held key as the same force-target
 	# modifier. They remain separate bindings so both defaults and both user
 	# remaps stay reachable without inventing an unsupported chord list format.
-	{"action": "force_target_ctrl", "label": "强制目标（Ctrl 通道）", "category": "目标", "keycode": KEY_CTRL, "held_only": true},
-	{"action": "force_target_up", "label": "强制目标（↑ 通道）", "category": "目标", "keycode": KEY_UP, "held_only": true},
-	{"action": "weapon_1", "label": "匕首", "category": "武器快捷键", "keycode": KEY_1},
-	{"action": "weapon_2", "label": "弹弓", "category": "武器快捷键", "keycode": KEY_2},
-	{"action": "weapon_3", "label": "大刀", "category": "武器快捷键", "keycode": KEY_3},
-	{"action": "weapon_4", "label": "飞刀", "category": "武器快捷键", "keycode": KEY_4},
-	{"action": "weapon_5", "label": "手枪", "category": "武器快捷键", "keycode": KEY_5},
-	{"action": "weapon_6", "label": "步枪", "category": "武器快捷键", "keycode": KEY_6},
-	{"action": "weapon_7", "label": "机枪", "category": "武器快捷键", "keycode": KEY_7},
-	{"action": "weapon_8", "label": "地雷", "category": "武器快捷键", "keycode": KEY_8},
-	{"action": "weapon_9", "label": "手榴弹", "category": "武器快捷键", "keycode": KEY_9},
-	{"action": "weapon_10", "label": "炸药包", "category": "武器快捷键", "keycode": KEY_0},
-	{"action": "interact", "label": "交互 / 拾取", "category": "扩展操作", "keycode": KEY_E},
-	{"action": "reload", "label": "换弹", "category": "扩展操作", "keycode": KEY_Q},
-	{"action": "detonate", "label": "引爆已安放炸药", "category": "扩展操作", "keycode": KEY_F},
-	{"action": "cycle_weapon", "label": "轮换武器", "category": "扩展操作", "keycode": KEY_TAB},
+	{"action": "force_target_ctrl", "label_key": "INPUT_FORCE_TARGET_CTRL", "category_id": "targeting", "category_key": "INPUT_CATEGORY_TARGETING", "keycode": KEY_CTRL, "held_only": true},
+	{"action": "force_target_up", "label_key": "INPUT_FORCE_TARGET_UP", "category_id": "targeting", "category_key": "INPUT_CATEGORY_TARGETING", "keycode": KEY_UP, "held_only": true},
+	{"action": "weapon_1", "label_key": "WEAPON_DAGGER", "category_id": "weapon", "category_key": "INPUT_CATEGORY_WEAPON", "keycode": KEY_1},
+	{"action": "weapon_2", "label_key": "WEAPON_SLINGSHOT", "category_id": "weapon", "category_key": "INPUT_CATEGORY_WEAPON", "keycode": KEY_2},
+	{"action": "weapon_3", "label_key": "WEAPON_BROADSWORD", "category_id": "weapon", "category_key": "INPUT_CATEGORY_WEAPON", "keycode": KEY_3},
+	{"action": "weapon_4", "label_key": "WEAPON_THROWING_KNIFE", "category_id": "weapon", "category_key": "INPUT_CATEGORY_WEAPON", "keycode": KEY_4},
+	{"action": "weapon_5", "label_key": "WEAPON_PISTOL", "category_id": "weapon", "category_key": "INPUT_CATEGORY_WEAPON", "keycode": KEY_5},
+	{"action": "weapon_6", "label_key": "WEAPON_RIFLE", "category_id": "weapon", "category_key": "INPUT_CATEGORY_WEAPON", "keycode": KEY_6},
+	{"action": "weapon_7", "label_key": "WEAPON_MACHINE_GUN", "category_id": "weapon", "category_key": "INPUT_CATEGORY_WEAPON", "keycode": KEY_7},
+	{"action": "weapon_8", "label_key": "WEAPON_LAND_MINE", "category_id": "weapon", "category_key": "INPUT_CATEGORY_WEAPON", "keycode": KEY_8},
+	{"action": "weapon_9", "label_key": "WEAPON_GRENADE", "category_id": "weapon", "category_key": "INPUT_CATEGORY_WEAPON", "keycode": KEY_9},
+	{"action": "weapon_10", "label_key": "WEAPON_EXPLOSIVES", "category_id": "weapon", "category_key": "INPUT_CATEGORY_WEAPON", "keycode": KEY_0},
+	{"action": "interact", "label_key": "INPUT_INTERACT", "category_id": "extended", "category_key": "INPUT_CATEGORY_EXTENDED", "keycode": KEY_E},
+	{"action": "reload", "label_key": "INPUT_RELOAD", "category_id": "extended", "category_key": "INPUT_CATEGORY_EXTENDED", "keycode": KEY_Q},
+	{"action": "detonate", "label_key": "INPUT_DETONATE", "category_id": "extended", "category_key": "INPUT_CATEGORY_EXTENDED", "keycode": KEY_F},
+	{"action": "cycle_weapon", "label_key": "INPUT_CYCLE_WEAPON", "category_id": "extended", "category_key": "INPUT_CATEGORY_EXTENDED", "keycode": KEY_TAB},
 	# Plain F5 belongs to the fourth playable actor in the original mapping.
 	# Save/load therefore use a modifier and remain accessible from the menu.
-	{"action": "quick_save", "label": "快速保存", "category": "扩展操作", "keycode": KEY_F5, "ctrl": true},
-	{"action": "quick_load", "label": "快速读取", "category": "扩展操作", "keycode": KEY_F9, "ctrl": true},
+	{"action": "quick_save", "label_key": "INPUT_QUICK_SAVE", "category_id": "extended", "category_key": "INPUT_CATEGORY_EXTENDED", "keycode": KEY_F5, "ctrl": true},
+	{"action": "quick_load", "label_key": "INPUT_QUICK_LOAD", "category_id": "extended", "category_key": "INPUT_CATEGORY_EXTENDED", "keycode": KEY_F9, "ctrl": true},
 ]
 
 
@@ -51,6 +56,8 @@ static func definitions() -> Array[Dictionary]:
 	var result: Array[Dictionary] = DEFINITIONS.duplicate(true)
 	for definition: Dictionary in result:
 		var action := str(definition.get("action", ""))
+		definition["label"] = _translated(str(definition.get("label_key", "")))
+		definition["category"] = _translated(str(definition.get("category_key", "")))
 		definition["trigger_phase"] = (
 			LEGACY_INPUT_RULES.trigger_phase_for_action(action)
 			if is_original_action(action)
@@ -74,7 +81,7 @@ static func action_ids() -> Array[String]:
 static func is_original_action(action: String) -> bool:
 	for definition: Dictionary in DEFINITIONS:
 		if str(definition["action"]) == action:
-			return str(definition.get("category", "")) != "扩展操作"
+			return str(definition.get("category_id", "")) != "extended"
 	return false
 
 
@@ -229,12 +236,18 @@ static func display_text(binding: Dictionary) -> String:
 	if bool(binding.get("meta", false)):
 		parts.append("Meta")
 	var key_name := OS.get_keycode_string(int(binding.get("keycode", 0)))
-	parts.append(key_name if not key_name.is_empty() else "未设置")
+	parts.append(key_name if not key_name.is_empty() else _translated("INPUT_UNSET"))
 	return "+".join(parts)
 
 
 static func label_for_action(action: String) -> String:
 	for definition: Dictionary in DEFINITIONS:
 		if str(definition["action"]) == action:
-			return str(definition["label"])
+			return _translated(str(definition.get("label_key", "")))
 	return action
+
+
+static func _translated(key: String) -> String:
+	if key.is_empty():
+		return ""
+	return str(LOCALIZATION_SERVICE_SCRIPT.translate_key(key))

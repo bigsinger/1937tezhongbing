@@ -583,6 +583,103 @@ if (!string.IsNullOrWhiteSpace(vwfDirectory))
     RunNativeVwfTests(Path.GetFullPath(vwfDirectory), root);
 }
 
+var nativePackDocument = MapDocument.Create("Synthetic native package", 16, 12);
+nativePackDocument.CellWidth = 32;
+nativePackDocument.CellHeight = 16;
+nativePackDocument.Metadata["pack_id"] = "tests.synthetic";
+nativePackDocument.Metadata["level_id"] = "training";
+nativePackDocument.Objects.Add(new MapObject
+{
+    Id = "player-1",
+    Name = "Test player",
+    Kind = "character",
+    Category = "角色",
+    Faction = "player",
+    X = 1,
+    Y = 1
+});
+nativePackDocument.Objects.Add(new MapObject
+{
+    Id = "enemy-20",
+    Name = "Patrol guard",
+    Kind = "character",
+    Category = "角色",
+    Faction = "enemy",
+    X = 11,
+    Y = 4,
+    PatrolEnabled = true,
+    PatrolWaypoints =
+    [
+        new MapWaypoint { X = 11, Y = 4 },
+        new MapWaypoint { X = 13, Y = 6 }
+    ]
+});
+nativePackDocument.Objects.Add(new MapObject
+{
+    Id = "door-70",
+    Name = "Training gate",
+    Kind = "door",
+    Category = "门",
+    X = 8,
+    Y = 6,
+    Properties = new Dictionary<string, string>
+    {
+        ["starts_open"] = "false",
+        ["locked_open"] = "false"
+    }
+});
+nativePackDocument.Objects.Add(new MapObject
+{
+    Id = "pickup-80",
+    Name = "Smoke lure",
+    Kind = "pickup",
+    Category = "物品",
+    X = 3,
+    Y = 2,
+    Properties = new Dictionary<string, string>
+    {
+        ["item_id"] = "83",
+        ["quantity"] = "2",
+        ["quantity_mode"] = "0",
+        ["original_inventory_kind"] = "backpack",
+        ["item_name"] = "Smoke lure"
+    }
+});
+nativePackDocument.Layer(EditorLayerKind.MovementObstacle).Cells[
+    nativePackDocument.Index(8, 6)] = 70;
+nativePackDocument.Layer(EditorLayerKind.LineOfSightObstacle).Cells[
+    nativePackDocument.Index(8, 6)] = 70;
+nativePackDocument.Tasks[0].Title = "Reach the exit";
+nativePackDocument.Tasks[0].Trigger = "trigger_activated";
+nativePackDocument.Tasks[0].RegionX = 14;
+nativePackDocument.Tasks[0].RegionY = 10;
+nativePackDocument.Tasks.Add(new MissionTask
+{
+    Id = "player-lost",
+    Title = "Keep the scout alive",
+    Trigger = "required_character_lost",
+    FailureCondition = true,
+    FailureReason = "The scout was lost."
+});
+var nativePackPath = Path.Combine(root, "mapeditor-synthetic.m1937pack");
+var nativePackResult = NativeContentPackExporter.Export(
+    nativePackDocument,
+    nativePackPath);
+var nativePackValidation = M1937Pack.Validate(nativePackPath);
+if (!File.Exists(nativePackPath) ||
+    nativePackResult.ObjectCount != 4 ||
+    nativePackResult.ObjectiveCount != 1 ||
+    nativePackValidation.Manifest.LevelEntries.Count != 1 ||
+    !nativePackValidation.Manifest.Capabilities.Contains("doors") ||
+    !nativePackValidation.Manifest.Capabilities.Contains("pickups") ||
+    nativePackValidation.Manifest.Files.All(file =>
+        !file.Path.EndsWith("navigation.bin", StringComparison.Ordinal)))
+{
+    throw new InvalidOperationException(
+        "MapEditor native .m1937pack export test failed.");
+}
+Console.WriteLine("MapEditor native .m1937pack export passed.");
+
 static void RunNativeVwfTests(
     string vwfDirectory,
     string testRoot)

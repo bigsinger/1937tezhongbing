@@ -12,6 +12,7 @@ class FakeNavigation:
 	var cell_size := Vector2i(32, 16)
 	var last_path_endpoint := Vector2.ZERO
 	var path_request_count := 0
+	var line_of_sight := true
 
 	func find_path_for_scene(
 		_unused_scene_index: int,
@@ -24,6 +25,26 @@ class FakeNavigation:
 
 	func release_goal(_unused_scene_index: int) -> void:
 		pass
+
+	func has_line_of_sight(
+		_unused_from: Vector2,
+		_unused_to: Vector2,
+		_unused_scene_indices: Array = [],
+	) -> bool:
+		return line_of_sight
+
+
+class FakeTarget:
+	extends Node2D
+
+	var scene_index := 9001
+	var faction_id := 3
+	var is_alive := true
+	var current_hit_points := 8
+	var is_crawling := false
+
+	func is_combat_alive() -> bool:
+		return is_alive and current_hit_points > 0
 
 
 class UnavailableWorldItem:
@@ -71,6 +92,7 @@ func _run_tests() -> void:
 	_test_exact_alert_geometry_and_eligibility()
 	_test_coordinate_search_lifecycle_and_snapshot()
 	_test_original_coordinate_broadcast()
+	_test_search_arrival_confirmation()
 	_test_remaining_original_update_random_branches()
 	_test_recurring_evidence_contact_gate()
 	if failures.is_empty():
@@ -599,6 +621,34 @@ func _test_original_coordinate_broadcast() -> void:
 	route_wins.free()
 	for recipient: ENEMY_UNIT in recipients:
 		recipient.free()
+
+
+func _test_search_arrival_confirmation() -> void:
+	var navigation := FakeNavigation.new()
+	var enemy = _enemy(29, Vector2(572.0, 62.0), navigation)
+	enemy.behavior_state = ENEMY_UNIT.BehaviorState.SEARCH
+	enemy.legacy_search_active = true
+	enemy.sense_profile = {"requires_line_of_sight": true}
+	var target := FakeTarget.new()
+	target.position = Vector2(561.0, 67.0)
+	var ignored: Array = [enemy.scene_index, target.scene_index]
+	_expect(
+		bool(enemy.call("_can_confirm_legacy_search_contact", target, ignored)),
+		"search arrival confirms a hostile inside the same recovered logical cell",
+	)
+	target.position = enemy.position + Vector2(33.0, 0.0)
+	_expect(
+		not bool(enemy.call("_can_confirm_legacy_search_contact", target, ignored)),
+		"search arrival does not turn wider hearing into omnidirectional vision",
+	)
+	target.position = Vector2(561.0, 67.0)
+	navigation.line_of_sight = false
+	_expect(
+		not bool(enemy.call("_can_confirm_legacy_search_contact", target, ignored)),
+		"search arrival confirmation still respects world occlusion",
+	)
+	target.free()
+	enemy.free()
 
 
 func _test_remaining_original_update_random_branches() -> void:

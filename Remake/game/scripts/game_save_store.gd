@@ -4,7 +4,7 @@ extends RefCounted
 const ATOMIC_JSON_STORE: Script = preload("res://scripts/atomic_json_store.gd")
 const CAMPAIGN_PROGRESS: Script = preload("res://scripts/campaign_progress.gd")
 
-const SCHEMA_VERSION := 2
+const SCHEMA_VERSION := 4
 const MIN_SUPPORTED_SCHEMA_VERSION := 0
 const GAME_ID := "1937-remake"
 const MISSION_RULE_MODES: Array[String] = ["stable_mod", "repaired"]
@@ -53,6 +53,7 @@ static func empty_session(level_id: String = "m000") -> Dictionary:
 			"completed": {},
 			"progress": {},
 			"seen_values": {},
+			"elapsed_ticks": 0,
 			"failure_id": "",
 			"durable_facts": [],
 			"applied_fact_objectives": {},
@@ -80,6 +81,9 @@ static func empty_session(level_id: String = "m000") -> Dictionary:
 			"legacy_burial_caches": [],
 			"pending_burial_command": {},
 			"projectiles": [],
+			"simulation": {},
+			"movement_reservations": {},
+			"tactical_commands": {},
 		},
 	}
 
@@ -92,7 +96,7 @@ static func migration_policy() -> Dictionary:
 	return {
 		"current_schema_version": SCHEMA_VERSION,
 		"minimum_supported_schema_version": MIN_SUPPORTED_SCHEMA_VERSION,
-		"supported_source_versions": [0, 1, SCHEMA_VERSION],
+		"supported_source_versions": [0, 1, 2, 3, SCHEMA_VERSION],
 		"schema_zero_shape": "prototype root/session document",
 		"migration_mode": "in_memory_then_current_schema_on_next_save",
 		"future_version_policy": "reject_and_preserve_all_generations",
@@ -525,7 +529,22 @@ static func is_valid_slot_id(slot_id: String) -> bool:
 
 
 static func is_valid_level_id(level_id: String) -> bool:
-	return CAMPAIGN_PROGRESS.is_valid_level_id(level_id)
+	if CAMPAIGN_PROGRESS.is_valid_level_id(level_id):
+		return true
+	var separator := level_id.find(":")
+	if separator <= 2 or separator >= level_id.length() - 1:
+		return false
+	var pack_id := level_id.substr(0, separator)
+	var local_id := level_id.substr(separator + 1)
+	if pack_id.length() > 64 or local_id.length() > 48:
+		return false
+	for character: String in pack_id:
+		if character not in "abcdefghijklmnopqrstuvwxyz0123456789._-":
+			return false
+	for character: String in local_id:
+		if character not in "abcdefghijklmnopqrstuvwxyz0123456789_-":
+			return false
+	return true
 
 
 func _is_loadable_document(value: Variant) -> bool:
@@ -542,11 +561,11 @@ func _is_loadable_document(value: Variant) -> bool:
 		return document.has("level_id") or document.has("session")
 	if version == SCHEMA_VERSION:
 		return _is_current_document(document)
-	# Schema 1 used the same top-level envelope but did not own gameplay
+	# Schemas 1 through 3 used the same top-level envelope but did not own all
 	# profile identity or the player's tactical workspace.  Keep validation
 	# intentionally narrow here; migration performs the complete current check.
 	return (
-		version == 1
+		version in [1, 2, 3]
 		and document.get("session") is Dictionary
 		and is_valid_level_id(str((document["session"] as Dictionary).get("level_id", "")))
 	)
@@ -624,6 +643,18 @@ func _is_valid_session(session: Dictionary) -> bool:
 	for key: String in ["completed", "progress", "seen_values"]:
 		if not mission.get(key) is Dictionary:
 			return false
+	if (
+		mission.has("elapsed_ticks")
+		and (
+			not _is_number(mission.get("elapsed_ticks"))
+			or float(mission.get("elapsed_ticks", -1.0)) < 0.0
+			or not is_equal_approx(
+				float(mission.get("elapsed_ticks", 0.0)),
+				float(roundi(float(mission.get("elapsed_ticks", 0.0)))),
+			)
+		)
+	):
+		return false
 	if not mission.get("durable_facts", []) is Array:
 		return false
 	var world := session["world"] as Dictionary
@@ -735,6 +766,17 @@ func _normalize_session(session: Dictionary) -> Dictionary:
 	normalized["elapsed_seconds"] = maxf(float(session.get("elapsed_seconds", 0.0)), 0.0)
 	normalized["camera"] = (session.get("camera", normalized["camera"]) as Dictionary).duplicate(true)
 	normalized["mission"] = (session.get("mission", normalized["mission"]) as Dictionary).duplicate(true)
+	var normalized_mission := normalized["mission"] as Dictionary
+	if not _is_number(normalized_mission.get("elapsed_ticks")):
+		normalized_mission["elapsed_ticks"] = maxi(
+			roundi(float(normalized["elapsed_seconds"]) * 60.0),
+			0,
+		)
+	else:
+		normalized_mission["elapsed_ticks"] = maxi(
+			int(normalized_mission["elapsed_ticks"]),
+			0,
+		)
 	for group_name: String in ["squad", "enemies", "escorts", "ambient"]:
 		normalized[group_name] = (session.get(group_name, []) as Array).duplicate(true)
 	var normalized_world := (normalized["world"] as Dictionary).duplicate(true)

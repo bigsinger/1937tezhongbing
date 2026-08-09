@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using System.Windows;
@@ -588,24 +589,158 @@ public partial class MainWindow : Window
     private void Export_Click(object sender, RoutedEventArgs e)
     {
         SyncCollections();
-        var errors = MapValidator.Validate(document);
-        if (errors.Count > 0)
+        var issues = MapQualityAnalyzer.Analyze(document);
+        var errors = issues
+            .Where(issue => issue.Severity == MapIssueSeverity.Error)
+            .ToArray();
+        if (errors.Length > 0)
         {
             MessageBox.Show(
-                this, string.Join(Environment.NewLine, errors),
+                this,
+                string.Join(
+                    Environment.NewLine,
+                    errors.Select(issue => $"{issue.Code}: {issue.Message}")),
                 "导出前校验失败",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         var dialog = new SaveFileDialog
         {
-            Filter = "1937 任务包 (*.m37pack.json)|*.m37pack.json",
-            FileName = $"{SafeName(document.Name)}.m37pack.json"
+            Filter = "Remake 原生内容包 (*.m1937pack)|*.m1937pack",
+            FileName = $"{SafeName(document.Name)}.m1937pack"
         };
         if (dialog.ShowDialog(this) != true)
             return;
-        MapDocumentSerializer.Save(document, dialog.FileName);
-        StatusText.Text = $"任务包已导出：{dialog.FileName}";
+        try
+        {
+            var result = NativeContentPackExporter.Export(
+                document,
+                dialog.FileName,
+                assetRoot);
+            StatusText.Text =
+                $"Remake 内容包已导出：{result.OutputPath}（{result.PackageSha256[..12]}…）";
+        }
+        catch (Exception exception) when (
+            exception is IOException or InvalidDataException or ArgumentException)
+        {
+            MessageBox.Show(
+                this,
+                exception.Message,
+                "内容包导出失败",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+    }
+
+    private void PlaytestInRemake_Click(object sender, RoutedEventArgs e)
+    {
+        SyncCollections();
+        var errors = MapQualityAnalyzer.Analyze(document)
+            .Where(issue => issue.Severity == MapIssueSeverity.Error)
+            .ToArray();
+        if (errors.Length > 0)
+        {
+            MessageBox.Show(
+                this,
+                string.Join(
+                    Environment.NewLine,
+                    errors.Select(issue => $"{issue.Code}: {issue.Message}")),
+                "试玩前校验失败",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+        try
+        {
+            var executable = FindGodotExecutable();
+            var project = FindRemakeProject();
+            var playtestRoot = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "M1937MapEditor",
+                "Playtest",
+                Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(playtestRoot);
+            var packagePath = Path.Combine(playtestRoot, "editor-playtest.m1937pack");
+            var result = NativeContentPackExporter.Export(document, packagePath, assetRoot);
+            var start = new ProcessStartInfo
+            {
+                FileName = executable,
+                Arguments =
+                    $"--path \"{project}\" -- --level={result.PackId}:{result.LevelId} " +
+                    "--skip-level-selector --skip-briefing",
+                UseShellExecute = false,
+                WorkingDirectory = project
+            };
+            start.Environment["M1937_USER_CAMPAIGN_ROOT"] = playtestRoot;
+            var process = Process.Start(start)
+                ?? throw new InvalidOperationException("Godot 试玩进程未能启动。");
+            process.EnableRaisingEvents = true;
+            process.Exited += (_, _) =>
+            {
+                try
+                {
+                    if (Directory.Exists(playtestRoot))
+                        Directory.Delete(playtestRoot, recursive: true);
+                }
+                catch (IOException)
+                {
+                    // A developer may still be inspecting files after process
+                    // exit. The isolated LocalAppData directory is safe to keep.
+                }
+                catch (UnauthorizedAccessException)
+                {
+                }
+            };
+            StatusText.Text =
+                $"已启动 Remake 试玩：{result.PackId}:{result.LevelId}";
+        }
+        catch (Exception exception) when (
+            exception is IOException or InvalidDataException or
+            InvalidOperationException or ArgumentException)
+        {
+            MessageBox.Show(
+                this,
+                exception.Message,
+                "无法启动 Remake 试玩",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+    }
+
+    private static string FindGodotExecutable()
+    {
+        var configured = Environment.GetEnvironmentVariable("GODOT4");
+        var candidates = new[]
+        {
+            configured,
+            @"D:\Godot\Godot_v4.7.1-stable_win64.exe",
+            @"D:\Godot\Godot_v4.7.1-stable_win64_console.exe"
+        };
+        return candidates.FirstOrDefault(path =>
+                   !string.IsNullOrWhiteSpace(path) && File.Exists(path))
+               ?? throw new InvalidOperationException(
+                   "未找到 Godot 4。请设置 GODOT4 环境变量，或安装到 D:\\Godot。");
+    }
+
+    private static string FindRemakeProject()
+    {
+        var configured = Environment.GetEnvironmentVariable("M1937_REMAKE_PROJECT");
+        if (!string.IsNullOrWhiteSpace(configured) &&
+            File.Exists(Path.Combine(configured, "project.godot")))
+            return Path.GetFullPath(configured);
+        foreach (var start in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
+        {
+            var directory = new DirectoryInfo(Path.GetFullPath(start));
+            while (directory is not null)
+            {
+                var candidate = Path.Combine(directory.FullName, "Remake", "game");
+                if (File.Exists(Path.Combine(candidate, "project.godot")))
+                    return candidate;
+                directory = directory.Parent;
+            }
+        }
+        throw new InvalidOperationException(
+            "未找到 Remake/game/project.godot。请设置 M1937_REMAKE_PROJECT 环境变量。");
     }
 
     private void MissionPackageWizard_Click(

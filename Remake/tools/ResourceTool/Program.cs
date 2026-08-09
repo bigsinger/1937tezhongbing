@@ -51,8 +51,75 @@ internal static class Program
             "install-text-briefings" => InstallTextBriefings(args),
             "import" => Import(args),
             "media-catalog" => MediaCatalog(args),
+            "pack" => Pack(args),
             _ => UnknownCommand(args[0])
         };
+    }
+
+    private static int Pack(string[] args)
+    {
+        if (args.Length < 2)
+            throw new ArgumentException(
+                "Usage: ResourceTool pack <validate|build|inspect|extract-safe|hash> ...");
+        var operation = args[1].ToLowerInvariant();
+        switch (operation)
+        {
+            case "validate":
+            {
+                RequireArgumentCount(args, 3, 3, "pack validate <package.m1937pack>");
+                var result = M1937Pack.Validate(args[2]);
+                WritePackSummary(result);
+                return 0;
+            }
+            case "build":
+            {
+                RequireArgumentCount(
+                    args,
+                    4,
+                    4,
+                    "pack build <source-directory> <package.m1937pack>");
+                var result = M1937Pack.Build(args[2], args[3]);
+                WritePackSummary(result);
+                Console.WriteLine($"Wrote: {Path.GetFullPath(args[3])}");
+                return 0;
+            }
+            case "inspect":
+            {
+                RequireArgumentCount(args, 3, 3, "pack inspect <package.m1937pack>");
+                var result = M1937Pack.Validate(args[2]);
+                Console.WriteLine(M1937Pack.ManifestJson(result.Manifest));
+                Console.WriteLine($"package_sha256: {result.PackageSha256}");
+                return 0;
+            }
+            case "extract-safe":
+            {
+                RequireArgumentCount(
+                    args,
+                    4,
+                    4,
+                    "pack extract-safe <package.m1937pack> <empty-output-directory>");
+                var result = M1937Pack.ExtractSafe(args[2], args[3]);
+                WritePackSummary(result);
+                Console.WriteLine($"Extracted: {Path.GetFullPath(args[3])}");
+                return 0;
+            }
+            case "hash":
+            {
+                RequireArgumentCount(args, 3, 3, "pack hash <package.m1937pack>");
+                Console.WriteLine(M1937Pack.Hash(args[2]));
+                return 0;
+            }
+            default:
+                throw new ArgumentException($"Unknown pack operation: {args[1]}");
+        }
+    }
+
+    private static void WritePackSummary(M1937PackValidationResult result)
+    {
+        Console.WriteLine(
+            $"Valid {result.Manifest.PackId} {result.Manifest.Version}: " +
+            $"{result.EntryCount} entries, {result.TotalUncompressedBytes} bytes.");
+        Console.WriteLine($"SHA-256: {result.PackageSha256}");
     }
 
     private static int WorldPickupBaseline(string[] args)
@@ -1173,6 +1240,11 @@ internal static class Program
             "[preview-directory]");
         Console.WriteLine("  import <game-directory> <output-directory>");
         Console.WriteLine("  media-catalog <game-directory> <converted-directory>");
+        Console.WriteLine("  pack validate <package.m1937pack>");
+        Console.WriteLine("  pack build <source-directory> <package.m1937pack>");
+        Console.WriteLine("  pack inspect <package.m1937pack>");
+        Console.WriteLine("  pack extract-safe <package.m1937pack> <empty-output-directory>");
+        Console.WriteLine("  pack hash <package.m1937pack>");
         Console.WriteLine();
         Console.WriteLine("Repository-local output directories must be ignored by Git.");
     }

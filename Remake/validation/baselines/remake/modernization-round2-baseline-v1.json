@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "profile_id": "modernization-round2-start-v1",
+  "baseline_commit": "daae74b",
+  "captured_from_commit": "89b5eb9",
+  "captured_date": "2026-08-08",
+  "scope": "Remake runtime and required MapEditor integration only",
+  "core_scripts": [
+    { "path": "game/scripts/main.gd", "lines": 12352, "functions": 402 },
+    { "path": "game/scripts/squad_unit.gd", "lines": 5537, "functions": 170 },
+    { "path": "game/scripts/enemy_unit.gd", "lines": 3802, "functions": 123 },
+    { "path": "game/scripts/game_shell.gd", "lines": 3814, "functions": 155 }
+  ],
+  "repository_metrics": {
+    "game_script_count": 103,
+    "game_script_lines": 51743,
+    "godot_test_script_count": 59,
+    "godot_test_lines": 35270,
+    "spatial_index_poll_seconds": 0.1,
+    "simulation_tick_rate": 60,
+    "global_pointer_control_calls": 0
+  },
+  "reference_performance": {
+    "source": "campaign-performance-1920x1080-v1.json",
+    "viewport": "1920x1080 windowed",
+    "renderer": "gl_compatibility",
+    "gpu": "NVIDIA GeForce GTX 1050 Ti",
+    "p95_ms": 17.604,
+    "p99_ms": 19.363,
+    "maximum_ms": 45.438,
+    "frames_over_50_ms": 0,
+    "second_pass_growth_bytes": 2667836
+  },
+  "reference_stability": {
+    "source": "stability-soak-30-minute-v1.json",
+    "duration_seconds": 1908.406682,
+    "passes": 3,
+    "status": "passed",
+    "second_pass_growth_mib": 3.911,
+    "global_pointer_control": false
+  },
+  "known_gaps": [
+    "gameplay mission/director/AI timers advance from render delta",
+    "performance samples use head removal rather than an O(1) ring",
+    "world spatial index polls all active actors every 0.1 seconds",
+    "no deterministic scheduled command stream or product command replay",
+    "no movement reservation service",
+    "no evidence-only modern AI blackboard",
+    "no declarative m1937pack content ecosystem"
+  ]
+}

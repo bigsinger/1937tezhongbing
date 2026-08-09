@@ -13,6 +13,7 @@ signal ending_closed
 
 const CATALOG_SCRIPT: Script = preload("res://scripts/legacy_media_catalog.gd")
 const GAME_INPUT_BINDINGS: Script = preload("res://scripts/game_input_bindings.gd")
+const LOCALIZATION_SERVICE_SCRIPT: Script = preload("res://scripts/localization_service.gd")
 # Eight warm players cover ordinary scenes without allocation. The pool grows
 # only when every warm/reused player is active because the original duplicates
 # per-sound DirectSound buffers instead of stealing a global saturated slot.
@@ -74,6 +75,10 @@ var _audio_stream_cache: Dictionary = {}
 var _audio_stream_loader_override: Callable = Callable()
 var _audio_stream_load_count := 0
 var input_bindings: Dictionary = GAME_INPUT_BINDINGS.default_bindings()
+
+
+static func _text(key: String) -> String:
+	return LOCALIZATION_SERVICE_SCRIPT.translate_key(key)
 
 
 func _ready() -> void:
@@ -371,8 +376,8 @@ func _play_audio_index(
 
 func show_briefing(
 	level_id: String,
-	fallback_title: String = "任务简报",
-	fallback_body: String = "本地尚未导入原版任务简报图。任务目标仍可正常进行。"
+	fallback_title: String = "",
+	fallback_body: String = ""
 ) -> bool:
 	_ensure_nodes()
 	_ensure_catalog()
@@ -382,7 +387,11 @@ func show_briefing(
 	active_ending = false
 	active_briefing = level_id
 	overlay.visible = true
-	help_label.text = "Enter / Space 继续    Esc 跳过"
+	help_label.text = _text("UI_MEDIA_CONTINUE_SKIP_HINT")
+	if fallback_title.is_empty():
+		fallback_title = _text("UI_MEDIA_BRIEFING_TITLE")
+	if fallback_body.is_empty():
+		fallback_body = _text("UI_MEDIA_BRIEFING_MISSING")
 	var path := str(catalog.call("briefing_path", level_id))
 	var used_original := _load_external_image(path)
 	if used_original:
@@ -409,7 +418,7 @@ func dismiss_briefing() -> void:
 	briefing_closed.emit(closed)
 
 
-func show_ending(target_width: int, fallback_text: String = "任务完成") -> bool:
+func show_ending(target_width: int, fallback_text: String = "") -> bool:
 	_ensure_nodes()
 	_ensure_catalog()
 	_begin_modal_transition()
@@ -418,7 +427,9 @@ func show_ending(target_width: int, fallback_text: String = "任务完成") -> b
 	active_briefing = ""
 	active_ending = true
 	overlay.visible = true
-	help_label.text = "Enter / Space 继续    Esc 跳过"
+	help_label.text = _text("UI_MEDIA_CONTINUE_SKIP_HINT")
+	if fallback_text.is_empty():
+		fallback_text = _text("UI_MEDIA_MISSION_COMPLETE")
 	var path := str(catalog.call("ending_path", target_width))
 	var used_original := _load_external_image(path)
 	fallback_label.visible = not used_original
@@ -457,7 +468,7 @@ func play_movie(movie_id: String) -> bool:
 	active_ending = false
 	image_view.visible = false
 	fallback_label.visible = false
-	help_label.text = "Enter / Space / Esc 跳过"
+	help_label.text = _text("UI_MEDIA_SKIP_HINT")
 	overlay.visible = true
 	video_player.visible = true
 	video_player.play()
@@ -498,7 +509,7 @@ func start_dialogue(sequence_id: String, lines: Array) -> bool:
 	overlay.visible = true
 	image_view.visible = false
 	fallback_label.visible = true
-	help_label.text = "Enter / Space 下一句    Esc 跳过"
+	help_label.text = _text("UI_MEDIA_NEXT_LINE_HINT")
 	_end_modal_transition()
 	_advance_dialogue_internal()
 	return true

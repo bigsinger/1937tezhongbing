@@ -156,7 +156,7 @@ for ($movementIndex = 0;
         $movementBaseline.metadata.input_isolation -ne
             'window-message-to-process-local-DirectInput' -or
         @($movementBaseline.checkpoints).Count -ne 6 -or
-        (Compare-Object `
+        @(Compare-Object `
             $movementCheckpointIds `
             @($movementBaseline.checkpoints.id)).Count -ne 0 -or
         @($auditedActors | Where-Object { $null -eq $_ }).Count -ne 0 -or
@@ -191,7 +191,7 @@ for ($levelIndex = 0; $levelIndex -lt 12; $levelIndex++) {
     if ($patrolBaseline.runtime -ne 'mod' -or
         $patrolBaseline.scenario.id -ne "$levelId-enemy-patrol-v1" -or
         @($patrolBaseline.checkpoints).Count -ne 4 -or
-        (Compare-Object `
+        @(Compare-Object `
             $patrolCheckpointIds `
             @($patrolBaseline.checkpoints.id)).Count -ne 0 -or
         @($patrolBaseline.checkpoints |
@@ -237,7 +237,7 @@ $contactPlayerHitPointSequence = @(
 if ($contactBaseline.runtime -ne 'mod' -or
     $contactBaseline.scenario.id -ne 'm000-natural-contact-v1' -or
     @($contactBaseline.checkpoints).Count -ne 7 -or
-    (Compare-Object `
+    @(Compare-Object `
         $contactCheckpointIds `
         @($contactBaseline.checkpoints.id)).Count -ne 0 -or
     @($contactBaseline.checkpoints |
@@ -485,7 +485,7 @@ foreach ($inventoryDefinition in $inventoryBaselineDefinitions) {
         $inventoryBaseline.scenario.id -ne
             $inventoryDefinition.scenario -or
         @($inventoryBaseline.checkpoints).Count -ne 2 -or
-        (Compare-Object `
+        @(Compare-Object `
             @($inventoryDefinition.checkpoint_ids) `
             $checkpointIds).Count -ne 0) {
         throw (

@@ -61,8 +61,19 @@ Assert-Baseline (
     [int]$baseline.measurement.window.width -eq 1920 -and
     [int]$baseline.measurement.window.height -eq 1080) (
     'the reference viewport is 1920x1080')
+Assert-Baseline (
+    [int]$baseline.measurement.window.maximum_fps -eq 60 -and
+    -not [bool]$baseline.measurement.window.vsync) (
+    'the reference workload uses the shipped 60 FPS pacing policy with VSync disabled')
 
 $maximumP95 = [double]$baseline.thresholds.maximum_p95_ms
+$maximumPerLevelP95 = if (
+    $baseline.thresholds.PSObject.Properties.Name -contains
+        'maximum_per_level_p95_ms') {
+    [double]$baseline.thresholds.maximum_per_level_p95_ms
+} else {
+    $maximumP95
+}
 $maximumP99 = [double]$baseline.thresholds.maximum_p99_ms
 $maximumOver50 = [int]$baseline.thresholds.maximum_over_50_per_level
 $maximumGrowthBytes = [double](
@@ -86,7 +97,7 @@ foreach ($level in @($baseline.levels)) {
     $levelId = [string]$level.level_id
     Assert-Baseline ([int]$level.sample_count -ge 600) (
         "$levelId has enough samples for a P99 gate")
-    Assert-Baseline ([double]$level.p95_ms -le $maximumP95) (
+    Assert-Baseline ([double]$level.p95_ms -le $maximumPerLevelP95) (
         "$levelId P95 remains inside its declared threshold")
     Assert-Baseline ([double]$level.p99_ms -le $maximumP99) (
         "$levelId P99 remains inside its declared threshold")

@@ -22,6 +22,9 @@ $bannedNames = @(
     '1937intro.svt',
     'gamekinglogo.svt'
 )
+$bannedRemakeDeliverableExtensions = @(
+    '.exe', '.pck', '.sav', '.vwf', '.zip', '.m1937pack'
+)
 $bannedHeaders = @(
     'GFL (Game File Library)',
     'VWL1 Intuition Engine Virtual World File',
@@ -60,6 +63,10 @@ foreach ($relativePath in $trackedFiles) {
 
     if ($bannedExtensions -contains $extension) {
         $violations.Add("Banned original extension: $relativePath")
+    }
+    if ($forwardPath.StartsWith('Remake/', [StringComparison]::OrdinalIgnoreCase) -and
+        $bannedRemakeDeliverableExtensions -contains $extension) {
+        $violations.Add("Remake deliverable or user-data file must remain local: $relativePath")
     }
     if ($bannedNames -contains $name) {
         $violations.Add("Banned original filename: $relativePath")

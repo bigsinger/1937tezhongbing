@@ -24,7 +24,16 @@ param(
     [double]$MaximumP95Ms = 20,
 
     [ValidateRange(1, 100)]
+    [double]$MaximumPerLevelP95Ms = 20,
+
+    [ValidateRange(1, 100)]
     [double]$MaximumP99Ms = 25,
+
+    [ValidateRange(1, 100)]
+    [double]$MaximumProcessP95Ms = 20,
+
+    [ValidateRange(1, 100)]
+    [double]$MaximumPhysicsP95Ms = 20,
 
     [ValidateRange(1, 100)]
     [double]$MaximumUiActionMs = 25,
@@ -50,7 +59,9 @@ param(
 
     [string]$Levels = '',
 
-    [switch]$ActorPhysicsProfile
+    [switch]$ActorPhysicsProfile,
+
+    [switch]$DiagnosticDisableReservations
 )
 
 $ErrorActionPreference = 'Stop'
@@ -78,7 +89,10 @@ $probeArguments = @(
     "--duration-seconds=$DurationSeconds"
     "--passes=$Passes"
     "--max-p95-ms=$MaximumP95Ms"
+    "--max-per-level-p95-ms=$MaximumPerLevelP95Ms"
     "--max-p99-ms=$MaximumP99Ms"
+    "--max-process-p95-ms=$MaximumProcessP95Ms"
+    "--max-physics-p95-ms=$MaximumPhysicsP95Ms"
     "--max-ui-action-ms=$MaximumUiActionMs"
     "--max-cold-level-load-ms=$MaximumColdLevelLoadMs"
     "--max-warm-level-load-ms=$MaximumWarmLevelLoadMs"
@@ -94,12 +108,16 @@ if (-not [string]::IsNullOrWhiteSpace($Levels)) {
 if ($ActorPhysicsProfile) {
     $probeArguments += '--profile-actor-physics'
 }
+if ($DiagnosticDisableReservations) {
+    $probeArguments += '--diagnostic-disable-reservations'
+}
 
 & $GodotExecutable `
     --path $gameDirectory `
     --windowed `
     --resolution "$($Width)x$($Height)" `
     --position $WindowPosition `
+    --max-fps 60 `
     --disable-vsync `
     --log-file $logPath `
     --script 'res://tests/campaign_performance_probe.gd' `

@@ -191,6 +191,12 @@ func _uses_source_backed_pursuit() -> bool:
 
 
 func _physics_process(delta: float) -> void:
+	simulate_tick(delta)
+	_notify_spatial_bucket_crossing()
+
+
+func simulate_tick(delta: float, delta_is_fixed: bool = false) -> void:
+	var safe_delta := delta if delta_is_fixed else resolved_simulation_delta(delta)
 	# Source-backed followers are advanced by SquadUnit's exact sub_45D330
 	# pursuit scheduler. The generic distance-band follower remains only as a
 	# compatibility fallback for synthetic fixtures without a captured runtime
@@ -205,7 +211,7 @@ func _physics_process(delta: float) -> void:
 			or bool(original_rescue_rule.get("follows_target", false))
 		)
 	):
-		follow_repath_elapsed += maxf(delta, 0.0)
+		follow_repath_elapsed += safe_delta
 		var distance := position.distance_to(follow_target.position)
 		if distance <= FOLLOW_STOP_DISTANCE:
 			if movement_path_index < movement_path.size():
@@ -222,7 +228,7 @@ func _physics_process(delta: float) -> void:
 				)
 				if not path.is_empty():
 					issue_path(path)
-	super._physics_process(delta)
+	super.simulate_tick(safe_delta, true)
 
 
 func _draw() -> void:

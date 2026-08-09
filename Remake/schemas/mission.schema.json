@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://m1937.example/schemas/mission.schema.json",
+  "title": "M1937 Remake mission",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "id", "number", "title", "objectives", "failure_conditions"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "id": {"type": "string", "pattern": "^[a-z0-9._-]{1,64}$"},
+    "number": {"type": "integer", "minimum": 1, "maximum": 9999},
+    "title": {"type": "string", "minLength": 1, "maxLength": 128},
+    "time_limit_seconds": {"type": "number", "minimum": 0, "maximum": 86400},
+    "scene_bindings": {
+      "type": "object", "maxProperties": 1024,
+      "additionalProperties": {"type": "array", "maxItems": 20000, "items": {"type": "integer", "minimum": 0}}
+    },
+    "objectives": {
+      "type": "array", "maxItems": 1024,
+      "items": {"$ref": "#/$defs/objective"}
+    },
+    "failure_conditions": {
+      "type": "array", "maxItems": 1024,
+      "items": {"$ref": "#/$defs/failure"}
+    }
+  },
+  "$defs": {
+    "condition": {
+      "type": "object", "additionalProperties": true,
+      "required": ["event"],
+      "properties": {
+        "event": {"type": "string", "minLength": 1, "maxLength": 128},
+        "where": {"type": "object", "maxProperties": 64},
+        "required_count": {"type": "integer", "minimum": 1, "maximum": 1000000}
+      }
+    },
+    "objective": {
+      "type": "object", "additionalProperties": true,
+      "required": ["id", "label", "required", "condition"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9._-]{1,64}$"},
+        "label": {"type": "string", "minLength": 1, "maxLength": 512},
+        "required": {"type": "boolean"},
+        "dependencies": {"type": "array", "maxItems": 128, "uniqueItems": true, "items": {"type": "string"}},
+        "depends_on": {"type": "array", "maxItems": 128, "uniqueItems": true, "items": {"type": "string"}},
+        "condition": {"$ref": "#/$defs/condition"}
+      }
+    },
+    "failure": {
+      "type": "object", "additionalProperties": true,
+      "required": ["id", "event"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9._-]{1,64}$"},
+        "event": {"type": "string", "minLength": 1, "maxLength": 128},
+        "where": {"type": "object", "maxProperties": 64}
+      }
+    }
+  }
+}

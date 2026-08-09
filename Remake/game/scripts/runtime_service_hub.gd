@@ -18,6 +18,12 @@ const RUNTIME_SETTINGS_APPLIER = preload(
 const APPLICATION_FOCUS_POLICY = preload(
 	"res://scripts/application_focus_policy.gd"
 )
+const SIMULATION_COORDINATOR = preload(
+	"res://scripts/simulation_coordinator.gd"
+)
+const MOVEMENT_RESERVATION_SERVICE = preload(
+	"res://scripts/movement_reservation_service.gd"
+)
 
 var spatial_index: RefCounted
 var perception_scheduler: RefCounted
@@ -28,6 +34,8 @@ var command_bus: RefCounted
 var navigation_requests: RefCounted
 var settings_applier: RefCounted
 var focus_policy: RefCounted
+var simulation: RefCounted
+var movement_reservations: RefCounted
 var current_level_id := ""
 
 
@@ -41,10 +49,14 @@ func _init() -> void:
 	navigation_requests = NAVIGATION_REQUEST_QUEUE.new()
 	settings_applier = RUNTIME_SETTINGS_APPLIER.new()
 	focus_policy = APPLICATION_FOCUS_POLICY.new()
+	simulation = SIMULATION_COORDINATOR.new()
+	movement_reservations = MOVEMENT_RESERVATION_SERVICE.new()
 
 
 func begin_level(level_id: String) -> void:
 	current_level_id = level_id
+	simulation.reset()
+	movement_reservations.clear()
 	spatial_index.clear()
 	navigation_requests.cancel_all()
 	performance_monitor.record_event("level_begin", 0, {"level_id": level_id})
@@ -60,6 +72,8 @@ func stats() -> Dictionary:
 		"commands": command_bus.stats(),
 		"navigation_requests": navigation_requests.stats(),
 		"focus_policy": focus_policy.snapshot(),
+		"simulation": simulation.stats(),
+		"movement_reservations": movement_reservations.stats(),
 	}
 
 

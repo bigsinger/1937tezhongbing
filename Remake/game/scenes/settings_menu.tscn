@@ -1,0 +1,10 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource path="res://scripts/responsive_panel.gd" type="Script" id="1"]
+
+[node name="SettingsMenu" type="PanelContainer"]
+script = ExtResource("1")
+title_key = "UI_GAME_SETTINGS_TITLE"
+description_key = "UI_GAME_SETTINGS_DESCRIPTION"
+action_ids = Array[String](["apply", "return"])
+action_keys = Array[String](["UI_APPLY", "UI_RETURN"])

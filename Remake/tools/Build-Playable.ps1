@@ -18,6 +18,7 @@ $gameRoot = Join-Path $remakeRoot 'game'
 $localBuildRoot = [System.IO.Path]::GetFullPath((Join-Path $remakeRoot 'LocalBuild'))
 $sourceAssets = Join-Path $remakeRoot 'LocalAssets'
 $convertedAssets = Join-Path $sourceAssets 'converted'
+$sourceSchemas = Join-Path $remakeRoot 'schemas'
 $requiredLevel = Join-Path $convertedAssets 'levels\m000\level.json'
 $presetName = 'Windows Desktop'
 $expectedGodotVersion = '4.7.1'
@@ -318,6 +319,21 @@ if ($AssetMode -eq 'Junction') {
     ) -Description 'Optimizing the isolated portable content copy...'
 }
 
+# Publish the authoring contract beside the portable game. The runtime itself
+# remains declarative and validates packages internally; these small JSON
+# schemas let players and editor authors inspect exactly which version the
+# build accepts without shipping any original content.
+$outputSchemas = Join-Path $outputRoot 'schemas'
+New-Item -ItemType Directory -Force -Path $outputSchemas | Out-Null
+$schemaFiles = @(Get-ChildItem -LiteralPath $sourceSchemas -Filter '*.schema.json' -File)
+if ($schemaFiles.Count -ne 5) {
+    throw 'Portable build requires all five native-content schema documents.'
+}
+foreach ($schemaFile in $schemaFiles) {
+    Copy-Item -LiteralPath $schemaFile.FullName `
+        -Destination (Join-Path $outputSchemas $schemaFile.Name) -Force
+}
+
 $criticalContentPaths = @(
     'levels/m000/level.json',
     'levels/m011/level.json'
@@ -393,6 +409,12 @@ $buildInfo = [ordered]@{
     content_manifest_sha256 = (
         Get-FileHash -LiteralPath $contentManifestPath -Algorithm SHA256).Hash
     content_identity_sha256 = $contentManifestDocument.content_identity_sha256
+    native_content_schemas = [ordered]@{}
+}
+foreach ($schemaFile in $schemaFiles | Sort-Object Name) {
+    $buildInfo.native_content_schemas[$schemaFile.Name] = (
+        Get-FileHash -LiteralPath (Join-Path $outputSchemas $schemaFile.Name) `
+            -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 $buildInfo | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $outputRoot 'build-info.json') -Encoding utf8
 

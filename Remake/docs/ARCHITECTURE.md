@@ -247,21 +247,48 @@ L3 位图哈希；关卡重建可复用只读基线，而门等运行时变化�
 宽相位半径，从 `WorldSpatialIndex` 查询邻近门后再执行原有精确矩形判定。
 真实第一关 895 项门/静态导航测试和十二关窗口性能门禁共同约束这些优化。
 
-存档 schema 2 将 `runtime_profile`、`content_identity` 和
-`workspace_identity` 与世界快照一起验证；旧 schema 0/1 在内存迁移，未知
-未来版本保持只读。内容包另有独立 manifest，发布构建在启动前验证关键文件，
-完整校验可由发布工具执行。
+第二轮在该服务边界上继续把确定性模拟和表现分开：
 
-该拆分的自动化入口是 `tests/modernization_systems_test.gd`；显示和可访问性
-矩阵由 `tests/display_accessibility_matrix_test.gd` 验证，完整十二关行为仍由
-原有真实资源、输入旅程、失败矩阵和差分探针约束。详细验收见
-[现代化改造验收报告](现代化改造验收报告.md)。
+```text
+Main（组合根与旧调用兼容面）
+├── SimulationCoordinator（60 Hz 整数 tick）
+│   ├── ScheduledGameCommand / TacticalCommandQueue
+│   ├── MovementReservationService
+│   ├── Mission / Director / Classic-or-Modern AI
+│   └── PresentationEventRouter（只发布表现事件）
+├── 世界控制器
+│   ├── WorldInteractionController / BurialCommandController
+│   ├── ActorMovement / Combat / Inventory Controller
+│   └── LevelRuntimeFactory / MissionSessionController
+├── 表现控制器
+│   ├── CameraInputController / ActorAnimationController
+│   ├── ActorAudioPresenter / StealthFeedbackOverlay
+│   └── ResponsivePanel / UiSafeAreaService
+├── CommandReplay / ReplayStateProbe
+└── NativeContentRuntime / M1937PackLoader
+```
+
+影响胜负、AI、任务、命中、物品、导航和存档的状态只能由整数 tick 更新；动画
+插值、镜头、界面和音频只消费表现事件。经典规则与现代规则共享时钟、导航安全和
+修复，但战术暂停、风险预览和现代协同 AI 由独立策略启用，不污染原版随机顺序。
+
+存档 schema 4 将 `runtime_profile`、`content_identity`、`workspace_identity`、
+`simulation_tick`、命令序列、预约、AI 黑板和战术队列与世界快照一起验证；旧
+schema 0—3 在内存单向迁移，未知未来版本保持只读。`.m1937pack` 使用独立、
+声明式 manifest 和内容哈希；不允许脚本或可执行载荷，也不会在验证失败后写入
+正式存档。
+
+第二轮拆分的合成入口是 `tests/modernization_round2_test.gd`、
+`tests/fixed_tick_persistence_test.gd`、`tests/tactical_replay_test.gd`、
+`tests/modern_ai_tactics_test.gd` 和 `tests/native_content_*_test.gd`。完整十二关行为
+仍由真实资源、产品输入旅程、失败矩阵、差分探针和发布性能/稳定性门禁约束。
+详细设计和实测数据见[现代化第二轮实施日志](现代化第二轮实施日志.md)。
 
 ## 7. 为什么选择 Godot 4.7
 
 本作适合俯视角 2D 即时战术架构。Godot 提供 2D 渲染、动画、导航、音频、UI、场景编辑器和现代 Windows 导出，可以把后续工作集中在规则、AI 和任务系统上。
 
-运行时使用 Standard 版本与 typed GDScript，不依赖 .NET；资源工具使用 .NET 10，以便严格处理二进制边界、合成 fixture 和命令行批量转换。默认采用 Compatibility renderer，目标是兼顾学校环境中的旧集成显卡。逻辑时钟为 60 Hz；Windows 10/GTX 1050 Ti 的最终十二关窗口性能和长时间稳定性数据记录在[现代化改造验收报告](现代化改造验收报告.md)。Windows 11、低端核显和更多实体设备不伪报性能结论，作为公开发布后的硬件矩阵扩充项；CI 继续覆盖这些平台可自动验证的构建、逻辑和软件渲染门禁。
+运行时使用 Standard 版本与 typed GDScript，不依赖 .NET；资源工具使用 .NET 10，以便严格处理二进制边界、合成 fixture 和命令行批量转换。默认采用 Compatibility renderer，目标是兼顾学校环境中的旧集成显卡。逻辑时钟为 60 Hz；Windows 10/GTX 1050 Ti 的最终十二关窗口性能和长时间稳定性数据记录在[现代化第二轮验收报告](现代化第二轮验收报告.md)。Windows 11、低端核显和更多实体设备不伪报性能结论，作为公开发布后的硬件矩阵扩充项；CI 继续覆盖这些平台可自动验证的构建、逻辑和软件渲染门禁。
 
 ## 8. 仓库与本地资产隔离
 

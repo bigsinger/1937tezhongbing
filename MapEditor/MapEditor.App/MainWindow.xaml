@@ -78,7 +78,9 @@
         <MenuItem x:Name="NativeVwfSaveMenu"
                   Header="安全另存为原生 VWF…"
                   Click="NativeVwfSaveAs_Click" />
-        <MenuItem Header="导出任务包…" Click="Export_Click" />
+        <MenuItem Header="一键导出 Remake 内容包…" Click="Export_Click" />
+        <MenuItem Header="在 Remake 中试玩当前地图"
+                  Click="PlaytestInRemake_Click" />
         <MenuItem Header="新建可运行关卡包向导…"
                   Click="MissionPackageWizard_Click" />
         <Separator />

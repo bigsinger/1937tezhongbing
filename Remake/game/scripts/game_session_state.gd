@@ -37,6 +37,9 @@ static func capture(game: Node) -> Dictionary:
 	var content_identity := str(
 		content_validation.get("content_identity_sha256", "")
 	)
+	var active_content := _dictionary_property(game, "active_content_entry")
+	if not active_content.is_empty():
+		content_identity = str(active_content.get("content_identity", ""))
 	if content_identity.is_empty():
 		content_identity = str(
 			content_validation.get("status", "development_unmanifested")
@@ -250,6 +253,7 @@ static func _capture_mission(game: Node, mission_state: Variant) -> Dictionary:
 		"completed": _json_dictionary(mission_state.get("completed")),
 		"progress": _json_dictionary(mission_state.get("progress")),
 		"seen_values": seen_output,
+		"elapsed_ticks": maxi(int(mission_state.get("elapsed_ticks")), 0),
 		"failure_id": str(mission_state.get("failure_id")),
 		"durable_facts": [],
 		"applied_fact_objectives": {},
@@ -271,11 +275,6 @@ static func _capture_actor(actor: Node2D, group_name: String) -> Dictionary:
 		"y": actor.position.y,
 		"faction_id": int(actor.get("faction_id")),
 		"runtime_actor_type": int(actor.get("runtime_actor_type")),
-		"original_command_goal_kind_latch": int(
-			actor.get("original_command_goal_kind_latch")
-			if _has_property(actor, "original_command_goal_kind_latch")
-			else 0
-		),
 		"original_pursuit_actor_scene_index": int(
 			actor.get("original_pursuit_target_scene_index")
 		),
@@ -297,6 +296,13 @@ static func _capture_actor(actor: Node2D, group_name: String) -> Dictionary:
 			else false
 		),
 	}
+	if actor.has_method("classic_parity_snapshot"):
+		var parity_value: Variant = actor.call("classic_parity_snapshot")
+		if parity_value is Dictionary:
+			for field_value: Variant in (parity_value as Dictionary).keys():
+				record[str(field_value)] = _json_value(
+					(parity_value as Dictionary)[field_value]
+				)
 	if actor.has_method("inventory_snapshot"):
 		record["inventory"] = _json_value(actor.call("inventory_snapshot"))
 		record["inventory_weapon_order"] = _json_value(actor.get("inventory_weapon_order"))
@@ -498,7 +504,31 @@ static func _capture_world(game: Node) -> Dictionary:
 		"projectiles": [],
 		"mission_direction": {},
 		"mission_ai_coordinator": {},
+		"simulation": {},
+		"movement_reservations": {},
+		"tactical_commands": {},
 	}
+	var simulation: Variant = game.get("simulation_coordinator")
+	if (
+		simulation != null
+		and simulation.has_method("capture_state")
+	):
+		world["simulation"] = _json_value(
+			simulation.call("capture_state")
+		)
+	var movement_reservations: Variant = game.get("movement_reservation_service")
+	if (
+		movement_reservations != null
+		and movement_reservations.has_method("capture_state")
+	):
+		world["movement_reservations"] = _json_value(
+			movement_reservations.call("capture_state")
+		)
+	var tactical_commands: Variant = game.get("tactical_command_queue")
+	if tactical_commands != null and tactical_commands.has_method("capture_state"):
+		world["tactical_commands"] = _json_value(
+			tactical_commands.call("capture_state")
+		)
 	var direction_runtime: Variant = game.get("mission_direction_runtime")
 	if direction_runtime is Node and (direction_runtime as Node).has_method("capture_state"):
 		world["mission_direction"] = _json_value(
@@ -732,7 +762,16 @@ static func _restore_mission(game: Node, mission: Dictionary, elapsed_seconds: f
 					objective_seen[_restored_scalar(seen_value)] = true
 			seen[str(objective_key)] = objective_seen
 	mission_state.set("seen_values", seen)
-	mission_state.set("elapsed_seconds", maxf(elapsed_seconds, 0.0))
+	if (
+		mission.has("elapsed_ticks")
+		and mission_state.has_method("restore_elapsed_ticks")
+	):
+		mission_state.call(
+			"restore_elapsed_ticks",
+			maxi(int(mission.get("elapsed_ticks", 0)), 0),
+		)
+	else:
+		mission_state.set("elapsed_seconds", maxf(elapsed_seconds, 0.0))
 	mission_state.set("failure_id", str(mission.get("failure_id", "")))
 	var runtime: Variant = game.get("mission_runtime")
 	if runtime != null:
@@ -810,7 +849,10 @@ static func _restore_actor(game: Node, actor: Node2D, record: Dictionary, group_
 		"runtime_actor_type",
 		int(record.get("runtime_actor_type", actor.get("runtime_actor_type"))),
 	)
-	if _has_property(actor, "original_command_goal_kind_latch"):
+	if actor.has_method("restore_classic_parity_snapshot"):
+		actor.call("restore_classic_parity_snapshot", record)
+	elif _has_property(actor, "original_command_goal_kind_latch"):
+		# Schema 0-2 compatibility for actor fixtures that predate the adapter.
 		actor.set(
 			"original_command_goal_kind_latch",
 			int(record.get("original_command_goal_kind_latch", 0)),
@@ -1229,6 +1271,36 @@ static func _restore_backpack(actor: Node2D, record: Dictionary) -> void:
 
 
 static func _restore_world(game: Node, world: Dictionary, warnings: Array[String]) -> Dictionary:
+	var simulation: Variant = game.get("simulation_coordinator")
+	var simulation_state: Variant = world.get("simulation", {})
+	if (
+		simulation_state is Dictionary
+		and not (simulation_state as Dictionary).is_empty()
+		and simulation != null
+		and simulation.has_method("restore_state")
+		and not bool(simulation.call("restore_state", simulation_state))
+	):
+		warnings.append("simulation clock and command state could not be restored")
+	var movement_reservations: Variant = game.get("movement_reservation_service")
+	var reservation_state: Variant = world.get("movement_reservations", {})
+	if (
+		reservation_state is Dictionary
+		and not (reservation_state as Dictionary).is_empty()
+		and movement_reservations != null
+		and movement_reservations.has_method("restore_state")
+		and not bool(movement_reservations.call("restore_state", reservation_state))
+	):
+		warnings.append("movement reservations could not be restored")
+	var tactical_commands: Variant = game.get("tactical_command_queue")
+	var tactical_state: Variant = world.get("tactical_commands", {})
+	if (
+		tactical_state is Dictionary
+		and not (tactical_state as Dictionary).is_empty()
+		and tactical_commands != null
+		and tactical_commands.has_method("restore_state")
+		and not bool(tactical_commands.call("restore_state", tactical_state))
+	):
+		warnings.append("tactical command queues could not be restored")
 	var activated: Dictionary = {}
 	for value: Variant in world.get("activated_scene_indices", []) as Array:
 		activated[int(value)] = true

@@ -1,0 +1,11 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource path="res://scripts/responsive_panel.gd" type="Script" id="1"]
+
+[node name="GameHud" type="PanelContainer"]
+script = ExtResource("1")
+title_key = "UI_GAME_TITLE"
+description_key = "UI_OBJECTIVES"
+action_ids = Array[String](["inventory", "map", "menu"])
+action_keys = Array[String](["UI_INVENTORY", "UI_TACTICAL_MAP", "UI_PAUSE_TITLE"])
+minimum_panel_size = Vector2(420, 180)

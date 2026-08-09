@@ -34,6 +34,7 @@ internal static class Program
             _checks += LegacySaveFormatTests.Run(temporaryDirectory);
             _checks += VwfNavigationGridSyntheticTests.Run();
             _checks += TerrainRasterizerSyntheticTests.Run();
+            _checks += M1937PackSyntheticTests.Run(temporaryDirectory);
             Console.WriteLine($"Resource format tests passed ({_checks} checks). No original game data was used.");
             return 0;
         }

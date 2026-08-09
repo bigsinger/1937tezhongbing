@@ -33,6 +33,13 @@ $viewports = [ordered]@{
     '1024x768' = [Drawing.Size]::new(1024, 768)
     '1920x1080' = [Drawing.Size]::new(1920, 1080)
 }
+# These two captures intentionally exercise the same selector surface through
+# different product journeys: once during startup and once from the pause-menu
+# route. Their state-transition assertions live in product_ui_probe.gd, while
+# the resulting pixels are allowed to match exactly on deterministic drivers.
+$allowedDuplicatePairs = @{
+    'level-selector.jpg|startup-level-selector.jpg' = $true
+}
 $failures = [Collections.Generic.List[string]]::new()
 $records = [Collections.Generic.List[object]]::new()
 
@@ -119,9 +126,13 @@ foreach ($viewport in $viewports.Keys) {
         }
         $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
         if ($observedHashes.ContainsKey($hash)) {
-            $failures.Add(
-                "Screenshots are unexpectedly identical: $viewport/$name and " +
-                $observedHashes[$hash])
+            $duplicateName = $observedHashes[$hash]
+            $pairKey = (@($name, $duplicateName) | Sort-Object) -join '|'
+            if (-not $allowedDuplicatePairs.ContainsKey($pairKey)) {
+                $failures.Add(
+                    "Screenshots are unexpectedly identical: $viewport/$name and " +
+                    $duplicateName)
+            }
         }
         else {
             $observedHashes[$hash] = $name

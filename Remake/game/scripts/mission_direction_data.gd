@@ -9,6 +9,7 @@ const SCHEMA_VERSION := 1
 const CATALOG_PATH := "res://data/mission_direction.json"
 const MISSION_CATALOG_PATH := "res://data/missions.json"
 const MISSION_DATA_SCRIPT: Script = preload("res://scripts/mission_data.gd")
+const LOCALIZATION_SERVICE_SCRIPT: Script = preload("res://scripts/localization_service.gd")
 
 const BEAT_SOURCE_STATUSES: Array[String] = ["recovered", "remake_editorial", "mixed"]
 const EDITORIAL_SOURCE := "remake_editorial"
@@ -75,8 +76,60 @@ static func load_mission_plan(
 	for raw_plan: Variant in catalog.get("missions", []) as Array:
 		var plan := raw_plan as Dictionary
 		if str(plan.get("id", "")) == mission_id:
-			return plan.duplicate(true) as Dictionary
+			return localize_plan(plan)
 	return {}
+
+
+static func localize_plan(plan: Dictionary) -> Dictionary:
+	var result := plan.duplicate(true)
+	var mission_token := str(result.get("id", "")).to_upper()
+	if mission_token.is_empty():
+		return result
+	result["title"] = _localized_or(
+		"MISSION_%s_TITLE" % mission_token,
+		str(result.get("title", "")),
+	)
+	var beats := result.get("beats", []) as Array
+	for beat_index: int in range(beats.size()):
+		if not beats[beat_index] is Dictionary:
+			continue
+		var beat := (beats[beat_index] as Dictionary).duplicate(true)
+		var beat_token := str(beat.get("id", beat_index)).to_upper()
+		var prefix := "DIRECTION_%s_BEAT_%s" % [mission_token, beat_token]
+		var dialogue_value: Variant = beat.get("dialogue", {})
+		if dialogue_value is Dictionary and not (dialogue_value as Dictionary).is_empty():
+			var dialogue := (dialogue_value as Dictionary).duplicate(true)
+			var lines := dialogue.get("lines", []) as Array
+			for line_index: int in range(lines.size()):
+				if not lines[line_index] is Dictionary:
+					continue
+				var line := (lines[line_index] as Dictionary).duplicate(true)
+				line["speaker"] = MISSION_DATA_SCRIPT._localized_speaker(
+					str(line.get("speaker", ""))
+				)
+				line["text"] = _localized_or(
+					"%s_LINE_%d" % [prefix, line_index],
+					str(line.get("text", "")),
+				)
+				lines[line_index] = line
+			dialogue["lines"] = lines
+			beat["dialogue"] = dialogue
+		var tutorial_value: Variant = beat.get("tutorial", {})
+		if tutorial_value is Dictionary and not (tutorial_value as Dictionary).is_empty():
+			var tutorial := (tutorial_value as Dictionary).duplicate(true)
+			tutorial["text"] = _localized_or(
+				"%s_TUTORIAL" % prefix,
+				str(tutorial.get("text", "")),
+			)
+			beat["tutorial"] = tutorial
+		beats[beat_index] = beat
+	result["beats"] = beats
+	return result
+
+
+static func _localized_or(key: String, fallback: String) -> String:
+	var translated: String = LOCALIZATION_SERVICE_SCRIPT.translate_key(key)
+	return fallback if translated == key else translated
 
 
 static func validate_catalog(catalog: Dictionary, mission_catalog: Dictionary) -> PackedStringArray:

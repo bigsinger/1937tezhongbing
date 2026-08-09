@@ -65,6 +65,19 @@ function ConvertTo-SortedCountObject {
     return $result
 }
 
+function Get-OptionalIntProperty {
+    param(
+        [object]$InputObject,
+        [string]$Name,
+        [int]$DefaultValue = 0
+    )
+    if ($null -eq $InputObject -or
+        $null -eq $InputObject.PSObject.Properties[$Name]) {
+        return $DefaultValue
+    }
+    return [int]$InputObject.$Name
+}
+
 function Get-TextSha256 {
     param([string[]]$Lines)
     $utf8 = [Text.UTF8Encoding]::new($false)
@@ -250,8 +263,10 @@ for ($levelIndex = 0; $levelIndex -lt 12; $levelIndex++) {
             current_hit_points = [int]$entity.current_hit_points
             default_attack_type = [int]$entity.default_attack_type
             special_sensor_mode = $specialSensorMode
-            patrol_current_waypoint_index = [int]$entity.patrol_current_waypoint_index
-            patrol_persistent_flag = [int]$entity.patrol_persistent_flag
+            patrol_current_waypoint_index = Get-OptionalIntProperty `
+                $entity 'patrol_current_waypoint_index'
+            patrol_persistent_flag = Get-OptionalIntProperty `
+                $entity 'patrol_persistent_flag'
             patrol_waypoints = $waypoints
         }
         $entitySignatureLines.Add(

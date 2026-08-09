@@ -67,6 +67,7 @@ func _run() -> void:
 	_test_readable_movement_animation_cadence()
 	_test_component_movement_carries_waypoint_time()
 	_test_single_pass_vision_clipping()
+	_test_static_navigation_restart_cache_is_isolated()
 	_test_bounded_movement_recovery_route()
 	_test_subtitle_safe_area()
 	_test_world_weapon_drop_art_catalog()
@@ -790,6 +791,74 @@ func _test_single_pass_vision_clipping() -> void:
 		occupancy.clip_line_of_sight_ray(origin - Vector2(0.0, 16.0), clear_target)
 			.is_equal_approx(clear_target),
 		"one-pass tactical vision clipping preserves an unobstructed fan ray",
+	)
+
+
+func _test_static_navigation_restart_cache_is_isolated() -> void:
+	var movement := PackedInt64Array()
+	var sight := PackedInt64Array()
+	movement.resize(15)
+	sight.resize(15)
+	movement[7] = 1042
+	var cache_namespace := "world-engine-cache-isolation"
+	var first = NAVIGATION_GRID_DATA.create_for_tests(
+		5, 3, Vector2i(32, 16), movement, sight
+	)
+	first.static_component_cache_namespace = cache_namespace
+	first.prepare_astar()
+	var second = NAVIGATION_GRID_DATA.create_for_tests(
+		5, 3, Vector2i(32, 16), movement, sight
+	)
+	second.static_component_cache_namespace = cache_namespace
+	second.prepare_astar()
+	_expect(
+		second.static_component_cache_hit_count == 1
+			and second.astar.is_point_solid(Vector2i(2, 1)),
+		"a reconstructed level reuses its immutable initial navigation components",
+	)
+	second.set_source_scene_disabled(42, true)
+	_expect(
+		not second.astar.is_point_solid(Vector2i(2, 1)),
+		"opening a runtime passage mutates the current navigation copy",
+	)
+	var third = NAVIGATION_GRID_DATA.create_for_tests(
+		5, 3, Vector2i(32, 16), movement, sight
+	)
+	third.static_component_cache_namespace = cache_namespace
+	third.prepare_astar()
+	_expect(
+		third.static_component_cache_hit_count == 1
+			and third.astar.is_point_solid(Vector2i(2, 1)),
+		"runtime passage changes never leak back into the restart cache",
+	)
+	var staged_navigation = NAVIGATION_GRID_DATA.create_for_tests(
+		5, 3, Vector2i(32, 16), movement, sight
+	)
+	staged_navigation.static_component_cache_namespace = (
+		"world-engine-staged-open-door"
+	)
+	var staged_occupancy = DYNAMIC_OCCUPANCY_GRID.new()
+	staged_occupancy.configure(staged_navigation)
+	var door_cell := Vector2i(2, 1)
+	var door_cells: Array[Vector2i] = [door_cell]
+	var empty_cells: Array[Vector2i] = []
+	staged_occupancy.register_source_scene_footprint(
+		42,
+		door_cells,
+		empty_cells,
+		true,
+		true,
+	)
+	staged_occupancy.set_source_scene_disabled(42, true)
+	_expect(
+		staged_navigation.astar == null,
+		"an initially open door is staged without constructing a partial AStar grid",
+	)
+	staged_occupancy.finalize_registration()
+	_expect(
+		staged_navigation.astar != null
+			and not staged_navigation.astar.is_point_solid(door_cell),
+		"final navigation construction applies every staged open-door passage",
 	)
 
 

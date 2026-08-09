@@ -93,7 +93,7 @@ foreach ($caller in $sdkCallers) {
     }
     $missing = @($entry.missing_sites |
         ForEach-Object { ([string]$_).ToUpperInvariant() })
-    if (($missing | Select-Object -Unique).Count -ne $missing.Count) {
+    if (@($missing | Select-Object -Unique).Count -ne $missing.Count) {
         throw "Caller $callerRva repeats a missing call site."
     }
     foreach ($site in $missing) {
@@ -135,10 +135,13 @@ foreach ($caller in $sdkCallers) {
         }
     }
 
-    $markers = @(
-        $entry.implementation_markers |
-            Where-Object { $null -ne $_ }
-    )
+    $markers = @()
+    if ($null -ne $entry.PSObject.Properties['implementation_markers']) {
+        $markers = @(
+            $entry.implementation_markers |
+                Where-Object { $null -ne $_ }
+        )
+    }
     if ($status -in @('exact_runtime', 'checkpoint_exact', 'partial_runtime') -and
         $markers.Count -eq 0) {
         throw "Implemented caller $callerRva has no source marker."

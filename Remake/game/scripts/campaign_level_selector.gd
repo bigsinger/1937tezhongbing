@@ -1,6 +1,10 @@
 class_name CampaignLevelSelector
 extends PanelContainer
 
+const LOCALIZATION_SERVICE_SCRIPT: Script = preload(
+	"res://scripts/localization_service.gd"
+)
+
 signal level_chosen(level_id: String)
 signal back_requested
 
@@ -94,7 +98,7 @@ func _build_interface() -> void:
 	add_child(content)
 
 	var title := Label.new()
-	title.text = "选择关卡"
+	title.text = _t("UI_CAMPAIGN_SELECT_TITLE")
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 30)
 	title.add_theme_color_override("font_color", Color(0.97, 0.88, 0.61))
@@ -115,10 +119,7 @@ func _build_interface() -> void:
 	content.add_child(_grid)
 
 	var evidence_note := Label.new()
-	evidence_note.text = (
-		"自由选关沿用稳定 MOD 的十二关路由；进入、退出或失败不会记为通关，"
-		+ "只有任务胜利才更新战役完成度。"
-	)
+	evidence_note.text = _t("UI_CAMPAIGN_SELECT_HELP")
 	evidence_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	evidence_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	evidence_note.add_theme_font_size_override("font_size", 13)
@@ -126,7 +127,7 @@ func _build_interface() -> void:
 	content.add_child(evidence_note)
 
 	var back := Button.new()
-	back.text = "返回"
+	back.text = _t("UI_BACK")
 	back.custom_minimum_size.y = 42.0
 	back.pressed.connect(func() -> void: back_requested.emit())
 	content.add_child(back)
@@ -143,24 +144,28 @@ func _rebuild_buttons() -> void:
 		completed_lookup[str(level_value)] = true
 	var highest_id := str(campaign_progress.get("highest_unlocked_level_id", "m000"))
 	var completed_count := completed_lookup.size()
-	_summary.text = (
-		"已完成 %d / 12　顺序战役推进至 %s　所有正式关均可自由选择"
-		% [completed_count, highest_id.to_upper()]
-	)
+	_summary.text = _t("UI_CAMPAIGN_PROGRESS_FORMAT") % [
+		completed_count,
+		highest_id.to_upper(),
+	]
 	for entry: Dictionary in level_entries:
 		var level_id := str(entry.get("id", ""))
 		if level_id.is_empty():
 			continue
 		var number := int(entry.get("number", level_buttons.size() + 1))
 		var title := str(entry.get("title", level_id.to_upper()))
-		var state := "✓ 已完成" if completed_lookup.has(level_id) else "自由选关"
+		var state := (
+			_t("UI_CAMPAIGN_COMPLETED")
+			if completed_lookup.has(level_id)
+			else _t("UI_CAMPAIGN_FREE_SELECT")
+		)
 		if level_id == current_level_id:
-			state += "　● 当前"
+			state += _t("UI_CAMPAIGN_CURRENT_SUFFIX")
 		elif level_id == highest_id and not completed_lookup.has(level_id):
-			state += "　◆ 顺序可玩"
+			state += _t("UI_CAMPAIGN_SEQUENTIAL_SUFFIX")
 		var button := Button.new()
 		button.name = "Level_%s" % level_id
-		button.text = "第 %02d 关\n%s" % [number, state]
+		button.text = _t("UI_CAMPAIGN_LEVEL_FORMAT") % [number, state]
 		button.custom_minimum_size = Vector2(245.0, 82.0)
 		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		button.tooltip_text = "%s：%s" % [level_id.to_upper(), title]
@@ -213,3 +218,7 @@ func _apply_original_button_texture(level_id: String) -> void:
 	var textures := _original_texture_pairs[level_id] as Dictionary
 	var highlighted := button.is_hovered() or button.has_focus() or button.button_pressed
 	button.icon = textures.get("hover" if highlighted else "normal") as Texture2D
+
+
+static func _t(key: String) -> String:
+	return str(LOCALIZATION_SERVICE_SCRIPT.translate_key(key))

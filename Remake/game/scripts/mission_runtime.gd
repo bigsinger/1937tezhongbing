@@ -175,6 +175,18 @@ func advance_time(delta_seconds: float) -> void:
 	_emit_changes(before_signature, [])
 
 
+func advance_ticks(tick_count: int = 1) -> void:
+	if not _configured or tick_count <= 0:
+		return
+	last_error = ""
+	var before_signature := _state_signature()
+	if mission_state.has_method("advance_ticks"):
+		mission_state.call("advance_ticks", tick_count)
+	else:
+		mission_state.call("advance_time", float(tick_count) / 60.0)
+	_emit_changes(before_signature, [])
+
+
 func binding_kinds_for_scene(scene_index: int) -> Array[String]:
 	var result: Array[String] = []
 	if not _binding_kinds_by_scene.has(scene_index):

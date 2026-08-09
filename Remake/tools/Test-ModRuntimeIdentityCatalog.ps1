@@ -42,10 +42,10 @@ if ($catalog.summary.runtime_object_count -ne 127 -or
 
 $runtimeIndices = @($identities | Select-Object -ExpandProperty runtime_index)
 $sceneIndices = @($resolved | Select-Object -ExpandProperty scene_index)
-if (($runtimeIndices | Select-Object -Unique).Count -ne $identities.Count) {
+if (@($runtimeIndices | Select-Object -Unique).Count -ne $identities.Count) {
     throw 'Runtime actor indices must be unique within the capture.'
 }
-if (($sceneIndices | Select-Object -Unique).Count -ne $resolved.Count) {
+if (@($sceneIndices | Select-Object -Unique).Count -ne $resolved.Count) {
     throw 'Resolved VWF scene assignments must be one-to-one.'
 }
 if (@($identities |

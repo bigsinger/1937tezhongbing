@@ -4,7 +4,7 @@ extends RefCounted
 const ATOMIC_JSON_STORE: Script = preload("res://scripts/atomic_json_store.gd")
 const GAME_INPUT_BINDINGS: Script = preload("res://scripts/game_input_bindings.gd")
 
-const SCHEMA_VERSION := 7
+const SCHEMA_VERSION := 8
 const DEFAULT_PATH := "user://settings.json"
 const DISPLAY_MODES: Array[String] = ["windowed", "fullscreen", "borderless"]
 const RESOLUTION_POLICIES: Array[String] = ["desktop", "custom"]
@@ -24,6 +24,7 @@ const INTERFACE_KEYS: Array[String] = [
 	"educational_mode",
 	"reduced_violence",
 	"history_notes",
+	"stealth_feedback",
 ]
 const RULESET_MODES: Array[String] = ["classic", "modern"]
 const DIFFICULTY_MODES: Array[String] = ["story", "normal", "hard", "custom"]
@@ -77,6 +78,7 @@ static func default_document() -> Dictionary:
 			"educational_mode": true,
 			"reduced_violence": false,
 			"history_notes": true,
+			"stealth_feedback": true,
 			"ui_scale": 1.0,
 			"text_scale": 1.0,
 			"edge_scroll_speed": 720.0,
@@ -455,7 +457,7 @@ func _is_loadable_document(value: Variant) -> bool:
 		)
 	if not _is_number(document["schema_version"]):
 		return false
-	return int(document["schema_version"]) in [0, 1, 2, 3, 4, 5, 6, SCHEMA_VERSION]
+	return int(document["schema_version"]) in [0, 1, 2, 3, 4, 5, 6, 7, SCHEMA_VERSION]
 
 
 func _normalize_document(document: Dictionary) -> Dictionary:

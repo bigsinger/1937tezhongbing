@@ -1,0 +1,10 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource path="res://scripts/responsive_panel.gd" type="Script" id="1"]
+
+[node name="TacticalMapPanel" type="PanelContainer"]
+script = ExtResource("1")
+title_key = "UI_TACTICAL_MAP"
+description_key = "UI_TACTICAL_MAP_HELP"
+action_ids = Array[String](["return"])
+action_keys = Array[String](["UI_RETURN"])

@@ -54,7 +54,20 @@ godot --path .\game -- --level=m011
 .\tools\Run-StabilitySoak.ps1 `
   -GodotExecutable C:\path\to\Godot_v4.7.1-stable_win64_console.exe `
   -DurationSeconds 1800 -Passes 3
+
+# 第二轮分层门禁：日常、真实内容、完整发布
+.\tools\Invoke-RemakeGate.ps1 -Tier Quick `
+  -GodotExecutable C:\path\to\Godot_v4.7.1-stable_win64_console.exe
+.\tools\Invoke-RemakeGate.ps1 -Tier Content `
+  -GodotExecutable C:\path\to\Godot_v4.7.1-stable_win64_console.exe
+.\tools\Invoke-RemakeGate.ps1 -Tier Release -Resume `
+  -GodotExecutable C:\path\to\Godot_v4.7.1-stable_win64_console.exe
 ```
+
+`Quick` 只使用仓库中的源码和合成 fixture；`Content` 增加合法本地十二关资源、
+产品输入和 UI；`Release` 再执行完整 Verify、十分钟严格性能和三十分钟稳定性。
+`-Resume` 只复用输入摘要相同且报告完整的成功步骤，源码或参数变化会自动令旧步骤
+失效，不能用残留报告冒充本次通过。
 
 长测完整报告和日志留在忽略的 `LocalAssets/qa/stability-soak/`；确认同一实现
 通过后，才把去除机器路径的摘要更新到
@@ -112,18 +125,29 @@ Godot 正确拒绝并显示 “doesn't inherit from SceneTree or MainLoop”。�
   -DurationSeconds 600 -Passes 2
 ```
 
-门禁要求逐关 P95 ≤ 20 ms、足量样本下 P99 ≤ 25 ms、稳态帧零个
->50 ms、两轮都发生真实敌军移动，且第二轮静态内存增长不超过 128 MiB。
+门禁要求总体 P95 ≤ 18.5 ms、逐关 P95 ≤ 19.5 ms、足量样本下 P99 ≤ 25 ms、
+稳态帧零个无法解释的 >50 ms、两轮都发生真实敌军移动，且第二轮静态内存净增长
+不超过 8 MiB。Main 脚本和物理 CPU P95 分别限制为 18/15 ms，避免只用呈现帧
+掩盖模拟尖峰。
 提交的参考结果在
 `validation/baselines/remake/campaign-performance-1920x1080-v1.json`；
 原始日志和本机绝对路径报告只留在被忽略的 `LocalAssets/qa/`。
 
 `save_settings_test.gd` 还必须用物理 `user://` 文件覆盖全部存档版本边界：
-schema 0/1 迁移、schema 2 规范化及运行时/内容/工作区身份、损坏主文件回退
+schema 0—3 迁移、schema 4 规范化及运行时/内容/工作区身份、模拟 tick、命令序列、
+预约、AI 黑板、战术队列、损坏主文件回退
 `.bak`、未来/过旧 schema
 主文件与备份逐字节不变，以及十二次产品胜利后的完成度/解锁前沿磁盘回读。
 新增 schema 时必须先更新 `GameSaveStore.migration_policy()` 和这些用例；
 不允许仅提高版本号后把旧文件交给通用“损坏文件隔离”路径。
+
+30 分钟 Release 稳定性在 headless 后端启用显式的
+`qa_simulation_only_world_visuals` 测试策略。它仍构造所有任务、AI、动态角色、
+导航、门、拾取和存读档状态，但跳过在 64×64 无显示后端反复解码地形及创建不可见
+的纯装饰 CanvasItem。该开关只在同时满足 headless 与 `--stability-mode` 时启用，
+不进入设置或存档；普通窗口、编辑器和性能探针始终使用完整视觉世界。长测脚本与
+版本基线会断言该策略状态，防止测试通道意外污染产品路径。等待渲染同步时使用有界
+帧循环，不能直接无限等待 `RenderingServer.frame_post_draw`。
 
 可单独重放某一关：
 
@@ -204,9 +228,9 @@ Godot 端的责任分工为：
   MOD/命令行自由选关不写进度，只有产品胜利入口调用 `record_victory()`；
 - `campaign_level_selector.gd`：启动页和 `Esc` 菜单共用的 3×4 原生关卡
   选择器；全部正式路由可用，同时只读展示当前关、完成度与顺序前沿；
-- `game_save_store.gd`：schema 0/1→2 内存迁移、运行时/内容/工作区身份、
-  轻量槽索引、当前格式规范化、原子写入与未来/过旧 schema 的拒绝且不改
-  文件策略；
+- `game_save_store.gd`：schema 0—3→4 内存迁移、运行时/内容/工作区身份、
+  模拟 tick/命令/预约/AI 黑板/战术队列、轻量槽索引、当前格式规范化、
+  原子写入与未来/过旧 schema 的拒绝且不改文件策略；
 - `legacy_projectile_rules.gd` / `legacy_combat_rules.gd` /
   `projectile_world.gd` / `combat_projectile.gd`：type 1/2/3/6/7/9 的
   原版整数 Bresenham 路径、逐 world-tick 步长、目标格门、机枪角度散布、
@@ -337,6 +361,36 @@ m004 的计划书来源已由物品 101/VWF 携带记录定案为 scene 2637；�
 `apply_after_level_loaded()` 核对角色、容器、埋藏物、拾取物和镜头。
 导入槽只在读取页出现，防止原始转换被菜单直接覆盖。用户流程见
 [原版 SAV/SI 存档导入](LEGACY_SAVE_IMPORT.md)。
+
+## 固定时钟、回放与原生内容开发工作流
+
+会影响玩法结果的新系统必须实现 `SimulationSystem` 并由
+`SimulationCoordinator` 按稳定顺序推进。禁止在 `_process(delta)` 中累计决定
+任务、AI、攻击、物品或导航结果；表现层只能提交 `ScheduledGameCommand` 或消费
+`PresentationEventRouter` 事件。同一输入序列必须通过
+`fixed_tick_persistence_test.gd` 的 30/60/120/不限渲染帧率测试和存读档下一 tick
+比较。
+
+可复现问题使用 `CommandReplay` 记录规范化 tick 命令、规则/难度、内容哈希、随机
+初态和检查点身份。回放不记录桌面坐标或原始系统输入；版本或内容不匹配时必须
+拒绝。新增可回放命令要同步更新 `tactical_replay_test.gd` 的命令序列、周期哈希和
+首次分歧断言。
+
+Remake 原生关卡使用声明式 `.m1937pack`，不要写回 VWF。常用命令如下：
+
+```powershell
+dotnet run --project .\tools\ResourceTool -- pack build `
+  .\examples\synthetic-pack-source `
+  .\LocalAssets\qa\native-content\synthetic.m1937pack
+dotnet run --project .\tools\ResourceTool -- pack validate `
+  .\LocalAssets\qa\native-content\synthetic.m1937pack
+dotnet run --project .\tools\ResourceTool -- pack inspect `
+  .\LocalAssets\qa\native-content\synthetic.m1937pack
+```
+
+源码只提交 schema、解析/验证工具、合成示例和测试。`.m1937pack` 成品、原版素材、
+试玩包和 QA 输出必须留在忽略目录。格式、安全限制、MapEditor 一键导出与试玩见
+[原生内容包与 MapEditor 工作流](原生内容包与MapEditor工作流.md)。
 
 ## 媒体开发工作流
 

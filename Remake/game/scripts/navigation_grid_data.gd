@@ -39,6 +39,15 @@ const ORIGINAL_PATHFINDER_NEIGHBOR_DIRECTIONS: Array[Vector2i] = [
 	Vector2i(-1, 1),
 	Vector2i(-1, 0),
 ]
+## A restart creates a fresh AStarGrid2D, but its initial solid mask and
+## connected components are identical for the same navigation payload, live
+## source roster and permanent passages. Cache that immutable baseline and
+## deep-copy it before runtime door changes can mutate the current level.
+const GLOBAL_STATIC_COMPONENT_CACHE_VERSION := "initial-components-v1"
+const MAX_GLOBAL_STATIC_COMPONENT_CACHE_ENTRIES := 24
+
+static var global_static_component_lookups: Dictionary = {}
+static var global_static_component_order: Array[String] = []
 
 var dimensions := Vector2i.ZERO
 var cell_size := Vector2i.ZERO
@@ -57,6 +66,8 @@ var static_component_by_cell := PackedInt32Array()
 var static_component_cells: Dictionary = {}
 var static_component_destination_cache: Dictionary = {}
 var static_component_redirect_count := 0
+var static_component_cache_namespace := ""
+var static_component_cache_hit_count := 0
 var dynamic_unreachable_precheck_count := 0
 var packed_footprint_unreachable_precheck_count := 0
 var packed_reachability_generation := 0
@@ -173,6 +184,7 @@ func prepare_astar(
 	movement_cells_to_release: Array[Vector2i] = [],
 	sight_cells_to_release: Array[Vector2i] = [],
 ) -> void:
+	static_component_cache_hit_count = 0
 	ignored_scene_indices.clear()
 	for scene_index in scene_indices_to_ignore:
 		if scene_index >= 0:
@@ -203,7 +215,29 @@ func prepare_astar(
 	astar.default_compute_heuristic = AStarGrid2D.HEURISTIC_CHEBYSHEV
 	astar.default_estimate_heuristic = AStarGrid2D.HEURISTIC_CHEBYSHEV
 	astar.update()
+	var cache_key := _static_component_cache_key(
+		scene_indices_to_ignore,
+		movement_cells_to_release,
+	)
+	if not cache_key.is_empty() and global_static_component_lookups.has(cache_key):
+		var cached := global_static_component_lookups[cache_key] as Dictionary
+		var cached_solid_indices := (
+			cached["solid_indices"] as PackedInt32Array
+		)
+		for cell_index: int in cached_solid_indices:
+			astar.set_point_solid(index_to_cell(cell_index), true)
+		static_component_by_cell = (
+			cached["component_by_cell"] as PackedInt32Array
+		).duplicate()
+		static_component_cells = (
+			cached["component_cells"] as Dictionary
+		).duplicate(true)
+		static_component_destination_cache.clear()
+		static_component_redirect_count = 0
+		static_component_cache_hit_count = 1
+		return
 	var movement_values := layers[MOVEMENT_LAYER_ID] as PackedInt64Array
+	var solid_indices := PackedInt32Array()
 	for cell_index in range(movement_values.size()):
 		var cell := index_to_cell(cell_index)
 		if (
@@ -214,7 +248,52 @@ func prepare_astar(
 			)
 		):
 			astar.set_point_solid(cell, true)
+			solid_indices.append(cell_index)
 	_rebuild_static_components()
+	if not cache_key.is_empty():
+		_store_static_component_cache(cache_key, solid_indices)
+
+
+func _static_component_cache_key(
+	scene_indices_to_ignore: Array[int],
+	movement_cells_to_release: Array[Vector2i],
+) -> String:
+	if static_component_cache_namespace.is_empty():
+		return ""
+	var scene_tokens := PackedStringArray()
+	for scene_index: int in scene_indices_to_ignore:
+		scene_tokens.append(str(scene_index))
+	var cell_tokens := PackedStringArray()
+	for cell: Vector2i in movement_cells_to_release:
+		cell_tokens.append("%d,%d" % [cell.x, cell.y])
+	return "%s|%s|%dx%d|%s|%s" % [
+		GLOBAL_STATIC_COMPONENT_CACHE_VERSION,
+		static_component_cache_namespace,
+		dimensions.x,
+		dimensions.y,
+		",".join(scene_tokens),
+		";".join(cell_tokens),
+	]
+
+
+func _store_static_component_cache(
+	cache_key: String,
+	solid_indices: PackedInt32Array,
+) -> void:
+	if global_static_component_lookups.has(cache_key):
+		return
+	while (
+		global_static_component_order.size()
+		>= MAX_GLOBAL_STATIC_COMPONENT_CACHE_ENTRIES
+	):
+		var oldest: String = global_static_component_order.pop_front()
+		global_static_component_lookups.erase(oldest)
+	global_static_component_lookups[cache_key] = {
+		"solid_indices": solid_indices.duplicate(),
+		"component_by_cell": static_component_by_cell.duplicate(),
+		"component_cells": static_component_cells.duplicate(true),
+	}
+	global_static_component_order.append(cache_key)
 
 
 func set_source_scene_disabled(
@@ -1534,12 +1613,15 @@ func _build_source_scene_cell_index(layer_id: int) -> void:
 		if encoded < 1000:
 			continue
 		var scene_index := encoded - 1000
-		var scene_cells: Array[Vector2i] = []
-		if layer_index.has(scene_index):
-			for cell_value: Variant in layer_index[scene_index] as Array:
-				scene_cells.append(cell_value as Vector2i)
+		# Arrays are reference values. Keep one typed array per scene and append
+		# directly instead of copying every previously indexed cell for every new
+		# cell. The old loop made large source footprints quadratic and added
+		# hundreds of milliseconds to every dense-level reconstruction.
+		if not layer_index.has(scene_index):
+			var initial_cells: Array[Vector2i] = []
+			layer_index[scene_index] = initial_cells
+		var scene_cells := layer_index[scene_index] as Array[Vector2i]
 		scene_cells.append(index_to_cell(cell_index))
-		layer_index[scene_index] = scene_cells
 	source_scene_cells_by_layer[layer_id] = layer_index
 
 

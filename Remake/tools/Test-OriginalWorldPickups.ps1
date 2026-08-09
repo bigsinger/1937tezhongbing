@@ -55,7 +55,7 @@ if ([int]$gameData.schema_version -ne 3 -or
 $expectedDatabaseIds = @(982, 983, 984, 986, 987, 988, 990, 993, 998, 999)
 $actualDatabaseIds = @($baseline.pickup_grants |
     ForEach-Object { [int]$_.database_entry_id })
-if ((Compare-Object $expectedDatabaseIds $actualDatabaseIds).Count -ne 0) {
+if (@(Compare-Object $expectedDatabaseIds $actualDatabaseIds).Count -ne 0) {
     throw 'World-pickup baseline has an unexpected DBL identity set.'
 }
 
@@ -126,7 +126,7 @@ if ([int]$barrelEvidence.database_entry_id -ne 1003 -or
         'recovered_sub_4554A0') {
     throw 'Gasoline-barrel actor-53/actor-62 evidence differs from product data.'
 }
-if ($null -ne $gameData.deployables) {
+if ($null -ne $gameData.PSObject.Properties['deployables']) {
     throw 'Retired generic LandMine defaults returned to product data.'
 }
 
@@ -158,7 +158,7 @@ if (Test-Path -LiteralPath $ConvertedLevelsRoot -PathType Container) {
         ForEach-Object { [string]$_ })
     if ($observedBarrels.Count -ne
             [int]$barrelEvidence.observed_instance_count -or
-        (Compare-Object $expectedLevels $observedLevels).Count -ne 0) {
+        @(Compare-Object $expectedLevels $observedLevels).Count -ne 0) {
         throw 'Converted twelve-level gasoline-barrel population differs from the evidence baseline.'
     }
 }

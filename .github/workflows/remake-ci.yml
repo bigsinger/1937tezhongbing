@@ -8,109 +8,89 @@ on:
 permissions:
   contents: read
 
+env:
+  GODOT_VERSION: "4.7.1"
+  GODOT_ARCHIVE_SHA256: "C7A289051EAEFB460B0106B60E9CD5BEE0EF55FD102DCB2BED1EB356CF3D90A1"
+
 jobs:
-  resource-tools:
+  fast-gate:
+    name: Fast source gate
     runs-on: windows-latest
     steps:
-      - name: Check out source
+      - name: Check out source without LFS game content
         uses: actions/checkout@v6
         with:
-          # The stable 12-level Mod is the authoritative parity oracle.  Pull
-          # its LFS objects so CI exercises the same real maps, scripts and
-          # resources as a local full verification instead of silently taking
-          # Verify.ps1's clean-room/no-assets branch.
-          lfs: true
+          lfs: false
 
       - name: Set up .NET 10
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "10.0.x"
+          cache: true
+          cache-dependency-path: |
+            Remake/**/*.csproj
+            MapEditor/**/*.csproj
 
-      - name: Guard against original assets
+      - name: Download verified Godot
         shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'godot.zip'
+          $destination = Join-Path $env:RUNNER_TEMP 'godot'
+          $url = "https://github.com/godotengine/godot/releases/download/$env:GODOT_VERSION-stable/Godot_v$env:GODOT_VERSION-stable_win64.exe.zip"
+          Invoke-WebRequest -Uri $url -OutFile $archive
+          $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
+          if ($actual -ne $env:GODOT_ARCHIVE_SHA256) { throw "Unexpected Godot SHA-256: $actual" }
+          Expand-Archive -LiteralPath $archive -DestinationPath $destination
+          $console = Get-ChildItem -LiteralPath $destination -Filter '*_console.exe' | Select-Object -First 1
+          if ($null -eq $console) { throw 'Godot console executable was not found.' }
+          "GODOT4=$($console.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Run fast gate
+        shell: pwsh
+        run: ./Remake/tools/Invoke-RemakeFastGate.ps1 -GodotExecutable $env:GODOT4
+
+  synthetic-content-gate:
+    name: Synthetic native-content gate
+    runs-on: windows-latest
+    steps:
+      - name: Check out source without LFS game content
+        uses: actions/checkout@v6
+        with:
+          lfs: false
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+          cache: true
+          cache-dependency-path: |
+            Remake/**/*.csproj
+            MapEditor/**/*.csproj
+
+      - name: Download verified Godot
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'godot.zip'
+          $destination = Join-Path $env:RUNNER_TEMP 'godot'
+          $url = "https://github.com/godotengine/godot/releases/download/$env:GODOT_VERSION-stable/Godot_v$env:GODOT_VERSION-stable_win64.exe.zip"
+          Invoke-WebRequest -Uri $url -OutFile $archive
+          $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
+          if ($actual -ne $env:GODOT_ARCHIVE_SHA256) { throw "Unexpected Godot SHA-256: $actual" }
+          Expand-Archive -LiteralPath $archive -DestinationPath $destination
+          $console = Get-ChildItem -LiteralPath $destination -Filter '*_console.exe' | Select-Object -First 1
+          if ($null -eq $console) { throw 'Godot console executable was not found.' }
+          "GODOT4=$($console.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Run content gate with clean-room fixtures
+        shell: pwsh
+        run: ./Remake/tools/Invoke-RemakeContentGate.ps1 -GodotExecutable $env:GODOT4
+
+  source-policy:
+    name: No distributable or original game payloads
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          lfs: false
+      - shell: pwsh
         run: ./Remake/tools/Check-NoOriginalAssets.ps1
-
-      - name: Build resource tools
-        run: dotnet build ./Remake/1937Remake.slnx --configuration Release
-
-      - name: Run synthetic format tests
-        run: dotnet run --project ./Remake/tools/ResourceFormats.Tests/ResourceFormats.Tests.csproj --configuration Release --no-build
-
-      - name: Import stable Mod assets for parity verification
-        shell: pwsh
-        run: ./Remake/tools/Import-ModAssets.ps1
-
-      - name: Download Godot 4.7.1 Standard
-        shell: pwsh
-        run: |
-          $archive = Join-Path $env:RUNNER_TEMP 'godot-4.7.1.zip'
-          $destination = Join-Path $env:RUNNER_TEMP 'godot-4.7.1'
-          $url = 'https://github.com/godotengine/godot/releases/download/4.7.1-stable/Godot_v4.7.1-stable_win64.exe.zip'
-          $expectedHash = 'C7A289051EAEFB460B0106B60E9CD5BEE0EF55FD102DCB2BED1EB356CF3D90A1'
-          Invoke-WebRequest -Uri $url -OutFile $archive
-          $actualHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
-          if ($actualHash -ne $expectedHash) {
-            throw "Unexpected Godot archive SHA-256: $actualHash"
-          }
-          Expand-Archive -LiteralPath $archive -DestinationPath $destination
-          $console = Get-ChildItem -LiteralPath $destination -Filter '*_console.exe' | Select-Object -First 1
-          if ($null -eq $console) {
-            throw 'Godot console executable was not found after extraction.'
-          }
-          "GODOT4=$($console.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Run complete remake verification
-        shell: pwsh
-        run: ./Remake/tools/Verify.ps1 -GodotExecutable $env:GODOT4
-
-  portable-release:
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
-    runs-on: windows-latest
-    permissions:
-      contents: read
-    steps:
-      - name: Check out source and LFS content
-        uses: actions/checkout@v6
-        with:
-          lfs: true
-
-      - name: Set up .NET 10
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: "10.0.x"
-
-      - name: Download verified Godot 4.7.1 editor
-        shell: pwsh
-        run: |
-          $archive = Join-Path $env:RUNNER_TEMP 'godot-4.7.1.zip'
-          $destination = Join-Path $env:RUNNER_TEMP 'godot-4.7.1'
-          $url = 'https://github.com/godotengine/godot/releases/download/4.7.1-stable/Godot_v4.7.1-stable_win64.exe.zip'
-          $expectedHash = 'C7A289051EAEFB460B0106B60E9CD5BEE0EF55FD102DCB2BED1EB356CF3D90A1'
-          Invoke-WebRequest -Uri $url -OutFile $archive
-          $actualHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
-          if ($actualHash -ne $expectedHash) {
-            throw "Unexpected Godot archive SHA-256: $actualHash"
-          }
-          Expand-Archive -LiteralPath $archive -DestinationPath $destination
-          $console = Get-ChildItem -LiteralPath $destination -Filter '*_console.exe' | Select-Object -First 1
-          if ($null -eq $console) {
-            throw 'Godot console executable was not found after extraction.'
-          }
-          "GODOT4=$($console.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Install official Windows export templates
-        shell: pwsh
-        run: python ./Remake/tools/Install-WindowsExportTemplate.py
-
-      - name: Build and smoke-test self-contained portable release
-        shell: pwsh
-        run: ./Remake/tools/Build-Playable.ps1 -GodotExecutable $env:GODOT4 -AssetMode Copy -CreateArchive $true
-
-      - name: Upload portable ZIP and SHA-256
-        uses: actions/upload-artifact@v6
-        with:
-          name: 1937Remake-Windows-portable
-          path: |
-            Remake/LocalBuild/1937Remake-portable.zip
-            Remake/LocalBuild/1937Remake-portable.zip.sha256
-          if-no-files-found: error

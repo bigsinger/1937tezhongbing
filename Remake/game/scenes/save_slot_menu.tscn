@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource path="res://scripts/responsive_panel.gd" type="Script" id="1"]
+
+[node name="SaveSlotMenu" type="PanelContainer"]
+script = ExtResource("1")
+title_key = "UI_SAVE_SLOTS_TITLE"
+action_ids = Array[String](["confirm", "return"])
+action_keys = Array[String](["UI_CONFIRM", "UI_RETURN"])

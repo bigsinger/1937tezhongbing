@@ -9,6 +9,22 @@ const BASE_SPRITE_TICK_SECONDS := 0.085
 ## therefore about 0.56 seconds instead of the former 0.08..0.12 seconds.
 const MODERN_MOVEMENT_MIN_FRAME_SECONDS := 1.0 / 18.0
 const MODERN_MOVEMENT_MAX_FRAME_SECONDS := 0.14
+## Modern presentation refreshes a sustained animation sound at a bounded
+## cadence.  The original executable requested the same GFL on every actor
+## update and relied on busy DirectSound buffers to suppress duplicates.  At
+## 60 Hz across a dense mission that needlessly repeats signal dispatch,
+## camera-rect construction and attenuation work thousands of times a second.
+## Ten refreshes per second keep a looping/busy-buffer request alive while
+## preserving an immediate request when the authored sound changes.  Classic
+## mode deliberately retains the recovered per-update request cadence.
+const MODERN_CONTINUOUS_AUDIO_REFRESH_SECONDS := 0.10
+## Actor positions and collision remain authoritative at 60 Hz. Sprite-frame,
+## facing and depth presentation commit at 20 Hz, still above the authored
+## 7..18 fps animation rate. Positional interpolation remains fully smooth,
+## while dense missions dirty and Y-sort 100+ CanvasItems one third less often.
+const MODERN_MOVEMENT_PRESENTATION_REFRESH_SECONDS := 1.0 / 20.0
+const MODERN_IDLE_PRESENTATION_REFRESH_SECONDS := 1.0 / 15.0
+const OCTANT_AXIS_RATIO := 0.41421356237309503 # tan(22.5 degrees)
 const PLAYER_PISTOL_HIT_CHANCE := 0.80
 const PLAYER_RIFLE_HIT_CHANCE := 0.90
 const PLAYER_MELEE_HIT_CHANCE := 1.0
@@ -101,6 +117,21 @@ const WORLD_DEPTH: Script = preload("res://scripts/world_depth.gd")
 const MOVEMENT_RECOVERY_PLANNER: Script = preload(
 	"res://scripts/movement_recovery_planner.gd"
 )
+const ACTOR_MOVEMENT_CONTROLLER: Script = preload(
+	"res://scripts/actor_movement_controller.gd"
+)
+const ACTOR_ANIMATION_CONTROLLER: Script = preload(
+	"res://scripts/actor_animation_controller.gd"
+)
+const ACTOR_COMBAT_CONTROLLER: Script = preload(
+	"res://scripts/actor_combat_controller.gd"
+)
+const ACTOR_INVENTORY_CONTROLLER: Script = preload(
+	"res://scripts/actor_inventory_controller.gd"
+)
+const CLASSIC_ACTOR_PARITY_ADAPTER: Script = preload(
+	"res://scripts/classic_actor_parity_adapter.gd"
+)
 
 enum CombatAction { NONE, ATTACK, RELOAD, DEATH }
 
@@ -189,6 +220,10 @@ var original_runtime_index := -1
 var original_native_actor_state: Dictionary = {}
 var original_crt_level_id := ""
 var original_crt_random_source: Node
+## Once player input invalidates the bounded original trace, modern actors can
+## return the stable zero round without repeated has_method()/call() crossings.
+## Active evidence and classic fixtures still use the exact provider path.
+var original_recurring_evidence_known_inactive := false
 var original_crt_initialization_profile: Dictionary = {}
 var original_crt_observation_gate_enabled := false
 var original_crt_observation_gate_elapsed := 0.0
@@ -260,6 +295,7 @@ var original_first_gameplay_resolved_goal := Vector2.ZERO
 var original_first_gameplay_route_wait_limit := -1
 var original_first_gameplay_navigation_applied := false
 var dynamic_occupancy: RefCounted
+var dynamic_occupancy_runtime: DynamicOccupancyGrid
 var dynamic_registered := false
 var active_sprite_footprint_key := ""
 ## Modern navigation uses a stable capsule-like grid footprint for biped
@@ -292,6 +328,8 @@ var sprite_drawn_by_row_slices := false
 var uniform_row_depth_enabled := false
 var uniform_row_depth_offset := 0.0
 var movement_groups: Array[Dictionary] = []
+var movement_frame_seconds_cache := PackedFloat64Array()
+var movement_frame_seconds_cache_speed := -1.0
 var idle_groups: Array[Dictionary] = []
 var run_groups: Array[Dictionary] = []
 var walk_groups: Array[Dictionary] = []
@@ -301,6 +339,12 @@ var stand_action_groups: Array[Dictionary] = []
 var walk_step_components := Vector2.ZERO
 var crawl_step_components := Vector2.ZERO
 var uses_original_component_movement := false
+var component_velocity_cache := Vector2.ZERO
+var component_velocity_cache_steps := Vector2(INF, INF)
+var component_velocity_cache_speed := -1.0
+var component_velocity_cache_running := false
+var component_velocity_cache_crawling := false
+var component_velocity_cache_enabled := false
 var animation_group_index := 7
 var animation_frame_index := 0
 var animation_elapsed := 0.0
@@ -342,6 +386,16 @@ var pending_hit_world_position := Vector2.ZERO
 ## switch explicit prevents the clean modern accuracy model from leaking into
 ## imported enemy/ambient parity actors that share this base class.
 var modern_player_combat_rules_enabled := false
+var modern_presentation_scheduling_enabled := false
+## Off-screen actors remain fully authoritative participants in movement, AI,
+## collision, audio and replay state. Only CanvasItem redraw/depth presentation
+## is suspended until the camera approaches them again. This avoids repeatedly
+## dirtying dense missions for sprites the renderer will cull anyway.
+var visual_presentation_active := true
+var continuous_animation_audio_elapsed := MODERN_CONTINUOUS_AUDIO_REFRESH_SECONDS
+var continuous_animation_audio_gfl_index := -1
+var modern_movement_presentation_elapsed := 0.0
+var modern_idle_presentation_elapsed := 0.0
 var player_attack_attempt_serial := 0
 var hurt_remaining := 0.0
 var death_emitted := false
@@ -358,10 +412,29 @@ var disguise_recovery_tick_counter := 0
 var disguise_recovery_tick_elapsed := 0.0
 var debug_physics_profiling_enabled := false
 var debug_physics_profile: Dictionary = {}
+var spatial_index_service: RefCounted
+var spatial_index_runtime: WorldSpatialIndex
+var spatial_index_cell := Vector2i.ZERO
+var spatial_index_cell_initialized := false
+var spatial_index_world_position := Vector2(INF, INF)
+var movement_reservation_service: RefCounted
+var movement_reservation_runtime: MovementReservationService
+var simulation_coordinator_service: RefCounted
+var centrally_scheduled_simulation_enabled := false
+var movement_reservation_granted := true
+var movement_reservation_tick := -1
+var movement_reservation_proposal_cache: Dictionary = {}
+var movement_reservation_alternatives: Array[Vector2] = [
+	Vector2.ZERO,
+	Vector2.ZERO,
+]
 ## Strict/classic rules retain the recovered 60 Hz CRT/random actor scheduler.
 ## Modern autonomous enemies use explicit deterministic AI clocks instead and
 ## disable this compatibility lane; player and classic actors keep it enabled.
 var legacy_actor_scheduler_enabled := true
+var movement_controller: ActorMovementController = ACTOR_MOVEMENT_CONTROLLER.new()
+var inventory_controller: RefCounted = ACTOR_INVENTORY_CONTROLLER.new()
+var classic_parity_adapter: RefCounted = CLASSIC_ACTOR_PARITY_ADAPTER.new()
 
 
 func set_reduced_violence(value: bool) -> void:
@@ -395,6 +468,8 @@ func configure(
 	if row_slice_renderer != null and is_instance_valid(row_slice_renderer):
 		row_slice_renderer.call("clear_visual")
 	movement_groups = new_movement_groups
+	movement_frame_seconds_cache.clear()
+	movement_frame_seconds_cache_speed = -1.0
 	idle_groups = new_idle_groups
 	run_groups = new_movement_groups
 	walk_groups = new_movement_groups
@@ -496,6 +571,11 @@ func configure(
 	original_first_gameplay_route_wait_limit = -1
 	original_first_gameplay_navigation_applied = false
 	dynamic_occupancy = new_dynamic_occupancy
+	dynamic_occupancy_runtime = (
+		new_dynamic_occupancy as DynamicOccupancyGrid
+		if new_dynamic_occupancy is DynamicOccupancyGrid
+		else null
+	)
 	use_soft_dynamic_occupancy = false
 	minimum_actor_separation = -1.0
 	use_recorded_patrol_relocation = false
@@ -515,6 +595,7 @@ func configure(
 	movement_recovery_count = 0
 	movement_recovery_failure_count = 0
 	movement_last_blocked_waypoint = Vector2(INF, INF)
+	movement_controller.reset()
 	dynamic_registered = false
 	active_sprite_footprint_key = ""
 	use_compact_navigation_footprint = false
@@ -555,6 +636,7 @@ func configure(
 		)
 		if not dynamic_registered:
 			dynamic_occupancy = null
+			dynamic_occupancy_runtime = null
 	_update_sprite_depth()
 	if movement_groups.size() >= 8:
 		var first_group: int = (
@@ -1121,6 +1203,8 @@ func next_original_crt_random_values(
 
 
 func _original_recurring_evidence_round_index() -> int:
+	if original_recurring_evidence_known_inactive:
+		return 0
 	if (
 		original_crt_random_source == null
 		or not is_instance_valid(original_crt_random_source)
@@ -1755,13 +1839,17 @@ func original_local_search_snapshot() -> Dictionary:
 
 
 func _advance_original_recurring_local_search() -> bool:
-	var physics_frame := Engine.get_physics_frames()
-	if original_local_search_last_physics_frame == physics_frame:
-		return false
-	original_local_search_last_physics_frame = physics_frame
+	if not centrally_scheduled_simulation_enabled:
+		var physics_frame := Engine.get_physics_frames()
+		if original_local_search_last_physics_frame == physics_frame:
+			return false
+		original_local_search_last_physics_frame = physics_frame
+	var evidence_round_index := _original_recurring_evidence_round_index()
 	if (
 		not is_alive
 		or original_runtime_index < 0
+		or evidence_round_index <= 0
+		or evidence_round_index <= original_local_search_last_round_index
 		or original_crt_random_source == null
 		or not is_instance_valid(original_crt_random_source)
 		or not original_crt_random_source.has_method(
@@ -1864,10 +1952,11 @@ func original_secondary_search_snapshot() -> Dictionary:
 
 
 func _advance_original_secondary_search(delta: float) -> void:
-	var physics_frame := Engine.get_physics_frames()
-	if original_secondary_search_last_physics_frame == physics_frame:
-		return
-	original_secondary_search_last_physics_frame = physics_frame
+	if not centrally_scheduled_simulation_enabled:
+		var physics_frame := Engine.get_physics_frames()
+		if original_secondary_search_last_physics_frame == physics_frame:
+			return
+		original_secondary_search_last_physics_frame = physics_frame
 	if (
 		not original_secondary_search_enabled
 		or not is_alive
@@ -2066,10 +2155,11 @@ func _original_secondary_search_world_bounds() -> Rect2:
 
 
 func _advance_original_pursuit(delta: float) -> void:
-	var physics_frame := Engine.get_physics_frames()
-	if original_pursuit_last_physics_frame == physics_frame:
-		return
-	original_pursuit_last_physics_frame = physics_frame
+	if not centrally_scheduled_simulation_enabled:
+		var physics_frame := Engine.get_physics_frames()
+		if original_pursuit_last_physics_frame == physics_frame:
+			return
+		original_pursuit_last_physics_frame = physics_frame
 	if (
 		original_pursuit_target_runtime_index < 0
 		or original_pursuit_call_site_rva not in [
@@ -2230,10 +2320,11 @@ func _should_apply_original_pursuit_navigation() -> bool:
 
 
 func _advance_original_crt_observation_gate(delta: float) -> void:
-	var physics_frame := Engine.get_physics_frames()
-	if original_crt_last_physics_frame == physics_frame:
-		return
-	original_crt_last_physics_frame = physics_frame
+	if not centrally_scheduled_simulation_enabled:
+		var physics_frame := Engine.get_physics_frames()
+		if original_crt_last_physics_frame == physics_frame:
+			return
+		original_crt_last_physics_frame = physics_frame
 	if (
 		not original_crt_observation_gate_enabled
 		or original_crt_random_source == null
@@ -2277,13 +2368,14 @@ func apply_original_crt_observation_gate_value(
 
 
 func _advance_original_crt_primary_candidate_scan(delta: float) -> void:
-	var physics_frame := Engine.get_physics_frames()
-	if (
-		original_crt_primary_candidate_last_physics_frame
-		== physics_frame
-	):
-		return
-	original_crt_primary_candidate_last_physics_frame = physics_frame
+	if not centrally_scheduled_simulation_enabled:
+		var physics_frame := Engine.get_physics_frames()
+		if (
+			original_crt_primary_candidate_last_physics_frame
+			== physics_frame
+		):
+			return
+		original_crt_primary_candidate_last_physics_frame = physics_frame
 	if (
 		not original_crt_primary_candidate_scan_enabled
 		or original_crt_random_source == null
@@ -2660,6 +2752,8 @@ func _apply_movement_mode() -> void:
 		movement_groups = walk_groups if not walk_groups.is_empty() else run_groups
 		idle_groups = standing_idle_groups
 		move_speed = _original_mode_nominal_speed(WALK_SPEED)
+	movement_frame_seconds_cache.clear()
+	movement_frame_seconds_cache_speed = -1.0
 	animation_frame_index = 0
 	animation_elapsed = 0.0
 	if (
@@ -2723,22 +2817,37 @@ static func _authored_motion_components(
 
 
 func original_component_velocity() -> Vector2:
-	if not uses_original_component_movement or move_speed <= 0.0:
-		return Vector2.ZERO
 	var step_components := (
 		crawl_step_components
 		if is_crawling
 		else walk_step_components * (ORIGINAL_RUN_STEP_MULTIPLIER if is_running else 1.0)
 	)
+	if (
+		component_velocity_cache_speed == move_speed
+		and component_velocity_cache_steps == step_components
+		and component_velocity_cache_running == is_running
+		and component_velocity_cache_crawling == is_crawling
+		and component_velocity_cache_enabled == uses_original_component_movement
+	):
+		return component_velocity_cache
+	component_velocity_cache_speed = move_speed
+	component_velocity_cache_steps = step_components
+	component_velocity_cache_running = is_running
+	component_velocity_cache_crawling = is_crawling
+	component_velocity_cache_enabled = uses_original_component_movement
+	component_velocity_cache = Vector2.ZERO
+	if not uses_original_component_movement or move_speed <= 0.0:
+		return component_velocity_cache
 	if step_components.is_zero_approx():
-		return Vector2.ZERO
+		return component_velocity_cache
 	var unscaled_velocity := step_components * ORIGINAL_MOVEMENT_TICKS_PER_SECOND
 	var unscaled_magnitude := unscaled_velocity.length()
 	if unscaled_magnitude <= 0.0:
-		return Vector2.ZERO
+		return component_velocity_cache
 	# Enemies, escorts and ambient actors retain their recovered scalar speed,
 	# while the SPR triplet supplies the original isometric X/Y ratio.
-	return unscaled_velocity * (move_speed / unscaled_magnitude)
+	component_velocity_cache = unscaled_velocity * (move_speed / unscaled_magnitude)
+	return component_velocity_cache
 
 
 static func advance_component_capped(
@@ -3091,7 +3200,13 @@ func add_backpack_item(
 	if backpack_inventory == null:
 		backpack_inventory = BACKPACK_INVENTORY_SCRIPT.new()
 	return int(
-		backpack_inventory.add_original_item(item_id, quantity, quantity_mode)
+		inventory_controller.call(
+			"add_original_item",
+			backpack_inventory,
+			item_id,
+			quantity,
+			quantity_mode,
+		)
 	)
 
 
@@ -3100,24 +3215,33 @@ func consume_backpack_item(
 	force_consumption: bool = false,
 	quantity: int = 1,
 ) -> bool:
-	return (
-		backpack_inventory != null
-		and bool(
-			backpack_inventory.consume(
-				item_id,
-				force_consumption,
-				quantity,
-			)
+	return bool(
+		inventory_controller.call(
+			"consume_original_item",
+			backpack_inventory,
+			item_id,
+			force_consumption,
+			quantity,
 		)
 	)
 
 
 func backpack_snapshot() -> Dictionary:
-	return (
-		backpack_inventory.snapshot()
-		if backpack_inventory != null
-		else {}
-	)
+	return inventory_controller.call(
+		"original_snapshot",
+		backpack_inventory,
+	) as Dictionary
+
+
+func classic_parity_snapshot() -> Dictionary:
+	return classic_parity_adapter.call("capture", self) as Dictionary
+
+
+func restore_classic_parity_snapshot(snapshot: Dictionary) -> bool:
+	if snapshot.is_empty():
+		return false
+	classic_parity_adapter.call("restore", self, snapshot)
+	return true
 
 
 func set_original_disguise(appearance_state: int) -> void:
@@ -3829,55 +3953,221 @@ func _record_debug_physics_section(section: String, started_usec: int) -> void:
 	debug_physics_profile[section] = current
 
 
+func _notify_spatial_bucket_crossing() -> bool:
+	if (
+		spatial_index_runtime == null
+		and (
+			spatial_index_service == null
+			or not spatial_index_service.has_method("world_to_cell")
+		)
+	):
+		return false
+	var current_world_position := global_position
+	if (
+		spatial_index_cell_initialized
+		and current_world_position == spatial_index_world_position
+	):
+		return false
+	spatial_index_world_position = current_world_position
+	var current_cell: Vector2i = (
+		spatial_index_runtime.world_to_cell(current_world_position)
+		if spatial_index_runtime != null
+		else spatial_index_service.world_to_cell(current_world_position)
+	)
+	if spatial_index_cell_initialized and current_cell == spatial_index_cell:
+		return false
+	spatial_index_cell = current_cell
+	spatial_index_cell_initialized = true
+	return (
+		spatial_index_runtime.update_node(self)
+		if spatial_index_runtime != null
+		else bool(spatial_index_service.update_node(self))
+	)
+
+
+func configure_world_spatial_index(index: RefCounted) -> void:
+	spatial_index_service = index
+	spatial_index_runtime = index as WorldSpatialIndex
+	spatial_index_cell_initialized = false
+	spatial_index_world_position = Vector2(INF, INF)
+	_notify_spatial_bucket_crossing()
+
+
+func configure_movement_reservation_service(service: RefCounted) -> void:
+	movement_reservation_service = service
+	movement_reservation_runtime = service as MovementReservationService
+	movement_reservation_granted = true
+	movement_reservation_tick = -1
+
+
+func configure_simulation_coordinator(service: RefCounted) -> void:
+	simulation_coordinator_service = service
+
+
+func configure_central_simulation(enabled: bool) -> void:
+	centrally_scheduled_simulation_enabled = enabled
+	if not enabled:
+		# Re-entering per-node scheduling must treat the current engine frame as a
+		# fresh boundary, including save and isolated-fixture transitions.
+		original_crt_last_physics_frame = -1
+		original_crt_primary_candidate_last_physics_frame = -1
+		original_secondary_search_last_physics_frame = -1
+		original_pursuit_last_physics_frame = -1
+		original_local_search_last_physics_frame = -1
+		original_ai_shared_counter_last_physics_frame = -1
+
+
+func configure_original_recurring_evidence_active(active: bool) -> void:
+	original_recurring_evidence_known_inactive = not active
+
+
+func configure_modern_presentation_scheduling(enabled: bool) -> void:
+	modern_presentation_scheduling_enabled = enabled
+	continuous_animation_audio_elapsed = MODERN_CONTINUOUS_AUDIO_REFRESH_SECONDS
+	continuous_animation_audio_gfl_index = -1
+	modern_movement_presentation_elapsed = 0.0
+	modern_idle_presentation_elapsed = 0.0
+	if enabled and scene_index >= 0:
+		# Presentation commits are deliberately phased by stable scene id. Without
+		# this, every moving guard loaded on the same frame dirties its texture and
+		# depth on the same 20 Hz tick, producing a visible P95 cadence spike even
+		# though average work is modest. Gameplay simulation remains 60 Hz and the
+		# phase is deterministic across save/load and replay.
+		var movement_slots := maxi(roundi(
+			MODERN_MOVEMENT_PRESENTATION_REFRESH_SECONDS
+				* ORIGINAL_MOVEMENT_TICKS_PER_SECOND
+		), 1)
+		var idle_slots := maxi(roundi(
+			MODERN_IDLE_PRESENTATION_REFRESH_SECONDS
+				* ORIGINAL_MOVEMENT_TICKS_PER_SECOND
+		), 1)
+		modern_movement_presentation_elapsed = (
+			float(posmod(scene_index * 37 + 11, movement_slots))
+			/ ORIGINAL_MOVEMENT_TICKS_PER_SECOND
+		)
+		modern_idle_presentation_elapsed = (
+			float(posmod(scene_index * 53 + 7, idle_slots))
+			/ ORIGINAL_MOVEMENT_TICKS_PER_SECOND
+		)
+
+
+func configure_visual_presentation_active(enabled: bool) -> void:
+	if visual_presentation_active == enabled:
+		return
+	visual_presentation_active = enabled
+	if visual_presentation_active:
+		# The logical texture/anchor continue advancing while off screen. Rebuild
+		# the retained draw command once, at re-entry, and commit current depth.
+		# Moving animation indices continue to advance while culled, but their
+		# texture assignment is intentionally deferred until this boundary.
+		if was_moving and combat_action == CombatAction.NONE:
+			update_animation_frame()
+		_update_sprite_depth()
+		queue_redraw()
+
+
+func resolved_simulation_delta(engine_delta: float) -> float:
+	return (
+		1.0 / 60.0
+		if simulation_coordinator_service != null
+		else maxf(engine_delta, 0.0)
+	)
+
+
+func movement_reservation_proposal(fixed_delta: float) -> Dictionary:
+	if (
+		not is_alive
+		or movement_path_index >= movement_path.size()
+		or fixed_delta <= 0.0
+	):
+		return {}
+	var waypoint := movement_path[movement_path_index]
+	var travel := maxf(move_speed, 0.0) * fixed_delta
+	var preferred: Vector2 = movement_controller.proposed_position(
+		position,
+		waypoint,
+		travel,
+	)
+	var direction := (waypoint - position).normalized()
+	var lateral := Vector2(-direction.y, direction.x) * minf(travel, 8.0)
+	if movement_reservation_alternatives.size() != 2:
+		movement_reservation_alternatives.resize(2)
+	movement_reservation_alternatives[0] = preferred + lateral
+	movement_reservation_alternatives[1] = preferred - lateral
+	movement_reservation_proposal_cache["current"] = position
+	movement_reservation_proposal_cache["preferred"] = preferred
+	movement_reservation_proposal_cache["alternatives"] = (
+		movement_reservation_alternatives
+	)
+	movement_reservation_proposal_cache["direction"] = direction
+	return movement_reservation_proposal_cache
+
+
+func apply_movement_reservation(decision: Dictionary) -> void:
+	movement_reservation_granted = bool(decision.get("granted", true))
+	movement_reservation_tick = int(decision.get("tick", -1))
+
+
+func apply_movement_reservation_values(granted: bool, tick: int) -> void:
+	movement_reservation_granted = granted
+	movement_reservation_tick = tick
+
+
 func _physics_process(delta: float) -> void:
-	var total_started_usec := (
-		Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
-	)
-	var safe_delta := maxf(delta, 0.0)
-	movement_recovery_cooldown = maxf(
-		movement_recovery_cooldown - safe_delta,
-		0.0,
-	)
-	var legacy_started_usec := (
-		Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
-	)
+	simulate_tick(delta)
+	_notify_spatial_bucket_crossing()
+
+
+func simulate_tick(delta: float, delta_is_fixed: bool = false) -> void:
+	if (
+		not delta_is_fixed
+		and (
+		simulation_coordinator_service != null
+		and not centrally_scheduled_simulation_enabled
+		)
+	):
+		var clock_value: Variant = simulation_coordinator_service.get("clock")
+		if clock_value != null and bool(clock_value.get("paused")):
+			return
+	var safe_delta := delta if delta_is_fixed else resolved_simulation_delta(delta)
+	if movement_recovery_cooldown > 0.0:
+		movement_recovery_cooldown = maxf(
+			movement_recovery_cooldown - safe_delta,
+			0.0,
+		)
 	if legacy_actor_scheduler_enabled:
 		_advance_original_crt_actor_random_tick(safe_delta)
 		_advance_original_ai_shared_counter(safe_delta)
 		_advance_original_recurring_blocked_retry_events()
 		_consume_original_pending_acknowledgement()
-	_record_debug_physics_section("legacy_scheduler", legacy_started_usec)
-	attack_cooldown_remaining = maxf(attack_cooldown_remaining - safe_delta, 0.0)
+	if attack_cooldown_remaining > 0.0:
+		attack_cooldown_remaining = maxf(
+			attack_cooldown_remaining - safe_delta,
+			0.0,
+		)
 	if combat_action != CombatAction.NONE:
 		_suspend_original_ai_idle_action()
-		var combat_started_usec := (
-			Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
-		)
 		_advance_combat_action(safe_delta)
-		_record_debug_physics_section("combat", combat_started_usec)
-		_record_debug_physics_section("total", total_started_usec)
 		return
 	if not is_alive:
-		_record_debug_physics_section("total", total_started_usec)
 		return
-	var auto_combat_started_usec := (
-		Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
-	)
 	if auto_combat_enabled and _update_auto_combat(safe_delta):
-		_record_debug_physics_section("auto_combat", auto_combat_started_usec)
 		_advance_original_ai_idle_animation(safe_delta)
-		_record_debug_physics_section("total", total_started_usec)
 		return
-	_record_debug_physics_section("auto_combat", auto_combat_started_usec)
-	if is_special_controlled():
+	if special_control_lock_count > 0:
 		_face_special_control_source()
 		_advance_original_ai_idle_animation(safe_delta)
-		_record_debug_physics_section("total", total_started_usec)
+		return
+	if (
+		movement_reservation_service != null
+		and movement_path_index < movement_path.size()
+		and not movement_reservation_granted
+	):
+		blocked_elapsed += safe_delta
+		_apply_idle_state()
+		_advance_original_ai_idle_animation(safe_delta)
 		return
 
-	var movement_started_usec := (
-		Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
-	)
 	# Most actors are stationary on any given tick. Avoid constructing the
 	# movement state machine, resolving component velocity, and comparing four
 	# temporary positions when there is no remaining waypoint. AI/idle animation
@@ -3888,8 +4178,6 @@ func _physics_process(delta: float) -> void:
 		_reset_movement_progress_watchdog()
 		_apply_idle_state()
 		_advance_original_ai_idle_animation(safe_delta)
-		_record_debug_physics_section("movement", movement_started_usec)
-		_record_debug_physics_section("total", total_started_usec)
 		return
 	var previous_position := position
 	var next_position := position
@@ -3928,10 +4216,11 @@ func _physics_process(delta: float) -> void:
 				and scene_index >= 0
 			):
 				relocation_applied_incrementally = true
-				if not _try_relocate_runtime(
+				var relocation_accepted := _try_relocate_runtime(
 					candidate_position,
 					relocation_targets_final_waypoint,
-				):
+				)
+				if not relocation_accepted:
 					movement_blocked = true
 					break
 			next_position = candidate_position
@@ -3959,22 +4248,25 @@ func _physics_process(delta: float) -> void:
 				remaining_distance -= distance_to_waypoint
 				next_path_index += 1
 			else:
-				next_position = next_position.move_toward(
+				next_position = movement_controller.proposed_position(
+					next_position,
 					waypoint,
 					remaining_distance,
 				)
 				remaining_distance = 0.0
+	var final_relocation_failed := false
 	if (
 		not movement_blocked
 		and not relocation_applied_incrementally
 		and next_position != position
 		and dynamic_occupancy != null
 		and scene_index >= 0
-		and not _try_relocate_runtime(
+	):
+		final_relocation_failed = not _try_relocate_runtime(
 			next_position,
 			relocation_targets_final_waypoint,
 		)
-	):
+	if final_relocation_failed:
 		movement_blocked = true
 		# Scalar/fallback actors validate their complete frame displacement
 		# only after calculating it. A rejected move has not been committed to
@@ -4010,15 +4302,8 @@ func _physics_process(delta: float) -> void:
 			_apply_idle_state()
 		else:
 			_suspend_original_ai_idle_action()
-			var accepted_group := direction_group_index(accepted_displacement)
-			if accepted_group != animation_group_index:
-				set_animation_group(accepted_group)
-			advance_animation(safe_delta)
-			was_moving = true
-			_update_sprite_depth()
+			_advance_movement_presentation(safe_delta, accepted_displacement)
 		_advance_movement_progress_watchdog(safe_delta, previous_position, true)
-		_record_debug_physics_section("movement", movement_started_usec)
-		_record_debug_physics_section("total", total_started_usec)
 		return
 	position = next_position
 	movement_path_index = next_path_index
@@ -4026,18 +4311,11 @@ func _physics_process(delta: float) -> void:
 	var displacement := position - previous_position
 	if not displacement.is_zero_approx():
 		_suspend_original_ai_idle_action()
-		var displacement_group := direction_group_index(displacement)
-		if displacement_group != animation_group_index:
-			set_animation_group(displacement_group)
-		advance_animation(safe_delta)
-		was_moving = true
-		_update_sprite_depth()
+		_advance_movement_presentation(safe_delta, displacement)
 	else:
 		_apply_idle_state()
 		_advance_original_ai_idle_animation(safe_delta)
 	_advance_movement_progress_watchdog(safe_delta, previous_position, false)
-	_record_debug_physics_section("movement", movement_started_usec)
-	_record_debug_physics_section("total", total_started_usec)
 
 
 func _try_relocate_runtime(
@@ -4046,6 +4324,32 @@ func _try_relocate_runtime(
 ) -> bool:
 	if dynamic_occupancy == null or scene_index < 0:
 		return false
+	if dynamic_occupancy_runtime != null:
+		if (
+			use_recorded_patrol_relocation
+			or (
+				use_recorded_patrol_final_relocation
+				and targets_final_waypoint
+			)
+		):
+			return dynamic_occupancy_runtime.try_relocate_from_runtime_evidence(
+				scene_index,
+				new_world_position,
+				minimum_actor_separation,
+			)
+		if use_soft_dynamic_occupancy:
+			return dynamic_occupancy_runtime.try_relocate(
+				scene_index,
+				new_world_position,
+				true,
+				minimum_actor_separation,
+			)
+		return dynamic_occupancy_runtime.try_relocate(
+			scene_index,
+			new_world_position,
+			false,
+			minimum_actor_separation,
+		)
 	if (
 		use_recorded_patrol_relocation
 		or (
@@ -4287,7 +4591,7 @@ func _advance_combat_action(delta: float) -> void:
 	if group.is_empty():
 		action_finished = true
 		return
-	_request_continuous_animation_audio(group)
+	_request_continuous_animation_audio(group, delta)
 	var frame_seconds := animation_frame_seconds(group)
 	action_frame_elapsed += delta
 	while action_frame_elapsed >= frame_seconds and not action_finished:
@@ -4401,12 +4705,33 @@ func authored_animation_sound_gfl_indices() -> Array[int]:
 	return result
 
 
-func _request_continuous_animation_audio(group: Dictionary) -> bool:
+func _request_continuous_animation_audio(
+	group: Dictionary,
+	delta: float = 0.0,
+) -> bool:
 	if not LEGACY_ANIMATION_AUDIO_RULES.requests_continuously(group):
+		continuous_animation_audio_gfl_index = -1
+		continuous_animation_audio_elapsed = MODERN_CONTINUOUS_AUDIO_REFRESH_SECONDS
 		return false
+	var gfl_index: int = LEGACY_ANIMATION_AUDIO_RULES.sound_gfl_index(group)
+	if not modern_presentation_scheduling_enabled:
+		original_animation_audio_requested.emit(self, gfl_index, true)
+		return true
+	var sound_changed: bool = continuous_animation_audio_gfl_index != gfl_index
+	if sound_changed:
+		continuous_animation_audio_gfl_index = gfl_index
+		continuous_animation_audio_elapsed = 0.0
+	else:
+		continuous_animation_audio_elapsed += maxf(delta, 0.0)
+		if continuous_animation_audio_elapsed < MODERN_CONTINUOUS_AUDIO_REFRESH_SECONDS:
+			return false
+		continuous_animation_audio_elapsed = fmod(
+			continuous_animation_audio_elapsed,
+			MODERN_CONTINUOUS_AUDIO_REFRESH_SECONDS,
+		)
 	original_animation_audio_requested.emit(
 		self,
-		LEGACY_ANIMATION_AUDIO_RULES.sound_gfl_index(group),
+		gfl_index,
 		true,
 	)
 	return true
@@ -4571,17 +4896,7 @@ func _can_resolve_pending_hit(attack_type: int) -> bool:
 
 
 static func player_hit_chance_for_attack_type(attack_type: int) -> float:
-	match attack_type:
-		1:
-			return PLAYER_PISTOL_HIT_CHANCE
-		2:
-			return PLAYER_RIFLE_HIT_CHANCE
-		4, 5:
-			return PLAYER_MELEE_HIT_CHANCE
-		_:
-			# No speculative miss model is added to the other recovered tools and
-			# special actions until their intended modern behavior is designed.
-			return 1.0
+	return ACTOR_COMBAT_CONTROLLER.player_hit_chance(attack_type)
 
 
 func modern_player_attack_will_hit(
@@ -4593,11 +4908,11 @@ func modern_player_attack_will_hit(
 		if attack_serial < 0
 		else attack_serial
 	)
-	return deterministic_player_accuracy_sample(
+	return ACTOR_COMBAT_CONTROLLER.player_attack_will_hit(
 		scene_index,
 		serial,
 		attack_type,
-	) < player_hit_chance_for_attack_type(attack_type)
+	)
 
 
 static func deterministic_player_accuracy_sample(
@@ -4605,13 +4920,11 @@ static func deterministic_player_accuracy_sample(
 	attack_serial: int,
 	attack_type: int,
 ) -> float:
-	var sample: int = posmod(
-		actor_scene_index * 1103515245
-		+ attack_serial * 12345
-		+ attack_type * 265443576,
-		10000,
+	return ACTOR_COMBAT_CONTROLLER.deterministic_accuracy_sample(
+		actor_scene_index,
+		attack_serial,
+		attack_type,
 	)
-	return float(sample) / 10000.0
 
 
 func _start_reload() -> bool:
@@ -4739,6 +5052,7 @@ func _apply_idle_state() -> void:
 	if not was_moving and animation_frame_index == 0:
 		return
 	was_moving = false
+	modern_movement_presentation_elapsed = 0.0
 	animation_frame_index = 0
 	animation_elapsed = 0.0
 	apply_idle_frame()
@@ -4753,8 +5067,23 @@ func _advance_original_ai_idle_animation(delta: float) -> void:
 		or movement_path_index < movement_path.size()
 		or was_moving
 	):
+		modern_idle_presentation_elapsed = 0.0
 		_suspend_original_ai_idle_action()
 		return
+	var presentation_delta := maxf(delta, 0.0)
+	if modern_presentation_scheduling_enabled:
+		modern_idle_presentation_elapsed += presentation_delta
+		if (
+			modern_idle_presentation_elapsed + 0.000001
+			< MODERN_IDLE_PRESENTATION_REFRESH_SECONDS
+		):
+			return
+		presentation_delta = modern_idle_presentation_elapsed
+		modern_idle_presentation_elapsed = maxf(
+			modern_idle_presentation_elapsed
+				- MODERN_IDLE_PRESENTATION_REFRESH_SECONDS,
+			0.0,
+		)
 	var next_action_active := original_ai_idle_uses_stand_action(
 		original_ai_idle_tick_counter,
 		original_ai_idle_tick_limit,
@@ -4763,7 +5092,7 @@ func _advance_original_ai_idle_animation(delta: float) -> void:
 		original_ai_idle_action_active = next_action_active
 		original_ai_idle_frame_index = 0
 		original_ai_idle_frame_elapsed = 0.0
-	if not _apply_current_idle_visual(maxf(delta, 0.0)):
+	if not _apply_current_idle_visual(presentation_delta):
 		return
 
 
@@ -4772,10 +5101,11 @@ func set_original_route_update_active(value: bool) -> void:
 
 
 func _advance_original_ai_shared_counter(delta: float) -> void:
-	var physics_frame := Engine.get_physics_frames()
-	if original_ai_shared_counter_last_physics_frame == physics_frame:
-		return
-	original_ai_shared_counter_last_physics_frame = physics_frame
+	if not centrally_scheduled_simulation_enabled:
+		var physics_frame := Engine.get_physics_frames()
+		if original_ai_shared_counter_last_physics_frame == physics_frame:
+			return
+		original_ai_shared_counter_last_physics_frame = physics_frame
 	var current_world_position := position
 	var stationary := current_world_position.is_equal_approx(
 		original_ai_previous_world_position
@@ -4792,7 +5122,9 @@ func _advance_original_ai_shared_counter(delta: float) -> void:
 	var evidence_round_index := (
 		_original_recurring_evidence_round_index()
 	)
-	var scheduled_by_site: Dictionary = {}
+	var scheduled_stationary_event: Variant = null
+	var scheduled_limit_event: Variant = null
+	var scheduled_route_event: Variant = null
 	if (
 		evidence_round_index > 0
 		and evidence_round_index
@@ -4804,23 +5136,27 @@ func _advance_original_ai_shared_counter(delta: float) -> void:
 			0x0005614F,
 			0x00058946,
 		]):
-			scheduled_by_site[int(event.get("call_site_rva", 0))] = (
-				event
-			)
+			match int(event.get("call_site_rva", 0)):
+				0x00056105:
+					scheduled_stationary_event = event
+				0x0005614F:
+					scheduled_limit_event = event
+				0x00058946:
+					scheduled_route_event = event
 	original_ai_idle_tick_elapsed += maxf(delta, 0.0)
 	while (
 		original_ai_idle_tick_elapsed
 		>= ORIGINAL_AI_IDLE_TICK_SECONDS
 	):
 		original_ai_idle_tick_elapsed -= ORIGINAL_AI_IDLE_TICK_SECONDS
-		if stationary or scheduled_by_site.has(0x00056105):
+		if stationary or scheduled_stationary_event is Dictionary:
 			original_ai_idle_tick_counter += 1
-			if scheduled_by_site.has(0x00056105):
+			if scheduled_stationary_event is Dictionary:
 				_apply_original_recurring_shared_event(
-					scheduled_by_site[0x00056105] as Dictionary,
+					scheduled_stationary_event as Dictionary,
 					0x00056105,
 				)
-				scheduled_by_site.erase(0x00056105)
+				scheduled_stationary_event = null
 			elif (
 				evidence_round_index <= 0
 				and original_ai_idle_tick_counter
@@ -4833,23 +5169,23 @@ func _advance_original_ai_shared_counter(delta: float) -> void:
 					original_ai_idle_tick_counter = 0
 					original_ai_idle_tick_limit = stationary_limit
 					original_ai_stationary_reset_serial += 1
-		if scheduled_by_site.has(0x0005614F):
+		if scheduled_limit_event is Dictionary:
 			_apply_original_recurring_shared_event(
-				scheduled_by_site[0x0005614F] as Dictionary,
+				scheduled_limit_event as Dictionary,
 				0x0005614F,
 			)
-			scheduled_by_site.erase(0x0005614F)
+			scheduled_limit_event = null
 		if (
 			original_route_update_active
-			or scheduled_by_site.has(0x00058946)
+			or scheduled_route_event is Dictionary
 		):
 			original_ai_idle_tick_counter += 1
-			if scheduled_by_site.has(0x00058946):
+			if scheduled_route_event is Dictionary:
 				_apply_original_recurring_shared_event(
-					scheduled_by_site[0x00058946] as Dictionary,
+					scheduled_route_event as Dictionary,
 					0x00058946,
 				)
-				scheduled_by_site.erase(0x00058946)
+				scheduled_route_event = null
 			elif (
 				evidence_round_index <= 0
 				and original_ai_idle_tick_counter
@@ -4969,7 +5305,7 @@ func _apply_current_idle_visual(advance_delta: float) -> bool:
 	var frames := group.get("frames", []) as Array[Texture2D]
 	if frames.is_empty():
 		return false
-	_request_continuous_animation_audio(group)
+	_request_continuous_animation_audio(group, advance_delta)
 	var desired_texture: Texture2D
 	if original_ai_idle_action_active and not is_crawling:
 		original_ai_idle_frame_index = clampi(
@@ -4998,7 +5334,8 @@ func _apply_current_idle_visual(advance_delta: float) -> bool:
 		# counters and continuous audio still advance above, but an unchanged
 		# texture/anchor does not need signature hashing, footprint lookup or a
 		# CanvasItem redraw on every 60 Hz tick.
-		_update_sprite_depth()
+		if visual_presentation_active:
+			_update_sprite_depth()
 		return true
 	_apply_visual_frame(
 		desired_texture,
@@ -5008,11 +5345,48 @@ func _apply_current_idle_visual(advance_delta: float) -> bool:
 	return true
 
 
+func _advance_movement_presentation(delta: float, displacement: Vector2) -> void:
+	var presentation_delta := maxf(delta, 0.0)
+	if modern_presentation_scheduling_enabled:
+		modern_movement_presentation_elapsed += presentation_delta
+		# Keep gameplay-facing movement state current even on the skipped visual
+		# tick so stopping, combat and footstep classification remain exact.
+		was_moving = true
+		if (
+			modern_movement_presentation_elapsed + 0.000001
+			< MODERN_MOVEMENT_PRESENTATION_REFRESH_SECONDS
+		):
+			return
+		presentation_delta = modern_movement_presentation_elapsed
+		modern_movement_presentation_elapsed = maxf(
+			modern_movement_presentation_elapsed
+				- MODERN_MOVEMENT_PRESENTATION_REFRESH_SECONDS,
+			0.0,
+		)
+	var displacement_group := direction_group_index(displacement)
+	if displacement_group != animation_group_index:
+		set_animation_group(displacement_group)
+	advance_animation(presentation_delta)
+	was_moving = true
+	if visual_presentation_active:
+		_update_sprite_depth()
+
+
 static func direction_group_index(direction: Vector2) -> int:
 	if direction.is_zero_approx():
 		return 7
-	var octant := roundi(direction.angle() / (PI / 4.0))
-	return posmod(octant + 5, 8)
+	# This is the same nearest-45-degree partition as round(angle / PI/4),
+	# expressed with tan(22.5°) comparisons. Dense patrols call it thousands of
+	# times per second; avoiding atan2 here removes a measurable hot-path cost.
+	var absolute_x := absf(direction.x)
+	var absolute_y := absf(direction.y)
+	if absolute_y <= absolute_x * OCTANT_AXIS_RATIO:
+		return 5 if direction.x >= 0.0 else 1
+	if absolute_x <= absolute_y * OCTANT_AXIS_RATIO:
+		return 7 if direction.y >= 0.0 else 3
+	if direction.x >= 0.0:
+		return 6 if direction.y >= 0.0 else 4
+	return 0 if direction.y >= 0.0 else 2
 
 
 func set_animation_group(group_index: int) -> bool:
@@ -5033,7 +5407,8 @@ func set_animation_group(group_index: int) -> bool:
 		animation_group_index = safe_index
 		animation_frame_index = 0
 		animation_elapsed = 0.0
-		update_animation_frame()
+		if visual_presentation_active:
+			update_animation_frame()
 	return true
 
 
@@ -5043,11 +5418,11 @@ func advance_animation(delta: float) -> void:
 	var group := movement_groups[animation_group_index]
 	if group.is_empty():
 		return
-	_request_continuous_animation_audio(group)
+	_request_continuous_animation_audio(group, delta)
 	var frames := group["frames"] as Array[Texture2D]
 	if frames.size() <= 1:
 		return
-	var frame_seconds := movement_animation_frame_seconds(group)
+	var frame_seconds := _current_movement_frame_seconds(group)
 	animation_elapsed += maxf(delta, 0.0)
 	var frame_changed := false
 	while animation_elapsed >= frame_seconds:
@@ -5055,14 +5430,40 @@ func advance_animation(delta: float) -> void:
 		animation_frame_index = (animation_frame_index + 1) % frames.size()
 		frame_changed = true
 	if frame_changed:
-		update_animation_frame()
+		if visual_presentation_active:
+			update_animation_frame()
 
 
 static func animation_frame_seconds(group: Dictionary) -> float:
-	return BASE_SPRITE_TICK_SECONDS * maxi(int(group.get("frame_hold_ticks", 1)), 1)
+	return ACTOR_ANIMATION_CONTROLLER.action_frame_seconds(group)
 
 
 func movement_animation_frame_seconds(group: Dictionary) -> float:
+	return movement_animation_frame_seconds_for_speed(group, move_speed)
+
+
+func _current_movement_frame_seconds(group: Dictionary) -> float:
+	if (
+		movement_frame_seconds_cache_speed != move_speed
+		or movement_frame_seconds_cache.size() != movement_groups.size()
+	):
+		movement_frame_seconds_cache.resize(movement_groups.size())
+		for group_index: int in range(movement_groups.size()):
+			movement_frame_seconds_cache[group_index] = (
+				movement_animation_frame_seconds_for_speed(
+					movement_groups[group_index],
+					move_speed,
+				)
+			)
+		movement_frame_seconds_cache_speed = move_speed
+	if (
+		animation_group_index >= 0
+		and animation_group_index < movement_frame_seconds_cache.size()
+	):
+		return maxf(
+			movement_frame_seconds_cache[animation_group_index],
+			0.001,
+		)
 	return movement_animation_frame_seconds_for_speed(group, move_speed)
 
 
@@ -5070,24 +5471,9 @@ static func movement_animation_frame_seconds_for_speed(
 	group: Dictionary,
 	speed: float,
 ) -> float:
-	var hold_ticks := maxi(int(group.get("frame_hold_ticks", 1)), 1)
-	var secondary_value: Variant = group.get("secondary_triplet", [])
-	var stride := Vector2.ZERO
-	if secondary_value is Array and (secondary_value as Array).size() >= 3:
-		stride = Vector2(
-			absf(float((secondary_value as Array)[0])),
-			absf(float((secondary_value as Array)[2])),
-		)
-	var safe_speed := maxf(speed, 0.001)
-	var seconds := (
-		stride.length() * float(hold_ticks) / safe_speed
-		if not stride.is_zero_approx()
-		else float(hold_ticks) / ORIGINAL_MOVEMENT_TICKS_PER_SECOND
-	)
-	return clampf(
-		seconds,
-		MODERN_MOVEMENT_MIN_FRAME_SECONDS,
-		MODERN_MOVEMENT_MAX_FRAME_SECONDS,
+	return ACTOR_ANIMATION_CONTROLLER.movement_frame_seconds(
+		group,
+		speed,
 	)
 
 
@@ -5141,7 +5527,27 @@ func _apply_visual_frame(
 		# Movement commits update depth after changing position. Reapplying the
 		# same idle/combat frame may still follow a restored/teleported position;
 		# _update_sprite_depth itself avoids dirtying an unchanged CanvasItem.
+		if visual_presentation_active:
+			_update_sprite_depth()
+		return
+	if use_compact_navigation_footprint:
+		# Modern bipeds have one direction-independent navigation/occlusion cell.
+		# Their SPR texture changes several times per second, but that must not
+		# rebuild geometry signatures, hash lookup arrays, or re-enter the row-slice
+		# and footprint pipelines on every animation frame.
+		sprite_texture = texture
+		sprite_anchor = anchor
+		active_visual_signature = "compact-biped"
+		if active_sprite_footprint_key != "compact-biped":
+			_apply_dynamic_sprite_footprint(group)
+		if sprite_drawn_by_row_slices:
+			sprite_drawn_by_row_slices = false
+			if row_slice_renderer != null and is_instance_valid(row_slice_renderer):
+				row_slice_renderer.call("clear_visual")
+		if not visual_presentation_active:
+			return
 		_update_sprite_depth()
+		queue_redraw()
 		return
 	var signature := "%d|%s|%s|%d|%d|%d" % [
 		texture.get_instance_id(),
@@ -5152,7 +5558,8 @@ func _apply_visual_frame(
 		hash(group.get("sight_lookup", [])),
 	]
 	if active_visual_signature == signature:
-		_update_sprite_depth()
+		if visual_presentation_active:
+			_update_sprite_depth()
 		return
 	sprite_texture = texture
 	sprite_anchor = anchor

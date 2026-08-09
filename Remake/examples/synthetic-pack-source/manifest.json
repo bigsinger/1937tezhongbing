@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "pack_id": "org.m1937.synthetic-training",
+  "version": "1.0.0",
+  "display_name": "Synthetic Training Ground",
+  "minimum_runtime_version": "1.0.0",
+  "level_entries": [
+    "levels/training/level.json"
+  ],
+  "dependencies": [],
+  "conflicts": [],
+  "source_declaration": "Repository-authored synthetic fixture; contains no original game assets.",
+  "capabilities": [
+    "terrain",
+    "mission"
+  ],
+  "files": []
+}

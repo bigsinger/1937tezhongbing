@@ -51,7 +51,7 @@ foreach ($collection in @($routes, $selector, $missions, $contract.levels)) {
 }
 $actualMaps = @(Get-ChildItem -LiteralPath $mod -Filter '1937m*.vwf' -File |
     Sort-Object Name | Select-Object -ExpandProperty Name)
-if ((Compare-Object $expectedMapNames $actualMaps).Count -ne 0) {
+if (@(Compare-Object $expectedMapNames $actualMaps).Count -ne 0) {
     throw (
         'Stable Mod VWF set must be exactly m000-m011. Actual: ' +
         ($actualMaps -join ', '))
@@ -69,11 +69,14 @@ for ($index = 0; $index -lt 12; $index++) {
     $selectorMission = $selector[$index]
     $remakeMission = $missions[$index]
     $level = $contract.levels[$index]
+    $routeIsExtension = (
+        $null -ne $route.PSObject.Properties['is_extension'] -and
+        [bool]$route.is_extension)
     if ($route.selector_level -ne $number -or
         $route.engine_mission -ne $number -or
         $route.id -ne $id -or
         $route.vwf_name.ToUpperInvariant() -ne $expectedVwf -or
-        $route.is_extension -or
+        $routeIsExtension -or
         $selectorMission.number -ne $number -or
         $selectorMission.id -ne $id -or
         $remakeMission.number -ne $number -or
@@ -100,7 +103,7 @@ foreach ($item in $allTrackedItems) {
     }
 }
 $domainIds = @($contract.feature_domains.id)
-if ($domainIds.Count -ne ($domainIds | Select-Object -Unique).Count) {
+if ($domainIds.Count -ne @($domainIds | Select-Object -Unique).Count) {
     throw 'Parity feature-domain ids must be unique.'
 }
 $directionDomain = @($contract.feature_domains | Where-Object {

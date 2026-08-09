@@ -327,7 +327,11 @@ func _test_settings_migration_and_validation(failures: Array[String]) -> void:
 	var migrated = GAME_SETTINGS.new()
 	var result: Dictionary = migrated.load_from_disk(legacy_path)
 	_expect(bool(result["ok"]), "legacy settings shape is loadable", failures)
-	_expect(int(migrated.values["schema_version"]) == 7, "legacy settings migrate to current schema", failures)
+	_expect(
+		int(migrated.values["schema_version"]) == GAME_SETTINGS.SCHEMA_VERSION,
+		"legacy settings migrate to current schema",
+		failures
+	)
 	_expect(is_equal_approx(migrated.audio_volume("master"), 0.42), "legacy volume migrates", failures)
 	_expect(migrated.display_settings()["mode"] == "windowed", "legacy fullscreen flag migrates", failures)
 	_expect(not migrated.hint_enabled("objectives"), "legacy hint flag migrates", failures)
@@ -781,7 +785,7 @@ func _test_save_migration_and_slot_safety(failures: Array[String]) -> void:
 	var policy: Dictionary = GAME_SAVE_STORE.migration_policy()
 	_expect(
 		int(policy["minimum_supported_schema_version"]) == 0
-		and int(policy["current_schema_version"]) == 2
+		and int(policy["current_schema_version"]) == GAME_SAVE_STORE.SCHEMA_VERSION
 		and str(policy["future_version_policy"])
 		== "reject_and_preserve_all_generations",
 		"save migration policy exposes its supported window and fail-closed future policy",
@@ -837,7 +841,11 @@ func _test_save_migration_and_slot_safety(failures: Array[String]) -> void:
 	var legacy: Dictionary = store.load_slot("legacy")
 	_expect(bool(legacy["ok"]), "v0 level save migrates", failures)
 	_expect(bool(legacy["migrated"]), "v0 load is explicitly reported as migrated", failures)
-	_expect(int((legacy["data"] as Dictionary)["schema_version"]) == 2, "v0 save receives current schema", failures)
+	_expect(
+		int((legacy["data"] as Dictionary)["schema_version"]) == GAME_SAVE_STORE.SCHEMA_VERSION,
+		"v0 save receives current schema",
+		failures
+	)
 	_expect(
 		str(((legacy["data"] as Dictionary)["session"] as Dictionary)["level_id"]) == "m002",
 		"v0 level ID survives migration",

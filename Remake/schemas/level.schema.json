@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://m1937.example/schemas/level.schema.json",
+  "title": "M1937 Remake level",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "world_size", "tile_size", "terrain_image", "entities", "task_anchors"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "world_size": {"$ref": "#/$defs/positive_size"},
+    "tile_size": {"$ref": "#/$defs/positive_size"},
+    "terrain_image": {"type": "string", "minLength": 1, "maxLength": 512},
+    "navigation": {"$ref": "#/$defs/navigation"},
+    "entities": {
+      "type": "array", "maxItems": 20000,
+      "items": {"$ref": "#/$defs/entity"}
+    },
+    "task_anchors": {
+      "type": "array", "maxItems": 4096,
+      "items": {"$ref": "#/$defs/anchor"}
+    }
+  },
+  "$defs": {
+    "positive_size": {
+      "type": "object", "additionalProperties": false,
+      "required": ["width", "height"],
+      "properties": {
+        "width": {"type": "integer", "minimum": 1, "maximum": 1048576},
+        "height": {"type": "integer", "minimum": 1, "maximum": 1048576}
+      }
+    },
+    "point": {
+      "type": "object", "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": {"x": {"type": "number"}, "y": {"type": "number"}}
+    },
+    "entity": {
+      "type": "object", "additionalProperties": true,
+      "required": ["scene_index", "resource_name", "x", "y", "runtime_role"],
+      "properties": {
+        "scene_index": {"type": "integer", "minimum": 0},
+        "database_entry_id": {"type": "integer", "minimum": 0},
+        "resource_name": {"type": "string", "minLength": 1, "maxLength": 256},
+        "display_name": {"type": "string", "maxLength": 128},
+        "category_name": {"type": "string", "maxLength": 128},
+        "x": {"type": "number"}, "y": {"type": "number"},
+        "reference_x": {"type": "number"}, "reference_y": {"type": "number"},
+        "sprite_preview": {"type": "string", "maxLength": 512},
+        "sprite_anchor": {"$ref": "#/$defs/point"},
+        "database_header_values": {"type": "array", "maxItems": 256, "items": {"type": "integer"}},
+        "patrol_waypoints": {"type": "array", "maxItems": 4096, "items": {"$ref": "#/$defs/point"}},
+        "faction_id": {"type": "integer"},
+        "direction_index": {"type": "integer", "minimum": 0, "maximum": 255},
+        "death_state": {"type": "integer", "minimum": 0},
+        "crawl_state": {"type": "integer", "minimum": 0},
+        "current_hit_points": {"type": "integer", "minimum": 0},
+        "default_attack_type": {"type": "integer", "minimum": 0},
+        "runtime_role": {"enum": ["player", "enemy", "escort", "ambient", "scenery", "pickup", "door", "trigger"]},
+        "runtime_actor_type": {"type": "integer", "minimum": 0},
+        "source_object_id": {"type": "string", "maxLength": 128},
+        "native_interaction": {"$ref": "#/$defs/native_interaction"}
+      }
+    },
+    "navigation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "relative_path", "width", "height", "cell_width", "cell_height", "layer_ids"],
+      "properties": {
+        "schema_version": {"const": 1},
+        "relative_path": {"type": "string", "minLength": 1, "maxLength": 512},
+        "width": {"type": "integer", "minimum": 1, "maximum": 1048576},
+        "height": {"type": "integer", "minimum": 1, "maximum": 1048576},
+        "cell_width": {"type": "integer", "minimum": 1, "maximum": 4096},
+        "cell_height": {"type": "integer", "minimum": 1, "maximum": 4096},
+        "layer_ids": {
+          "type": "object", "additionalProperties": false,
+          "required": ["line_of_sight_obstacle", "movement_obstacle", "event_layer", "manual_movement_correction"],
+          "properties": {
+            "line_of_sight_obstacle": {"type": "integer", "minimum": 1},
+            "movement_obstacle": {"type": "integer", "minimum": 1},
+            "event_layer": {"type": "integer", "minimum": 1},
+            "manual_movement_correction": {"type": "integer", "minimum": 1}
+          }
+        }
+      }
+    },
+    "native_interaction": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind", "starts_open", "locked_open"],
+          "properties": {
+            "kind": {"const": "door"},
+            "starts_open": {"type": "boolean"},
+            "locked_open": {"type": "boolean"}
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind", "original_inventory_kind", "item_id", "quantity", "quantity_mode", "attack_type", "item_name"],
+          "properties": {
+            "kind": {"const": "pickup"},
+            "original_inventory_kind": {"enum": ["backpack", "weapon"]},
+            "item_id": {"type": "integer", "minimum": 1},
+            "original_actor_type": {"type": "integer", "minimum": 1},
+            "quantity": {"type": "integer", "minimum": 1},
+            "quantity_mode": {"type": "integer"},
+            "attack_type": {"type": "integer", "minimum": 0, "maximum": 11},
+            "item_name": {"type": "string", "minLength": 1, "maxLength": 128}
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind"],
+          "properties": {"kind": {"const": "trigger"}}
+        },
+        {"type": "object", "maxProperties": 0}
+      ]
+    },
+    "anchor": {
+      "type": "object", "additionalProperties": true,
+      "required": ["scene_index", "kind", "x", "y"],
+      "properties": {
+        "scene_index": {"type": "integer", "minimum": 0},
+        "database_entry_id": {"type": "integer", "minimum": 0},
+        "kind": {"type": "string", "minLength": 1, "maxLength": 64},
+        "x": {"type": "number"}, "y": {"type": "number"},
+        "reference_x": {"type": "number"}, "reference_y": {"type": "number"}
+      }
+    }
+  }
+}

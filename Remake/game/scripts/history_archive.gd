@@ -3,6 +3,8 @@ extends RefCounted
 
 const SCHEMA_VERSION := 1
 const DEFAULT_PATH := "res://data/history_archive.json"
+const ENGLISH_PATH := "res://data/history_archive_en.json"
+const LOCALIZATION_SERVICE_SCRIPT: Script = preload("res://scripts/localization_service.gd")
 
 var entries: Dictionary = {}
 var last_error := ""
@@ -11,30 +13,36 @@ var last_error := ""
 func load_catalog(path: String = DEFAULT_PATH) -> bool:
 	last_error = ""
 	entries.clear()
+	if (
+		path == DEFAULT_PATH
+		and TranslationServer.get_locale().to_lower().begins_with("en")
+		and FileAccess.file_exists(ENGLISH_PATH)
+	):
+		path = ENGLISH_PATH
 	if not FileAccess.file_exists(path):
-		last_error = "历史档案不存在：%s" % path
+		last_error = _text("ERROR_HISTORY_MISSING_FORMAT") % path
 		return false
 	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
 	if not parsed is Dictionary:
-		last_error = "历史档案不是 JSON 对象"
+		last_error = _text("ERROR_HISTORY_NOT_OBJECT")
 		return false
 	var document := parsed as Dictionary
 	if int(document.get("schema_version", 0)) != SCHEMA_VERSION:
-		last_error = "不支持的历史档案版本"
+		last_error = _text("ERROR_HISTORY_UNSUPPORTED_VERSION")
 		return false
 	var raw_entries: Variant = document.get("missions", [])
 	if not raw_entries is Array:
-		last_error = "历史档案缺少 missions 数组"
+		last_error = _text("ERROR_HISTORY_MISSIONS_ARRAY")
 		return false
 	for raw_entry: Variant in raw_entries:
 		if not raw_entry is Dictionary:
-			last_error = "历史档案包含无效条目"
+			last_error = _text("ERROR_HISTORY_INVALID_ENTRY")
 			entries.clear()
 			return false
 		var entry := _normalize_entry(raw_entry as Dictionary)
 		var mission_id := str(entry.get("id", ""))
 		if mission_id.is_empty() or entries.has(mission_id):
-			last_error = "历史档案关卡 ID 缺失或重复"
+			last_error = _text("ERROR_HISTORY_DUPLICATE_ID")
 			entries.clear()
 			return false
 		entries[mission_id] = entry
@@ -116,7 +124,7 @@ func validate_required_missions(level_ids: Array[String]) -> Array[String]:
 	var failures: Array[String] = []
 	for mission_id: String in level_ids:
 		if not entries.has(mission_id):
-			failures.append("缺少历史档案：%s" % mission_id)
+			failures.append(_text("ERROR_HISTORY_REQUIRED_FORMAT") % mission_id)
 			continue
 		var entry := entries[mission_id] as Dictionary
 		for field: String in [
@@ -124,10 +132,14 @@ func validate_required_missions(level_ids: Array[String]) -> Array[String]:
 			"fact_vs_fiction", "optional_challenge",
 		]:
 			if str(entry.get(field, "")).strip_edges().is_empty():
-				failures.append("%s 缺少字段 %s" % [mission_id, field])
+				failures.append(
+					_text("ERROR_HISTORY_FIELD_FORMAT") % [mission_id, field]
+				)
 		for collection: String in ["people", "places", "weapons", "events"]:
 			if (entry.get(collection, []) as Array).is_empty():
-				failures.append("%s 缺少词条 %s" % [mission_id, collection])
+				failures.append(
+					_text("ERROR_HISTORY_TERM_FORMAT") % [mission_id, collection]
+				)
 	return failures
 
 
@@ -162,8 +174,9 @@ static func _append_terms(lines: Array[String], heading: String, terms: Array) -
 	lines.append("[b]%s[/b]" % heading)
 	for raw_term: Variant in terms:
 		var term := raw_term as Dictionary
-		lines.append("• [color=#d7c98b]%s[/color]：%s" % [
-			str(term.get("name", "")), str(term.get("note", "")),
+		lines.append(_text("HISTORY_TERM_FORMAT") % [
+			str(term.get("name", "")),
+			str(term.get("note", "")),
 		])
 
 
@@ -187,4 +200,4 @@ static func _evaluate_challenge(entry: Dictionary, statistics: Dictionary) -> St
 
 
 static func _text(key: String) -> String:
-	return str(TranslationServer.translate(StringName(key)))
+	return LOCALIZATION_SERVICE_SCRIPT.translate_key(key)

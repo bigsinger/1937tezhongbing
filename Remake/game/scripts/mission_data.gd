@@ -3,6 +3,7 @@ extends RefCounted
 
 const SCHEMA_VERSION := 1
 const CATALOG_PATH := "res://data/missions.json"
+const LOCALIZATION_SERVICE_SCRIPT: Script = preload("res://scripts/localization_service.gd")
 const DEFAULT_RULE_MODE := "stable_mod"
 const RULE_MODES: Array[String] = ["stable_mod", "repaired"]
 const RULE_PROFILE_SOURCES: Array[String] = [
@@ -48,8 +49,129 @@ static func load_mission_for_rule_mode(
 	for raw_mission: Variant in catalog["missions"] as Array:
 		var mission := raw_mission as Dictionary
 		if str(mission["id"]) == mission_id:
-			return apply_rule_mode(mission, rule_mode)
+			return localize_mission(apply_rule_mode(mission, rule_mode))
 	return {}
+
+
+static func localize_mission(mission: Dictionary) -> Dictionary:
+	if mission.is_empty():
+		return {}
+	var result := mission.duplicate(true)
+	var mission_token := str(result.get("id", "")).to_upper()
+	if mission_token.is_empty():
+		return result
+	result["title"] = _localized_or(
+		"MISSION_%s_TITLE" % mission_token,
+		str(result.get("title", "")),
+	)
+	var rule_mode := str(result.get("rule_mode", ""))
+	var objectives := result.get("objectives", []) as Array
+	for index: int in range(objectives.size()):
+		if not objectives[index] is Dictionary:
+			continue
+		var objective := (objectives[index] as Dictionary).duplicate(true)
+		var objective_token := str(objective.get("id", "")).to_upper()
+		var fallback := str(objective.get("label", ""))
+		var profile_key := "MISSION_%s_%s_OBJECTIVE_%s" % [
+			mission_token,
+			rule_mode.to_upper(),
+			objective_token,
+		]
+		var generic_key := "MISSION_%s_OBJECTIVE_%s" % [
+			mission_token,
+			objective_token,
+		]
+		var translated := _localized_or(profile_key, "")
+		objective["label"] = (
+			translated if not translated.is_empty()
+			else _localized_or(generic_key, fallback)
+		)
+		objectives[index] = objective
+	result["objectives"] = objectives
+	var media_cues_value: Variant = result.get("media_cues", {})
+	if result.has("media_cues") and media_cues_value is Dictionary:
+		result["media_cues"] = _localize_media_cues(
+			mission_token,
+			media_cues_value as Dictionary,
+		)
+	return result
+
+
+static func _localize_media_cues(
+	mission_token: String,
+	media_cues: Dictionary,
+) -> Dictionary:
+	var localized := media_cues.duplicate(true)
+	for section_value: Variant in localized.keys():
+		var section := str(section_value)
+		var section_value_data: Variant = localized[section_value]
+		if section_value_data is Dictionary and str(
+			(section_value_data as Dictionary).get("kind", "")
+		).is_empty():
+			var nested := (section_value_data as Dictionary).duplicate(true)
+			for cue_id_value: Variant in nested.keys():
+				if nested[cue_id_value] is Dictionary:
+					nested[cue_id_value] = _localize_media_cue(
+						mission_token,
+						"%s_%s" % [section, str(cue_id_value)],
+						nested[cue_id_value] as Dictionary,
+					)
+			localized[section_value] = nested
+		elif section_value_data is Dictionary:
+			localized[section_value] = _localize_media_cue(
+				mission_token,
+				section,
+				section_value_data as Dictionary,
+			)
+	return localized
+
+
+static func _localize_media_cue(
+	mission_token: String,
+	cue_token: String,
+	cue: Dictionary,
+) -> Dictionary:
+	var localized := cue.duplicate(true)
+	var key_prefix := "MISSION_%s_CUE_%s" % [
+		mission_token,
+		cue_token.to_upper(),
+	]
+	if localized.has("fallback_text"):
+		localized["fallback_text"] = _localized_or(
+			"%s_FALLBACK" % key_prefix,
+			str(localized.get("fallback_text", "")),
+		)
+	var lines := localized.get("lines", []) as Array
+	for index: int in range(lines.size()):
+		if not lines[index] is Dictionary:
+			continue
+		var line := (lines[index] as Dictionary).duplicate(true)
+		line["speaker"] = _localized_speaker(str(line.get("speaker", "")))
+		line["text"] = _localized_or(
+			"%s_LINE_%d" % [key_prefix, index],
+			str(line.get("text", "")),
+		)
+		lines[index] = line
+	localized["lines"] = lines
+	return localized
+
+
+static func _localized_speaker(speaker: String) -> String:
+	var speaker_keys := {
+		"\u4efb\u52a1\u63d0\u793a": "SPEAKER_MISSION_GUIDANCE",
+		"\u5f3a\u5b50": "SPEAKER_QIANGZI",
+		"\u8001\u8d75": "SPEAKER_LAO_ZHAO",
+		"\u53e4\u660e": "SPEAKER_GUMING",
+		"\u94c1\u86cb": "SPEAKER_TIEDAN",
+		"\u5927\u725b": "SPEAKER_DANIU",
+	}
+	var key := str(speaker_keys.get(speaker, ""))
+	return speaker if key.is_empty() else _localized_or(key, speaker)
+
+
+static func _localized_or(key: String, fallback: String) -> String:
+	var translated: String = LOCALIZATION_SERVICE_SCRIPT.translate_key(key)
+	return fallback if translated == key else translated
 
 
 static func apply_rule_mode(mission: Dictionary, rule_mode: String) -> Dictionary:

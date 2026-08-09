@@ -606,6 +606,29 @@ func _init() -> void:
 					row_texture,
 					Vector2(48, 50),
 					1298.0,
+					[49, 49, 89],
+				)
+			)
+			and int(row_renderer.call("active_part_count")) == 2
+			and row_renderer.call("active_part_positions")
+				== [Vector2(-48, -50), Vector2(16, -50)]
+			and row_renderer.call("active_depth_keys")
+				== [
+					MAIN_SCRIPT.WORLD_DEPTH.normal_z(1297.0),
+					MAIN_SCRIPT.WORLD_DEPTH.normal_z(1337.0),
+				]
+		),
+		"adjacent RowLookup columns with one baseline share an exact atlas draw item",
+		failures,
+	)
+	expect(
+		(
+			bool(
+				row_renderer.call(
+					"configure",
+					row_texture,
+					Vector2(48, 50),
+					1298.0,
 					[50, 50, 50],
 				)
 			)
@@ -615,8 +638,8 @@ func _init() -> void:
 		failures,
 	)
 	expect(
-		int(LEGACY_ROW_SLICE_SPRITE.cached_slice_count()) == 3,
-		"nonuniform RowLookup columns reuse three cached AtlasTextures",
+		int(LEGACY_ROW_SLICE_SPRITE.cached_slice_count()) == 4,
+		"nonuniform RowLookup runs reuse cached AtlasTextures",
 		failures,
 	)
 	LEGACY_ROW_SLICE_SPRITE.clear_texture_cache()
@@ -2532,6 +2555,27 @@ func _init() -> void:
 		(
 			"a collision-shifted one-cell actor reuses the same-displacement "
 			+ "evidence route only after every translated step is walkable"
+		),
+		failures,
+	)
+	prewarm_grid.release_goal(50)
+	var quantized_boundary_evidence_path: PackedVector2Array = (
+		prewarm_grid.find_path_for_scene(
+			50,
+			prewarm_start + evidence_shift + Vector2(0.0006, 0.0),
+			prewarm_destination + evidence_shift + Vector2(0.0001, 0.0),
+			true,
+		)
+	)
+	expect(
+		not quantized_boundary_evidence_path.is_empty()
+			and quantized_boundary_evidence_path[-1].is_equal_approx(
+				prewarm_destination + evidence_shift + Vector2(0.0001, 0.0)
+			)
+			and prewarm_grid.runtime_evidence_translated_hit_count == 2,
+		(
+			"independent sub-pixel key rounding still reuses an otherwise "
+			+ "identical, fully validated runtime-evidence displacement"
 		),
 		failures,
 	)

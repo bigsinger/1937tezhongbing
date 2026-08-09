@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://m1937.example/schemas/direction.schema.json",
+  "title": "M1937 Remake mission direction",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "level_id", "sequences"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "level_id": {"type": "string", "pattern": "^[a-z0-9._-]{1,64}$"},
+    "sequences": {
+      "type": "array", "maxItems": 512,
+      "items": {
+        "type": "object", "additionalProperties": true,
+        "required": ["id", "trigger", "steps"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9._-]{1,64}$"},
+          "trigger": {"type": "object", "minProperties": 1, "maxProperties": 32},
+          "once": {"type": "boolean"},
+          "steps": {
+            "type": "array", "maxItems": 2048,
+            "items": {
+              "type": "object", "additionalProperties": true,
+              "required": ["type"],
+              "properties": {"type": {"type": "string", "minLength": 1, "maxLength": 64}}
+            }
+          }
+        }
+      }
+    }
+  }
+}

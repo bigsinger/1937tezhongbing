@@ -1,6 +1,10 @@
 class_name SaveSlotSelector
 extends PanelContainer
 
+const LOCALIZATION_SERVICE_SCRIPT: Script = preload(
+	"res://scripts/localization_service.gd"
+)
+
 signal slot_chosen(slot_id: String)
 signal back_requested
 
@@ -42,7 +46,7 @@ func _build_interface() -> void:
 	_title.add_theme_color_override("font_color", Color(0.97, 0.88, 0.61))
 	content.add_child(_title)
 	var help := Label.new()
-	help.text = "选择一个存档位置；覆盖已有存档时需要再次确认。"
+	help.text = tr("UI_SAVE_SLOT_HELP")
 	help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	content.add_child(help)
 	var scroll := ScrollContainer.new()
@@ -56,7 +60,7 @@ func _build_interface() -> void:
 	_rows.add_theme_constant_override("separation", 7)
 	scroll.add_child(_rows)
 	var back := Button.new()
-	back.text = "返回"
+	back.text = tr("UI_BACK")
 	back.custom_minimum_size.y = 40.0
 	back.pressed.connect(func() -> void: back_requested.emit())
 	content.add_child(back)
@@ -68,7 +72,7 @@ func _rebuild_rows() -> void:
 		_rows.remove_child(child)
 		child.queue_free()
 	slot_buttons.clear()
-	_title.text = "保存游戏" if mode == Mode.SAVE else "读取游戏"
+	_title.text = tr("UI_SAVE_GAME_TITLE") if mode == Mode.SAVE else tr("UI_LOAD_GAME_TITLE")
 	var summaries_by_id: Dictionary = {}
 	for summary: Dictionary in slot_summaries:
 		summaries_by_id[str(summary.get("slot_id", ""))] = summary
@@ -120,7 +124,7 @@ func _on_slot_pressed(slot_id: String, occupied: bool) -> void:
 		_refresh_button_labels()
 		var button := slot_buttons.get(slot_id) as Button
 		if button != null:
-			button.text = "再次点击确认覆盖：%s" % _display_slot_name(slot_id)
+			button.text = tr("UI_SAVE_OVERWRITE_CONFIRM_FORMAT") % _display_slot_name(slot_id)
 		return
 	_pending_overwrite_slot = ""
 	slot_chosen.emit(slot_id)
@@ -142,27 +146,27 @@ func _refresh_button_labels() -> void:
 static func _slot_label(slot_id: String, summary: Dictionary) -> String:
 	var display_name := _display_slot_name(slot_id)
 	if summary.is_empty():
-		return "%s　—　空" % display_name
+		return _translate("UI_SAVE_SLOT_EMPTY_FORMAT") % display_name
 	var level_id := str(summary.get("level_id", "m000")).to_upper()
 	var elapsed := _format_elapsed(float(summary.get("elapsed_seconds", 0.0)))
 	var saved_at := _format_timestamp(int(summary.get("saved_at_unix", 0)))
-	var recovery := "　[备份恢复]" if bool(summary.get("recovered", false)) else ""
+	var recovery := _translate("UI_SAVE_RECOVERED_SUFFIX") if bool(summary.get("recovered", false)) else ""
 	return "%s　%s　%s　%s%s" % [display_name, level_id, elapsed, saved_at, recovery]
 
 
 static func _display_slot_name(slot_id: String) -> String:
 	if slot_id == "quick":
-		return "快速存档"
+		return _translate("UI_QUICK_SAVE_SLOT")
 	if slot_id == "autosave":
-		return "自动存档"
+		return _translate("UI_AUTOSAVE_SLOT")
 	if slot_id.begins_with("checkpoint_"):
-		return str(
-			TranslationServer.translate(StringName("UI_CHECKPOINT_SLOT_FORMAT"))
-		) % int(slot_id.trim_prefix("checkpoint_"))
+		return _translate("UI_CHECKPOINT_SLOT_FORMAT") % int(
+			slot_id.trim_prefix("checkpoint_")
+		)
 	if slot_id.begins_with("legacy_"):
-		return "原版导入 %s" % slot_id.trim_prefix("legacy_").to_upper()
+		return _translate("UI_LEGACY_SAVE_SLOT_FORMAT") % slot_id.trim_prefix("legacy_").to_upper()
 	if slot_id.begins_with("slot_"):
-		return "存档 %d" % int(slot_id.trim_prefix("slot_"))
+		return _translate("UI_MANUAL_SAVE_SLOT_FORMAT") % int(slot_id.trim_prefix("slot_"))
 	return slot_id
 
 
@@ -180,7 +184,7 @@ static func _format_timestamp(
 	utc_offset_minutes: int = 2147483647,
 ) -> String:
 	if unix_time <= 0:
-		return "未知时间"
+		return _translate("UI_UNKNOWN_TIME")
 	var resolved_offset := utc_offset_minutes
 	if resolved_offset == 2147483647:
 		resolved_offset = int(Time.get_time_zone_from_system().get("bias", 0))
@@ -196,3 +200,7 @@ static func _format_timestamp(
 		int(value.get("hour", 0)),
 		int(value.get("minute", 0)),
 	]
+
+
+static func _translate(key: String) -> String:
+	return str(LOCALIZATION_SERVICE_SCRIPT.translate_key(key))

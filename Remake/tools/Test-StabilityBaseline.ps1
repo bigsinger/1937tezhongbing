@@ -39,6 +39,8 @@ Assert-StabilityBaseline (
     [string]$document.profile_id -eq
         'twelve-level-headless-30-minute-stability-v2') (
     'the expected non-interactive stability profile was used')
+Assert-StabilityBaseline ([bool]$document.simulation_only_world_visuals) (
+    'the headless soak skips only immutable static-world rendering')
 Assert-StabilityBaseline ([double]$document.duration_seconds -ge 1800.0) (
     'the run sampled at least thirty minutes')
 Assert-StabilityBaseline ([int]$document.passes -ge 3) (

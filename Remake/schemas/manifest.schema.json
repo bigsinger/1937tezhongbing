@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://m1937.example/schemas/manifest.schema.json",
+  "title": "M1937 Remake content-pack manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "pack_id", "version", "display_name",
+    "minimum_runtime_version", "level_entries", "dependencies", "conflicts",
+    "source_declaration", "capabilities", "files"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "pack_id": {"$ref": "#/$defs/identifier"},
+    "version": {"$ref": "#/$defs/semver"},
+    "display_name": {"type": "string", "minLength": 1, "maxLength": 128},
+    "minimum_runtime_version": {"$ref": "#/$defs/semver"},
+    "level_entries": {
+      "type": "array", "minItems": 1, "maxItems": 128, "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^levels/[a-z0-9._-]{1,64}/level\\.json$"}
+    },
+    "dependencies": {"$ref": "#/$defs/identifier_list"},
+    "conflicts": {"$ref": "#/$defs/identifier_list"},
+    "source_declaration": {"type": "string", "minLength": 1, "maxLength": 512},
+    "capabilities": {"$ref": "#/$defs/identifier_list"},
+    "files": {
+      "type": "array", "maxItems": 8191,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["path", "length", "sha256"],
+        "properties": {
+          "path": {"$ref": "#/$defs/safe_path"},
+          "length": {"type": "integer", "minimum": 0, "maximum": 67108864},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {"type": "string", "pattern": "^[a-z0-9._-]{3,64}$"},
+    "identifier_list": {
+      "type": "array", "maxItems": 128, "uniqueItems": true,
+      "items": {"$ref": "#/$defs/identifier"}
+    },
+    "semver": {"type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"},
+    "safe_path": {
+      "type": "string", "minLength": 1, "maxLength": 512,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*\\\\)(?!.*:)[^/]+(?:/[^/]+)*$"
+    }
+  }
+}

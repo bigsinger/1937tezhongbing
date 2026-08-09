@@ -16,6 +16,21 @@ const LEGACY_ENEMY_AI_RULES: Script = preload(
 const LEGACY_ACTOR_AUDIO_RULES: Script = preload(
 	"res://scripts/legacy_actor_audio_rules.gd"
 )
+const MODERN_ENEMY_STRATEGY_SCRIPT: Script = preload(
+	"res://scripts/modern_enemy_strategy.gd"
+)
+const CLASSIC_ENEMY_STRATEGY_SCRIPT: Script = preload(
+	"res://scripts/classic_enemy_strategy.gd"
+)
+const TACTICAL_FEEDBACK_PRESENTER_SCRIPT: Script = preload(
+	"res://scripts/enemy_tactical_feedback_presenter.gd"
+)
+const ENEMY_PERCEPTION_CONTROLLER_SCRIPT: Script = preload(
+	"res://scripts/enemy_perception_controller.gd"
+)
+const ENEMY_DUTY_CONTROLLER_SCRIPT: Script = preload(
+	"res://scripts/enemy_duty_controller.gd"
+)
 const SENSE_INTERVAL_SECONDS := 0.20
 ## High-level decisions do not need to run at the 60 Hz movement cadence.
 ## Ten deterministic updates per second keep reaction/memory timers exact while
@@ -23,6 +38,12 @@ const SENSE_INTERVAL_SECONDS := 0.20
 ## remains independently phased at 5 Hz and movement still runs every physics
 ## tick, so this does not make guards step or animate less smoothly.
 const MODERN_BEHAVIOR_INTERVAL_SECONDS := 1.0 / 10.0
+## A stationary modern patrol still advances perception and behavior from the
+## authoritative 60 Hz enemy lane. Its inherited movement/collision state
+## machine, however, has no work until a path or combat action is issued. Batch
+## only that idle presentation tail at 15 Hz so AI timing and path decisions do
+## not move or bunch together.
+const MODERN_IDLE_BASE_INTERVAL_SECONDS := 1.0 / 15.0
 const CHASE_REPLAN_SECONDS := 0.50
 const SEARCH_TIMEOUT_SECONDS := 2.50
 const PATROL_PATH_RETRY_MIN_SECONDS := 0.75
@@ -69,7 +90,17 @@ const ORIGINAL_WORLD_ITEM_ABANDON_RANDOM_SPAN := 40
 ## moving third-party sight blockers, so drawing remains a cheap polyline.
 const TACTICAL_RANGE_CACHE_REFRESH_SECONDS := 0.50
 const TACTICAL_RANGE_CELL_SIZE := Vector2(32.0, 16.0)
+# Once a guard reaches a reported sound/last-known coordinate, a hostile in
+# the same original logical cell is a close contact rather than a distant fan
+# query. This keeps fixed-tick path rounding from producing a near-overlap
+# search loop without granting omnidirectional vision at ordinary distances.
+const LEGACY_SEARCH_CONFIRMATION_EXTENT := Vector2(32.0, 16.0)
 const TACTICAL_HEADING_QUANTUM_DEGREES := 3.0
+## Perception itself is scheduled at 5 Hz. Updating the quantized presentation
+## heading at 15 Hz remains smoother than its fastest search sweep can cross a
+## 3-degree bucket while avoiding a sine/atan evaluation for every guard on
+## every 60 Hz movement tick.
+const MODERN_GAZE_REFRESH_SECONDS := 1.0 / 15.0
 const PATROL_GAZE_SWEEP_AMPLITUDE_DEGREES := 18.0
 const PATROL_GAZE_SWEEP_PERIOD_SECONDS := 4.5
 const SEARCH_GAZE_SWEEP_AMPLITUDE_DEGREES := 34.0
@@ -82,6 +113,11 @@ const VEHICLE_PURSUIT_SPEED_MULTIPLIER := 1.55
 ## lands within roughly one original isometric cell of it. A partial A* route
 ## stopped by a wall then falls through to the next compact candidate.
 const EDITORIAL_SEARCH_ENDPOINT_TOLERANCE := 48.0
+## Enemy detection only consumes the player/escort roster assigned through
+## set_potential_targets(). Querying every enemy, ambient actor and explosive
+## in the broad phase made dense missions inspect dozens of guaranteed
+## non-hostile records before reaching that small roster.
+const ENEMY_TARGET_SPATIAL_TAGS := ["enemy_target"]
 
 enum BehaviorState {
 	PATROL,
@@ -131,6 +167,10 @@ var sense_profile: Dictionary = {}
 var potential_targets: Array[Node2D] = []
 var potential_world_items: Array[Node2D] = []
 var potential_corpses: Array[Node2D] = []
+var nearby_target_query_buffer: Array[Node2D] = []
+## Reused by the 5 Hz perception lane. Allocating one ignored-scene array for
+## every candidate guard/target pair was visible in dense-level profiles.
+var detection_ignored_scene_indices: Array = []
 var current_target: Node2D
 var legacy_world_item_target: Node2D
 var legacy_world_item_interaction_pending := false
@@ -164,6 +204,7 @@ var sense_elapsed := 0.0
 var perception_schedule_slot_count := 1
 var perception_schedule_initial_elapsed := 0.0
 var modern_behavior_elapsed := 0.0
+var modern_idle_base_elapsed := 0.0
 var chase_replan_elapsed := 0.0
 var last_chase_path_goal := Vector2(INF, INF)
 var search_elapsed := 0.0
@@ -187,6 +228,7 @@ var legacy_tracked_face_gate_last_evidence_round_index := 0
 var pending_original_coordinate_alert_active := false
 var pending_original_coordinate_alert_position := Vector2.ZERO
 var original_actor_command_serial := 0
+var last_direction_sync_animation_group := -1
 var attack_recheck_elapsed := 0.0
 var attack_recheck_seconds := ATTACK_RECHECK_MIN_SECONDS
 var attack_count := 0
@@ -210,7 +252,13 @@ var tactical_cache_refresh_remaining := 0.0
 var tactical_range_cache_rebuild_count := 0
 var tactical_range_cache_rebuild_usec := 0
 var mission_ai_coordinator: Node
-var world_spatial_index: RefCounted
+var enemy_strategy: RefCounted = CLASSIC_ENEMY_STRATEGY_SCRIPT.new()
+var tactical_feedback_presenter: RefCounted = TACTICAL_FEEDBACK_PRESENTER_SCRIPT.new()
+var perception_controller: EnemyPerceptionController = (
+	ENEMY_PERCEPTION_CONTROLLER_SCRIPT.new()
+)
+var duty_controller: EnemyDutyController = ENEMY_DUTY_CONTROLLER_SCRIPT.new()
+var world_spatial_index: WorldSpatialIndex
 ## No miss dispersion is applied until an explicitly editorial difficulty
 ## profile configures it.  Original-parity mode therefore uses the recovered
 ## hit/damage path without a remake-only random miss layer.
@@ -237,9 +285,22 @@ var locomotion_can_move := true
 var gaze_heading_degrees := -1.0
 var gaze_heading_bucket := -1
 var gaze_sweep_elapsed := 0.0
-var duty_snapshot_active := false
-var duty_anchor_position := Vector2.ZERO
-var duty_patrol_index := 0
+var gaze_heading_refresh_elapsed := 0.0
+var duty_snapshot_active: bool:
+	get:
+		return duty_controller.active
+	set(value):
+		duty_controller.active = value
+var duty_anchor_position: Vector2:
+	get:
+		return duty_controller.anchor
+	set(value):
+		duty_controller.anchor = value
+var duty_patrol_index: int:
+	get:
+		return duty_controller.patrol_index
+	set(value):
+		duty_controller.patrol_index = maxi(value, 0)
 var return_to_duty_destination := Vector2.ZERO
 var return_to_duty_patrol_index := -1
 var return_to_duty_elapsed := 0.0
@@ -397,6 +458,10 @@ func configure_enemy(
 	return_to_duty_elapsed = 0.0
 	last_chase_path_goal = Vector2(INF, INF)
 	gaze_sweep_elapsed = float(posmod(scene_index * 29, 270)) / 60.0
+	gaze_heading_refresh_elapsed = (
+		float(posmod(scene_index * 31, 4)) / 60.0
+	)
+	modern_idle_base_elapsed = float(posmod(scene_index * 17, 4)) / 60.0
 	gaze_heading_degrees = _authored_facing_heading_degrees()
 	gaze_heading_bucket = _quantized_heading_bucket(gaze_heading_degrees)
 	stable_mod_patrol_timeline = normalized_patrol_timeline
@@ -604,10 +669,15 @@ func configure_perception_schedule(
 		perception_schedule_initial_elapsed,
 		MODERN_BEHAVIOR_INTERVAL_SECONDS,
 	)
+	modern_idle_base_elapsed = fmod(
+		perception_schedule_initial_elapsed,
+		MODERN_IDLE_BASE_INTERVAL_SECONDS,
+	)
 
 
 func configure_world_spatial_index(index: RefCounted) -> void:
-	world_spatial_index = index
+	super.configure_world_spatial_index(index)
+	world_spatial_index = index as WorldSpatialIndex
 
 
 func set_potential_world_items(items: Array) -> void:
@@ -630,6 +700,16 @@ func configure_editorial_ai(
 	cooperation: Dictionary,
 ) -> void:
 	mission_ai_coordinator = coordinator
+	enemy_strategy = MODERN_ENEMY_STRATEGY_SCRIPT.new()
+	var blackboard: RefCounted
+	if coordinator != null:
+		var blackboard_value: Variant = coordinator.get("evidence_blackboard")
+		if blackboard_value is RefCounted:
+			blackboard = blackboard_value as RefCounted
+	var hearing_radius := float(sense_profile.get("hearing_radius", 0.0))
+	if hearing_radius <= 0.0:
+		hearing_radius = maxf(float(sense_profile.get("horizontal_radius", 0.0)), float(sense_profile.get("vertical_radius", 0.0)))
+	enemy_strategy.configure(scene_index, blackboard, hearing_radius)
 	legacy_actor_scheduler_enabled = coordinator == null
 	editorial_aim_error_multiplier = maxf(
 		0.0, float(applied_values.get("aim_error_multiplier", 1.0))
@@ -675,6 +755,7 @@ func configure_editorial_ai(
 func clear_editorial_ai_coordinator(source: Node = null) -> void:
 	if source == null or mission_ai_coordinator == source:
 		mission_ai_coordinator = null
+		enemy_strategy = CLASSIC_ENEMY_STRATEGY_SCRIPT.new()
 		legacy_actor_scheduler_enabled = true
 
 
@@ -720,24 +801,34 @@ static func deterministic_aim_sample(enemy_scene_index: int, attack_serial: int)
 
 
 func _physics_process(delta: float) -> void:
-	var enemy_logic_started_usec := (
+	simulate_tick(delta)
+	_notify_spatial_bucket_crossing()
+
+
+func simulate_tick(delta: float, delta_is_fixed: bool = false) -> void:
+	var enemy_total_started_usec := (
 		Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
 	)
-	var safe_delta := maxf(delta, 0.0)
+	var safe_delta := delta if delta_is_fixed else resolved_simulation_delta(delta)
 	legacy_contact_acquired_this_tick = false
-	_advance_gaze_heading(safe_delta)
-	var command_serial_at_update_start := original_actor_command_serial
-	var legacy_pre_started_usec := (
+	var section_started_usec := (
 		Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
 	)
+	_advance_gaze_heading(safe_delta)
+	_record_debug_physics_section("enemy_gaze", section_started_usec)
+	var command_serial_at_update_start := original_actor_command_serial
 	if legacy_actor_scheduler_enabled:
 		_advance_original_crt_actor_random_tick(safe_delta)
 		_advance_original_tracked_target_face_gate(safe_delta)
-	_record_debug_physics_section("enemy_legacy_pre", legacy_pre_started_usec)
 	if not is_alive or combat_action != CombatAction.NONE or hurt_remaining > 0.0:
-		_record_debug_physics_section("enemy_logic", enemy_logic_started_usec)
-		super._physics_process(safe_delta)
-		_advance_tactical_range_cache(safe_delta)
+		section_started_usec = (
+			Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
+		)
+		super.simulate_tick(safe_delta, true)
+		_record_debug_physics_section("enemy_base", section_started_usec)
+		if tactical_ranges_visible:
+			_advance_tactical_range_cache(safe_delta)
+		_record_debug_physics_section("enemy_total", enemy_total_started_usec)
 		return
 	var legacy_effect_blocked_at_start := (
 		legacy_hypnosis_active
@@ -746,28 +837,33 @@ func _physics_process(delta: float) -> void:
 	)
 	if legacy_effect_blocked_at_start:
 		advance_legacy_world_item_effect_ticks(1)
-		_record_debug_physics_section("enemy_logic", enemy_logic_started_usec)
-		super._physics_process(safe_delta)
-		original_direction_index = (
-			IMPORTED_SPRITE_ANIMATION.direction_index_for_legacy_group(
-				animation_group_index
-			)
+		section_started_usec = (
+			Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
 		)
-		_advance_tactical_range_cache(safe_delta)
+		super.simulate_tick(safe_delta, true)
+		_record_debug_physics_section("enemy_base", section_started_usec)
+		_sync_original_direction_from_animation()
+		if tactical_ranges_visible:
+			_advance_tactical_range_cache(safe_delta)
+		_record_debug_physics_section("enemy_total", enemy_total_started_usec)
 		return
-	path_request_delay_remaining = maxf(path_request_delay_remaining - safe_delta, 0.0)
+	if path_request_delay_remaining > 0.0:
+		path_request_delay_remaining = maxf(
+			path_request_delay_remaining - safe_delta,
+			0.0,
+		)
 	sense_elapsed += safe_delta
 	chase_replan_elapsed += safe_delta
 	attack_recheck_elapsed += safe_delta
 	if sense_elapsed >= SENSE_INTERVAL_SECONDS and behavior_state != BehaviorState.REGROUP:
 		sense_elapsed = fmod(sense_elapsed, SENSE_INTERVAL_SECONDS)
-		var detection_started_usec := (
+		section_started_usec = (
 			Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
 		)
 		_update_detection()
-		_record_debug_physics_section("enemy_detection", detection_started_usec)
+		_record_debug_physics_section("enemy_detection", section_started_usec)
 	var attention_holds_idle := (
-		is_special_controlled()
+		special_control_lock_count > 0
 		and behavior_state == BehaviorState.PATROL
 		and current_target == null
 	)
@@ -781,31 +877,62 @@ func _physics_process(delta: float) -> void:
 		)
 		if behavior_update_due:
 			behavior_delta = modern_behavior_elapsed
-			modern_behavior_elapsed = fmod(
-				modern_behavior_elapsed,
-				MODERN_BEHAVIOR_INTERVAL_SECONDS,
+			# The epsilon above intentionally accepts the binary floating-point
+			# value immediately below 0.1 seconds. Feeding that value to fmod()
+			# returned it unchanged, so the next 60 Hz tick ran behavior again and
+			# the advertised 10 Hz lane became roughly 20 Hz. Consume one interval
+			# explicitly and clamp the tolerated sub-microsecond deficit instead.
+			modern_behavior_elapsed = maxf(
+				modern_behavior_elapsed - MODERN_BEHAVIOR_INTERVAL_SECONDS,
+				0.0,
 			)
 	if not attention_holds_idle and behavior_update_due:
-		var behavior_started_usec := (
+		section_started_usec = (
 			Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
 		)
 		_update_behavior(behavior_delta)
-		_record_debug_physics_section("enemy_behavior", behavior_started_usec)
-	var pending_alert_started_usec := (
-		Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
+		_record_debug_physics_section("enemy_behavior", section_started_usec)
+	if pending_original_coordinate_alert_active:
+		_consume_pending_original_coordinate_alert(
+			command_serial_at_update_start
+		)
+	var batch_idle_base := (
+		mission_ai_coordinator != null
+		and behavior_state == BehaviorState.PATROL
+		and current_target == null
+		and movement_path_index >= movement_path.size()
+		and combat_action == CombatAction.NONE
+		and attack_cooldown_remaining <= 0.0
+		and movement_recovery_cooldown <= 0.0
+		and not was_moving
 	)
-	_consume_pending_original_coordinate_alert(
-		command_serial_at_update_start
-	)
-	_record_debug_physics_section("enemy_pending_alert", pending_alert_started_usec)
-	_record_debug_physics_section("enemy_logic", enemy_logic_started_usec)
-	super._physics_process(safe_delta)
-	if attention_holds_idle and is_special_controlled():
+	if batch_idle_base:
+		modern_idle_base_elapsed += safe_delta
+		if (
+			modern_idle_base_elapsed + 0.000001
+			>= MODERN_IDLE_BASE_INTERVAL_SECONDS
+		):
+			var presentation_delta := modern_idle_base_elapsed
+			modern_idle_base_elapsed = maxf(
+				modern_idle_base_elapsed - MODERN_IDLE_BASE_INTERVAL_SECONDS,
+				0.0,
+			)
+			_apply_idle_state()
+			_advance_original_ai_idle_animation(presentation_delta)
+	else:
+		modern_idle_base_elapsed = 0.0
+		section_started_usec = (
+			Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
+		)
+		super.simulate_tick(safe_delta, true)
+		_record_debug_physics_section("enemy_base", section_started_usec)
+	if attention_holds_idle and special_control_lock_count > 0:
 		_face_special_control_source()
-	original_direction_index = (
-		IMPORTED_SPRITE_ANIMATION.direction_index_for_legacy_group(animation_group_index)
-	)
-	_advance_tactical_range_cache(safe_delta)
+	if last_direction_sync_animation_group != animation_group_index:
+		_sync_original_direction_from_animation()
+	if tactical_ranges_visible:
+		_advance_tactical_range_cache(safe_delta)
+	_record_debug_physics_section("enemy_total", enemy_total_started_usec)
 
 
 func _advance_original_tracked_target_face_gate(delta: float) -> bool:
@@ -884,11 +1011,7 @@ func _apply_original_tracked_target_face_value(random_value: int) -> bool:
 	if target_direction.is_zero_approx():
 		return true
 	if set_animation_group(direction_group_index(target_direction)):
-		original_direction_index = (
-			IMPORTED_SPRITE_ANIMATION.direction_index_for_legacy_group(
-				animation_group_index
-			)
-		)
+		_sync_original_direction_from_animation()
 	return true
 
 
@@ -961,38 +1084,34 @@ func _update_detection() -> void:
 	var nearest_visible: Node2D
 	var nearest_distance_squared := INF
 	if _original_recurring_evidence_allows_new_live_contact():
-		for target: Node2D in _nearby_potential_targets():
-			if not _is_hostile_target(target):
-				continue
-			var disguise_mode := _disguise_detection_mode(target)
-			var visible := disguise_mode == "close_without_los"
-			if not visible:
-				var ignored: Array = [scene_index]
-				var target_scene_index := int(target.get("scene_index"))
-				if target_scene_index >= 0:
-					ignored.append(target_scene_index)
-				visible = TACTICAL_SENSES.can_detect_original_heading(
-					dynamic_occupancy,
-					position,
-					target.position,
-					perception_heading_degrees(),
-					TACTICAL_SENSES.original_direction_half_angle_degrees(
-						original_direction_index
-					),
-					sense_profile,
-					bool(target.get("is_crawling")),
-					ignored,
-				)
+		# Modern guards keep visual attention on an already acquired live target.
+		# Re-scanning the complete nearby roster every 200 ms added no tactical
+		# value while chasing; if contact is lost we immediately fall back to the
+		# full scan so another visible player can still be acquired this tick.
+		if (
+			mission_ai_coordinator != null
+			and behavior_state in [BehaviorState.CHASE, BehaviorState.ATTACK]
+			and current_target != null
+			and is_instance_valid(current_target)
+			and _target_is_alive(current_target)
+			and _is_target_visibly_detectable(current_target)
+		):
+			nearest_visible = current_target
+			nearest_distance_squared = position.distance_squared_to(
+				current_target.position
+			)
+		if nearest_visible == null:
+			for target: Node2D in _nearby_potential_targets():
+				if not _is_target_visibly_detectable(target):
+					continue
 			# Hearing is event driven. A standing, silent target inside the recovered
 			# radius must not be treated as a continuous omnidirectional noise source;
 			# Main routes explicit N-key, dropped-item, shot and explosion events to
 			# investigate_position/receive_alert.
-			if not visible:
-				continue
-			var distance_squared := position.distance_squared_to(target.position)
-			if distance_squared < nearest_distance_squared:
-				nearest_distance_squared = distance_squared
-				nearest_visible = target
+				var distance_squared := position.distance_squared_to(target.position)
+				if distance_squared < nearest_distance_squared:
+					nearest_distance_squared = distance_squared
+					nearest_visible = target
 	if nearest_visible != null:
 		if mission_ai_coordinator == null:
 			_acquire_visible_live_target(nearest_visible)
@@ -1039,6 +1158,68 @@ func _update_detection() -> void:
 				_begin_legacy_world_item_investigation(visible_world_item)
 
 
+func _is_target_visibly_detectable(target: Node2D) -> bool:
+	if not _is_hostile_target(target):
+		return false
+	var disguise_mode := _disguise_detection_mode(target)
+	if disguise_mode == "close_without_los":
+		return true
+	detection_ignored_scene_indices.clear()
+	detection_ignored_scene_indices.append(scene_index)
+	var target_scene_index := int(target.get("scene_index"))
+	if target_scene_index >= 0:
+		detection_ignored_scene_indices.append(target_scene_index)
+	if perception_controller.can_detect_heading(
+		dynamic_occupancy,
+		position,
+		target.position,
+		perception_heading_degrees(),
+		TACTICAL_SENSES.original_direction_half_angle_degrees(
+			original_direction_index
+		),
+		sense_profile,
+		bool(target.get("is_crawling")),
+		detection_ignored_scene_indices,
+	):
+		return true
+	return _can_confirm_legacy_search_contact(
+		target,
+		detection_ignored_scene_indices,
+	)
+
+
+func _can_confirm_legacy_search_contact(
+	target: Node2D,
+	ignored_scene_indices: Array,
+) -> bool:
+	if (
+		mission_ai_coordinator != null
+		or behavior_state != BehaviorState.SEARCH
+		or not (legacy_search_active or legacy_search_finishing)
+		or target == null
+		or not is_instance_valid(target)
+	):
+		return false
+	var offset := target.position - position
+	if (
+		absf(offset.x) > LEGACY_SEARCH_CONFIRMATION_EXTENT.x
+		or absf(offset.y) > LEGACY_SEARCH_CONFIRMATION_EXTENT.y
+	):
+		return false
+	if not bool(sense_profile.get("requires_line_of_sight", true)):
+		return true
+	return (
+		dynamic_occupancy != null
+		and dynamic_occupancy.has_method("has_line_of_sight")
+		and bool(dynamic_occupancy.call(
+			"has_line_of_sight",
+			position,
+			target.position,
+			ignored_scene_indices,
+		))
+	)
+
+
 func _nearby_potential_targets() -> Array[Node2D]:
 	if world_spatial_index == null:
 		return potential_targets
@@ -1048,15 +1229,13 @@ func _nearby_potential_targets() -> Array[Node2D]:
 	)
 	if radius <= 0.0:
 		return potential_targets
-	var result: Array[Node2D] = []
-	for raw_candidate: Variant in world_spatial_index.query_radius(
+	world_spatial_index.query_radius_into(
+		nearby_target_query_buffer,
 		position,
 		radius,
-		["combatant"],
-	):
-		if raw_candidate is Node2D:
-			result.append(raw_candidate as Node2D)
-	return result
+		ENEMY_TARGET_SPATIAL_TAGS,
+	)
+	return nearby_target_query_buffer
 
 
 func _update_editorial_suspicion(target: Node2D) -> void:
@@ -1145,6 +1324,7 @@ func _acquire_visible_live_target(target: Node2D) -> bool:
 		and behavior_state in [BehaviorState.CHASE, BehaviorState.ATTACK]
 	)
 	current_target = target
+	gaze_heading_refresh_elapsed = MODERN_GAZE_REFRESH_SECONDS
 	last_known_target_position = target.position
 	search_elapsed = 0.0
 	if already_tracking:
@@ -1198,10 +1378,18 @@ func _logical_heading_to(world_position: Vector2) -> float:
 
 func _advance_gaze_heading(delta: float) -> void:
 	gaze_sweep_elapsed += maxf(delta, 0.0)
-	var heading := _authored_facing_heading_degrees()
 	# Strict-original mode keeps the recovered eight-direction perception exactly
 	# as authored.  Smooth tracking and patrol/search scanning are modern-rule
 	# features, so they are enabled only when the mission AI coordinator exists.
+	if mission_ai_coordinator != null:
+		gaze_heading_refresh_elapsed += maxf(delta, 0.0)
+		if gaze_heading_refresh_elapsed < MODERN_GAZE_REFRESH_SECONDS:
+			return
+		gaze_heading_refresh_elapsed = fmod(
+			gaze_heading_refresh_elapsed,
+			MODERN_GAZE_REFRESH_SECONDS,
+		)
+	var heading := _authored_facing_heading_degrees()
 	if mission_ai_coordinator != null:
 		if (
 			behavior_state in [BehaviorState.CHASE, BehaviorState.ATTACK]
@@ -1232,6 +1420,17 @@ func _advance_gaze_heading(delta: float) -> void:
 	# perception reads the same quantized heading on its normal 5 Hz schedule.
 	if tactical_ranges_visible:
 		tactical_cache_refresh_remaining = 0.0
+
+
+func _sync_original_direction_from_animation() -> void:
+	if last_direction_sync_animation_group == animation_group_index:
+		return
+	last_direction_sync_animation_group = animation_group_index
+	original_direction_index = (
+		IMPORTED_SPRITE_ANIMATION.direction_index_for_legacy_group(
+			animation_group_index
+		)
+	)
 
 
 func perception_heading_degrees() -> float:
@@ -1267,9 +1466,7 @@ func _set_enemy_pursuit_locomotion(active: bool) -> void:
 func _capture_duty_snapshot() -> void:
 	if mission_ai_coordinator == null or duty_snapshot_active:
 		return
-	duty_snapshot_active = true
-	duty_anchor_position = position
-	duty_patrol_index = patrol_index
+	duty_controller.capture(position, patrol_index)
 
 
 func _end_modern_alert_or_enter_patrol() -> void:
@@ -1329,13 +1526,24 @@ func _update_return_to_duty(delta: float) -> void:
 func _finish_return_to_duty() -> void:
 	if return_to_duty_patrol_index >= 0:
 		patrol_index = return_to_duty_patrol_index
-	duty_snapshot_active = false
+	duty_controller.clear()
 	return_to_duty_patrol_index = -1
 	return_to_duty_elapsed = 0.0
 	_enter_patrol()
 
 
 func _update_behavior(delta: float) -> void:
+	if (
+		mission_ai_coordinator != null
+		and behavior_state in [BehaviorState.CHASE, BehaviorState.ATTACK, BehaviorState.SEARCH]
+		and maximum_hit_points > 0
+		and float(current_hit_points) / float(maximum_hit_points) <= 0.20
+		and duty_snapshot_active
+	):
+		# Wounded modern guards disengage through the same authoritative path
+		# service. Classic parity never constructs the coordinator.
+		_begin_return_to_duty()
+		return
 	if behavior_state != BehaviorState.PATROL:
 		minimum_actor_separation = -1.0
 	if (
@@ -1355,13 +1563,7 @@ func _update_behavior(delta: float) -> void:
 			if current_target == null or not is_instance_valid(current_target):
 				_end_modern_alert_or_enter_patrol()
 				return
-			var chase_range_started_usec := (
-				Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
-			)
 			var chase_can_attack := _can_attack_current_target()
-			_record_debug_physics_section(
-				"enemy_attack_range_check", chase_range_started_usec
-			)
 			if chase_can_attack:
 				behavior_state = BehaviorState.ATTACK
 				_set_enemy_pursuit_locomotion(false)
@@ -1400,13 +1602,7 @@ func _update_behavior(delta: float) -> void:
 			if current_target == null or not is_instance_valid(current_target):
 				_end_modern_alert_or_enter_patrol()
 				return
-			var attack_range_started_usec := (
-				Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
-			)
 			var attack_can_continue := _can_attack_current_target()
-			_record_debug_physics_section(
-				"enemy_attack_range_check", attack_range_started_usec
-			)
 			if not attack_can_continue:
 				behavior_state = BehaviorState.CHASE
 				_set_enemy_pursuit_locomotion(true)
@@ -1416,9 +1612,6 @@ func _update_behavior(delta: float) -> void:
 				attack_recheck_elapsed = 0.0
 				attack_recheck_seconds = (
 					_sample_original_attack_interval()
-				)
-				var permission_started_usec := (
-					Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
 				)
 				if (
 					mission_ai_coordinator != null
@@ -1430,35 +1623,19 @@ func _update_behavior(delta: float) -> void:
 						)
 					)
 				):
-					_record_debug_physics_section(
-						"enemy_attack_permission", permission_started_usec
-					)
 					_enter_regroup()
 					return
-				_record_debug_physics_section(
-					"enemy_attack_permission", permission_started_usec
-				)
 				_pending_editorial_aim_miss = will_editorial_attack_miss(
 					current_target, attack_count
 				)
 				last_editorial_aim_miss = _pending_editorial_aim_miss
-				var attack_start_started_usec := (
-					Time.get_ticks_usec() if debug_physics_profiling_enabled else 0
-				)
 				if try_start_attack(
 					current_target,
 					_is_identified_disguise_target(current_target),
 				):
-					_record_debug_physics_section(
-						"enemy_attack_start", attack_start_started_usec
-					)
 					attack_count += 1
 					attack_committed.emit(
 						self, current_target, int(weapon_profile.get("attack_type", 0))
-					)
-				else:
-					_record_debug_physics_section(
-						"enemy_attack_start", attack_start_started_usec
 					)
 		BehaviorState.SEARCH:
 			if legacy_search_active or legacy_search_finishing:
@@ -2096,7 +2273,11 @@ func receive_editorial_search_order(
 	role: String,
 	command_serial: int,
 ) -> bool:
-	if not is_alive or not _is_hostile_target(target) or not raw_candidates is Array:
+	if (
+		not is_alive
+		or (target != null and not _is_hostile_target(target))
+		or not raw_candidates is Array
+	):
 		return false
 	var candidates := raw_candidates as Array
 	if candidates.is_empty():
@@ -2413,37 +2594,26 @@ func can_discover_legacy_corpse(corpse: Node2D) -> bool:
 		)
 	):
 		return false
-	if TACTICAL_SENSES.original_visibility_band_heading(
-		position,
-		corpse.position,
-		perception_heading_degrees(),
-		TACTICAL_SENSES.original_direction_half_angle_degrees(
-			original_direction_index
-		),
-		sense_profile,
-		false,
-	) != LEGACY_CORPSE_DISCOVERY_RULES.REQUIRED_VISIBILITY_BAND:
-		return false
-	if not bool(sense_profile.get("requires_line_of_sight", true)):
-		return true
-	if (
-		dynamic_occupancy == null
-		or not dynamic_occupancy.has_method("has_line_of_sight")
-	):
-		return false
 	var ignored: Array = []
 	if scene_index >= 0:
 		ignored.append(scene_index)
 	var corpse_scene_index := int(corpse.get("scene_index"))
 	if corpse_scene_index >= 0:
 		ignored.append(corpse_scene_index)
-	return bool(
-		dynamic_occupancy.has_line_of_sight(
+	return int(
+		perception_controller.visibility_band_index_heading(
+			dynamic_occupancy,
 			position,
 			corpse.position,
+			perception_heading_degrees(),
+			TACTICAL_SENSES.original_direction_half_angle_degrees(
+				original_direction_index
+			),
+			sense_profile,
+			false,
 			ignored,
 		)
-	)
+	) == LEGACY_CORPSE_DISCOVERY_RULES.REQUIRED_VISIBILITY_BAND
 
 
 func _first_visible_legacy_corpse() -> Node2D:
@@ -2600,34 +2770,23 @@ func can_consider_legacy_world_item(world_item: Node2D) -> bool:
 		faction_id,
 	):
 		return false
-	if TACTICAL_SENSES.original_visibility_band_heading(
-		position,
-		world_item.position,
-		perception_heading_degrees(),
-		TACTICAL_SENSES.original_direction_half_angle_degrees(
-			original_direction_index
-		),
-		sense_profile,
-		false,
-	) != 1:
-		return false
-	if not bool(sense_profile.get("requires_line_of_sight", true)):
-		return true
-	if (
-		dynamic_occupancy == null
-		or not dynamic_occupancy.has_method("has_line_of_sight")
-	):
-		return false
 	var ignored: Array = []
 	if scene_index >= 0:
 		ignored.append(scene_index)
-	return bool(
-		dynamic_occupancy.has_line_of_sight(
+	return int(
+		perception_controller.visibility_band_index_heading(
+			dynamic_occupancy,
 			position,
 			world_item.position,
+			perception_heading_degrees(),
+			TACTICAL_SENSES.original_direction_half_angle_degrees(
+				original_direction_index
+			),
+			sense_profile,
+			false,
 			ignored,
 		)
-	)
+	) == 1
 
 
 func apply_legacy_world_item_effect(
@@ -2775,6 +2934,7 @@ func legacy_enemy_ai_state_snapshot() -> Dictionary:
 
 
 func editorial_ai_state_snapshot() -> Dictionary:
+	var duty_state := duty_controller.snapshot()
 	return {
 		"search_role": editorial_search_role,
 		"search_command_serial": editorial_search_command_serial,
@@ -2782,15 +2942,17 @@ func editorial_ai_state_snapshot() -> Dictionary:
 		"suspicion": editorial_suspicion,
 		"suspicion_target_scene_index": editorial_suspicion_target_scene_index,
 		"memory_remaining": editorial_memory_remaining,
-		"duty_snapshot_active": duty_snapshot_active,
-		"duty_anchor_x": duty_anchor_position.x,
-		"duty_anchor_y": duty_anchor_position.y,
-		"duty_patrol_index": duty_patrol_index,
+		"duty_snapshot_active": bool(duty_state.get("active", false)),
+		"duty_anchor_x": float(duty_state.get("x", position.x)),
+		"duty_anchor_y": float(duty_state.get("y", position.y)),
+		"duty_patrol_index": int(duty_state.get("patrol_index", patrol_index)),
 		"return_destination_x": return_to_duty_destination.x,
 		"return_destination_y": return_to_duty_destination.y,
 		"return_patrol_index": return_to_duty_patrol_index,
 		"return_elapsed": return_to_duty_elapsed,
 		"gaze_sweep_elapsed": gaze_sweep_elapsed,
+		"gaze_heading_refresh_elapsed": gaze_heading_refresh_elapsed,
+		"idle_base_elapsed": modern_idle_base_elapsed,
 	}
 
 
@@ -2819,12 +2981,12 @@ func restore_editorial_ai_state(state: Dictionary) -> bool:
 		0.0,
 		editorial_memory_seconds,
 	)
-	duty_snapshot_active = bool(state.get("duty_snapshot_active", false))
-	duty_anchor_position = Vector2(
-		float(state.get("duty_anchor_x", position.x)),
-		float(state.get("duty_anchor_y", position.y)),
-	)
-	duty_patrol_index = maxi(int(state.get("duty_patrol_index", patrol_index)), 0)
+	duty_controller.restore({
+		"active": bool(state.get("duty_snapshot_active", false)),
+		"x": float(state.get("duty_anchor_x", position.x)),
+		"y": float(state.get("duty_anchor_y", position.y)),
+		"patrol_index": maxi(int(state.get("duty_patrol_index", patrol_index)), 0),
+	})
 	return_to_duty_destination = Vector2(
 		float(state.get("return_destination_x", duty_anchor_position.x)),
 		float(state.get("return_destination_y", duty_anchor_position.y)),
@@ -2835,11 +2997,24 @@ func restore_editorial_ai_state(state: Dictionary) -> bool:
 		float(state.get("gaze_sweep_elapsed", gaze_sweep_elapsed)),
 		0.0,
 	)
+	gaze_heading_refresh_elapsed = clampf(
+		float(state.get(
+			"gaze_heading_refresh_elapsed",
+			gaze_heading_refresh_elapsed,
+		)),
+		0.0,
+		MODERN_GAZE_REFRESH_SECONDS,
+	)
+	modern_idle_base_elapsed = clampf(
+		float(state.get("idle_base_elapsed", modern_idle_base_elapsed)),
+		0.0,
+		MODERN_IDLE_BASE_INTERVAL_SECONDS,
+	)
 	return true
 
 
 func modern_ai_debug_snapshot() -> Dictionary:
-	return {
+	var result := {
 		"scene_index": scene_index,
 		"behavior": BehaviorState.keys()[behavior_state],
 		"suspicion": editorial_suspicion,
@@ -2854,6 +3029,132 @@ func modern_ai_debug_snapshot() -> Dictionary:
 		"returning_to_duty": behavior_state == BehaviorState.RETURN_TO_DUTY,
 		"movement_health": movement_health_snapshot(),
 	}
+	result["strategy"] = enemy_strategy_snapshot()
+	return result
+
+
+func enemy_strategy_snapshot() -> Dictionary:
+	if enemy_strategy == null:
+		enemy_strategy = CLASSIC_ENEMY_STRATEGY_SCRIPT.new()
+	if enemy_strategy.has_method("synchronize"):
+		var visibility_band := "none"
+		if current_target != null and is_instance_valid(current_target):
+			var ignored: Array = [scene_index]
+			var target_scene_index := int(current_target.get("scene_index"))
+			if target_scene_index >= 0:
+				ignored.append(target_scene_index)
+			visibility_band = perception_controller.visibility_band_heading(
+				dynamic_occupancy,
+				position,
+				current_target.position,
+				perception_heading_degrees(),
+				TACTICAL_SENSES.original_direction_half_angle_degrees(
+					original_direction_index
+				),
+				sense_profile,
+				# Context targets can also be doors, props, or test doubles. Their
+				# missing stance property is semantically "standing", not a Nil-to-
+				# bool conversion (which is invalid in Godot 4.7).
+				current_target.get("is_crawling") == true,
+				ignored,
+			)
+		var awareness_name: String = str(BehaviorState.keys()[behavior_state]).to_lower()
+		var presentation_suspicion := editorial_suspicion
+		var presentation_memory := editorial_memory_remaining
+		if mission_ai_coordinator == null:
+			presentation_suspicion = (
+				1.0 if behavior_state in [BehaviorState.CHASE, BehaviorState.ATTACK]
+				else 0.65 if behavior_state in [
+					BehaviorState.SEARCH,
+					BehaviorState.WORLD_ITEM,
+					BehaviorState.CORPSE_DISCOVERY,
+				]
+				else 0.0
+			)
+			presentation_memory = (
+				maxf(SEARCH_TIMEOUT_SECONDS - search_elapsed, 0.0)
+				if presentation_suspicion > 0.0 else 0.0
+			)
+			if enemy_strategy.has_method("configure_hearing"):
+				var hearing := float(sense_profile.get("hearing_radius", 0.0))
+				if hearing <= 0.0:
+					hearing = maxf(
+						float(sense_profile.get("horizontal_radius", 0.0)),
+						float(sense_profile.get("vertical_radius", 0.0)),
+					)
+				enemy_strategy.call("configure_hearing", hearing)
+		enemy_strategy.call(
+			"synchronize",
+			awareness_name,
+			presentation_suspicion,
+			last_known_target_position,
+			presentation_memory,
+			visibility_band,
+		)
+	return enemy_strategy.call("public_snapshot") as Dictionary
+
+
+func tactical_feedback_awareness_state() -> String:
+	if mission_ai_coordinator != null:
+		match behavior_state:
+			BehaviorState.CHASE:
+				return "chase"
+			BehaviorState.ATTACK:
+				return "attack"
+			BehaviorState.SEARCH:
+				return "search"
+			BehaviorState.REGROUP:
+				return "regroup"
+			BehaviorState.WORLD_ITEM:
+				return "world_item"
+			BehaviorState.CORPSE_DISCOVERY:
+				return "corpse_discovery"
+			BehaviorState.RETURN_TO_DUTY:
+				return "return_to_duty"
+			_:
+				return "patrol"
+	return str(enemy_strategy_snapshot().get("awareness_state", "classic"))
+
+
+func tactical_feedback_suspicion_ratio() -> float:
+	if mission_ai_coordinator != null:
+		return clampf(editorial_suspicion, 0.0, 1.0)
+	return clampf(
+		float(enemy_strategy_snapshot().get("suspicion_ratio", 0.0)),
+		0.0,
+		1.0,
+	)
+
+
+func tactical_feedback_memory_ticks() -> int:
+	if mission_ai_coordinator != null:
+		return maxi(roundi(editorial_memory_remaining * 60.0), 0)
+	return maxi(
+		int(enemy_strategy_snapshot().get("memory_ticks_remaining", 0)),
+		0,
+	)
+
+
+func tactical_feedback_last_known_position() -> Vector2:
+	if mission_ai_coordinator != null:
+		return last_known_target_position
+	return enemy_strategy_snapshot().get(
+		"last_known_position",
+		last_known_target_position,
+	) as Vector2
+
+
+func should_present_tactical_feedback(
+	observed: bool,
+	hovered: bool,
+	engaged: bool,
+) -> bool:
+	return (
+		observed
+		or hovered
+		or engaged
+		or tactical_feedback_awareness_state() not in ["patrol", "classic"]
+	)
 
 
 func restore_legacy_enemy_ai_state(state: Dictionary) -> bool:
@@ -3631,6 +3932,31 @@ func _draw() -> void:
 		]
 	)
 	super._draw()
+	var awareness := tactical_feedback_awareness_state()
+	var suspicion := tactical_feedback_suspicion_ratio()
+	if (
+		is_alive
+		and should_present_tactical_feedback(
+			tactical_ranges_visible,
+			false,
+			behavior_state in [BehaviorState.CHASE, BehaviorState.ATTACK, BehaviorState.SEARCH],
+		)
+		and suspicion > 0.0
+	):
+		var suspicion_y := -maxf(sprite_anchor.y, 28.0) - 27.0
+		draw_rect(Rect2(-14.0, suspicion_y, 28.0, 3.0), Color(0.05, 0.05, 0.04, 0.75), true)
+		draw_rect(Rect2(-13.0, suspicion_y + 1.0, 26.0 * suspicion, 1.0), Color(1.0, 0.72, 0.16, 0.95), true)
+		var state_color := (
+			Color(1.0, 0.20, 0.16, 0.96)
+			if awareness in ["attack", "chase"]
+			else Color(1.0, 0.64, 0.16, 0.94)
+			if awareness in ["search", "investigate"]
+			else Color(0.56, 0.78, 0.92, 0.85)
+		)
+		# A three-stroke chevron above the narrow bar communicates alert state
+		# without adding a selection circle under the living sprite.
+		draw_line(Vector2(-4.0, suspicion_y - 4.0), Vector2(0.0, suspicion_y - 7.0), state_color, 1.0)
+		draw_line(Vector2(0.0, suspicion_y - 7.0), Vector2(4.0, suspicion_y - 4.0), state_color, 1.0)
 	if tactical_ranges_visible and is_alive:
 		_draw_tactical_ranges()
 
@@ -3745,11 +4071,9 @@ func _refresh_tactical_range_cache(force: bool) -> bool:
 		# Commandos-style directional perception: the far band is green (a prone
 		# target is concealed) and the near band is red (prone or standing is
 		# detected). Every ray stops at the first L2 obstruction, so walls cut it.
-		tactical_outer_outline = _visibility_fan_points(vision_radii, 1.0)
-		tactical_inner_outline = _visibility_fan_points(
-			vision_radii,
-			near_ratio,
-		)
+		var outlines := _visibility_fan_outlines(vision_radii, near_ratio)
+		tactical_outer_outline = outlines[0] as PackedVector2Array
+		tactical_inner_outline = outlines[1] as PackedVector2Array
 	tactical_cache_cell = current_cell
 	tactical_cache_direction = original_direction_index
 	tactical_cache_heading_bucket = perception_heading_bucket
@@ -3760,25 +4084,40 @@ func _refresh_tactical_range_cache(force: bool) -> bool:
 	return true
 
 
-func _visibility_fan_points(
+func _visibility_fan_outlines(
 	radii: Vector2,
-	ratio: float,
-) -> PackedVector2Array:
+	near_ratio: float,
+) -> Array[PackedVector2Array]:
 	# The fan is parameterized in the executable's logical isometric angle.
 	# Scaling x/y by the recovered ellipse radii projects it to screen pixels.
 	var center: float = perception_heading_degrees()
 	var half_angle: float = TACTICAL_SENSES.original_direction_half_angle_degrees(original_direction_index)
 	if center < 0.0 or half_angle <= 0.0:
-		return PackedVector2Array()
-	var points := PackedVector2Array([Vector2.ZERO])
+		return [PackedVector2Array(), PackedVector2Array()]
+	var outer := PackedVector2Array([Vector2.ZERO])
+	var inner := PackedVector2Array([Vector2.ZERO])
 	const STEPS := 10
 	for step: int in range(STEPS + 1):
 		var degrees: float = center - half_angle + (2.0 * half_angle * float(step) / float(STEPS))
-		var candidate := Vector2(cos(deg_to_rad(degrees)) * radii.x * ratio, sin(deg_to_rad(degrees)) * radii.y * ratio)
-		var endpoint := _clip_vision_ray(candidate)
-		points.append(endpoint)
-	points.append(Vector2.ZERO)
-	return points
+		var outer_candidate := Vector2(
+			cos(deg_to_rad(degrees)) * radii.x,
+			sin(deg_to_rad(degrees)) * radii.y,
+		)
+		var outer_endpoint := _clip_vision_ray(outer_candidate)
+		var inner_candidate := outer_candidate * near_ratio
+		outer.append(outer_endpoint)
+		# Both bands share the same ray. If an obstacle clips the far ray before
+		# the near endpoint, it also clips the near band at that exact point;
+		# otherwise no second supercover traversal is necessary.
+		inner.append(
+			outer_endpoint
+			if outer_endpoint.length_squared()
+				<= inner_candidate.length_squared() + 0.0001
+			else inner_candidate
+		)
+	outer.append(Vector2.ZERO)
+	inner.append(Vector2.ZERO)
+	return [outer, inner]
 
 func _clip_vision_ray(candidate: Vector2) -> Vector2:
 	if dynamic_occupancy == null:

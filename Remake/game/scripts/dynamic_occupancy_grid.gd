@@ -41,10 +41,17 @@ const MAX_GLOBAL_FOOTPRINT_CLEARANCE_BYTES := 16 * 1024 * 1024
 const MAX_SOURCE_ANCHOR_DISTANCE := 1
 
 var navigation: RefCounted
+var navigation_runtime: NavigationGridData
+var navigation_cell_size := Vector2i(32, 16)
 static var global_static_prewarmed_paths: Dictionary = {}
 static var global_footprint_clearance_lookups: Dictionary = {}
 static var global_footprint_clearance_bytes := 0
 var actors: Dictionary = {}
+## Position/origin are the only actor fields read and written at 60 Hz. Keep
+## them in flat tables so an in-cell movement substep does not copy/mutate the
+## full footprint Dictionary and write it back into `actors` every frame.
+var actor_world_positions: Dictionary = {}
+var actor_origins: Dictionary = {}
 var actor_origin_owners: Dictionary = {}
 var disabled_source_scenes: Dictionary = {}
 var source_scene_footprints: Dictionary = {}
@@ -107,10 +114,16 @@ func configure(
 	new_static_prewarm_cache_namespace: String = "",
 ) -> void:
 	navigation = source_navigation
+	navigation_runtime = source_navigation as NavigationGridData
+	var configured_cell_size: Variant = source_navigation.get("cell_size")
+	if configured_cell_size is Vector2i:
+		navigation_cell_size = configured_cell_size as Vector2i
 	static_prewarm_cache_namespace = (
 		new_static_prewarm_cache_namespace.strip_edges()
 	)
 	actors.clear()
+	actor_world_positions.clear()
+	actor_origins.clear()
 	actor_origin_owners.clear()
 	disabled_source_scenes.clear()
 	source_scene_footprints.clear()
@@ -184,6 +197,8 @@ func register_scene(
 		"sight_offsets": sight_offsets,
 	}
 	actors[scene_index] = actor
+	actor_world_positions[scene_index] = world_position
+	actor_origins[scene_index] = origin
 	_add_actor_origin_owner(scene_index, origin)
 	disabled_source_scenes[scene_index] = true
 	_add_footprint(movement_owners, scene_index, origin, movement_offsets)
@@ -301,6 +316,15 @@ func set_source_scene_disabled(scene_index: int, disabled: bool) -> bool:
 	var sight_release_cells := (
 		footprint.get("sight", []) as Array[Vector2i]
 	)
+	# Initial open doors bind before players, ambient actors and enemies finish
+	# registering. Record their desired state now and let finalize_registration()
+	# build the one authoritative AStar grid from the complete roster. Calling
+	# NavigationGridData here used to build a partial grid that was immediately
+	# discarded, doubled dense-level startup work and polluted the warm cache
+	# with incomplete component variants. Runtime door changes still take the
+	# incremental path below once registration has completed.
+	if not registration_finalized:
+		return true
 	var changed_cells: Array[Vector2i] = (
 		navigation.set_source_scene_disabled(
 			scene_index,
@@ -344,6 +368,8 @@ func unregister_scene(scene_index: int, keep_source_disabled: bool = true) -> vo
 	)
 	_remove_actor_origin_owner(scene_index, actor["origin"] as Vector2i)
 	actors.erase(scene_index)
+	actor_world_positions.erase(scene_index)
+	actor_origins.erase(scene_index)
 	_clear_goal(scene_index)
 	if not keep_source_disabled:
 		disabled_source_scenes.erase(scene_index)
@@ -603,6 +629,18 @@ func find_path_for_scene(
 			world_destination,
 			path,
 		)
+	elif ignore_dynamic_actors:
+		# A displaced stable-timeline actor can miss every prewarmed translation
+		# and require one authoritative static A* query. Retain that exact result
+		# under the actor's current footprint so a retry or later translated leg
+		# never pays the same long query again. Door/source changes already clear
+		# the runtime-evidence caches, so this cannot preserve stale geometry.
+		_cache_runtime_evidence_result(
+			scene_index,
+			world_start,
+			world_destination,
+			path,
+		)
 	if reserve_goal:
 		_reserve_path_goal(scene_index, movement_offsets, path)
 	_record_path_query(
@@ -617,6 +655,26 @@ func find_path_for_scene(
 		last_prewarmed_path_nearest_distance,
 	)
 	return path
+
+
+func _cache_runtime_evidence_result(
+	scene_index: int,
+	world_start: Vector2,
+	world_destination: Vector2,
+	path: PackedVector2Array,
+) -> void:
+	var footprint_key := _scene_movement_footprint_key(scene_index)
+	var profile_caches := (
+		runtime_evidence_paths_by_footprint.get(scene_index, {}) as Dictionary
+	)
+	var scene_cache := profile_caches.get(footprint_key, {}) as Dictionary
+	scene_cache[_runtime_evidence_path_cache_key(
+		world_start,
+		world_destination,
+	)] = path.duplicate()
+	profile_caches[footprint_key] = scene_cache
+	runtime_evidence_paths_by_footprint[scene_index] = profile_caches
+	runtime_evidence_paths[scene_index] = scene_cache
 
 
 ## Candidate evaluation for editorial formation slots must not erase an
@@ -1014,15 +1072,27 @@ func _translated_runtime_evidence_path(
 	)
 	var best_key := Vector4i.ZERO
 	var has_best := false
+	var best_displacement_error := 0x7fffffffffffffff
 	var best_start_distance := 0x7fffffffffffffff
 	for candidate_key_value: Variant in scene_cache.keys():
 		if not candidate_key_value is Vector4i:
 			continue
 		var candidate_key := candidate_key_value as Vector4i
-		if Vector2i(
+		var candidate_delta := Vector2i(
 			candidate_key.z - candidate_key.x,
 			candidate_key.w - candidate_key.y,
-		) != requested_delta:
+		)
+		# Start and destination are quantized independently to 1/1024 pixel.
+		# Translating the same captured Vector2 displacement can therefore differ
+		# by one quantum on each axis when a live actor starts on the opposite side
+		# of a rounding boundary. Treat that sub-pixel error as the same evidence
+		# vector; the translated cell route and every footprint step are still fully
+		# validated below before it can be used.
+		var displacement_error := (
+			absi(candidate_delta.x - requested_delta.x)
+			+ absi(candidate_delta.y - requested_delta.y)
+		)
+		if displacement_error > 2:
 			continue
 		var candidate_path := (
 			scene_cache[candidate_key] as PackedVector2Array
@@ -1035,13 +1105,20 @@ func _translated_runtime_evidence_path(
 		)
 		if (
 			not has_best
-			or start_distance < best_start_distance
+			or displacement_error < best_displacement_error
 			or (
-				start_distance == best_start_distance
-				and _runtime_evidence_key_precedes(candidate_key, best_key)
+				displacement_error == best_displacement_error
+				and (
+					start_distance < best_start_distance
+					or (
+						start_distance == best_start_distance
+						and _runtime_evidence_key_precedes(candidate_key, best_key)
+					)
+				)
 			)
-			):
+		):
 				best_key = candidate_key
+				best_displacement_error = displacement_error
 				best_start_distance = start_distance
 				has_best = true
 	if not has_best:
@@ -1142,6 +1219,11 @@ func _runtime_evidence_step_is_clear(
 	):
 		return false
 	var delta := to_cell - from_cell
+	# AStar paths include their start anchor. After translating a prewarmed
+	# route, that first waypoint can legitimately remain in the actor's current
+	# cell. It is a no-op, not a blocked/non-adjacent step.
+	if delta == Vector2i.ZERO:
+		return true
 	if maxi(absi(delta.x), absi(delta.y)) != 1:
 		return false
 	if delta.x == 0 or delta.y == 0:
@@ -1431,11 +1513,18 @@ func try_relocate(
 ) -> bool:
 	if navigation == null or not actors.has(scene_index):
 		return false
-	_sync_move_reservations()
+	if not ignore_dynamic_actors:
+		_sync_move_reservations()
 	var actor := actors[scene_index] as Dictionary
-	var old_world_position := actor["world_position"] as Vector2
-	var old_origin := actor["origin"] as Vector2i
-	var new_origin: Vector2i = navigation.world_to_cell(new_world_position)
+	var old_world_position := actor_world_positions.get(
+		scene_index, actor["world_position"]
+	) as Vector2
+	var old_origin := actor_origins.get(scene_index, actor["origin"]) as Vector2i
+	var new_origin: Vector2i = (
+		navigation_runtime.world_to_cell(new_world_position)
+		if navigation_runtime != null
+		else navigation.world_to_cell(new_world_position)
+	)
 	# The inverse isometric cell is convex. A short substep whose two endpoints
 	# remain in the actor's current cell cannot enter a new static footprint or
 	# cross a diagonal reservation. Dense patrols spend most movement ticks in
@@ -1448,6 +1537,7 @@ func try_relocate(
 				scene_index,
 				old_world_position,
 				new_world_position,
+				new_origin,
 				(
 					minimum_actor_separation
 					if minimum_actor_separation > 0.0
@@ -1457,8 +1547,7 @@ func try_relocate(
 		):
 			relocation_rejection_count += 1
 			return false
-		actor["world_position"] = new_world_position
-		actors[scene_index] = actor
+		actor_world_positions[scene_index] = new_world_position
 		return true
 	if absi(new_origin.x - old_origin.x) > 1 or absi(new_origin.y - old_origin.y) > 1:
 		relocation_rejection_count += 1
@@ -1478,6 +1567,7 @@ func try_relocate(
 			scene_index,
 			old_world_position,
 			new_world_position,
+			new_origin,
 			(
 				minimum_actor_separation
 				if minimum_actor_separation > 0.0
@@ -1515,8 +1605,12 @@ func try_relocate_from_runtime_evidence(
 	if navigation == null or not actors.has(scene_index):
 		return false
 	var actor := actors[scene_index] as Dictionary
-	var old_origin := actor["origin"] as Vector2i
-	var new_origin: Vector2i = navigation.world_to_cell(new_world_position)
+	var old_origin := actor_origins.get(scene_index, actor["origin"]) as Vector2i
+	var new_origin: Vector2i = (
+		navigation_runtime.world_to_cell(new_world_position)
+		if navigation_runtime != null
+		else navigation.world_to_cell(new_world_position)
+	)
 	if (
 		not navigation.is_valid_cell(new_origin)
 		or absi(new_origin.x - old_origin.x) > 1
@@ -1524,13 +1618,16 @@ func try_relocate_from_runtime_evidence(
 	):
 		relocation_rejection_count += 1
 		return false
-	var old_world_position := actor["world_position"] as Vector2
+	var old_world_position := actor_world_positions.get(
+		scene_index, actor["world_position"]
+	) as Vector2
 	if (
 		minimum_actor_separation > 0.0
 		and not _keeps_actor_separation(
 			scene_index,
 			old_world_position,
 			new_world_position,
+			new_origin,
 			minimum_actor_separation,
 		)
 	):
@@ -1579,9 +1676,14 @@ func _commit_relocation(
 		)
 		_remove_actor_origin_owner(scene_index, old_origin)
 		_add_actor_origin_owner(scene_index, new_origin)
-	actor["origin"] = new_origin
-	actor["world_position"] = new_world_position
-	actors[scene_index] = actor
+	actor_world_positions[scene_index] = new_world_position
+	actor_origins[scene_index] = new_origin
+	# Footprint metadata only changes when a cell boundary is crossed. Keep its
+	# diagnostic position synchronized at that much lower cadence.
+	if new_origin != old_origin:
+		actor["origin"] = new_origin
+		actor["world_position"] = new_world_position
+		actors[scene_index] = actor
 	if new_origin != old_origin:
 		accepted_moves.append({"from": old_origin, "to": new_origin})
 		if (
@@ -1650,7 +1752,10 @@ func runtime_movement_owner(cell: Vector2i) -> int:
 func actor_cell(scene_index: int) -> Vector2i:
 	if not actors.has(scene_index):
 		return Vector2i(-1, -1)
-	return (actors[scene_index] as Dictionary)["origin"] as Vector2i
+	return actor_origins.get(
+		scene_index,
+		(actors[scene_index] as Dictionary)["origin"],
+	) as Vector2i
 
 
 func _source_offsets(layer_id: int, scene_index: int, origin: Vector2i) -> Array[Vector2i]:
@@ -2042,7 +2147,11 @@ func _can_traverse(
 	var previous_origin := old_origin
 	for step in range(steps + 1):
 		var sample := old_world_position.lerp(new_world_position, float(step) / float(steps))
-		var sample_origin: Vector2i = navigation.world_to_cell(sample)
+		var sample_origin: Vector2i = (
+			navigation_runtime.world_to_cell(sample)
+			if navigation_runtime != null
+			else navigation.world_to_cell(sample)
+		)
 		if sample_origin != previous_origin:
 			if (
 				absi(sample_origin.x - previous_origin.x) > 1
@@ -2059,7 +2168,11 @@ func _can_traverse(
 			previous_origin = sample_origin
 		for offset: Vector2i in movement_offsets:
 			var cell: Vector2i = sample_origin + offset
-			if not navigation.is_valid_cell(cell):
+			if not (
+				navigation_runtime.is_valid_cell(cell)
+				if navigation_runtime != null
+				else navigation.is_valid_cell(cell)
+			):
 				return false
 			if sample_origin != old_origin and _source_movement_blocked(cell):
 				return false
@@ -2325,18 +2438,17 @@ func _keeps_actor_separation(
 	scene_index: int,
 	old_world_position: Vector2,
 	new_world_position: Vector2,
+	target_origin: Vector2i,
 	minimum_separation: float = MIN_ACTOR_SEPARATION,
 ) -> bool:
 	minimum_separation = maxf(minimum_separation, 0.0)
-	var target_origin: Vector2i = navigation.world_to_cell(
-		new_world_position
-	)
+	var minimum_separation_squared := minimum_separation * minimum_separation
 	var x_radius := maxi(
-		ceili(minimum_separation / float(navigation.cell_size.x)),
+		ceili(minimum_separation / float(navigation_cell_size.x)),
 		1,
 	)
 	var y_radius := maxi(
-		ceili(minimum_separation / float(navigation.cell_size.y)),
+		ceili(minimum_separation / float(navigation_cell_size.y)),
 		1,
 	)
 	for y: int in range(
@@ -2348,39 +2460,43 @@ func _keeps_actor_separation(
 			target_origin.x + x_radius + 1,
 		):
 			var origin := Vector2i(x, y)
-			if not actor_origin_owners.has(origin):
+			var owners_value: Variant = actor_origin_owners.get(origin)
+			if not owners_value is Dictionary:
 				continue
-			for other_scene_value: Variant in (
-				actor_origin_owners[origin] as Dictionary
-			).keys():
+			for other_scene_value: Variant in owners_value as Dictionary:
 				var other_scene := int(other_scene_value)
 				if other_scene == scene_index:
 					continue
-				var other_position := (
-					(actors[other_scene] as Dictionary)["world_position"]
-					as Vector2
+				var other_position_value: Variant = actor_world_positions.get(
+					other_scene
 				)
-				var old_distance := old_world_position.distance_to(
+				if not other_position_value is Vector2:
+					continue
+				var other_position := other_position_value as Vector2
+				var old_distance_squared := old_world_position.distance_squared_to(
 					other_position
 				)
-				var new_distance := new_world_position.distance_to(
+				var new_distance_squared := new_world_position.distance_squared_to(
 					other_position
 				)
 				if (
-					new_distance < minimum_separation
-					and new_distance <= old_distance
+					new_distance_squared < minimum_separation_squared
+					and new_distance_squared <= old_distance_squared
 				):
-					var other_origin := (
-						(actors[other_scene] as Dictionary)["origin"]
-						as Vector2i
-					)
+					var other_origin := actor_origins.get(
+						other_scene,
+						Vector2i(-1, -1),
+					) as Vector2i
 					if (
 						scene_index < other_scene
 						and goal_origin_by_scene.has(scene_index)
 						and goal_origin_by_scene.has(other_scene)
 						and target_origin != other_origin
-						and new_distance
-						>= MIN_PRIORITY_PASS_SEPARATION
+						and new_distance_squared
+						>= (
+							MIN_PRIORITY_PASS_SEPARATION
+							* MIN_PRIORITY_PASS_SEPARATION
+						)
 					):
 						continue
 					return false

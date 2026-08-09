@@ -7,6 +7,7 @@ signal load_requested
 signal save_slot_requested(slot_id: String)
 signal load_slot_requested(slot_id: String)
 signal restart_requested
+signal checkpoint_retry_requested
 signal next_level_requested
 signal level_requested(level_id: String)
 signal level_selection_cancelled
@@ -27,6 +28,10 @@ const CAMPAIGN_LEVEL_SELECTOR_SCRIPT: Script = preload(
 )
 const INVENTORY_GRID_VIEW_SCRIPT: Script = preload("res://scripts/inventory_grid_view.gd")
 const GAME_INPUT_BINDINGS: Script = preload("res://scripts/game_input_bindings.gd")
+const UI_SAFE_AREA_SERVICE_SCRIPT: Script = preload("res://scripts/ui_safe_area_service.gd")
+const LOCALIZATION_SERVICE_SCRIPT: Script = preload(
+	"res://scripts/localization_service.gd"
+)
 const ORIGINAL_INVENTORY_POPUP_SIZE := Vector2(276.0, 421.0)
 const ORIGINAL_BOTTOM_HUD_HEIGHT := 62.0
 const ORIGINAL_INVENTORY_BACKGROUND_PSD := 1129
@@ -85,33 +90,33 @@ const ORIGINAL_HUD_ACTIONS: Array[Dictionary] = [
 		"action": "observation",
 		"normal": 1160,
 		"active": 1161,
-		"tooltip": "观察敌军视线（S）",
+		"tooltip_key": "TOOLTIP_OBSERVE_ENEMY_SIGHT",
 		"toggle": true,
 	},
 	{
 		"action": "minimap",
 		"normal": 1143,
 		"active": 1144,
-		"tooltip": "显示或隐藏地图（M）",
+		"tooltip_key": "TOOLTIP_TOGGLE_MAP",
 		"toggle": true,
 	},
 	{
 		"action": "system",
 		"normal": 1232,
 		"active": 1233,
-		"tooltip": "游戏菜单（Esc）",
+		"tooltip_key": "TOOLTIP_GAME_MENU",
 		"toggle": false,
 	},
 ]
 const ORIGINAL_PAUSE_MENU_BUTTONS: Array[Dictionary] = [
-	{"id": "resume", "normal": 1103, "hover": 1104, "tooltip": "开始游戏"},
-	{"id": "restart", "normal": 1114, "hover": 1115, "tooltip": "重玩本关"},
-	{"id": "missions", "normal": 1101, "hover": 1102, "tooltip": "返回任务"},
-	{"id": "save", "normal": 1097, "hover": 1098, "tooltip": "存储进度"},
-	{"id": "load", "normal": 1109, "hover": 1110, "tooltip": "载入进度"},
-	{"id": "settings", "normal": 1107, "hover": 1108, "tooltip": "游戏设置"},
-	{"id": "credits", "normal": 1112, "hover": 1113, "tooltip": "制作人员"},
-	{"id": "quit", "normal": 1105, "hover": 1106, "tooltip": "退出游戏"},
+	{"id": "resume", "normal": 1103, "hover": 1104, "tooltip_key": "UI_RESUME_GAME"},
+	{"id": "restart", "normal": 1114, "hover": 1115, "tooltip_key": "UI_RESTART_LEVEL"},
+	{"id": "missions", "normal": 1101, "hover": 1102, "tooltip_key": "UI_LEVEL_SELECT"},
+	{"id": "save", "normal": 1097, "hover": 1098, "tooltip_key": "UI_SAVE_GAME"},
+	{"id": "load", "normal": 1109, "hover": 1110, "tooltip_key": "UI_LOAD_GAME"},
+	{"id": "settings", "normal": 1107, "hover": 1108, "tooltip_key": "UI_SETTINGS"},
+	{"id": "credits", "normal": 1112, "hover": 1113, "tooltip_key": "UI_CREDITS"},
+	{"id": "quit", "normal": 1105, "hover": 1106, "tooltip_key": "UI_QUIT"},
 ]
 const DISPLAY_MODES: Array[String] = ["windowed", "fullscreen", "borderless"]
 const RULESET_MODES: Array[String] = ["classic", "modern"]
@@ -188,6 +193,7 @@ var _failure_main_label: Label
 var _original_failure_font: SystemFont
 var _failure_text := ""
 var _failure_can_load := false
+var _failure_can_checkpoint := false
 var _menu_title: Label
 var _menu_message: Label
 var _resume_button: Button
@@ -195,6 +201,7 @@ var _next_level_button: Button
 var _save_button: Button
 var _load_button: Button
 var _restart_button: Button
+var _checkpoint_retry_button: Button
 var _level_select_button: Button
 var _display_mode_option: OptionButton
 var _monitor_option: OptionButton
@@ -224,6 +231,7 @@ var _pause_on_focus_loss_toggle: CheckButton
 var _educational_mode_toggle: CheckButton
 var _reduced_violence_toggle: CheckButton
 var _history_notes_toggle: CheckButton
+var _stealth_feedback_toggle: CheckButton
 var _age_guidance_label: Label
 var _history_menu_button: Button
 var _diagnostics_menu_button: Button
@@ -282,9 +290,17 @@ var _pause_owned := false
 var _pause_state_before_overlay := false
 var _updating_settings_controls := false
 var _suppress_release_keycode := 0
+var _safe_area_service: RefCounted = UI_SAFE_AREA_SERVICE_SCRIPT.new()
+var _standalone_localization_service: RefCounted
 
 
 func _ready() -> void:
+	# GameShell is also instantiated directly by panel and product tests. Install
+	# the safe Chinese fallback before any formatted label is constructed when
+	# Main has not installed the user's requested catalog yet.
+	if tr("UI_RESUME") == "UI_RESUME":
+		_standalone_localization_service = LOCALIZATION_SERVICE_SCRIPT.new()
+		_standalone_localization_service.call("install", "zh_CN")
 	layer = 180
 	# This layer owns both paused menus and the live bottom HUD/minimap. WHEN_PAUSED
 	# made the live controls hoverable but silently excluded their GUI events
@@ -368,6 +384,7 @@ func set_settings(new_settings: Dictionary) -> void:
 		"educational_mode": bool(new_settings.get("educational_mode", true)),
 		"reduced_violence": bool(new_settings.get("reduced_violence", false)),
 		"history_notes": bool(new_settings.get("history_notes", true)),
+		"stealth_feedback": bool(new_settings.get("stealth_feedback", true)),
 		"locale": str(new_settings.get("locale", "system")),
 		"ui_scale": clampf(float(new_settings.get("ui_scale", 1.0)), 0.75, 2.0),
 		"text_scale": clampf(float(new_settings.get("text_scale", 1.0)), 0.75, 2.0),
@@ -422,6 +439,7 @@ func set_settings(new_settings: Dictionary) -> void:
 	_educational_mode_toggle.button_pressed = bool(settings["educational_mode"])
 	_reduced_violence_toggle.button_pressed = bool(settings["reduced_violence"])
 	_history_notes_toggle.button_pressed = bool(settings["history_notes"])
+	_stealth_feedback_toggle.button_pressed = bool(settings["stealth_feedback"])
 	_select_metadata_option(_language_option, str(settings["locale"]), "system")
 	_ui_scale_slider.value = float(settings["ui_scale"])
 	_text_scale_slider.value = float(settings["text_scale"])
@@ -719,6 +737,7 @@ func gameplay_camera_offset(full_viewport_size: Vector2, zoom: float = 1.0) -> V
 func edge_scroll_pointer_position(
 	screen_position: Vector2,
 	full_viewport_size: Vector2,
+	check_interactive_blockers: bool = true,
 ) -> Vector2:
 	var safe_rect := gameplay_screen_rect(full_viewport_size)
 	if (
@@ -733,7 +752,10 @@ func edge_scroll_pointer_position(
 	# Empty stonework in the bottom bar acts as the physical lower edge of the
 	# battlefield. Buttons, portraits, the weapon switcher and the minimap remain
 	# ordinary interactive controls and never start edge scrolling.
-	if is_screen_point_over_edge_scroll_blocker(screen_position):
+	if (
+		check_interactive_blockers
+		and is_screen_point_over_edge_scroll_blocker(screen_position)
+	):
 		return Vector2(-1.0, -1.0)
 	return Vector2(screen_position.x, safe_rect.end.y - 0.5)
 
@@ -810,7 +832,7 @@ func update_original_hud(actor_states: Array) -> void:
 			selected_state.get("weapon_ammo_text", "")
 		)
 		_original_hud_weapon_panel.tooltip_text = (
-			"当前武器：%s　%s\n点击切换下一件武器（Tab）"
+			tr("TOOLTIP_CURRENT_WEAPON_FORMAT")
 			% [
 				_original_hud_weapon_name.text,
 				_original_hud_weapon_ammo.text,
@@ -858,7 +880,7 @@ func update_original_hud(actor_states: Array) -> void:
 			else Color.RED
 		)
 		var button := controls.get("button") as TextureButton
-		button.tooltip_text = "选择%s并定位视图　生命 %d%%" % [
+		button.tooltip_text = tr("TOOLTIP_SELECT_ACTOR_HEALTH_FORMAT") % [
 			actor_name,
 			roundi(ratio * 100.0),
 		]
@@ -1078,8 +1100,8 @@ func settings_snapshot() -> Dictionary:
 
 func show_pause_menu(can_load: bool, message: String = "") -> void:
 	_enter_mode(OverlayMode.PAUSE_MENU)
-	_menu_title.text = "游戏菜单"
-	_menu_message.text = message if not message.is_empty() else "游戏已暂停"
+	_menu_title.text = tr("UI_PAUSE_TITLE")
+	_menu_message.text = message if not message.is_empty() else tr("UI_GAME_PAUSED")
 	_resume_button.visible = true
 	_next_level_button.visible = false
 	_save_button.visible = true
@@ -1101,11 +1123,11 @@ func show_pause_menu(can_load: bool, message: String = "") -> void:
 
 func show_victory(can_load: bool, has_next_level: bool) -> void:
 	_enter_mode(OverlayMode.PAUSE_MENU)
-	_menu_title.text = "任务完成" if has_next_level else "战役完成"
+	_menu_title.text = tr("UI_MISSION_COMPLETE") if has_next_level else tr("UI_CAMPAIGN_COMPLETE")
 	_menu_message.text = (
-		"进度已自动保存，可以进入下一关。"
+		tr("UI_VICTORY_NEXT_LEVEL_MESSAGE")
 		if has_next_level
-		else "十二关任务已经全部完成，可以读取存档或返回战场查看。"
+		else tr("UI_VICTORY_CAMPAIGN_MESSAGE")
 	)
 	if not _victory_debrief.is_empty():
 		_menu_message.text += "\n%s" % tr("UI_VICTORY_DEBRIEF_AVAILABLE")
@@ -1208,19 +1230,32 @@ func show_level_selector(startup: bool = false) -> void:
 	_level_selector.focus_current()
 
 
-func show_failure(failure_text: String, can_load: bool) -> void:
+func show_failure(
+	failure_text: String,
+	can_load: bool,
+	can_checkpoint: bool = false,
+) -> void:
 	_failure_text = failure_text
 	_failure_can_load = can_load
+	_failure_can_checkpoint = can_checkpoint
+	if str(settings.get("ruleset_mode", "classic")) == "modern":
+		_show_failure_main_menu()
+		_release_gui_focus()
+		return
 	_enter_mode(OverlayMode.FAILURE)
-	_menu_title.text = "任务失败"
+	_menu_title.text = tr("UI_MISSION_FAILED_TITLE")
 	_menu_message.text = failure_text
 	_resume_button.visible = false
 	_next_level_button.visible = false
 	_save_button.visible = false
 	_load_button.visible = true
 	_load_button.disabled = not can_load
+	_checkpoint_retry_button.visible = can_checkpoint
 	_restart_button.visible = true
 	_level_select_button.visible = true
+	_failure_restart_button.tooltip_text = (
+		tr("UI_CHECKPOINT_RETRY") if can_checkpoint else tr("UI_RESTART_LEVEL")
+	)
 	_release_gui_focus()
 
 
@@ -1330,10 +1365,10 @@ func _normalized_inventory_model(inventory_data: Variant) -> Dictionary:
 	# Compatibility with pre-grid callers and old saves under test.  The text is
 	# still represented as a real grid cell instead of reverting to a text dump.
 	return {
-		"actor_name": "当前队员",
+		"actor_name": tr("UI_CURRENT_ACTOR"),
 		"groups": [
 			{
-				"title": "当前状态",
+				"title": tr("UI_CURRENT_STATUS"),
 				"mode": _inventory_mode,
 				"slots": [
 					{
@@ -1451,7 +1486,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if not key_event.pressed:
 			return
 		if key_event.keycode == KEY_BACKSPACE:
-			_cancel_binding_capture("已取消重新绑定")
+			_cancel_binding_capture(tr("STATUS_REMAP_CANCELLED"))
 		else:
 			_apply_captured_binding(key_event)
 		get_viewport().set_input_as_handled()
@@ -1634,6 +1669,19 @@ func _on_restart_pressed() -> void:
 	restart_requested.emit()
 
 
+func _on_failure_primary_pressed() -> void:
+	_close_overlay()
+	if _failure_can_checkpoint:
+		checkpoint_retry_requested.emit()
+	else:
+		restart_requested.emit()
+
+
+func _on_checkpoint_retry_pressed() -> void:
+	_close_overlay()
+	checkpoint_retry_requested.emit()
+
+
 func _on_next_level_pressed() -> void:
 	_close_overlay()
 	next_level_requested.emit()
@@ -1646,18 +1694,44 @@ func _show_level_selector_from_menu() -> void:
 func _show_failure_main_menu() -> void:
 	_modern_menu_return_mode = OverlayMode.FAILURE
 	_enter_mode(OverlayMode.MODERN_MENU)
-	_menu_title.text = "任务失败"
-	_menu_message.text = (
-		_failure_text
-		+ "\n可重玩本关、读取存档、选择其他任务或调整设置。"
-	)
+	_menu_title.text = tr("UI_MISSION_FAILED_TITLE")
+	_menu_message.text = _failure_text
 	_resume_button.visible = false
 	_next_level_button.visible = false
 	_save_button.visible = false
+	_checkpoint_retry_button.visible = true
+	_checkpoint_retry_button.disabled = not _failure_can_checkpoint
+	_checkpoint_retry_button.tooltip_text = (
+		tr("UI_CHECKPOINT_RETRY")
+		if _failure_can_checkpoint
+		else tr("UI_CHECKPOINT_UNAVAILABLE_HINT")
+	)
+	_restart_button.visible = true
 	_load_button.visible = true
 	_load_button.disabled = not _failure_can_load
-	_restart_button.visible = true
 	_level_select_button.visible = true
+	_order_modern_failure_actions()
+
+
+func _order_modern_failure_actions() -> void:
+	var parent := _checkpoint_retry_button.get_parent()
+	if parent == null:
+		return
+	# Title and failure reason occupy indices 0 and 1.  Hidden pause-only
+	# actions are moved behind the four recovery actions so keyboard traversal
+	# and visual order are both checkpoint, restart, load, level selection.
+	for index: int in range([
+		_checkpoint_retry_button,
+		_restart_button,
+		_load_button,
+		_level_select_button,
+	].size()):
+		parent.move_child([
+			_checkpoint_retry_button,
+			_restart_button,
+			_load_button,
+			_level_select_button,
+		][index], 2 + index)
 
 
 func _show_game_settings() -> void:
@@ -1730,7 +1804,7 @@ func _on_rebind_pressed(action: String) -> void:
 	if _settings_status != null:
 		_settings_status.text = _localized_text(
 			"UI_REMAP_WAITING_FORMAT",
-			"正在设置“%s”：请按新的组合键（Backspace 取消）",
+			"Waiting for a new binding for %s (Backspace cancels).",
 		) % GAME_INPUT_BINDINGS.label_for_action(action)
 
 
@@ -1740,7 +1814,7 @@ func _apply_captured_binding(event: InputEventKey) -> void:
 		return
 	var binding: Dictionary = GAME_INPUT_BINDINGS.binding_from_event(event)
 	if int(binding.get("keycode", 0)) <= 0:
-		_cancel_binding_capture("该按键无法识别，请重新选择")
+		_cancel_binding_capture(tr("STATUS_REMAP_UNRECOGNIZED"))
 		return
 	var controls := settings.get("controls", {}) as Dictionary
 	var conflict: String = GAME_INPUT_BINDINGS.conflicting_action(controls, binding, action)
@@ -1752,11 +1826,11 @@ func _apply_captured_binding(event: InputEventKey) -> void:
 	_update_control_buttons()
 	if _settings_status != null:
 		_settings_status.text = (
-			"已设置“%s”为 %s%s"
+			tr("STATUS_REMAP_APPLIED_FORMAT")
 			% [
 				GAME_INPUT_BINDINGS.label_for_action(action),
 				GAME_INPUT_BINDINGS.display_text(binding),
-				"（与“%s”交换）" % GAME_INPUT_BINDINGS.label_for_action(conflict) if not conflict.is_empty() else "",
+				tr("STATUS_REMAP_SWAPPED_FORMAT") % GAME_INPUT_BINDINGS.label_for_action(conflict) if not conflict.is_empty() else "",
 			]
 		)
 	settings_changed.emit(settings_snapshot())
@@ -1771,7 +1845,7 @@ func _cancel_binding_capture(message: String) -> void:
 
 func _reset_control_bindings() -> void:
 	settings["controls"] = GAME_INPUT_BINDINGS.default_bindings()
-	_cancel_binding_capture("按键已恢复为原版默认配置")
+	_cancel_binding_capture(tr("STATUS_REMAP_DEFAULTS_RESTORED"))
 	settings_changed.emit(settings_snapshot())
 
 
@@ -1782,7 +1856,7 @@ func _update_control_buttons() -> void:
 	for action: String in _control_buttons:
 		var button := _control_buttons[action] as Button
 		button.text = (
-			"请按键…"
+			tr("UI_PRESS_A_KEY")
 			if action == _capturing_action
 			else GAME_INPUT_BINDINGS.display_text(controls.get(action, {}) as Dictionary)
 		)
@@ -1822,6 +1896,7 @@ func _on_setting_changed(_value: Variant = null) -> void:
 		"educational_mode": _educational_mode_toggle.button_pressed,
 		"reduced_violence": _reduced_violence_toggle.button_pressed,
 		"history_notes": _history_notes_toggle.button_pressed,
+		"stealth_feedback": _stealth_feedback_toggle.button_pressed,
 		"locale": str(_selected_option_metadata(
 			_language_option,
 			settings.get("locale", "system"),
@@ -1868,9 +1943,17 @@ func apply_localization() -> void:
 	for index: int in range(mini(keys.size(), _language_option.item_count)):
 		_language_option.set_item_text(index, tr(keys[index]))
 	_select_metadata_option(_language_option, selected_locale, "system")
+	_resume_button.text = tr("UI_RESUME_GAME")
+	_next_level_button.text = tr("UI_NEXT_LEVEL")
+	_save_button.text = tr("UI_SAVE_GAME")
+	_load_button.text = tr("UI_LOAD_GAME")
+	_checkpoint_retry_button.text = tr("UI_CHECKPOINT_RETRY")
+	_restart_button.text = tr("UI_RESTART_LEVEL")
+	_level_select_button.text = tr("UI_LEVEL_SELECT")
 	_educational_mode_toggle.text = tr("UI_EDUCATIONAL_MODE")
 	_reduced_violence_toggle.text = tr("UI_REDUCED_VIOLENCE")
 	_history_notes_toggle.text = tr("UI_HISTORY_NOTES")
+	_stealth_feedback_toggle.text = tr("UI_STEALTH_FEEDBACK")
 	_vsync_toggle.text = tr("UI_VSYNC")
 	_subtitles_toggle.text = tr("UI_SUBTITLES")
 	_environment_captions_toggle.text = tr("UI_ENVIRONMENT_CAPTIONS")
@@ -1902,7 +1985,7 @@ func apply_localization() -> void:
 				screen_index,
 				_localized_text(
 					"UI_MONITOR_FORMAT",
-					"显示器 %d（%d × %d）",
+					"Display %d (%d × %d)",
 				) % [screen_index, screen_size.x, screen_size.y],
 			)
 	var custom_keys := {
@@ -2140,10 +2223,10 @@ func apply_visual_preferences(preferences: Dictionary) -> void:
 	_root.theme = interface_theme
 	_hud_root.theme = interface_theme
 	var viewport_size := get_viewport().get_visible_rect().size
-	var safe_size := Vector2(
-		maxf(viewport_size.x - 32.0, 320.0),
-		maxf(viewport_size.y - 32.0, 240.0),
-	)
+	var action_safe_rect := _safe_area_service.call(
+		"safe_rect", viewport_size, ui_scale
+	) as Rect2
+	var safe_size := action_safe_rect.size.max(Vector2(320.0, 240.0))
 	for panel: Control in [
 		_menu_panel,
 		_settings_panel,
@@ -2500,7 +2583,7 @@ func _build_original_bottom_hud() -> void:
 	_original_hud_weapon_panel.offset_bottom = 56.0
 	_original_hud_weapon_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	_original_hud_weapon_panel.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	_original_hud_weapon_panel.tooltip_text = "点击切换下一件武器（Tab）"
+	_original_hud_weapon_panel.tooltip_text = tr("TOOLTIP_CYCLE_WEAPON")
 	_original_hud_weapon_panel.gui_input.connect(
 		_on_original_hud_weapon_gui_input
 	)
@@ -2578,7 +2661,7 @@ func _build_original_hud_portrait(actor_name: String) -> void:
 	button.focus_mode = Control.FOCUS_NONE
 	button.mouse_filter = Control.MOUSE_FILTER_STOP
 	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	button.tooltip_text = "选择%s并将视图定位到该角色" % actor_name
+	button.tooltip_text = tr("TOOLTIP_SELECT_ACTOR_FORMAT") % actor_name
 	button.pressed.connect(_on_original_hud_actor_pressed.bind(actor_name))
 	container.add_child(button)
 
@@ -2618,7 +2701,7 @@ func _build_original_hud_action(descriptor: Dictionary) -> void:
 	button.mouse_filter = Control.MOUSE_FILTER_STOP
 	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	button.toggle_mode = bool(descriptor.get("toggle", false))
-	button.tooltip_text = str(descriptor.get("tooltip", action))
+	button.tooltip_text = tr(str(descriptor.get("tooltip_key", "")))
 	button.pressed.connect(_on_original_hud_action_pressed.bind(action))
 	_original_hud_action_row.add_child(button)
 	_original_hud_action_buttons[action] = button
@@ -2779,15 +2862,21 @@ func _build_menu_panel() -> void:
 	_menu_message.custom_minimum_size = Vector2(0.0, 42.0)
 	content.add_child(_menu_message)
 
-	_resume_button = _add_button(content, "继续游戏", _on_resume_pressed)
-	_next_level_button = _add_button(content, "进入下一关", _on_next_level_pressed)
+	_resume_button = _add_button(content, tr("UI_RESUME_GAME"), _on_resume_pressed)
+	_next_level_button = _add_button(content, tr("UI_NEXT_LEVEL"), _on_next_level_pressed)
 	_next_level_button.visible = false
-	_save_button = _add_button(content, "保存游戏…", _on_save_pressed)
-	_load_button = _add_button(content, "读取游戏…", _on_load_pressed)
-	_restart_button = _add_button(content, "重新开始本关", _on_restart_pressed)
+	_save_button = _add_button(content, tr("UI_SAVE_GAME"), _on_save_pressed)
+	_load_button = _add_button(content, tr("UI_LOAD_GAME"), _on_load_pressed)
+	_checkpoint_retry_button = _add_button(
+		content,
+		tr("UI_CHECKPOINT_RETRY"),
+		_on_checkpoint_retry_pressed,
+	)
+	_checkpoint_retry_button.visible = false
+	_restart_button = _add_button(content, tr("UI_RESTART_LEVEL"), _on_restart_pressed)
 	_level_select_button = _add_button(
 		content,
-		"选择关卡…",
+		tr("UI_LEVEL_SELECT"),
 		_show_level_selector_from_menu,
 	)
 
@@ -2837,6 +2926,11 @@ func _build_menu_panel() -> void:
 	_history_notes_toggle.text = tr("UI_HISTORY_NOTES")
 	_history_notes_toggle.toggled.connect(_on_setting_changed)
 	content.add_child(_history_notes_toggle)
+	_stealth_feedback_toggle = CheckButton.new()
+	_stealth_feedback_toggle.name = "StealthFeedbackToggle"
+	_stealth_feedback_toggle.text = tr("UI_STEALTH_FEEDBACK")
+	_stealth_feedback_toggle.toggled.connect(_on_setting_changed)
+	content.add_child(_stealth_feedback_toggle)
 	_age_guidance_label = Label.new()
 	_age_guidance_label.text = tr("UI_AGE_GUIDANCE")
 	_age_guidance_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -2998,7 +3092,7 @@ func _build_menu_panel() -> void:
 		_monitor_option.add_item(
 			_localized_text(
 				"UI_MONITOR_FORMAT",
-				"显示器 %d（%d × %d）",
+				"Display %d (%d × %d)",
 			) % [
 				screen_index + 1, screen_size.x, screen_size.y,
 			]
@@ -3148,14 +3242,14 @@ func _build_menu_panel() -> void:
 	_edge_scroll_speed_label = edge_speed_row["value_label"] as Label
 	content.add_child(edge_speed_row["row"] as Control)
 
-	_add_button(content, "声音与按键设置", _show_settings)
+	_add_button(content, tr("UI_AUDIO_CONTROLS_SETTINGS"), _show_settings)
 	_history_menu_button = _add_button(
 		content, tr("UI_HISTORY_ARCHIVE"), _show_history_archive_from_menu
 	)
 	_diagnostics_menu_button = _add_button(
 		content, tr("UI_DIAGNOSTICS_EXPORT"), _request_diagnostics_export
 	)
-	_add_button(content, "退出游戏", _on_quit_pressed)
+	_add_button(content, tr("UI_QUIT"), _on_quit_pressed)
 
 
 func _build_history_panel() -> void:
@@ -3318,7 +3412,7 @@ func _build_classic_pause_button(
 	button.ignore_texture_size = true
 	button.stretch_mode = TextureButton.STRETCH_KEEP
 	button.focus_mode = Control.FOCUS_ALL
-	button.tooltip_text = str(descriptor.get("tooltip", button_id))
+	button.tooltip_text = tr(str(descriptor.get("tooltip_key", "")))
 	button.pressed.connect(callback)
 	_classic_menu_panel.add_child(button)
 	_classic_menu_buttons[button_id] = button
@@ -3359,7 +3453,7 @@ func _build_classic_failure_menu() -> void:
 	_failure_title_label = Label.new()
 	_failure_title_label.name = "OriginalFailureTitleText"
 	_failure_title_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_failure_title_label.text = "任务失败"
+	_failure_title_label.text = tr("UI_FAILURE_TITLE")
 	_failure_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_failure_title_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_failure_title_label.add_theme_font_size_override("font_size", 38)
@@ -3373,8 +3467,8 @@ func _build_classic_failure_menu() -> void:
 	_failure_restart_button.ignore_texture_size = true
 	_failure_restart_button.stretch_mode = TextureButton.STRETCH_KEEP
 	_failure_restart_button.focus_mode = Control.FOCUS_ALL
-	_failure_restart_button.tooltip_text = "重玩本关"
-	_failure_restart_button.pressed.connect(_on_restart_pressed)
+	_failure_restart_button.tooltip_text = tr("UI_RESTART_LEVEL")
+	_failure_restart_button.pressed.connect(_on_failure_primary_pressed)
 	_classic_failure_panel.add_child(_failure_restart_button)
 
 	_failure_main_button = TextureButton.new()
@@ -3384,7 +3478,7 @@ func _build_classic_failure_menu() -> void:
 	_failure_main_button.ignore_texture_size = true
 	_failure_main_button.stretch_mode = TextureButton.STRETCH_KEEP
 	_failure_main_button.focus_mode = Control.FOCUS_ALL
-	_failure_main_button.tooltip_text = "回主界面"
+	_failure_main_button.tooltip_text = tr("UI_FAILURE_MORE_OPTIONS")
 	_failure_main_button.pressed.connect(_show_failure_main_menu)
 	_failure_main_button.mouse_entered.connect(_set_failure_main_highlight.bind(true))
 	_failure_main_button.mouse_exited.connect(_set_failure_main_highlight.bind(false))
@@ -3395,7 +3489,7 @@ func _build_classic_failure_menu() -> void:
 	_failure_main_label = Label.new()
 	_failure_main_label.name = "OriginalFailureMainText"
 	_failure_main_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_failure_main_label.text = "回主界面"
+	_failure_main_label.text = tr("UI_FAILURE_MORE_OPTIONS")
 	_failure_main_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_failure_main_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_failure_main_label.add_theme_font_size_override("font_size", 25)
@@ -3436,7 +3530,7 @@ func _build_settings_panel() -> void:
 	content.add_theme_constant_override("separation", 8)
 	_settings_panel.add_child(content)
 	var title := Label.new()
-	title.text = "声音与按键设置"
+	title.text = tr("UI_AUDIO_CONTROLS_SETTINGS")
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 27)
 	title.add_theme_color_override("font_color", Color(0.97, 0.88, 0.61))
@@ -3450,11 +3544,11 @@ func _build_settings_panel() -> void:
 	sections.add_theme_constant_override("separation", 8)
 	scroll.add_child(sections)
 	var audio_title := Label.new()
-	audio_title.text = "分通道音量"
+	audio_title.text = tr("UI_AUDIO_CHANNELS")
 	audio_title.add_theme_font_size_override("font_size", 19)
 	sections.add_child(audio_title)
 	_muted_toggle = CheckButton.new()
-	_muted_toggle.text = "全部静音（保留各通道音量）"
+	_muted_toggle.text = tr("UI_MUTE_ALL_PRESERVE")
 	_muted_toggle.toggled.connect(_on_setting_changed)
 	sections.add_child(_muted_toggle)
 	for channel: String in ["master", "music", "sfx", "voice"]:
@@ -3462,7 +3556,7 @@ func _build_settings_panel() -> void:
 	var separator := HSeparator.new()
 	sections.add_child(separator)
 	var controls_title := Label.new()
-	controls_title.text = "按键重映射（默认值来自原版操作指南与程序分发表）"
+	controls_title.text = tr("UI_CONTROL_REMAP_DESCRIPTION")
 	controls_title.add_theme_font_size_override("font_size", 19)
 	sections.add_child(controls_title)
 	var last_category := ""
@@ -3495,12 +3589,17 @@ func _build_settings_panel() -> void:
 	actions.alignment = BoxContainer.ALIGNMENT_CENTER
 	actions.add_theme_constant_override("separation", 12)
 	content.add_child(actions)
-	_add_button(actions, "恢复原版按键", _reset_control_bindings)
-	_add_button(actions, "返回游戏菜单", _return_from_settings)
+	_add_button(actions, tr("UI_RESTORE_CLASSIC_BINDINGS"), _reset_control_bindings)
+	_add_button(actions, tr("UI_RETURN_GAME_MENU"), _return_from_settings)
 
 
 func _add_audio_channel_row(parent: Control, channel: String) -> void:
-	var names := {"master": "主音量", "music": "音乐", "sfx": "音效", "voice": "语音"}
+	var names := {
+		"master": tr("UI_MASTER_VOLUME"),
+		"music": tr("UI_MUSIC_VOLUME"),
+		"sfx": tr("UI_SFX_VOLUME"),
+		"voice": tr("UI_VOICE_VOLUME"),
+	}
 	var row := HBoxContainer.new()
 	var label := Label.new()
 	label.text = str(names[channel])
@@ -3618,7 +3717,7 @@ func _build_map_panel() -> void:
 	_map_view.mouse_filter = Control.MOUSE_FILTER_STOP
 	_map_view.focus_mode = Control.FOCUS_NONE
 	_map_view.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	_map_view.tooltip_text = "点击或拖动以移动游戏视图"
+	_map_view.tooltip_text = tr("UI_TACTICAL_MAP_HELP")
 	_map_view.world_position_requested.connect(_on_map_position_requested)
 	_map_panel.add_child(_map_view)
 	_map_panel.visible = false
@@ -3714,12 +3813,7 @@ func _build_help_panel() -> void:
 	_help_texture.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_help_panel.add_child(_help_texture)
 	_help_fallback = Label.new()
-	_help_fallback.text = (
-		"F2–F6 选择队员　R 跑/走　C 匍匐/站立\n"
-		+ "W 武器栏　A 物品栏　S 视线观察　B 掩埋模式　M 地图\n"
-		+ "1–0 武器快捷键　F7 任务简报　Esc 系统菜单\n"
-		+ "左键选择/下令　右键拖框/菜单返回　按住 Ctrl 或 ↑ 强制目标"
-	)
+	_help_fallback.text = tr("UI_CONTROL_GUIDE_FALLBACK")
 	_help_fallback.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_help_fallback.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_help_fallback.custom_minimum_size = ORIGINAL_HELP_SIZE

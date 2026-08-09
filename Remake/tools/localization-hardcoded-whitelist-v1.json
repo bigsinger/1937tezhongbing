@@ -1,0 +1,2472 @@
+﻿{
+    "schema_version":  1,
+    "purpose":  "Freeze reviewed pre-localization legacy/editorial string literals; new player-visible text must use localization keys.",
+    "entries":  [
+                    {
+                        "file":  "scripts/campaign_level_selector.gd",
+                        "line":  97,
+                        "literal_sha256":  "2e1da919abd17da9d7e4d56a11349b3ee67e66dd0ab14115bba16de5dd38e057",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/campaign_level_selector.gd",
+                        "line":  160,
+                        "literal_sha256":  "35c17e6910fe7f1fd1df2a47d6cabde39da563759846dddc19d847d7a377aa2b",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/campaign_level_selector.gd",
+                        "line":  120,
+                        "literal_sha256":  "36b4539908c6fcb7836c40c392e306b9de2f58e1467f257f02b13b0d0f59e5e8",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/campaign_level_selector.gd",
+                        "line":  129,
+                        "literal_sha256":  "7ea93f4bebda542d555f5f7342eb4755dd5ac5ddc563ffc1e1664bc3ec989c5b",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/campaign_level_selector.gd",
+                        "line":  156,
+                        "literal_sha256":  "7f755954f58b297c06b3dd202b42aca6e27069d88dc9847e496ea5df4860ff55",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/campaign_level_selector.gd",
+                        "line":  147,
+                        "literal_sha256":  "90cbba725ac59080a91cd70d24b342fe3f5ccada8d21cf7b50d2ceb24e2ac744",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/campaign_level_selector.gd",
+                        "line":  158,
+                        "literal_sha256":  "b9fd63845cee30444ea4deda93c0404ec39d7c8ed67b5ba25443753c051941a6",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/campaign_level_selector.gd",
+                        "line":  156,
+                        "literal_sha256":  "c5bc0119d1eb73ad16f66ebb1aee17a5caba6b638a0673797b380de31218142b",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/campaign_level_selector.gd",
+                        "line":  163,
+                        "literal_sha256":  "c5c5d468e7af83a88f59ea6c026976b368e440e4e9743855c7e0055b7112a60f",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/campaign_level_selector.gd",
+                        "line":  119,
+                        "literal_sha256":  "ec0b350ced86527003543f1464f0a47d4761d449b1a639b7e9a781bf2fecd2c4",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  16,
+                        "literal_sha256":  "08e8343a7a92dc1014c857649ff30e0c29e49b8b11acfbe0b38b77aaddd93371",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  22,
+                        "literal_sha256":  "0a0479bddf8142f2e1ebeae0a6604c8f845b2dea2911d81ec0258b8a7154946c",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  39,
+                        "literal_sha256":  "0e839953c19a66238cf0e106bcae6a5e0c0521a44ef1c7efeadd3a6bcdddc249",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  35,
+                        "literal_sha256":  "1081e85628d42f5718b6548e7371a9f8274c052b8374395d225480e33415b633",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  23,
+                        "literal_sha256":  "2219c2ceabaccd65801dcd20c1749f9ae7a1955141ab6fee3b2f9344c0b47838",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  13,
+                        "literal_sha256":  "3a45556115e84cc62de2b3247ba966ce0b7b44ca372d91f794dce7945078a5ab",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  43,
+                        "literal_sha256":  "3e71e0ac0f9dbd0ef65d90b51948c7b71b30ed8d1b22c558b9ad732f431a5cc7",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  24,
+                        "literal_sha256":  "54956ddc45b62bfb190bf6f30d4f5e5974a136d248ac88538b57bc5fa0f77d7d",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  40,
+                        "literal_sha256":  "566476c9a08d213178e4521e86ce2fe7b394cf66595501cbace2e370c6f2a34d",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  18,
+                        "literal_sha256":  "5fc062e48b3a37907e540a7923d82fb8e9d4f4979e876ecd9f683b5eb507f6d2",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  36,
+                        "literal_sha256":  "64ebb02a494134178d92a4a5d0f7fa1754dc210515c1aee81c72cae596fe2deb",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  12,
+                        "literal_sha256":  "6cc013c14e54cd2a265eae5ddab31de4e82e5f593d4625eabb51c571b5717ef4",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  30,
+                        "literal_sha256":  "7f2895216c5cd9d6213bba5f3aaa8ad1d5e413453c7c6ad0d614eca240b0c740",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  19,
+                        "literal_sha256":  "842fcdaa3ea778fbea4d62a5594a5363794cf9f8ea71ac094a773833a42bf38e",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  11,
+                        "literal_sha256":  "86d15ef94d705f461218dea1d4432e4f35e2f4b6587bcbe7cbe1daad4c4891c7",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  9,
+                        "literal_sha256":  "8c9fe348584c4c6155dd6f1f23f3793460fd04adcd75f659682c05cc8ef7a26e",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  24,
+                        "literal_sha256":  "8d86b037ce8e7c5260e95f82f69370df5fa57fdb2e04a1d003bcc5c65a5288b6",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  233,
+                        "literal_sha256":  "8dd10cc69924e86dc621d0574552a89a62ef1e62d7edf9b6409053b35964051b",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  14,
+                        "literal_sha256":  "95f217e3af41b867b0218acfbc6cb0992a8505ec17993e5ac18ae0c2593543e7",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  10,
+                        "literal_sha256":  "9c1f45078bb5780453197a7918de4db0e2cacbefe0ab535a62b605e906fa7649",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  32,
+                        "literal_sha256":  "9f104e4a7a79892f63d2e5b1f1f50b1056381a123ab639667c386c603deec40b",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  34,
+                        "literal_sha256":  "9f3b3b467780f3bd6d4aea0e2ab61c829efa8e5bd44fe866ae0c23075334cdd7",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  18,
+                        "literal_sha256":  "aed5e1a50e734637343baa10cef4edf3cf7a234c0c9b981bd75054c2dc600c20",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  23,
+                        "literal_sha256":  "b0291efcf74c409fb60227083eec7331202cbd0282219b6605bc982fe695c13c",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  36,
+                        "literal_sha256":  "b07dbd89726047a151ddf7c786d4d9c9c4b288f1045d8180184a8d151effdffc",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  29,
+                        "literal_sha256":  "b3582f19e4deab6b4c2f00264fb21e4cacda7b53036fc7e93f712a6e04988257",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  47,
+                        "literal_sha256":  "bced0f65b28a8f06c8e4606f65f9bdd421d6ce508e720c163eaac34255570fa6",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  17,
+                        "literal_sha256":  "c32c4238d48160a1ec85b99f4901e4fdf56d37dac8eacd33748b5deb852e018d",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  21,
+                        "literal_sha256":  "c40de6140804aa71d1d624d1ea72626470b520cd7e8a1ba5a909a24ba82acbe9",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  15,
+                        "literal_sha256":  "c66667fbf68685326f4a3acec50bfc9d03c80d33348fc4f8ebc9b8c8fc8ff8f8",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  38,
+                        "literal_sha256":  "c66ac7bdd77c05050f006da64e826d3a87e9e4b7372cef716a07f09d54f94500",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  46,
+                        "literal_sha256":  "d3db2a3a554ae63cd89ceca8a0ade4e0334d52b8b2890bcdac1b6c04e9332f49",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  37,
+                        "literal_sha256":  "da7401b24bc7e3b1abf4f98be232ece01b577fcddb5d473ced6e99e84edb9f9d",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  31,
+                        "literal_sha256":  "dcb03ef34bc84157a282ea0dd20152afee0ff57fddf344af55a3e3a671c18b87",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  41,
+                        "literal_sha256":  "dcf01d4b2b9a042610ecd072014f79a753b2ce62ac03e9384fab300426a97491",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  43,
+                        "literal_sha256":  "dd38b63733387c01a0f2d7264b057a5bf40af80832a0bfa7bbcaef9b52852c93",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  28,
+                        "literal_sha256":  "dff40f678a5c5f9ec4dac3b944a02e05344b645967ff6acb31f67a11e5abb6f3",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  42,
+                        "literal_sha256":  "e3f0c94bf63a2edf66fe13938970aa89e8baf10d2d9848da9a236926eae85e10",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  28,
+                        "literal_sha256":  "e6957d008fb21943e75530acbb3f4548ed43d997f10777b78e7242ca8fdbef36",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  20,
+                        "literal_sha256":  "f4427b8fabd746a1d866f83a363d1997fac29eb4e7ef984e3845075f38d45423",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  33,
+                        "literal_sha256":  "fb70f14b9f4a60d5d20a5a3eb44a90904e562183125ef934887053824e990118",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_input_bindings.gd",
+                        "line":  11,
+                        "literal_sha256":  "fee5221f76bc00506dd09f53611243efc3e032fd7beedffb230296e6327070f6",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  3503,
+                        "literal_sha256":  "002d9ca7a269a6e647b85083d3562600e2488c9b9412b73613970bbd8906c72c",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  1469,
+                        "literal_sha256":  "050a3bdb991f7684e6b15d63ed0b9c48e512cd40691cb6633712deaf257564f8",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  110,
+                        "literal_sha256":  "1322dac0bd147a80fe8c93855d8afe78c9cfdaed5e5650a2f5d9ede12c0aefc1",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  89,
+                        "literal_sha256":  "18a8406e71d196133c9aec83ab1062740f433473cbfefe44dbaaeffffab3b829",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  2538,
+                        "literal_sha256":  "1989fadc026cf195097247a2d2c27d257751fec89acca7ba207fa686a1da9096",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  2616,
+                        "literal_sha256":  "1a837c59151a33cff309841a237f66d5d385371628131c6fc011bf6c8cbefebd",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  819,
+                        "literal_sha256":  "1dd582f0e7ca872be3812a5a8a58d4240c03ee912058c2fedc33c341c3a01a32",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  1114,
+                        "literal_sha256":  "1ef48a07bf08331063a61f8578d443ebab01158495d11561ac871f6fa471ec71",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  3766,
+                        "literal_sha256":  "2073da9ddd7221e06564550e63ef37a8b4fab51dc2ff068f100bc2968fae6a61",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  78,
+                        "literal_sha256":  "2479aa743de7286530dc3d42bf722c249f5f58ec5c6215b4d04991bbedbaf18b",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  3545,
+                        "literal_sha256":  "2d5c8a5a53e3fb91b0442e0bcf279d5506a7126ab09740f1a662fd0a4de1c8c9",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  113,
+                        "literal_sha256":  "30edbf7537d1e44a3e3983edf0fd1a6fd3f296b35af40ddf4ee7bc327f7f7aa2",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  3197,
+                        "literal_sha256":  "32dc1bb2733f3e690f8810659220e1797b9a28cd20566d6bbade9947c7886991",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  109,
+                        "literal_sha256":  "34fbb92f2e5fb45617da401d941be4ff9c375a8bde0ececdd871ea78dd989c79",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  1110,
+                        "literal_sha256":  "3a38315c6c03dcd51c965aeac781fbe6aa4209593df3846c89704751f91a26b9",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  1759,
+                        "literal_sha256":  "3f9e73a896e8d89f354bc3257ea15d3cdbb507102cfa003f965624729f2f20d9",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  3544,
+                        "literal_sha256":  "49b2ff9a38e6d04b02dded0944d6247152994d91a52b9ef7452eda9d46be6194",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  3667,
+                        "literal_sha256":  "523a4bdbd66928caf607d36a664313942934f6d2a983cf0ade8103bf67b2f283",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  96,
+                        "literal_sha256":  "58e4ef429e53d137f25b6f831a06a2d756e0a45b699bc3ff39728c9b89aeff0b",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  103,
+                        "literal_sha256":  "5927e34b76876142247faa93f5b99079c4a8729222b80e52d7346c28b7f6e90f",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  115,
+                        "literal_sha256":  "5b1092d896d888d2ec1e1743e8aaf93c9e91c78e58a1a3ab57d4d866847d5266",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  1351,
+                        "literal_sha256":  "5b500cc929f99c51f706489e03ffcdebc5bec724d2e0e80ee5afad9a2cada43d",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  3549,
+                        "literal_sha256":  "5cc6fb37c54f94bb1ee5b6b1b4c1c6d11587c8f2eac2f7ae405b7a50b511a643",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  1785,
+                        "literal_sha256":  "649b8fbde331a167aba1c067005d4a4d6d3295ebb1c5818c15d865bab78dcf33",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  1811,
+                        "literal_sha256":  "6d1365124bc20f109965d7a59dfb9615b48ad268fb18c99e96d0c69a8eb3f8c9",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  1088,
+                        "literal_sha256":  "740ddeb717c4eff593268c4fc6f67b9d5a375303c2c71cd371274202919fcbff",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  867,
+                        "literal_sha256":  "7674a06cdd994180d18a2e35300d4101fbecbc09ef90a75d8c1b2ad3c1b9dade",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  3511,
+                        "literal_sha256":  "847014ba0d43f26241df26bfd6d1f501f11382aa5bab2c45b29fd661a2a67a6d",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  3549,
+                        "literal_sha256":  "88428df7ea12aabd7193aca520f0820f159bbe21750464b3d5191ec825b5fa6d",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  114,
+                        "literal_sha256":  "8c267d900a9853e8b88860e5c9923dc82c89a03646530445f37fb0c8886cdbd1",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  72,
+                        "literal_sha256":  "8c99b8c69adde466a2a5d45a78ce80253469d12216c7708acfba0b5ff78d0404",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  75,
+                        "literal_sha256":  "8d174ae3dc2ad2b4963549ee576409e4fb929b4f120bacbe151eab4d6e3253b9",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  111,
+                        "literal_sha256":  "8eb40e3adf1beff138fbae50601c1587e1a0e5dd5a240fc5c924aceb86d2551b",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  3767,
+                        "literal_sha256":  "8f88aebeba356f1d2f542d5adcfe952f22f61f9c79adca3c662bca5adf3bea9c",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  3549,
+                        "literal_sha256":  "914aafb9662b907d262291b93dfbdd3426e5c7c4cc36bcb70d2bb3c18cdf23cd",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  3433,
+                        "literal_sha256":  "91b24c532f9d2104bee832f3c782677290d6705118623c9fabf655d0253bbbe0",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  1087,
+                        "literal_sha256":  "92f764df9194b6f02c679e22813047bcf4a4cd21960dba7b4c1027c23e10bc8e",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  1112,
+                        "literal_sha256":  "96819583f504b8f5674d3bb30bff1ba0881b04f951edacf45ffac4ff046229a3",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  3408,
+                        "literal_sha256":  "9c2041f3fdb763befc400d744a0d61ad6767a00fc9673a03e24275099ce2ec07",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  3379,
+                        "literal_sha256":  "a30455c688c22fb77f1f4ec8a1e44392a51a6ef892d1d04d1b3b3f1a5307e382",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  112,
+                        "literal_sha256":  "a421f2783ac469f431472aee414077a52723cd6c614b11c5072c171f523b55a8",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  80,
+                        "literal_sha256":  "a51741899d49107ec2e1bb478554ff8178fdd713ae9f793351ccee216c62997b",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  1800,
+                        "literal_sha256":  "a98e672074d07196578b2def34e2630356899a662317c2d0e96c9c4cbd73234e",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  3549,
+                        "literal_sha256":  "b6d07fd0143293e19bcff5fc27b8aa565de0c324d0e23e9510ef850281cfbafb",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  1348,
+                        "literal_sha256":  "ba6576f303c1cb3137f24ac1837ba0dfc0e497dd01a2987da46d9465fe39929a",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  3499,
+                        "literal_sha256":  "c7e72aad61362c083bbc7122a396094b978d92fcc7dc43e0090ea8d60340690e",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  81,
+                        "literal_sha256":  "d2c5ba268a16bf974c2288d3d12212fb2300c968d8c0f669fcd04f91162f2b9b",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  1110,
+                        "literal_sha256":  "d95ee47fbb4cae2b8c9c3884f5815247dc20f919792c3f01ecfc99506aef4e17",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  1769,
+                        "literal_sha256":  "dc0cc71068f7520c01593ccc8697f7b02beeac829168aa49049e03f19a04e887",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  3765,
+                        "literal_sha256":  "dfcb3e94e65d93c001c3b2e44b0165196117f1e5b45a1f0a5b39ddfc06405a32",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  1781,
+                        "literal_sha256":  "e69b61a5637a8e38f2255a3bf1331826071efa1e69ca7ddb45e27f73feddde0d",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  3764,
+                        "literal_sha256":  "ea4595c8decc59545fe087ca3c4cc8dcfb0cd1018052d16624889e96f4dadf63",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  3047,
+                        "literal_sha256":  "f1a5c46867cf3438375c36feaccbd863606c7db14b2f6af149e540cc76fdb112",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/game_shell.gd",
+                        "line":  108,
+                        "literal_sha256":  "f302953737fdbd43542094906c520356f0b2f7acb23afa6cfc8c4ee60d7a63f2",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/history_archive.gd",
+                        "line":  37,
+                        "literal_sha256":  "12226c570024f4d308296550edb79f6b25cf8861ccf6dc8f910f2737ac640e0d",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/history_archive.gd",
+                        "line":  31,
+                        "literal_sha256":  "8176a08b48af773aa8670504db16218ae5de94f3f1b50465f3c5ff64b3fc968f",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/history_archive.gd",
+                        "line":  127,
+                        "literal_sha256":  "9f0fc897c3c3cb8d1c05734208cf3d8233f0a598ba8e1e7ed342ffdae2891706",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/history_archive.gd",
+                        "line":  23,
+                        "literal_sha256":  "a49ab568cbaa23f292e1bc00a3af4707b380a9b2cbc2dfe598e3f2467e390312",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/history_archive.gd",
+                        "line":  119,
+                        "literal_sha256":  "af61f5e2e9f7fab430852b3609452f1538b8c39088ba8ba16aa7ae6d54ff479f",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/history_archive.gd",
+                        "line":  27,
+                        "literal_sha256":  "d0f43fe496655319f8a76efc995602b54c69f075a9a32d58fe30cdd6010ccc2c",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/history_archive.gd",
+                        "line":  15,
+                        "literal_sha256":  "d999e5bcde216077bf6dcae5cca7256fc4d4cb436c48cfa1c9893522a947c9aa",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/history_archive.gd",
+                        "line":  19,
+                        "literal_sha256":  "e423273db841cd6f920a3ae0321fdea41076edc4efc3bfab8ebf976bf5f79c4d",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/history_archive.gd",
+                        "line":  130,
+                        "literal_sha256":  "eab903c077f9c262d6f5c7f77ca75b7f7a256b3129e4f7115ef3a39930b21d8c",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/inventory_grid_view.gd",
+                        "line":  212,
+                        "literal_sha256":  "d3513f80c35b0f2e8fbd01da428f9bea2db3b79e7a1cebefee62cc24f25fb177",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/inventory_grid_view.gd",
+                        "line":  141,
+                        "literal_sha256":  "f821a6623e1cf1cd6edfd0cfc5fbe82e5961f8940b7858e36c435ae902cf3410",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_door.gd",
+                        "line":  52,
+                        "literal_sha256":  "1dfcfdb8cdd2244287ad66cc12a0ce3fbb4ac8c8a4dba81b2cb83b346d6d85ab",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_door_catalog.gd",
+                        "line":  12,
+                        "literal_sha256":  "061f38aaac6f5c08d7e45ac944fdb22b4aa4445f7e01aef4245b9391474365cb",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_door_catalog.gd",
+                        "line":  27,
+                        "literal_sha256":  "1fe3344f22ab420cf37243f595cfd74efe7d81dead791fb3909599db63d6ffd5",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_door_catalog.gd",
+                        "line":  30,
+                        "literal_sha256":  "21ba999bf18a61ea92f5a82729d100b8b4318590c509495340fcf9893cbd00e9",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_door_catalog.gd",
+                        "line":  28,
+                        "literal_sha256":  "5543085408facfff9f74251b783e5f0dcded5cfc0d98fdf1b47b6a0120efc324",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_door_catalog.gd",
+                        "line":  19,
+                        "literal_sha256":  "6183b59c5ed06fb13f696863867565ea3bb3027e0a20b4ee20446bf6c726e7dd",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_door_catalog.gd",
+                        "line":  15,
+                        "literal_sha256":  "62e2cde73c16734d2ad865dcf41c07ef1dea429e7da56e5909836c400ca200a5",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_door_catalog.gd",
+                        "line":  17,
+                        "literal_sha256":  "7582a9f7a3250df119fb35210ef466324fdf5f6159f772e0575acce3574c78b5",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_door_catalog.gd",
+                        "line":  18,
+                        "literal_sha256":  "92309fc391495575c864219a99a6dfa86c83f9427c1fc4ec5f83d672ec2cb6ef",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_door_catalog.gd",
+                        "line":  29,
+                        "literal_sha256":  "9f2b8cd5e2c1364ef4f5cc4b11df74d7302ea126bf78acae92d0f102c27a768d",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_door_catalog.gd",
+                        "line":  13,
+                        "literal_sha256":  "a79ecbd25605a00a39867c7e19550ae8a99e9748ac9a87237318d9064ce83230",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_door_catalog.gd",
+                        "line":  14,
+                        "literal_sha256":  "b8351c74b1a988c65c0df2578589f40ef36bb5d540862f908b59652f978f8819",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_door_catalog.gd",
+                        "line":  26,
+                        "literal_sha256":  "d37f1e70921de53370e95e353b28a0cd60e5fe4a8330ab2757eb190ddf29b58a",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_door_catalog.gd",
+                        "line":  32,
+                        "literal_sha256":  "dbe0a2ca76c5f436b0f3b88006cf07566cb0f71fee8574af10656de4cb807c08",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_door_catalog.gd",
+                        "line":  16,
+                        "literal_sha256":  "e42fba05dd690d318f571fce8b46db7aeab11a389e636e765778b2deb81c404c",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_door_catalog.gd",
+                        "line":  31,
+                        "literal_sha256":  "f57bc47938e5673dfa298687603c2541c744c30edf47210fd685b856088c9d45",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_escort_rules.gd",
+                        "line":  38,
+                        "literal_sha256":  "370ed863d508fd9037b8bd2177bbecaef9caf5663111ddd23f3ef66ae08b98ff",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_escort_rules.gd",
+                        "line":  33,
+                        "literal_sha256":  "78e84dda171a92b526c4d6849a81512ddd8624967d0b164385c05e287657f782",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_escort_rules.gd",
+                        "line":  43,
+                        "literal_sha256":  "8a1e85e6420983567024a682e3230adc245dcdb7e113abb6e30d07e616f0eb48",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_escort_rules.gd",
+                        "line":  49,
+                        "literal_sha256":  "c0c19d0cd48e1e5335ac058855acc775e134057571cbb0eb2ff44eec8eb6c654",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_escort_rules.gd",
+                        "line":  49,
+                        "literal_sha256":  "f585a84162391c91bb419e3331b4284fb08b3fa466e0eae4f4f3a21d0e88ad38",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_explosion_effect.gd",
+                        "line":  706,
+                        "literal_sha256":  "0a9f782f6119b8327fefc1aa0057c45d29865ffc73b5beda8b70f29e71afaca6",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_explosion_visual_rules.gd",
+                        "line":  733,
+                        "literal_sha256":  "11d534d4bfccfec2fda5234f66641ab028898116f92da960e0669f1853c51846",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_explosion_visual_rules.gd",
+                        "line":  388,
+                        "literal_sha256":  "3a46ea8d90385a9950b16689378f53d5be53da875c0daf721826b1665bb13cc6",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_explosion_visual_rules.gd",
+                        "line":  262,
+                        "literal_sha256":  "42e00a4f2e356a4871d30d00acc173fea0b07889be7d999b04cd3c99b1ed9b68",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_mission_rules.gd",
+                        "line":  72,
+                        "literal_sha256":  "60912cdf4ee947bf8e9c7d3b0a9902a5ddef54b0c895c9af5b69d7e772d5637c",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_mission_rules.gd",
+                        "line":  82,
+                        "literal_sha256":  "668f84254abc76178f03a713489ef2cd7e39d3240da4fa8666549dd682bde17c",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_mission_rules.gd",
+                        "line":  88,
+                        "literal_sha256":  "8a9c21c7bde78e8c58dbb3f3ab4f8c51ec6cbb78325249cdcc7a0a9f9916c7a8",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_mission_rules.gd",
+                        "line":  105,
+                        "literal_sha256":  "c8ccd6242667a8b2cb21e68107fcb835c4104317faa9653eff7868f2822d11b7",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/legacy_special_world_object.gd",
+                        "line":  806,
+                        "literal_sha256":  "1e9de8d5f8d5e3dbe09690e8b8aef1650143933a55b8549645bab789bbe2a6be",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/level_view.gd",
+                        "line":  34,
+                        "literal_sha256":  "eed1cc792c9daa0eda10612ddad280579612f47de5e987d171f78ef23fb1c3bb",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  12728,
+                        "literal_sha256":  "00c1e83ca35953f200dcdd8106dd0e45d84a6d7578d3a508e044fce5ad21c9a8",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  9356,
+                        "literal_sha256":  "00dcbc523e290624e49873978d69d32d2f18ecd5542017e9d605de4db05881be",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11528,
+                        "literal_sha256":  "01e5645acc1eba64b5c6b780a3f0c8efd4bf5bd0d6838366782ed07842df08f7",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11462,
+                        "literal_sha256":  "02be9040deae7e1ba2fb89bf291e80f7e24be7aa84f04d21aa57f095e2f61c42",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11290,
+                        "literal_sha256":  "03b53cf56c66f992fed9b4370e87d5722b5caac495300c60ffbffb6223ca610e",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6913,
+                        "literal_sha256":  "04840a3844602eff3b9d1ca0a46f661165eb3232a951e1eab0d1628cf511a6f4",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  4814,
+                        "literal_sha256":  "05298cc89c307b6ad7a920fb63a9bffdd9ec1abc67dc18aeda7f4c72cb4a4382",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  311,
+                        "literal_sha256":  "0737d042dc58f5aff852a4642b472913ba70130c95de7d41a3811cbe611c81ec",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11049,
+                        "literal_sha256":  "08aa77d988d86878aeea9dfc705d739361b48d0ea6bfa99f7da2f4536b308507",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11602,
+                        "literal_sha256":  "094e5db9128a8bc5b805b97f0e697d850122d43c61e9d3bee68003e226448c86",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  8526,
+                        "literal_sha256":  "09db018709c243b0126d124752d52539e2bf0a30750927e923a1cdaf90f08d74",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11494,
+                        "literal_sha256":  "0a122ed93ae895ffba79a06cf31f24115931a8622962a64f703d7f9be29f5bb2",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11751,
+                        "literal_sha256":  "0a30183cf37c808a9547c416a8e77c6d0cda04ab0686272a379481c1812d6155",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  9298,
+                        "literal_sha256":  "0d1bf2894c516d792d68a9bcda4ab448495125f922b3e0040f1f06bb01791662",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11265,
+                        "literal_sha256":  "0d5c03ea61c25aaf2d6a9f282b8cedc4952fbe0f0173a7d5f8caf2ec84d2057c",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  12909,
+                        "literal_sha256":  "0dbade78e7c129c6c5dcadc850f6e7fba2bfc8bf1e66f35997e026fa596619e6",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11486,
+                        "literal_sha256":  "0e00cefa359028f41e1bab4e5279cf1c41aca75b92d7fe030f025c5677c2c6eb",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  1367,
+                        "literal_sha256":  "0e4052b50386fdbc5441c8746a95ed74464d438343945d45a8afaea6f31facaa",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  10535,
+                        "literal_sha256":  "0f4ab9aab7644fc32eed29f8109a5edf4b294901f78d9ec03a1cd04a01484c92",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11606,
+                        "literal_sha256":  "0ff1fe287589d54028790ab0fac36b19b1a6e14705dd6896b52a1b0248bf0207",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11071,
+                        "literal_sha256":  "113bd6845c1f8e3348e8f217f2190dc0bc86c126ec9fa9707b501ae94710ea84",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  4696,
+                        "literal_sha256":  "11cffff5bca53eb141523b9a02d2d8234ae11794e7b12d4d94661084d8367b89",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6768,
+                        "literal_sha256":  "1207adaf6d46394172676c1b2e856dc57946e96f6288145dbc95172e20ac28f6",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  7278,
+                        "literal_sha256":  "135916dbbde3d22833485f9438c345661ad6760a80a8374553a9d073d53f74af",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  1129,
+                        "literal_sha256":  "13aa399e22c7efa3e37c2bdf567c9469312d2ced633b69b44a80849f96ea47fa",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  13391,
+                        "literal_sha256":  "13f1f0c0abe41bfd07826efdddc954fad43f6dc864987ded1fa779c2cc83b6e5",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11755,
+                        "literal_sha256":  "14029650ead0c5aff411162cb8b0eaa73ce6e9ab4cd37f1a73ee15e94e330c04",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  7280,
+                        "literal_sha256":  "14f9dcc880e75675dd34a7e31b752e5ba91ee86d771bf767790e018407902af5",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  10940,
+                        "literal_sha256":  "162bde4ff8ce5293b153a4c40110f0160ae9fe309878907552f2f46359702900",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  9300,
+                        "literal_sha256":  "166c2efa38614649a4d3fea821761645787da9b244016adc32798609dc57b768",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  408,
+                        "literal_sha256":  "177c5604946e332c5d275b585ef2be5231e9c91ec426587ae32403f42d88c8cc",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11837,
+                        "literal_sha256":  "19813e4ff04beaf9342a1080ea910fab03cf463d7777b0f61e3a6c1d95f2bf73",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11818,
+                        "literal_sha256":  "1b010acec21ed671630f079b21f437a72c32d34832c28a8b01ff4ab6183c6c95",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  4814,
+                        "literal_sha256":  "1b1be55d098658e41b7ebdf881e29bb77ed718713567463751bb72750f8dd103",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11287,
+                        "literal_sha256":  "1b2564538eb6723627e7602e406546e67fae08f7076e54107dbf33ab4c3f8547",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  5314,
+                        "literal_sha256":  "1bff2824a0c875d43976440ba40848685bdfadf5166ce36efa4e50ea8a3cef43",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  9369,
+                        "literal_sha256":  "1c4b3cbba46de373245528b90be71d3ba04d58096dfa9ffddbfb35fa6c00a159",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  9928,
+                        "literal_sha256":  "1c84cb757545c3eec77048e64139f79b12421d45c16f5e41ca9299444806ec2b",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  8522,
+                        "literal_sha256":  "1d93411f2e1d939f2777c008922aecfc1d9a5aa82e7056fffbf3a83a850e7697",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  8529,
+                        "literal_sha256":  "1dae3da015a19965bb3489f531ccbc13feaa1ccea75eb7f188d682829dc9a400",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  1212,
+                        "literal_sha256":  "211f801ece6326ef19590b6f9c86cbc79fe026076cd5214131a6ff27572a7e94",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11049,
+                        "literal_sha256":  "23504db04e1e07cb7fc74afc0bb27d78946e8516ada1a006ae2d058f30ef852d",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11071,
+                        "literal_sha256":  "2441b9be9ba933f22f92caec12ddf70dc649c103241edfa57334a3f5abfefcf5",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  12079,
+                        "literal_sha256":  "26600b77367063daeb5924ad9d7471a9c36d80b5affa54f90f59391b00ccc2d5",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  5999,
+                        "literal_sha256":  "273007a1ef5910f0be71ffe12c347968fb408c97e7ce262a57564d1635cf7633",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  12701,
+                        "literal_sha256":  "2983a5ee99df34b142086fb687d81099a72ec310e01f6d0b78b8746182aa6f68",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  12054,
+                        "literal_sha256":  "2ba7588100dfcdd75e28f07c07af3f4506530e8c3cffb600d25b59e0679dbe8d",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  8917,
+                        "literal_sha256":  "2ccbaef2ce3f825a6ae2c61da731207807fe1bb27a9e99e102102c225df6e45f",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  8723,
+                        "literal_sha256":  "2fd4065b8ed0cef98638e07102fc0b6af9217979ca159b854e8c28b1e31e4f43",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  2477,
+                        "literal_sha256":  "3047a78ecfd72f031ff74412e4214937a1dc05ca094a760562dc8c5b7654c6bc",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  10491,
+                        "literal_sha256":  "30ec12ef5a8d212541c6ac37cf12a394fefae51176d7ffecc4b9150028edb8fa",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  1184,
+                        "literal_sha256":  "319c62ba4cd44e4835c8a13696fc962fbf341cc2a47e6b405d97d9dafeac4aaa",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  7644,
+                        "literal_sha256":  "31c79054a89a08445c8fd1678fa75cdcca54917f92066c5a7057213eefb087f8",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  12270,
+                        "literal_sha256":  "3216e68fced105fbfd1fd512fa68a9bee1919d066162d5749a2219b1ed598072",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  7254,
+                        "literal_sha256":  "326f3b481ce6cdab2c80fe4e1465147e2330b4b8833c7e412409235b074e8d9d",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11365,
+                        "literal_sha256":  "32ac14cb3d20147bfbdb3a59c236243c49eb1d1f7c723e09553a64684b1dc043",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11263,
+                        "literal_sha256":  "32fda07990ca64da37533a761de5f6d17e56823e863e0865d53e5952d9a8017a",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  12069,
+                        "literal_sha256":  "33d9265383225fd01f5a409a8806e65c5b77765a428bd34f4d375acf56980cb6",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11293,
+                        "literal_sha256":  "33ef27a5fc1e190d3d4ec417d919bce9b10009cbfe9221c20fdab5fdb19058d0",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  310,
+                        "literal_sha256":  "343b7fa015241bee6e5680fcc3c3484a6a9288c44c0ec450cd25e5835d4f9f7e",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  12698,
+                        "literal_sha256":  "34c8eec3fdc5d7904f8adba80222a2853ddd6a7d6178286c80865154db4971dd",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  12157,
+                        "literal_sha256":  "35826dc8228bdb43d38faf7ed4f8980b10bd3ef6c354412da0a3a4c9cba43dde",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  8538,
+                        "literal_sha256":  "36957df901eef383ae4a9832eede5547d398561c5e75b93721169d00dd5f595e",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6215,
+                        "literal_sha256":  "389576f82168cd35e58be09a66602e9da5bb1d81fb1760385a3ea54a29579e0e",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  12286,
+                        "literal_sha256":  "38c5ea3c0591d2f4084209f29b95e9767cc7ad040620e1aca33039167b2179bf",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  324,
+                        "literal_sha256":  "38e8dfca80b6a30d25f7d312e95e1e48ace7ce05201061db6fe1082b2857e65c",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  5234,
+                        "literal_sha256":  "39b9de91bbc343b280974adc190ea5b57857e2155a7c7316bb1f9e28d70c849d",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6267,
+                        "literal_sha256":  "3a170004ca31205f3db10e43ad7688f4578e0eb501dd3e21736521417994cbd0",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11148,
+                        "literal_sha256":  "3a604abe92cbf11cfe76ea91365536312dc1466108c0371aa734220b4a78ae15",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  8226,
+                        "literal_sha256":  "3aa3e9b3d6c1180a4cb6d964da840c3b8d61d890a46ffa6da9664b2cd94689b5",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  2496,
+                        "literal_sha256":  "3d6a70707df66db8e4790c3770ae80c5996ea744ce792851359566ed4df628b1",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  5234,
+                        "literal_sha256":  "3fa4db28524b4149b430a6b77b22a8896206dc41ad9f6eee2fdca0292a9637c9",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6707,
+                        "literal_sha256":  "4082dff8c410309322abef198c9abea9248abc0d696d8387bb05584a6c8784fb",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  12718,
+                        "literal_sha256":  "42799da088d440295c71be5959987b2fa03ff86e486a966ba165a7c61e3ccdc0",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  3737,
+                        "literal_sha256":  "4287c5bc6d0eb01d087f8131b7c5443a9ac21081825c32663f703112ba682b60",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  8727,
+                        "literal_sha256":  "42c129c6358a0204baca07d1a34571948c615b8b6d98403fee2481a6b7fae2b7",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11716,
+                        "literal_sha256":  "43e946335e3e29c9add43244c0bfe19a110ffa5e5e15c77aa8dd21c05bcfdd0b",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  3731,
+                        "literal_sha256":  "4415e6ca07381b3a88e43a2d5ad013f1b9e948aa53c4fc5088a5ab03f3553b89",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  8875,
+                        "literal_sha256":  "464353f2421d08083aff9e4e72d07d12aa5db6e002ac8e04ef7da6442d6d80ce",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  1154,
+                        "literal_sha256":  "4774dff39ab640ebceaf54dfaf4d3070ff78af4f9959faf23f8352d88a780b4b",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6430,
+                        "literal_sha256":  "4c0ecd159d62f5ed88b0e8769e664adc35058f441be484f26417bca5b49716c2",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  3735,
+                        "literal_sha256":  "4d42cba02d0f302a6ee0e465307f46fd780b0b3a186162516c4d489bdb65242e",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  3044,
+                        "literal_sha256":  "4daab348803d4bb546ad63034f062ffc4c0dbaab662086773c91d0422e724233",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6655,
+                        "literal_sha256":  "4de62047c94e79eb6126071f1c428b996c005feed93ef24c4a4857c9b9890e5e",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  8482,
+                        "literal_sha256":  "5048b2774f52364e719c81fbb363272ac5f8c96d347574e21fac34e47d7ab1c3",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  9274,
+                        "literal_sha256":  "508c95489238825b9d456bdb9ea0bc30ac43ee77ef09c941460909a22dc1dca1",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11534,
+                        "literal_sha256":  "5218754656796db7150a25589eee7aed3e104417f63f2e7119b9ae4c46653fe6",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  320,
+                        "literal_sha256":  "5225bd4472ac45a08231d63ccdeddd6792e789efaba7f0c7e557777e06f12504",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11143,
+                        "literal_sha256":  "540c3f3ba24a47452a39e456c48433b520a4302fdefc7cf2c4a061dd8a608ae6",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11606,
+                        "literal_sha256":  "55fc22b4d277cccf3437ef4877696f57fe8973f869eb638b230c34edaca876db",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  282,
+                        "literal_sha256":  "565f3cab25304afd2369dd0a84730264dec94c4951a043cfa00a0b026564fc9d",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  8667,
+                        "literal_sha256":  "56ecd32d313485f38d44e78e96ae181f8adf7713ffaf66f7f524c1b487bbb267",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  9225,
+                        "literal_sha256":  "5a0fb9062f31652219eaee0e94daf38c9a2aef9a9cf2741fea375f414df63a0f",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  7957,
+                        "literal_sha256":  "5acc34074e8b38efd36d0ac2b2ca2905feb0869612a0ccfd54dab4e08858f95c",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  10077,
+                        "literal_sha256":  "5b0f11e4d80a8f771fdaaefd0570db7236f54f28b863ffdf3f6adfcdf61891c4",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  10880,
+                        "literal_sha256":  "5b147b58f569e6e45821323c03fcc1ffddeb21b9f65840d5d36f3cc7345c0c64",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  13390,
+                        "literal_sha256":  "5b4d770a3c5c3366f3de503f3ce06890bc755dc9b0d5f341a3794f955e17bf35",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  2989,
+                        "literal_sha256":  "5e162b6ba98613f3d99eea50041d5c56215efa729ff27ab41038cda59decfa09",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11468,
+                        "literal_sha256":  "62b9068a66e2e7fd3975de9ef87cfa5f19588a236f06a319f692bed8f09b402d",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  268,
+                        "literal_sha256":  "6727bca229d02f43ace7456acd7d1d2a90dcc15d8f4a827cb5e2866cf773f972",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11493,
+                        "literal_sha256":  "67b5d1d2497186b3eeaf81319de8bd37f28b30dec721752bd97be8f67b54b141",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11755,
+                        "literal_sha256":  "67bc724712a154314132423fd05f15e561ced630d566002d1525b2f60f9a39d6",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  7625,
+                        "literal_sha256":  "68087eb7438ab92a480e4da80b4174d9d9390c0976c38a25912bb1b9ae16385f",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  1138,
+                        "literal_sha256":  "686831e0c2c1c00b0c0a338997ba97f05fd1d456e53a6766fa631f15e587ab23",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6461,
+                        "literal_sha256":  "6d5538efac2e005de12f1fa6c61205739badea3be7ad1dff63e772fe090e2e27",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  4811,
+                        "literal_sha256":  "6d7a3841e08a08da1fbcee3ed721bfae51365a146807d7b95c5877a54a1eb579",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  12715,
+                        "literal_sha256":  "6ef405efa814643a519f0c21456e24f0bf855bb3e458aeadf31e8f56e2b5ca73",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  8775,
+                        "literal_sha256":  "6ef873352ee84ff4d2d423db057ebfc34521de1acec91c8cd93c58c06c62d973",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  10540,
+                        "literal_sha256":  "6f2b2b156ed857cb656106541da536968b5a41741ab0cfc931ed3bb524e93e9c",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  12754,
+                        "literal_sha256":  "700113a506081a3ca50dec9252160d9a2712f2293b699524bc0b26dc6ac02ad5",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11621,
+                        "literal_sha256":  "72f4003bcab94dc3483ed8417ed2e3026839b22eb6f3499db228e19e36475e13",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  1153,
+                        "literal_sha256":  "73fa536d094606a2f94a12a2dcab036f0a81fdc1295eb39d1d9575d1da32e2a7",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  8630,
+                        "literal_sha256":  "7550402017a811e133a2e72ae82ff56ec11f02265de5c787d6b90bec7b76a4d7",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  1848,
+                        "literal_sha256":  "76de51e2b333075705159de186f6a0638bc1bfed63a296c13677d849aadd3e61",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6189,
+                        "literal_sha256":  "78daaf52dabc83923f04b86d8c04cfe69f534832bc8ebe5fbbe9ffac07345c9b",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  2037,
+                        "literal_sha256":  "790a711e958309d731031bd9c04697b040bb3f01c2b79841e22c04d907049671",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11537,
+                        "literal_sha256":  "79f0ae0a874e0752b4ef1a489ddb3d87f22c6e03fa94e91181ae72e77f079d0f",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  299,
+                        "literal_sha256":  "79fa9195825f74e497da7cbd1641ddd6ec8802c79ae14bf772ac3de12acdb3ec",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  13393,
+                        "literal_sha256":  "7b7fcf8ab4d45efd1cca7b6ee5939301ba38b8be5f0e62dd1567ae1ef87df4e9",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  9333,
+                        "literal_sha256":  "7cf1d91ca4ce9272dfc3680177ba3f70cc09b31b6cbfb72302e85a7c32d666a0",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  306,
+                        "literal_sha256":  "7d559349caa5477b74c51b813786e8db5d7c303d83be804c1e163ea678d38f70",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  7229,
+                        "literal_sha256":  "7de8e6c3b7f33d9db8c6b4be8116392f7bcef4956a37c153712b32695546016d",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  12374,
+                        "literal_sha256":  "7e0d2dd03087a4d1c22952462b941192b7c4876f518a6992252eb7f7843fb07f",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11461,
+                        "literal_sha256":  "7e1bae1a7146e0393354e87aa9aa60cce19e79d2cfe55fcf79a25f0362a7bce7",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  12073,
+                        "literal_sha256":  "7e77569e79b680eabfdd1835741133aba64769b24f055f0c5a1b9dcad1aaa459",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  298,
+                        "literal_sha256":  "7f4603ab78dcae74c1c5665356007ed0fbe805d82b0839012107e224b29dc173",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  1203,
+                        "literal_sha256":  "7fcf5225bc03a705814f4809d0914c1abc7aaea1d6f56cf89a6cac2a51fe2091",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11852,
+                        "literal_sha256":  "800d483869f04707f3096d7a978068288e3cddf4a32a92b9bbec923c8c7a2ba4",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  2470,
+                        "literal_sha256":  "800dcb3585937924014c4f410346a1a4c289e3c663525fc1b6aa695ba1a12a9a",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6688,
+                        "literal_sha256":  "80aa87e58f57eef5d257b223a942f7f212942260cae048ecebd8f66278dad8e8",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6681,
+                        "literal_sha256":  "80ba17dd14738d3793d387766cc2c25cbda126fb57921f0cdbc08ddb6674c99e",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  2762,
+                        "literal_sha256":  "80bc40f0e7345b21012b1d29dbbde083f613a5033de48f075c1ea454a34fdb03",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6901,
+                        "literal_sha256":  "8161478b5ef17ba747ad63f73db0f4422eaa7ab8b123a1e9ede30cda141211a4",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6661,
+                        "literal_sha256":  "850f36ac271ca597a028b2fcb20160bb7ab15a709573f2feba45dc7edac9a2e9",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  1831,
+                        "literal_sha256":  "8759a52160fc6c8eb8e83aa49f639a8ce2684671f9cf74e6fbff014f74c1f226",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11067,
+                        "literal_sha256":  "887dd9ee9ccbfa6ab01dd1c067c66cda9f618b73b0f46739b6cba046d42cd06c",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  1341,
+                        "literal_sha256":  "88d35cc22a88ce11f99c429b704065d4981c73952f86eae89b6d31508bcff7da",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  10768,
+                        "literal_sha256":  "88dd0fa826466fdc4b8bd189b8232a34ca231305f53a92ac236e011ebee2f1d1",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6827,
+                        "literal_sha256":  "8914ce3e14ef2d7c62d96ce9a49f79bc0a66107fc3a172e351c349da4a508c44",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6691,
+                        "literal_sha256":  "8a8f867a4e07eaab385cead56e2414e48beb4ac08251048456e1dc31ae5c7deb",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  1824,
+                        "literal_sha256":  "8b16498d103e2309472f8d86754cc191b4ffae8834a671f953706443edcb3389",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  7253,
+                        "literal_sha256":  "8c73efabe4dc0954eb138e557f3263da155d9ac7dd4b9323fc4eb4bbeb710160",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11462,
+                        "literal_sha256":  "8f2a1f5427bb63aba50cde1f4a7385d0d6869b2ee86eb5334fcd5f6b3f550b47",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  12673,
+                        "literal_sha256":  "8f5de9758ed8f414a504f359da389c528d04288c212c5baa2a29fe608ee5cd08",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11371,
+                        "literal_sha256":  "8ff060302479136bd4e2af727ca38b82b2b03516aa69c61788ce8f4b79f60ae0",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6551,
+                        "literal_sha256":  "9121f8963c57a338feeed51b1596d4b97d95c970548455eb5db383d46c35fa59",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  2504,
+                        "literal_sha256":  "947e30598e833582ea42c573363de7ad7523f8be5a03f8b4dbb679c5623c89ce",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  12346,
+                        "literal_sha256":  "9a847fab08d74f4a6c44d45709545eef589361eb32ce42c1dd2ffa01f5eca3fa",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11068,
+                        "literal_sha256":  "9ad464fb40ec2b7a7323c55f413bf1a60eada7c52d855fac95d9b12ff885dab8",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  312,
+                        "literal_sha256":  "9ae20f7875370f9d96f69f3b6d1f548475feb0070f3e1a4802e0938b2a2fcf92",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  13145,
+                        "literal_sha256":  "9bddc7342227900e39f668a6fecdba6cc9977c59c2156d846d880f97f5b6cb27",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  1225,
+                        "literal_sha256":  "9c61feb54f771cc232595377228baea74fc4c6565a188277b6de45e66039a69b",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  12063,
+                        "literal_sha256":  "9c95c247c5e2cea220ed6d05d5239a5e6807cfea587e785f1e450cd65fa2ffd7",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  12052,
+                        "literal_sha256":  "9e25ed9c2b1b0b4983de94d03a6768820b5f0d2fe7dfa3b435568ef3fa50e51f",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  7267,
+                        "literal_sha256":  "9f40fd18f261e426c7ee1225897bf81a33da170d997083199b6e38576d1749c7",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  9332,
+                        "literal_sha256":  "9fe26b4f80aada9461ff9f227ea148de19bc431d3755192dc88116fba6b6d33c",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  5396,
+                        "literal_sha256":  "a01b13e68c795404c06b1fd0e15b1135eabc81dbbe0b50db7f46ef9a7ed5e065",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6671,
+                        "literal_sha256":  "a26bb39f64507c69fb85d832eded0e317398728ca6299f282909bdd00014a68e",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11458,
+                        "literal_sha256":  "a279b318212d9621edc9bc14501e80f0502186985e3afc74ccee9f2af520ce94",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  9367,
+                        "literal_sha256":  "a31dff71e4092add79b2a515d1ea3625bd16c29c2dfbe4ff6e20355c706e9493",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  12331,
+                        "literal_sha256":  "a344c668268b1280721ed723fcacd29ef2f13231e963af546d3d2c772b092c3f",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11534,
+                        "literal_sha256":  "a60ee267de2c7662e12e8ceea02f101175468e6caab6856936b38ace142c343b",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  12093,
+                        "literal_sha256":  "a83df0f241dcc3c52de5b6c64e18028cce3fc4d04fd2a0160c7504c1278a2d3b",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  10899,
+                        "literal_sha256":  "a9592bbdc0bba7f3b2285f1c92febc233d43a3e41a0ece0844207972b036d0c2",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  302,
+                        "literal_sha256":  "aa1b4b1df64c777659dd1faceb872a93a82efc113762201be2a290782a51123a",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  9365,
+                        "literal_sha256":  "aa2efebb0b8e3e76cabe19ea54e6abe0dbdc8e2659110bd470e8a235d4be349a",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6303,
+                        "literal_sha256":  "abeb570fb39cf5aa67691bd104a928f8118b2429e7308dc0748468e87ff84043",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6249,
+                        "literal_sha256":  "ad62930b591ffc43e4bbcb751f4736e729209094c6446ef62268510de96085c8",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  10501,
+                        "literal_sha256":  "ad63c1d1e39e85aad02f57496bbc3eb57e1f72e4fa05a20d395a8259c18c7209",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  7045,
+                        "literal_sha256":  "ae0237ec36ca96107b7c92510009de8e886de1078be987c95dddd7fa84276adb",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6066,
+                        "literal_sha256":  "ae03ced3929003117eec53f7fbb953b8d3e9ff7ed2bd360cf6db98b8de927ff4",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  4669,
+                        "literal_sha256":  "ae6fd5dcae3c382df93732db51acd327c54d1786fb5f82b32794cc39183d660a",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  7048,
+                        "literal_sha256":  "af8ae87a7652d9eea615ca064aa3333e298fe92f4330b041509d3dc9a8c03131",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  792,
+                        "literal_sha256":  "b07c3ca824783a5d5621504d45c8fc1e8de9084ef60216bdf9b7c7ff75921edf",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  10483,
+                        "literal_sha256":  "b0e808d12cd896967f8ed1620282c6369d29ffc024009961309fab4c03214bf9",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6041,
+                        "literal_sha256":  "b11b29596d53d39ba4b4efcd9ee603445387b3ecdf76518aeabb999df1b825b9",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6207,
+                        "literal_sha256":  "b440fae70240fdd0e130b9337e1321d936a840bf5cd3943fb2fa84a9815e3896",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11334,
+                        "literal_sha256":  "b5492bf2ca4157209052f180ef616f0fa4ee49434c5148ff2c57d881882c20ee",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6233,
+                        "literal_sha256":  "b5c9d95f77862284dac145b64a3697d3b92fdd9a005da06ff722fdc767f53233",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  12007,
+                        "literal_sha256":  "b7a6e45689f3a2c2c46e25132df304ebbad9b7040ca9278d976e520a4b4a5850",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  13387,
+                        "literal_sha256":  "b9cfbdc9b9d6f0b75af96e27356d0be702091f465dd79ba64c8c54d06dc9a5f1",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  10899,
+                        "literal_sha256":  "ba432591e7cd487e867a5221eb1d7db39109021de607a0b4c6b0aea00ce33129",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  2477,
+                        "literal_sha256":  "bb63f5ae29d8d47a131b739d95e48f43276e1f8e3c2c3d63d35f4e5bf41a6f1a",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  317,
+                        "literal_sha256":  "be3872f910b61524ece646435085419dc9f963744e635523c85a15524cf818c8",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6345,
+                        "literal_sha256":  "bf3672e021adb5f8a29d9ee1d613ca1cac59138199fd57827086fec5297af9fd",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  12377,
+                        "literal_sha256":  "c1519f02ddbce74d675795fe60f9afcd11416862267b9fb11d33e5c68afd96ab",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  2500,
+                        "literal_sha256":  "c3bc67fb9cf895a2652277fafcccc879053ff61ad9bb98ee1683afb0ef558ece",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  10764,
+                        "literal_sha256":  "c78f5b31412bca1fe0abdae8e9c6eb9a1ebb3bf7196135df0cc5575618f5d6bd",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  13394,
+                        "literal_sha256":  "c88f132bcf05764d91bd5d157c85e255e4edf2be6e81adce3dde7560c7eec3ed",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  300,
+                        "literal_sha256":  "c9035a6fdfa690470bcf38e6fad7c8803f074c63b4aa704b663361036ac1a29c",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11166,
+                        "literal_sha256":  "cb0f05d2f81f040594ea8b0ad8e368796ca18109cafd41f4951bf852cf198829",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11597,
+                        "literal_sha256":  "cfa286f63d49fbcf0e338ef03bc7c60cea43307f15aeaf1f84c81e5a25c4de45",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6856,
+                        "literal_sha256":  "cfcacfb56df59a29bb1c45461760e2ee7dd7f4bf6231526ca1684bd7c8e5b43e",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  280,
+                        "literal_sha256":  "d14f6ca2b78ef86342b3b9df0778a088f613b80f0f2ff4dc22f22c98b0a0d284",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  323,
+                        "literal_sha256":  "d1e919469d757de614dbc452c8eaca1135c746f9a7e77d188365991f891e8ec6",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  12318,
+                        "literal_sha256":  "d205045184b156abe8688fdd30f31b3cb77b3409219469582e0360476494626d",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  10766,
+                        "literal_sha256":  "d25fae71d4850c6d7737b964cfd6bdcf86969db2a02343211cce04949411d82c",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  303,
+                        "literal_sha256":  "d3171e7b97b22d9b65177540ab7228dc258bd0189d94b4fd0b8aa049a5c60a36",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  8742,
+                        "literal_sha256":  "d3c65736781f59f74849b5b1b24dbfa37bd89123a6129460b45943f3b84a07aa",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  12209,
+                        "literal_sha256":  "d423cfa079f02ced9b7c7433329c38066885153af01509fc3aa43b0dda9340a8",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6671,
+                        "literal_sha256":  "d5918429624fce94c591dd37db5e5a962e9f6da6bd6f5f8dff0dfd6e070ed25c",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  314,
+                        "literal_sha256":  "d5d3c0349cbab0b8c197acd8ebda7b4e83cc5245d05aee08d90a70076bbc3519",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  12063,
+                        "literal_sha256":  "d6955fceacf68eebbbc7de9f763a30fbf4fe20fd724844407e2a2c9bc40847e6",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11336,
+                        "literal_sha256":  "d6cbf286464d84014538908490a7e48c996cb9f6071831c21aca6564303cb88c",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6979,
+                        "literal_sha256":  "d7262da0acaef357dec265d49575aaa3fc7653cc7630a3b0f438c8d5bc54d5a6",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  9955,
+                        "literal_sha256":  "d80822890886f71ed4ae7bf9cd49186da1ea4276335281d7bab760c1ef61e0bf",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6829,
+                        "literal_sha256":  "d981451989736989f8974d1ee44d5f83d0581f30fe0be1c51e4b739757fc6709",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  3733,
+                        "literal_sha256":  "d9a81b553f7440800f1ad2b7e4fa02dd80126a60882fd2313cdecf1b3e8c56d7",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6922,
+                        "literal_sha256":  "da1e0da772ebc562930adc5637f92c300df7eb4ff1ce844487fd4c01500455dd",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  2445,
+                        "literal_sha256":  "da2accde3a26ae813d133bd62b709d759699ec8eb230a6a1220b1c55da8a7f9e",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  9323,
+                        "literal_sha256":  "da4f8eab20acf1c6836689e30b67eafb96807c0aa433ab965fa4e5542bb8be36",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  7253,
+                        "literal_sha256":  "dae682f6156aa8833beaa072784ad56970317bc0c9e4adbe91fa343d292c3ffb",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11328,
+                        "literal_sha256":  "db0c817900eab39a05aeef7044d4b93359ed69cb3f09e20effe4b7221bfdbe00",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  9417,
+                        "literal_sha256":  "dd67445ea1beb8efb003038c3c4dda524c7c2ee5a6d0e49e1ddbe4aa3d32cd96",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  12914,
+                        "literal_sha256":  "de9961ae306d9fa7133c3ab11443406bde9d6b5fab6537a2f1e10d7d6de773f3",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6661,
+                        "literal_sha256":  "debbf10f61229bb323e5acbb829d7ce683d44ebb74f1ca9f91882c06fbe69e0f",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6873,
+                        "literal_sha256":  "ded378ebd23419deb9e8ddacadff181add2a2e7536a212454eb6e3aeb910866d",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  307,
+                        "literal_sha256":  "e0f398507383f19443e8b375c97fc5c90bd53ad58428b98c9f1b72f5794187e3",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6154,
+                        "literal_sha256":  "e2a2ecec7d66757a7479763a60256081d8fe3a754c7c72af730119d302a10117",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11124,
+                        "literal_sha256":  "e2b1ca5dd94d84790e95f01497adf426caca9745829da0d3bcfc0eeaca40d286",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11332,
+                        "literal_sha256":  "e2f03c4e6ac53e97cd65060b4c8a13a76332940f6adb515e661feecfd55c4645",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6661,
+                        "literal_sha256":  "e73a7b91816aaaf50b264e27dc11dc6a1249f58ebebe9dfa3bd42442514f2c9e",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  5384,
+                        "literal_sha256":  "e8839d4b5224a2ad38cb65e284f5a6f698c8e5c6078e9bcae281311bed5c9aae",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11372,
+                        "literal_sha256":  "e993fb9a943940adcffec2ffa806d129969992026b98009301b363f46c70d4d1",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  1388,
+                        "literal_sha256":  "ec646e5ef6f559643c4dab294da092d0f3d08699c7efeeb6a10853670fead17f",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  13395,
+                        "literal_sha256":  "ee5ace73faa0b381520c001e012cfc72ad0fc8ba5f8914e31aa05ee3e63d802c",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  10032,
+                        "literal_sha256":  "f0035bf2965b3f7fc8013aaf943d645c80aa8f8e54f7b3299827d808cd1d5df4",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  5233,
+                        "literal_sha256":  "f1488b4c042729db79b584dbc5f9221223d4056656979b58df5d6395263af235",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11493,
+                        "literal_sha256":  "f2fde20524a44a110d841e763ee080d05ea2b871f5e274eac1629f7b232988e4",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11330,
+                        "literal_sha256":  "f3734b044f84a97d5498f13a95ead70673f273d8462dd86a850af0e711b83a8b",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  9314,
+                        "literal_sha256":  "f550b94a97d49f11eb131c9eded816132e2d8e31f6b050672dd447f3de639881",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6165,
+                        "literal_sha256":  "f633b31dcdccb12ac366c89912a58b02546f03c0f1d2bcc203d94a24fd533e27",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  10504,
+                        "literal_sha256":  "f659012d3bec32b61ae2ddca043fb3d572ce9b9e1813ddda4c330bfc5c53f7e0",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  11464,
+                        "literal_sha256":  "f704671438378e50bbd40d71da1c5a1a43441bfca05fbb5b7556ff6a146bb1bf",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  6258,
+                        "literal_sha256":  "f71112125a9747a417684369b11350ce90d0a4eea64c00a9019e9e4800f88648",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  10938,
+                        "literal_sha256":  "f752b3053f2efc9decc841973767a7c803882cca0b383628909c743807b4e2d4",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  305,
+                        "literal_sha256":  "fad2063f3117765f780e8283587dbf6c039ab589060daa00063425d378564b4b",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  10899,
+                        "literal_sha256":  "fc4e55792b1ea17638d4b8f6d1907fa8a3c3d09f5c0dec341ba4477be4360e9f",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  9358,
+                        "literal_sha256":  "fd277d86e09eb4a16b7b3ea41ea6ec845c245638713f5d4d1e95fd5658b3d00c",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  8881,
+                        "literal_sha256":  "fe668a262723423cf9a6bc09529156254c49f829dbe800828a18d05698c6b040",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  9872,
+                        "literal_sha256":  "ff2b0f5ce77557d5afbb50dfbb439b8fb3f2c6a8ad5779f57b755e8e83608d6c",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  297,
+                        "literal_sha256":  "ff408c7d583c0922a2f495343e05062e03155123f54a1c5d9bd7148a81689b3a",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/main.gd",
+                        "line":  316,
+                        "literal_sha256":  "ffd8852e50a34e001271674a9a9867959017f3bd203fab1877eb92d532249175",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/media_director.gd",
+                        "line":  421,
+                        "literal_sha256":  "10d049ae0cfb2f9731f55773510946fc79bad7bb4234aa07667657fe1f0f9daa",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/media_director.gd",
+                        "line":  501,
+                        "literal_sha256":  "395f34e2004463618895c588c2f50d27a126a00820629b7e71a250487778d581",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/media_director.gd",
+                        "line":  375,
+                        "literal_sha256":  "47434d7095c71c18ca44270148cf80659367612904626cf9fdf2a680a462153b",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/media_director.gd",
+                        "line":  412,
+                        "literal_sha256":  "968fdc9fb8121b5d635f1ab8bfe35fb786622bc3b19aa9857124f4a6ba8757be",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/media_director.gd",
+                        "line":  460,
+                        "literal_sha256":  "cf86ff92cf3ecfadf1d30dfd7fbb579808ee402c164c3b9be056d5cd1f24c678",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/media_director.gd",
+                        "line":  374,
+                        "literal_sha256":  "fd5383fb04e376411f7b9358c1789c54754c990b14a91c7de97877bc95d04ee1",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/mission_state.gd",
+                        "line":  120,
+                        "literal_sha256":  "c60b174b3bf55668df2841ec1439b710c4997a9a907330d9ac30353dee7cd9a3",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/save_slot_selector.gd",
+                        "line":  145,
+                        "literal_sha256":  "27c2b7f2becb5b4253688847cf1d2aebf994d478629f6aa5be403cccc3c37b9b",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/save_slot_selector.gd",
+                        "line":  59,
+                        "literal_sha256":  "29f052de827c5ab2c454dffec17b933b5b6cdfccc31399849385401f44999d6a",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/save_slot_selector.gd",
+                        "line":  155,
+                        "literal_sha256":  "359c5b5e388bd88172e6f78b61ac19604a42369078c33547783098b1d769eeb0",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/save_slot_selector.gd",
+                        "line":  71,
+                        "literal_sha256":  "49f6d2a9be7a5d5806876c22337d2044b8769ad815baf78e79828468a32d9418",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/save_slot_selector.gd",
+                        "line":  163,
+                        "literal_sha256":  "5a82d19a03d4401d11004df3430e39e21e9abf23df0441d275a87f959cdbcf49",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/save_slot_selector.gd",
+                        "line":  157,
+                        "literal_sha256":  "70e0bcdb2e919df0d950fd85eba9d6327818dddfcbf57570f0f1ed8797a21ac8",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/save_slot_selector.gd",
+                        "line":  165,
+                        "literal_sha256":  "7ea8f4e3b538bc62441b21b7e5b52a8868054539d9cf1a4c32bc29a0343e2f77",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/save_slot_selector.gd",
+                        "line":  123,
+                        "literal_sha256":  "851f1008fbe98723bee76421f2cf923db72e8f095576ab4e31e522bfa22372ef",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/save_slot_selector.gd",
+                        "line":  45,
+                        "literal_sha256":  "b4ce86886fcb07c0c803616a804b02e4e2416e8de77863f268126628a5e50856",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/save_slot_selector.gd",
+                        "line":  149,
+                        "literal_sha256":  "e7ad4c948d75578bc0fd94e25290b6cad13f8c5bc7ca3949bc186017f962f6c5",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/save_slot_selector.gd",
+                        "line":  71,
+                        "literal_sha256":  "ea47fd744057da11a023d23c3478fea7371a2f7ddcd45ede85ac30b6d520c7b2",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/save_slot_selector.gd",
+                        "line":  183,
+                        "literal_sha256":  "fd461816e29271e042e6086f428549970411e7ba4edaf77f16d91830d204be12",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    },
+                    {
+                        "file":  "scripts/squad_unit.gd",
+                        "line":  164,
+                        "literal_sha256":  "737cbd40d521fc84fe9550e02a0fc62853ec7ecdc33652ce4edc133dc51fa14c",
+                        "reason":  "legacy_or_editorial_source_baseline"
+                    }
+                ]
+}

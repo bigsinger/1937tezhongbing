@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "id": "training",
+  "number": 1,
+  "title": "Movement and Evacuation",
+  "time_limit_seconds": 120,
+  "scene_bindings": {
+    "exit": [900000]
+  },
+  "objectives": [
+    {
+      "id": "reach_exit",
+      "label": "Reach the marked evacuation area",
+      "required": true,
+      "condition": {
+        "event": "trigger_activated",
+        "where": {},
+        "required_count": 1
+      }
+    }
+  ],
+  "failure_conditions": [
+    {
+      "id": "time_limit",
+      "event": "time_expired"
+    }
+  ]
+}

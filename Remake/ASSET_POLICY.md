@@ -17,14 +17,16 @@
 - 资源格式、架构、任务恢复和开发文档；
 - `game/data/missions.json` 等重新整理的数据驱动任务定义；
 - 为格式测试人工生成、不能还原原始作品的微型二进制 fixture；
-- 项目自行制作或明确选择收录的占位内容。
+- 项目自行制作或明确选择收录的占位内容；
+- `.m1937pack` 的 JSON schema、解析/安全策略源码和完全合成的最小源目录示例。
 
 ## 默认不进入 Remake Git 树的批量转换内容
 
 - 原版可执行文件、安装程序和 DLL；
 - `GFL/VWF/SVT/SAV/DBL/SLF/SI0` 等旧引擎文件；
 - 从本地输入批量提取或转换的图片、精灵帧、地形、音频和视频；
-- 光盘镜像、绿色版压缩包、IDA 数据库、反编译日志和运行存档。
+- 光盘镜像、绿色版压缩包、IDA 数据库、反编译日志和运行存档；
+- 构建完成的 `.m1937pack`、试玩 EXE/PCK/ZIP、QA 截图、日志和遥测。
 
 从稳定 `Mod/` 解出的批量转换结果放在已被根 `.gitignore` 排除的
 `Remake/LocalAssets/`，不会再次复制进普通 Git 历史。`Mod/` 自身的 LFS
@@ -63,6 +65,8 @@ Godot 读取版本化 JSON 和普通 PNG/WAV，不在运行时直接解析 GFL�
 - 输出位于任意 Git 工作树内时，导入器会在写文件前调用 `git check-ignore`；
 - 根 `.gitignore` 排除 `Remake/LocalAssets/`、`game/imported/` 和常见旧资源扩展名；
 - `tools/Check-NoOriginalAssets.ps1` 扫描文件名、格式签名、导入目录和压缩包内容；
+- 第二轮仓库守卫同时拒绝成品 `.m1937pack`、EXE、PCK、ZIP、SAV、VWF、
+  LocalAssets 和机器专用 QA 输出；
 - CI 和常规验证只使用合成 fixture，不要求存在本地原版目录。
 
 导入器不会上传输入或转换结果，也不执行网络下载。完成本地导入后可运行：

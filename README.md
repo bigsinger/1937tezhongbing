@@ -102,6 +102,16 @@ WebP 和图集去重，实测 ZIP 已从 295.39 MiB 降至 159.64 MiB，详见
 操作、存档、辅助功能、AI/教育内容和最终验收见
 [`Remake/docs/现代化改造验收报告.md`](Remake/docs/现代化改造验收报告.md)。
 
+现代化第二轮又完成了 60 Hz 固定模拟、事件空间索引、移动预约、响应式中英文
+界面、检查点快速重试、现代规则战术暂停/顺序命令队列、有限证据 AI 黑板、产品级
+命令回放及安全的 `.m1937pack` 原生内容包。MapEditor 可以从零导出同一 schema
+并在隔离临时目录启动 Remake 试玩。完整设计与逐项证据见
+[`Remake/docs/现代化第二轮持续改进实施方案.md`](Remake/docs/现代化第二轮持续改进实施方案.md)、
+[`Remake/docs/现代化第二轮实施日志.md`](Remake/docs/现代化第二轮实施日志.md)和
+[`Remake/docs/现代化第二轮验收报告.md`](Remake/docs/现代化第二轮验收报告.md)，
+内容包工作流见
+[`Remake/docs/原生内容包与MapEditor工作流.md`](Remake/docs/原生内容包与MapEditor工作流.md)。
+
 完全复刻不是“关卡能显示”就算完成。功能差距、证据规则、逐关通关矩阵和
 发布硬门禁见
 [`Remake/docs/MOD完全复刻开发实施方案.md`](Remake/docs/MOD完全复刻开发实施方案.md)；
@@ -114,14 +124,13 @@ WebP 和图集去重，实测 ZIP 已从 295.39 MiB 降至 159.64 MiB，详见
 `FLIPMISSION` 的进程内按键到胜利状态转换另有 720 项零差异对照。后者
 只证明胜利转换链，不作为非作弊完整通关证据；这一边界仍由机器可读 parity
 contract 强制保留。
-Remake 还已通过十二关双轮 600 秒真实窗口性能门禁：33,105 帧整体
-P95 17.604 ms、P99 19.363 ms、零个 >50 ms 帧，且不会控制系统鼠标。
+Remake 还已通过现代化第二轮的十二关双轮 600 秒真实窗口性能门禁：33,130 帧
+整体 P95 18.193 ms、P99 20.236 ms、零个 >50 ms 帧，且不会控制系统鼠标。
 参考硬件与逐关数据见
 [`Remake/validation/baselines/remake/campaign-performance-1920x1080-v1.json`](Remake/validation/baselines/remake/campaign-performance-1920x1080-v1.json)。
-同一版本还通过了 31.81 分钟无交互稳定性验收：十二关循环 3 轮、
-103,576 帧，P95 19.296 ms、P99 24.874 ms，最大冷/热加载分别为
-3798/2943.9 ms，36 次存档和 36 次读档全部成功，第二轮内存净增长
-3.911 MiB；基线见
+同一版本还通过了 31.61 分钟无交互稳定性验收：十二关循环 3 轮，P95
+19.559 ms、P99 24.618 ms，最大冷/热加载分别为 5854.3/2274.2 ms，
+36 次存档和 36 次读档全部成功，第二轮内存净增长 4.786 MiB；基线见
 [`Remake/validation/baselines/remake/stability-soak-30-minute-v1.json`](Remake/validation/baselines/remake/stability-soak-30-minute-v1.json)。
 十二关后续运行态取证、共用路线/静止计数器、追击关系、80° 环境粒子场和
 对应性能优化见
@@ -159,7 +168,9 @@ P95 17.604 ms、P99 19.363 ms、零个 >50 ms 帧，且不会控制系统鼠标�
   正式 `.m1937mission.json` 插件往返；
 - 1,037 项素材放置元数据与一键 README/缩略图/故事/验证摘要发布；
 - 原版 `VWL1/SLIST1` VWF 只读导入；
-- 可进行 Git 差异比较的 `*.m37map.json` 和任务包导出。
+- 可进行 Git 差异比较的 `*.m37map.json` 和任务包导出；
+- 使用 Remake 共用 schema 导出安全的 `.m1937pack`，并在隔离临时目录一键
+  启动 Remake 试玩，不污染正式内容库或存档。
 
 运行已发布版本：
 

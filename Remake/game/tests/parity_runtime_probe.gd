@@ -54,6 +54,12 @@ const HUMAN_INPUT_NATURAL_FAILURE_ROUTES := {
 		"weapon_key": KEY_5,
 		"target_scene": 840,
 		"approach_world": Vector2(464.0, 1688.0),
+		# Wait on an authored patrol state, not a wall-clock delay.  This open-lane
+		# phase is the deterministic point at which the authentic shot can alert
+		# scene 870 and the guard can subsequently reacquire the player.
+		"lure_observer_scene": 870,
+		"lure_observer_window": Rect2(704.0, 1504.0, 16.0, 20.0),
+		"lure_observer_direction": 4,
 	},
 	"m003": {
 		"player_scene": 1150,
@@ -999,6 +1005,38 @@ func _run_human_input_natural_failure_probe(
 						"%s viewport ground click reaches the audited lure point"
 						% level_id,
 					)
+					if approach_reached and route.has("lure_observer_scene"):
+						var observer := _enemy_for_scene(
+							main,
+							int(route["lure_observer_scene"]),
+						)
+						var observer_window := route.get(
+							"lure_observer_window",
+							Rect2(),
+						) as Rect2
+						var observer_direction := int(route.get(
+							"lure_observer_direction",
+							-1,
+						))
+						var observer_ready := false
+						for _observer_frame: int in range(1800):
+							if (
+								observer != null
+								and observer_window.has_point(observer.position)
+								and (
+									observer_direction < 0
+									or int(observer.get("original_direction_index"))
+										== observer_direction
+								)
+							):
+								observer_ready = true
+								break
+							await physics_frame
+						_expect(
+							observer_ready,
+							"%s authentic lure observer reaches the audited open-lane phase"
+							% level_id,
+						)
 				target_world = lure.position
 				before_pistol_quantity = _inventory_quantity(
 					player,

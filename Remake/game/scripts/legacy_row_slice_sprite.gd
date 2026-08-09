@@ -16,6 +16,7 @@ static var _slice_texture_cache: Dictionary = {}
 
 var _parts: Array[Sprite2D] = []
 var _row_lookup: Array[int] = []
+var _part_row_values: Array[int] = []
 var _anchor := Vector2.ZERO
 var _reference_y := 0.0
 var _reference_offset_from_parent := 0.0
@@ -62,9 +63,11 @@ func configure(
 	set_process(_track_parent_reference_y)
 
 	var uniform := _rows_are_uniform(_row_lookup)
-	var required_parts := 1 if uniform else _row_lookup.size()
+	var runs := _contiguous_row_runs(_row_lookup)
+	var required_parts := 1 if uniform else runs.size()
 	_ensure_part_count(required_parts)
 	_active_part_count = required_parts
+	_part_row_values.clear()
 	for part_index: int in range(_parts.size()):
 		var part := _parts[part_index]
 		part.visible = part_index < required_parts
@@ -74,12 +77,11 @@ func configure(
 		if uniform:
 			part.texture = texture
 			part.position = -_anchor
+			_part_row_values.append(_row_lookup[0])
 		else:
-			var source_x := part_index * COLUMN_WIDTH
-			var slice_width := mini(
-				COLUMN_WIDTH,
-				texture_width - source_x,
-			)
+			var run := runs[part_index]
+			var source_x := int(run.x) * COLUMN_WIDTH
+			var slice_width := mini(int(run.y) * COLUMN_WIDTH, texture_width - source_x)
 			part.texture = _slice_texture(
 				texture,
 				source_x,
@@ -90,6 +92,7 @@ func configure(
 				-_anchor.x + float(source_x),
 				-_anchor.y,
 			)
+			_part_row_values.append(_row_lookup[int(run.x)])
 	_apply_depths()
 	return true
 
@@ -97,6 +100,7 @@ func configure(
 func clear_visual() -> void:
 	_active_part_count = 0
 	_row_lookup.clear()
+	_part_row_values.clear()
 	_track_parent_reference_y = false
 	set_process(false)
 	for part: Sprite2D in _parts:
@@ -166,9 +170,9 @@ func _apply_depths() -> void:
 			_z_bias,
 		)
 		return
-	for column: int in range(_active_part_count):
-		_parts[column].z_index = WORLD_DEPTH.normal_z(
-			_reference_y - _anchor.y + float(_row_lookup[column]),
+	for part_index: int in range(_active_part_count):
+		_parts[part_index].z_index = WORLD_DEPTH.normal_z(
+			_reference_y - _anchor.y + float(_part_row_values[part_index]),
 			_z_bias,
 		)
 
@@ -195,6 +199,22 @@ static func _rows_are_uniform(rows: Array[int]) -> bool:
 		if rows[row_index] != first:
 			return false
 	return true
+
+
+static func _contiguous_row_runs(rows: Array[int]) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	if rows.is_empty():
+		return result
+	var run_start := 0
+	var run_value := rows[0]
+	for row_index: int in range(1, rows.size()):
+		if rows[row_index] == run_value:
+			continue
+		result.append(Vector2i(run_start, row_index - run_start))
+		run_start = row_index
+		run_value = rows[row_index]
+	result.append(Vector2i(run_start, rows.size() - run_start))
+	return result
 
 
 static func _slice_texture(
