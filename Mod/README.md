@@ -3,6 +3,10 @@
 这是可以直接运行的原版增强发行目录，不再依赖仓库外的
 `E:\1937\1937tzb_1229`。GitHub 用户克隆仓库时需要启用 Git LFS：
 
+普通玩家也可从
+[最终归档 Release](https://github.com/bigsinger/1937tezhongbing/releases/tag/archive-2026.08.10)
+下载 `1937-Mod-portable.zip`，无需安装 Git LFS。
+
 ```powershell
 git lfs install
 git clone https://github.com/bigsinger/1937tezhongbing.git

@@ -11,6 +11,20 @@
 | [`SDK/`](SDK/) | 已验证 EXE 的地址、结构、补丁原语和运行时访问接口 |
 | [`Remake/`](Remake/) | 正在继续开发的 Godot 现代复刻工程，以稳定 MOD 为行为基准 |
 
+## 最终归档版下载
+
+不需要开发环境的用户可从
+[最终归档 Release](https://github.com/bigsinger/1937tezhongbing/releases/tag/archive-2026.08.10)
+直接下载三个经过验证的离线包：
+
+- `1937-Mod-portable.zip`：解压后直接玩现代增强原版；
+- `1937-Remake-portable.zip`：解压后直接玩 Godot 复刻版；
+- `1937-MapEditor-portable.zip`：自包含地图编辑器、素材库和十二关地图。
+
+开发者仍可通过 Git LFS 克隆完整仓库，自行编译并进行二次创作。包体入口、
+SHA-256 校验和冻结范围见
+[`doc/最终归档发布说明.md`](doc/最终归档发布说明.md)。
+
 ## 项目效果一览
 
 | MapEditor：原版地图、活动路线与任务分析 | Mod：现代启动中心 |
@@ -244,3 +258,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Patch\tools\Build-Mod.ps1
   9.414—12.837ms，未响应和超过 50ms 卡顿均为 0；
 - m000—m011 原生 VWF 无修改逐字节往返和损坏输入拒绝通过；
 - 原版源目录只作只读取证，后续开发均在 `Mod/`。
+
+## 许可证与素材边界
+
+本项目自行编写的软件与文档采用 [MIT 许可证](LICENSE)，允许使用、修改、
+分发和二次创作。第三方组件继续采用各自许可证。原游戏可执行文件、数据、
+美术、音频、地图和剧情等历史内容不因本项目的 MIT 许可证而被重新授权；
+使用者应自行确认适用条件。

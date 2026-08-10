@@ -2,6 +2,10 @@
 
 面向原版关卡查看、修改和社区新关卡制作的可视化编辑器。
 
+无需安装 .NET 的最终便携包可从
+[最终归档 Release](https://github.com/bigsinger/1937tezhongbing/releases/tag/archive-2026.08.10)
+下载 `1937-MapEditor-portable.zip`；解压后运行 `1937MapEditor.exe`。
+
 ## 最简单的使用方法
 
 1. 运行 `启动地图编辑器.ps1`；

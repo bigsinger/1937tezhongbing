@@ -77,4 +77,7 @@ third_party/   cnc-ddraw 版本、许可证和官方源码归档
 
 ## 许可证
 
-cnc-ddraw 使用其上游 MIT 许可证，见 [third_party/cnc-ddraw/LICENSE](third_party/cnc-ddraw/LICENSE)。仓库没有为自研兼容层另行授予开源许可证，因此在明确授权前保留全部权利。原游戏版权归原权利人所有。
+本项目自行编写的兼容层、工具和文档使用仓库根目录的
+[MIT 许可证](../LICENSE)。cnc-ddraw 使用其上游 MIT 许可证，见
+[third_party/cnc-ddraw/LICENSE](third_party/cnc-ddraw/LICENSE)。其他第三方组件
+继续采用各自许可证；原游戏内容不因本项目许可证而被重新授权。

@@ -2,7 +2,11 @@
 
 ## 效果截图
 
-最新本地试玩包请运行 `LocalBuild/1937Remake/Play-1937-Remake.cmd`。
+无需开发环境的最终试玩包可从
+[最终归档 Release](https://github.com/bigsinger/1937tezhongbing/releases/tag/archive-2026.08.10)
+下载 `1937-Remake-portable.zip`，解压后运行 `Play-1937-Remake.cmd`。
+源码检出后的本地构建入口仍为
+`LocalBuild/1937Remake/Play-1937-Remake.cmd`。
 
 | 真实关卡、原版 HUD 与现代运行时 | 现代设置、显示与辅助功能 |
 |---|---|
